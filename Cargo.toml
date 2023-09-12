@@ -1,0 +1,9 @@
+[package]
+name = "rs-platform-explorer"
+version = "0.1.0"
+license = "MIT"
+edition = "2021"
+
+[dependencies]
+crossterm = "0.26.1"
+ratatui = "0.21.0"
