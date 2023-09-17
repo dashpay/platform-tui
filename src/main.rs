@@ -14,7 +14,7 @@ fn main() -> AppResult<()> {
     // Initialize the terminal user interface.
     let backend = CrosstermBackend::new(io::stderr());
     let terminal = Terminal::new(backend)?;
-    let events = EventHandler::new(250);
+    let events = EventHandler::new();
     let mut tui = Tui::new(terminal, events);
     tui.init()?;
 
@@ -24,10 +24,8 @@ fn main() -> AppResult<()> {
         tui.draw(&mut app)?;
         // Handle events.
         match tui.events.next()? {
-            Event::Tick => app.tick(),
             Event::Key(key_event) => handle_key_events(key_event, &mut app)?,
-            Event::Mouse(_) => {}
-            Event::Resize(_, _) => {}
+            _ => {}
         }
     }
 
