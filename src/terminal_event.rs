@@ -1,10 +1,8 @@
-use std::sync::mpsc;
+use std::sync::mpsc::{self, RecvError};
 use std::thread;
 use std::time::Duration;
 
 use crossterm::event::{self, Event as CrosstermEvent, KeyEvent, MouseEvent};
-
-use crate::app::AppResult;
 
 /// Terminal events.
 #[derive(Clone, Copy, Debug)]
@@ -59,7 +57,7 @@ impl TerminalEventHandler {
     ///
     /// This function will always block the current thread if
     /// there is no data available and it's possible for more data to be sent.
-    pub fn next(&self) -> AppResult<TerminalEvent> {
-        Ok(self.receiver.recv()?)
+    pub fn next(&self) -> Result<TerminalEvent, RecvError> {
+        self.receiver.recv()
     }
 }

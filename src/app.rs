@@ -1,9 +1,4 @@
-use std::error;
-
-use crate::screen::{self, Screen};
-
-/// Application result type.
-pub type AppResult<T> = std::result::Result<T, Box<dyn error::Error>>;
+use crate::screen::Screen;
 
 /// Application.
 pub struct App {
