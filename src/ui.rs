@@ -9,12 +9,13 @@ use crate::app::App;
 
 /// Renders the user interface widgets.
 pub fn render<B: Backend>(app: &mut App, frame: &mut Frame<'_, B>) {
-    // App layout
+    // App layout: screen window, screen keys and status bar
     let layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(10), Constraint::Max(10), Constraint::Max(2)].as_ref())
         .split(frame.size());
 
+    // Render the screen window
     let main_widget_block = Block::default()
         .title("Platform Explorer")
         .title_alignment(Alignment::Center)
@@ -22,7 +23,6 @@ pub fn render<B: Backend>(app: &mut App, frame: &mut Frame<'_, B>) {
         .padding(Padding::new(1, 0, 0, 0));
 
     frame.render_widget(app.screen.clone(), main_widget_block.inner(layout[0]));
-
     frame.render_widget(main_widget_block, layout[0]);
 
     frame.render_widget(
