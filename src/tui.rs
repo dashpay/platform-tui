@@ -7,7 +7,7 @@ use ratatui::backend::Backend;
 use ratatui::Terminal;
 
 use crate::app::{App, AppResult};
-use crate::event::EventHandler;
+use crate::terminal_event::TerminalEventHandler;
 use crate::ui;
 
 /// Representation of a terminal user interface.
@@ -19,12 +19,12 @@ pub struct Tui<B: Backend> {
     /// Interface to the Terminal.
     terminal: Terminal<B>,
     /// Terminal event handler.
-    pub events: EventHandler,
+    pub events: TerminalEventHandler,
 }
 
 impl<B: Backend> Tui<B> {
     /// Constructs a new instance of [`Tui`].
-    pub fn new(terminal: Terminal<B>, events: EventHandler) -> Self {
+    pub fn new(terminal: Terminal<B>, events: TerminalEventHandler) -> Self {
         Self { terminal, events }
     }
 
