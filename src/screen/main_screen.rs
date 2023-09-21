@@ -1,54 +1,88 @@
 //! First screen of the application.
 
-use super::Key;
+use crossterm::event::{KeyCode, KeyEvent};
+use ratatui::{
+    prelude::{Buffer, Rect},
+    widgets::{Paragraph, Widget},
+};
+
+use crate::app::App;
+
+use super::{identity_screen::IdentityScreen, Key, Screen};
 
 #[derive(Debug, Clone)]
-pub struct MainScreen {
-    identity_private_key: Option<()>, // TODO
+pub struct MainScreen {}
+
+impl From<MainScreen> for Screen {
+    fn from(value: MainScreen) -> Self {
+        Screen::MainScreen(value)
+    }
 }
 
 impl MainScreen {
     pub fn new() -> Self {
-        MainScreen {
-            identity_private_key: None,
-        }
+        MainScreen {}
     }
 
-    pub fn keys(&self) -> impl Iterator<Item = &Key> {
+    pub fn render(self, area: Rect, buf: &mut Buffer) {
+        Paragraph::new(
+            "Welcome to Platform TUI!
+
+Use keys listed in \"Commands\" section below to switch screens and/or toggle flags.
+
+Some of them require signature and are disabled until an identity key is loaded.",
+        )
+        .render(area, buf)
+    }
+
+    pub fn keys(&self) -> &'static [Key] {
         [
+            Key {
+                key: 'q',
+                description: "Quit",
+            },
             Key {
                 key: 'i',
                 description: "Identities",
             },
             Key {
-                key: 't',
-                description: "Test1",
+                key: 'c',
+                description: "Data Contracts",
             },
             Key {
-                key: 'o',
-                description: "Test2",
-            },
-            Key {
-                key: 'p',
-                description: "Test3",
-            },
-            Key {
-                key: 'q',
-                description: "Test4",
-            },
-            Key {
-                key: 'r',
-                description: "Test4",
+                key: 'd',
+                description: "Documents",
             },
             Key {
                 key: 's',
-                description: "Test5",
-            },
-            Key {
-                key: 'u',
-                description: "Test6",
+                description: "State Transitions",
             },
         ]
-        .iter()
+        .as_ref()
+    }
+
+    pub fn screen_name(&self) -> &'static str {
+        "Main"
+    }
+
+    pub fn handle_key_event(self, app: &mut App, key_event: KeyEvent) -> Screen {
+        match key_event {
+            KeyEvent {
+                code: KeyCode::Char('q'),
+                ..
+            } => {
+                app.quit();
+                self.into()
+            }
+            KeyEvent {
+                code: KeyCode::Char('i'),
+                ..
+            } => IdentityScreen::new().into(),
+            _ => self.into(),
+        }
+    }
+
+    pub fn breadcrumbs(&self) -> &'static [&'static str] {
+        ["Main"].as_ref()
     }
 }

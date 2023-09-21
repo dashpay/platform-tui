@@ -3,7 +3,6 @@ use std::io;
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 use rs_platform_explorer::app::App;
-use rs_platform_explorer::handler::handle_key_events;
 use rs_platform_explorer::terminal_event::{TerminalEvent, TerminalEventHandler};
 use rs_platform_explorer::tui::Tui;
 
@@ -28,7 +27,7 @@ fn main() {
             .next()
             .expect("unable to get next terminal event")
         {
-            TerminalEvent::Key(key_event) => handle_key_events(key_event, &mut app),
+            TerminalEvent::Key(key_event) => app.handle_key_event(key_event),
             _ => {}
         }
     }
