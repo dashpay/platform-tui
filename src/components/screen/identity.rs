@@ -49,7 +49,7 @@ impl Component<Message, NoUserEvent> for IdentityScreenCommands {
             Event::Keyboard(KeyEvent {
                 code: Key::Char('q'),
                 modifiers: KeyModifiers::NONE,
-            }) => Some(Message::ChangeScreen(Screen::Main)),
+            }) => Some(Message::PrevScreen),
             _ => None,
         }
     }

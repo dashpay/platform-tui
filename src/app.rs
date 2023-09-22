@@ -5,13 +5,13 @@ use std::time::Duration;
 use tuirealm::{
     terminal::TerminalBridge,
     tui::prelude::{Constraint, Direction, Layout},
-    Application, ApplicationError, EventListenerCfg, NoUserEvent, Update,
+    Application, ApplicationError, AttrValue, Attribute, EventListenerCfg, NoUserEvent, Update,
 };
 
 use crate::components::*;
 
 /// Screen identifiers
-#[derive(Debug, Hash, Clone, Eq, PartialEq, Copy)]
+#[derive(Debug, Hash, Clone, Eq, PartialEq, Copy, strum::AsRefStr)]
 pub(super) enum Screen {
     Main,
     Identity,
@@ -24,6 +24,7 @@ pub(super) enum ComponentId {
     CommandPallet,
     Screen,
     Status,
+    Breadcrumbs,
 }
 
 impl Default for Screen {
@@ -35,7 +36,8 @@ impl Default for Screen {
 #[derive(Debug, PartialEq)]
 pub(super) enum Message {
     AppClose,
-    ChangeScreen(Screen),
+    NextScreen(Screen),
+    PrevScreen,
 }
 
 pub(super) struct Model {
@@ -47,6 +49,8 @@ pub(super) struct Model {
     pub redraw: bool,
     /// Current screen
     pub current_screen: Screen,
+    /// Breadcrumbs
+    pub breadcrumbs: Vec<Screen>,
     /// Used to draw to terminal
     pub terminal: TerminalBridge,
 }
@@ -58,6 +62,7 @@ impl Default for Model {
             quit: false,
             redraw: true,
             current_screen: Screen::Main,
+            breadcrumbs: Vec::new(),
             terminal: TerminalBridge::new().expect("Cannot initialize terminal"),
         }
     }
@@ -73,13 +78,18 @@ impl Model {
         );
 
         // Mount components
-        app.mount(ComponentId::Status, Box::new(Status::new()), Vec::new())?;
         app.mount(ComponentId::Screen, Box::new(MainScreen::new()), Vec::new())?;
         app.mount(
             ComponentId::CommandPallet,
             Box::new(MainScreenCommands::new()),
             Vec::new(),
         )?;
+        app.mount(
+            ComponentId::Breadcrumbs,
+            Box::new(Breadcrumbs::new()),
+            Vec::new(),
+        )?;
+        app.mount(ComponentId::Status, Box::new(Status::new()), Vec::new())?;
 
         // Setting focus on the screen so it will react to events
         app.active(&ComponentId::CommandPallet)?;
@@ -101,6 +111,7 @@ impl Model {
 
                 // Status line layout
                 let status_bar_layout = Layout::default()
+                    .horizontal_margin(1)
                     .direction(Direction::Horizontal)
                     .constraints([Constraint::Min(20), Constraint::Max(20)].as_ref())
                     .split(outer_layout[2]);
@@ -108,9 +119,62 @@ impl Model {
                 self.app.view(&ComponentId::Screen, f, outer_layout[0]);
                 self.app
                     .view(&ComponentId::CommandPallet, f, outer_layout[1]);
+
+                self.app
+                    .view(&ComponentId::Breadcrumbs, f, status_bar_layout[0]);
                 self.app.view(&ComponentId::Status, f, status_bar_layout[1]);
             })
             .expect("unable to render the application");
+    }
+
+    pub fn set_screen(&mut self, screen: Screen) {
+        match screen {
+            Screen::Main => {
+                self.app
+                    .remount(ComponentId::Screen, Box::new(MainScreen::new()), Vec::new())
+                    .expect("unable to remount screen");
+                self.app
+                    .remount(
+                        ComponentId::CommandPallet,
+                        Box::new(MainScreenCommands::new()),
+                        Vec::new(),
+                    )
+                    .expect("unable to remount screen");
+            }
+            Screen::Identity => {
+                self.app
+                    .remount(
+                        ComponentId::Screen,
+                        Box::new(IdentityScreen::new()),
+                        Vec::new(),
+                    )
+                    .expect("unable to remount screen");
+                self.app
+                    .remount(
+                        ComponentId::CommandPallet,
+                        Box::new(IdentityScreenCommands::new()),
+                        Vec::new(),
+                    )
+                    .expect("unable to remount screen");
+            }
+        }
+        self.app
+            .attr(
+                &ComponentId::Breadcrumbs,
+                Attribute::Text,
+                AttrValue::String(
+                    self.breadcrumbs
+                        .iter()
+                        .chain(std::iter::once(&self.current_screen))
+                        .map(AsRef::as_ref)
+                        .fold(String::new(), |mut acc, segment| {
+                            acc.push_str(segment);
+                            acc.push_str(" / ");
+                            acc
+                        }),
+                ),
+            )
+            .expect("cannot set breadcrumbs");
     }
 }
 
@@ -125,45 +189,21 @@ impl Update<Message> for Model {
                     self.quit = true; // Terminate
                     None
                 }
-                Message::ChangeScreen(s) => {
+                Message::NextScreen(s) => {
+                    self.breadcrumbs.push(self.current_screen);
                     self.current_screen = s;
-                    match s {
-                        Screen::Main => {
-                            self.app
-                                .remount(
-                                    ComponentId::Screen,
-                                    Box::new(MainScreen::new()),
-                                    Vec::new(),
-                                )
-                                .expect("unable to remount screen");
-                            self.app
-                                .remount(
-                                    ComponentId::CommandPallet,
-                                    Box::new(MainScreenCommands::new()),
-                                    Vec::new(),
-                                )
-                                .expect("unable to remount screen");
-                        }
-                        Screen::Identity => {
-                            self.app
-                                .remount(
-                                    ComponentId::Screen,
-                                    Box::new(IdentityScreen::new()),
-                                    Vec::new(),
-                                )
-                                .expect("unable to remount screen");
-                            self.app
-                                .remount(
-                                    ComponentId::CommandPallet,
-                                    Box::new(IdentityScreenCommands::new()),
-                                    Vec::new(),
-                                )
-                                .expect("unable to remount screen");
-                        }
-                    }
+                    self.set_screen(s);
                     None
                 }
-                _ => todo!(),
+                Message::PrevScreen => {
+                    let screen = self
+                        .breadcrumbs
+                        .pop()
+                        .expect("must not be triggered on the main screen");
+                    self.current_screen = screen;
+                    self.set_screen(screen);
+                    None
+                }
             }
         } else {
             None

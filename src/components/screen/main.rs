@@ -62,7 +62,7 @@ impl Component<Message, NoUserEvent> for MainScreenCommands {
             Event::Keyboard(KeyEvent {
                 code: Key::Char('i'),
                 modifiers: KeyModifiers::NONE,
-            }) => Some(Message::ChangeScreen(Screen::Identity)),
+            }) => Some(Message::NextScreen(Screen::Identity)),
             _ => None,
         }
     }
