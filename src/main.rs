@@ -1,38 +1,52 @@
-use std::io;
+mod app;
+// mod components;
+// use app::model::Model;
 
-use ratatui::backend::CrosstermBackend;
-use ratatui::Terminal;
-use rs_platform_explorer::app::App;
-use rs_platform_explorer::terminal_event::{TerminalEvent, TerminalEventHandler};
-use rs_platform_explorer::tui::Tui;
+use tuirealm::{application::PollStrategy, AttrValue, Attribute, Update};
+
+use app::{ComponentId, Message, Model, Screen};
 
 fn main() {
-    // Create an application.
-    let mut app = App::new();
-
-    // Initialize the terminal user interface.
-    let backend = CrosstermBackend::new(io::stderr());
-    let terminal = Terminal::new(backend).expect("cannot initialize terminal backend");
-    let events = TerminalEventHandler::new();
-    let mut tui = Tui::new(terminal, events);
-    tui.init().expect("unable to init terminal UI");
-
-    // Start the main loop.
-    while app.running {
-        // Render the user interface.
-        tui.draw(&mut app).expect("unable to update terminal view");
-        // Handle events.
-        match tui
-            .events
-            .next()
-            .expect("unable to get next terminal event")
-        {
-            TerminalEvent::Key(key_event) => app.handle_key_event(key_event),
+    // Setup model
+    let mut model = Model::default();
+    // Enter alternate screen
+    let _ = model.terminal.enter_alternate_screen();
+    let _ = model.terminal.enable_raw_mode();
+    // Main loop
+    // NOTE: loop until quit; quit is set in update if AppClose is received from counter
+    while !model.quit {
+        // Tick
+        match model.app.tick(PollStrategy::Once) {
+            Err(err) => {
+                assert!(model
+                    .app
+                    .attr(
+                        &ComponentId::Status,
+                        Attribute::Text,
+                        AttrValue::String(format!("Application error: {}", err)),
+                    )
+                    .is_ok());
+            }
+            Ok(messages) if messages.len() > 0 => {
+                // NOTE: redraw if at least one msg has been processed
+                model.redraw = true;
+                for msg in messages.into_iter() {
+                    let mut msg = Some(msg);
+                    while msg.is_some() {
+                        msg = model.update(msg);
+                    }
+                }
+            }
             _ => {}
         }
+        // Redraw
+        if model.redraw {
+            model.view();
+            model.redraw = false;
+        }
     }
-
-    // Exit the user interface.
-    tui.exit()
-        .expect("unable to properly close terminal session");
+    // Terminate terminal
+    let _ = model.terminal.leave_alternate_screen();
+    let _ = model.terminal.disable_raw_mode();
+    let _ = model.terminal.clear_screen();
 }
