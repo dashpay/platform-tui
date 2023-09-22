@@ -1,5 +1,5 @@
 mod app;
-// mod components;
+mod components;
 // use app::model::Model;
 
 use tuirealm::{application::PollStrategy, AttrValue, Attribute, Update};
