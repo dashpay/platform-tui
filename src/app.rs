@@ -2,17 +2,16 @@
 
 use std::time::Duration;
 
-use tui_realm_stdlib::Label;
 use tuirealm::{
     terminal::TerminalBridge,
     tui::prelude::{Constraint, Direction, Layout},
     Application, ApplicationError, EventListenerCfg, NoUserEvent, Update,
 };
 
-use crate::components::{MainScreen, Status};
+use crate::components::*;
 
 /// Screen identifiers
-#[derive(Debug, Hash, Clone, Eq, PartialEq)]
+#[derive(Debug, Hash, Clone, Eq, PartialEq, Copy)]
 pub(super) enum Screen {
     Main,
     Identity,
@@ -76,9 +75,14 @@ impl Model {
         // Mount components
         app.mount(ComponentId::Status, Box::new(Status::new()), Vec::new())?;
         app.mount(ComponentId::Screen, Box::new(MainScreen::new()), Vec::new())?;
+        app.mount(
+            ComponentId::CommandPallet,
+            Box::new(MainScreenCommands::new()),
+            Vec::new(),
+        )?;
 
         // Setting focus on the screen so it will react to events
-        app.active(&ComponentId::Screen)?;
+        app.active(&ComponentId::CommandPallet)?;
 
         Ok(app)
     }
@@ -101,6 +105,9 @@ impl Model {
                     .constraints([Constraint::Min(20), Constraint::Max(20)].as_ref())
                     .split(outer_layout[2]);
 
+                self.app.view(&ComponentId::Screen, f, outer_layout[0]);
+                self.app
+                    .view(&ComponentId::CommandPallet, f, outer_layout[1]);
                 self.app.view(&ComponentId::Status, f, status_bar_layout[1]);
             })
             .expect("unable to render the application");
@@ -116,6 +123,44 @@ impl Update<Message> for Model {
             match message {
                 Message::AppClose => {
                     self.quit = true; // Terminate
+                    None
+                }
+                Message::ChangeScreen(s) => {
+                    self.current_screen = s;
+                    match s {
+                        Screen::Main => {
+                            self.app
+                                .remount(
+                                    ComponentId::Screen,
+                                    Box::new(MainScreen::new()),
+                                    Vec::new(),
+                                )
+                                .expect("unable to remount screen");
+                            self.app
+                                .remount(
+                                    ComponentId::CommandPallet,
+                                    Box::new(MainScreenCommands::new()),
+                                    Vec::new(),
+                                )
+                                .expect("unable to remount screen");
+                        }
+                        Screen::Identity => {
+                            self.app
+                                .remount(
+                                    ComponentId::Screen,
+                                    Box::new(IdentityScreen::new()),
+                                    Vec::new(),
+                                )
+                                .expect("unable to remount screen");
+                            self.app
+                                .remount(
+                                    ComponentId::CommandPallet,
+                                    Box::new(IdentityScreenCommands::new()),
+                                    Vec::new(),
+                                )
+                                .expect("unable to remount screen");
+                        }
+                    }
                     None
                 }
                 _ => todo!(),

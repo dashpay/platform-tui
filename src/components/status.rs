@@ -13,7 +13,7 @@ pub(crate) struct Status {
 impl Status {
     pub(crate) fn new() -> Self {
         Status {
-            component: Label::default().text("No identity loaded")
+            component: Label::default().text("No identity loaded"),
         }
     }
 }
