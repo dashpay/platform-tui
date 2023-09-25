@@ -1,6 +1,6 @@
 mod app;
 mod components;
-// use app::model::Model;
+mod mock_components;
 
 use tuirealm::{application::PollStrategy, AttrValue, Attribute, Update};
 
