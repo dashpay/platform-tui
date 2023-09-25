@@ -1,17 +1,77 @@
 //! Command Pallet is a "mock component" that helps to quickly setup keystroke navigation
 //! for each screen including execution of actions with togglable flags.
 
+use std::collections::HashMap;
+
+use tui_realm_stdlib::Table;
 use tuirealm::{
     command::{Cmd, CmdResult},
+    props::TextSpan,
     tui::prelude::Rect,
-    AttrValue, Attribute, Frame, MockComponent, State,
+    AttrValue, Attribute, Frame, MockComponent, State, StateValue,
 };
 
-pub(crate) struct CommandPallet {}
+const KEYS_PER_ROW: usize = 3;
+
+#[derive(PartialEq)]
+pub(crate) enum KeyType {
+    Toggle,
+    Command,
+}
+
+pub(crate) struct CommandPalletKey {
+    key: char,
+    description: &'static str,
+    key_type: KeyType,
+}
+
+pub(crate) struct CommandPallet {
+    keys: Vec<CommandPalletKey>,
+    state: State,
+}
+
+impl CommandPallet {
+    pub(crate) fn new(keys: Vec<CommandPalletKey>) -> Self {
+        let mut state_map = keys
+            .iter()
+            .filter(|k| k.key_type == KeyType::Toggle)
+            .map(|k| (k.key.to_string(), StateValue::Bool(false)))
+            .collect();
+
+        CommandPallet {
+            state: State::Map(state_map),
+            keys,
+        }
+    }
+}
 
 impl MockComponent for CommandPallet {
     fn view(&mut self, frame: &mut Frame, area: Rect) {
-        todo!()
+        let mut table_vec = Vec::new();
+        let toggles = match &self.state {
+            State::Map(hm) => hm,
+            _ => unreachable!("State for `CommandPallet` is always a map"),
+        };
+
+        for row in self.keys.chunks(KEYS_PER_ROW) {
+            let mut row_vec = Vec::new();
+            for key in row {
+                let mut span = TextSpan::new(format!("{} - {}", key.key, key.description));
+                span = if matches!(
+                    toggles.get(key.key.to_string().as_str()),
+                    Some(StateValue::Bool(true))
+                ) {
+                    span.bold()
+                } else {
+                    span
+                };
+                row_vec.push(span);
+            }
+
+            table_vec.push(row_vec);
+        }
+
+        Table::default().table(table_vec).view(frame, area);
     }
 
     fn query(&self, attr: Attribute) -> Option<AttrValue> {
@@ -27,6 +87,19 @@ impl MockComponent for CommandPallet {
     }
 
     fn perform(&mut self, cmd: Cmd) -> CmdResult {
-        todo!()
+        match cmd {
+            Cmd::Type(c) => todo!(),
+            Cmd::Move(_) => todo!(),
+            Cmd::Scroll(_) => todo!(),
+            Cmd::GoTo(_) => todo!(),
+            Cmd::Submit => todo!(),
+            Cmd::Delete => todo!(),
+            Cmd::Cancel => todo!(),
+            Cmd::Toggle => todo!(),
+            Cmd::Change => todo!(),
+            Cmd::Tick => todo!(),
+            Cmd::Custom(_) => todo!(),
+            Cmd::None => todo!(),
+        }
     }
 }
