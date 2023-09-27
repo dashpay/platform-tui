@@ -76,11 +76,15 @@ impl Component<Message, NoUserEvent> for GetIdentityScreenCommands {
                 modifiers: KeyModifiers::NONE,
             }) => Some(Message::PrevScreen),
             Event::Keyboard(KeyEvent {
+                code: Key::Char('i'),
+                modifiers: KeyModifiers::NONE,
+            }) => Some(Message::ExpectingInput),
+            Event::Keyboard(KeyEvent {
                 code: Key::Char(c),
                 modifiers: KeyModifiers::NONE,
             }) => {
                 self.perform(Cmd::Type(c));
-                Some(Message::ToggleFlag)
+                Some(Message::Redraw)
             }
             _ => None,
         }

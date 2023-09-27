@@ -2,13 +2,21 @@ mod app;
 mod components;
 mod mock_components;
 
+use rs_dapi_client::{AddressList, DapiClient, RequestSettings};
 use tuirealm::{application::PollStrategy, AttrValue, Attribute, Update};
 
 use app::{ComponentId, Message, Model, Screen};
 
 fn main() {
+    // Setup DAPI client
+    let mut address_list = AddressList::new();
+    address_list.add_uri(rs_dapi_client::Uri::from_static(
+        "https://54.213.204.85:1443",
+    ));
+    let mut dapi_client = DapiClient::new(address_list, RequestSettings::default());
+
     // Setup model
-    let mut model = Model::default();
+    let mut model = Model::new(&mut dapi_client);
     // Enter alternate screen
     let _ = model.terminal.enter_alternate_screen();
     let _ = model.terminal.enable_raw_mode();
@@ -28,8 +36,6 @@ fn main() {
                     .is_ok());
             }
             Ok(messages) if messages.len() > 0 => {
-                // NOTE: redraw if at least one msg has been processed
-                model.redraw = true;
                 for msg in messages.into_iter() {
                     let mut msg = Some(msg);
                     while msg.is_some() {

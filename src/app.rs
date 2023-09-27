@@ -2,6 +2,8 @@
 
 use std::time::Duration;
 
+use rs_dapi_client::DapiClient;
+use rs_sdk::DashPlatformSdk;
 use tuirealm::{
     terminal::TerminalBridge,
     tui::prelude::{Constraint, Direction, Layout},
@@ -39,10 +41,11 @@ pub(super) enum Message {
     AppClose,
     NextScreen(Screen),
     PrevScreen,
-    ToggleFlag,
+    ExpectingInput,
+    Redraw,
 }
 
-pub(super) struct Model {
+pub(super) struct Model<'a> {
     /// Application
     pub app: Application<ComponentId, Message, NoUserEvent>,
     /// Indicates that the application must quit
@@ -55,10 +58,12 @@ pub(super) struct Model {
     pub breadcrumbs: Vec<Screen>,
     /// Used to draw to terminal
     pub terminal: TerminalBridge,
+    /// DAPI Client
+    pub dapi_client: &'a mut DapiClient,
 }
 
-impl Default for Model {
-    fn default() -> Self {
+impl<'a> Model<'a> {
+    pub(crate) fn new(dapi_client: &'a mut DapiClient) -> Self {
         Self {
             app: Self::init_app().expect("Unable to init the application"),
             quit: false,
@@ -66,11 +71,10 @@ impl Default for Model {
             current_screen: Screen::Main,
             breadcrumbs: Vec::new(),
             terminal: TerminalBridge::new().expect("Cannot initialize terminal"),
+            dapi_client,
         }
     }
-}
 
-impl Model {
     fn init_app() -> Result<Application<ComponentId, Message, NoUserEvent>, ApplicationError> {
         let mut app = Application::init(
             EventListenerCfg::default()
@@ -107,7 +111,7 @@ impl Model {
                 let outer_layout = Layout::default()
                     .direction(Direction::Vertical)
                     .constraints(
-                        [Constraint::Min(10), Constraint::Max(5), Constraint::Max(2)].as_ref(),
+                        [Constraint::Min(10), Constraint::Max(10), Constraint::Max(2)].as_ref(),
                     )
                     .split(f.size());
 
@@ -196,7 +200,7 @@ impl Model {
     }
 }
 
-impl Update<Message> for Model {
+impl Update<Message> for Model<'_> {
     fn update(&mut self, message: Option<Message>) -> Option<Message> {
         if let Some(message) = message {
             // Set redraw
@@ -222,8 +226,17 @@ impl Update<Message> for Model {
                     self.set_screen(screen);
                     None
                 }
-                // Just redraw
-                Message::ToggleFlag => None,
+                Message::ExpectingInput => {
+                    self.app
+                        .remount(
+                            ComponentId::CommandPallet,
+                            Box::new(IdentityIdInput::new()),
+                            vec![],
+                        )
+                        .expect("unable to remount component");
+                    None
+                }
+                Message::Redraw => None,
             }
         } else {
             None

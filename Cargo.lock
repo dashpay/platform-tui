@@ -3209,6 +3209,7 @@ dependencies = [
 name = "rs-platform-explorer"
 version = "0.1.0"
 dependencies = [
+ "rs-dapi-client",
  "rs-sdk",
  "strum 0.25.0",
  "tui-realm-stdlib",
