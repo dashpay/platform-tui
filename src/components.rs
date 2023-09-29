@@ -7,6 +7,7 @@ pub(crate) use breadcrumbs::Breadcrumbs;
 pub(crate) use input::IdentityIdInput;
 pub(crate) use screen::{
     GetIdentityScreen, GetIdentityScreenCommands, IdentityScreen, IdentityScreenCommands,
-    MainScreen, MainScreenCommands,
+    MainScreen, MainScreenCommands, GetContractScreen, GetContractScreenCommands,
+    ContractScreen, ContractScreenCommands,
 };
 pub(crate) use status::Status;
