@@ -62,6 +62,11 @@ impl MainScreenCommands {
                     description: "Identities",
                     key_type: KeyType::Command,
                 },
+                CommandPalletKey {
+                    key: 'c',
+                    description: "Contracts",
+                    key_type: KeyType::Command,
+                },
             ]),
         }
     }
@@ -78,6 +83,10 @@ impl Component<Message, NoUserEvent> for MainScreenCommands {
                 code: Key::Char('i'),
                 modifiers: KeyModifiers::NONE,
             }) => Some(Message::NextScreen(Screen::Identity)),
+            Event::Keyboard(KeyEvent {
+                                code: Key::Char('c'),
+                                modifiers: KeyModifiers::NONE,
+                            }) => Some(Message::NextScreen(Screen::Contracts)),
             _ => None,
         }
     }

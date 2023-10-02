@@ -18,6 +18,8 @@ pub(super) enum Screen {
     Main,
     Identity,
     GetIdentity,
+    Contracts,
+    GetContract,
 }
 
 /// Component identifiers, required to triggers screen switch which involves mounting and
@@ -163,6 +165,22 @@ impl<'a> Model<'a> {
                     )
                     .expect("unable to remount screen");
             }
+            Screen::Contracts => {
+                self.app
+                    .remount(
+                        ComponentId::Screen,
+                        Box::new(ContractScreen::new()),
+                        Vec::new(),
+                    )
+                    .expect("unable to remount screen");
+                self.app
+                    .remount(
+                        ComponentId::CommandPallet,
+                        Box::new(ContractScreenCommands::new()),
+                        Vec::new(),
+                    )
+                    .expect("unable to remount screen");
+            }
             Screen::GetIdentity => {
                 self.app
                     .remount(
@@ -175,6 +193,22 @@ impl<'a> Model<'a> {
                     .remount(
                         ComponentId::CommandPallet,
                         Box::new(GetIdentityScreenCommands::new()),
+                        Vec::new(),
+                    )
+                    .expect("unable to remount screen");
+            }
+            Screen::GetContract => {
+                self.app
+                    .remount(
+                        ComponentId::Screen,
+                        Box::new(GetContractScreen::new()),
+                        Vec::new(),
+                    )
+                    .expect("unable to remount screen");
+                self.app
+                    .remount(
+                        ComponentId::CommandPallet,
+                        Box::new(GetContractScreenCommands::new()),
                         Vec::new(),
                     )
                     .expect("unable to remount screen");
