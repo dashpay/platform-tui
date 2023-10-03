@@ -3,8 +3,8 @@
 use std::time::Duration;
 
 use rs_dapi_client::DapiClient;
-use rs_sdk::DashPlatformSdk;
 use tuirealm::{
+    props::{PropPayload, PropValue, TextSpan},
     terminal::TerminalBridge,
     tui::prelude::{Constraint, Direction, Layout},
     Application, ApplicationError, AttrValue, Attribute, EventListenerCfg, NoUserEvent, Update,
@@ -45,6 +45,7 @@ pub(super) enum Message {
     PrevScreen,
     ExpectingInput,
     Redraw,
+    FetchIdentityById(String),
 }
 
 pub(super) struct Model<'a> {
@@ -271,6 +272,25 @@ impl Update<Message> for Model<'_> {
                     None
                 }
                 Message::Redraw => None,
+                Message::FetchIdentityById(s) => {
+                    self.app
+                        .remount(
+                            ComponentId::CommandPallet,
+                            Box::new(GetIdentityScreenCommands::new()),
+                            vec![],
+                        )
+                        .expect("unable to remount component");
+                    self.app
+                        .attr(
+                            &ComponentId::Screen,
+                            Attribute::Text,
+                            AttrValue::Payload(PropPayload::Vec(vec![PropValue::TextSpan(
+                                TextSpan::new("TODO".to_owned()),
+                            )])),
+                        )
+                        .unwrap();
+                    None
+                }
             }
         } else {
             None

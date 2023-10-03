@@ -2,13 +2,15 @@
 
 mod completions;
 
+use std::ops::Deref;
+
 use tui_realm_stdlib::{Input, List};
 use tuirealm::{
     command::{self, Cmd, CmdResult},
     event::{Key, KeyEvent},
-    props::{Alignment, Color, InputType, Style},
+    props::{Alignment, Color, InputType, Style, TextSpan},
     tui::prelude::{Constraint, Direction, Layout, Rect},
-    AttrValue, Attribute, Frame, MockComponent, Props, State,
+    AttrValue, Attribute, Frame, MockComponent, Props, State, StateValue,
 };
 
 pub(crate) use completions::*;
@@ -31,18 +33,25 @@ pub(crate) struct CompletingInput<C> {
     completion_engine: C,
     input: Input,
     variants: List,
+    choosing_completion: bool,
 }
 
-impl<C> CompletingInput<C> {
-    pub(crate) fn new(completion_engine: C) -> Self {
+impl<C: CompletionEngine> CompletingInput<C> {
+    pub(crate) fn new(completion_engine: C, placeholder: &'static str) -> Self {
         let mut input = Input::default()
-            .placeholder("base58 ID", Style::default().fg(Color::Gray))
+            .placeholder(placeholder, Style::default().fg(Color::Gray))
             .input_type(InputType::Text);
         input.attr(Attribute::Focus, AttrValue::Flag(true));
+
+        let completions = completion_engine
+            .get_completions_list("")
+            .map(|c| vec![TextSpan::new(c.deref())])
+            .collect();
         Self {
             completion_engine,
             input,
-            variants: Default::default(),
+            variants: List::default().rows(completions),
+            choosing_completion: false,
         }
     }
 }
@@ -72,15 +81,25 @@ impl<C: CompletionEngine> MockComponent for CompletingInput<C> {
             char_input @ Cmd::Type(_) => self.input.perform(char_input),
             Cmd::Delete => self.input.perform(Cmd::Delete),
             move_input @ Cmd::Move(_) => self.input.perform(move_input),
-            Cmd::Scroll(_) => todo!(),
-            Cmd::GoTo(_) => todo!(),
-            Cmd::Submit => todo!(),
+            Cmd::Scroll(command::Direction::Down) => todo!(),
+            Cmd::Scroll(command::Direction::Up) => todo!(),
             Cmd::Cancel => todo!(),
-            Cmd::Toggle => todo!(),
-            Cmd::Change => todo!(),
-            Cmd::Tick => todo!(),
-            Cmd::Custom(_) => todo!(),
-            Cmd::None => todo!(),
+            Cmd::Submit => {
+                if self.choosing_completion {
+                    self.choosing_completion = false;
+                    match self.variants.state() {
+                        State::One(StateValue::String(s)) => {
+                            self.input.attr(Attribute::Value, AttrValue::String(s))
+                        }
+                        _ => (),
+                    };
+
+                    CmdResult::None
+                } else {
+                    CmdResult::Submit(self.input.state())
+                }
+            }
+            _ => CmdResult::None,
         }
     }
 }
