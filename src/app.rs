@@ -1,5 +1,7 @@
 //! Application logic module, includes model and screen ids.
 
+mod identity;
+
 use std::time::Duration;
 
 use rs_dapi_client::DapiClient;
@@ -280,13 +282,15 @@ impl Update<Message> for Model<'_> {
                             vec![],
                         )
                         .expect("unable to remount component");
+                    let identity_spans =
+                        identity::fetch_identity_bytes_by_b58_id(self.dapi_client, s)
+                            .and_then(|bytes| identity::identity_bytes_to_spans(&bytes))
+                            .expect("TODO error handling");
                     self.app
                         .attr(
                             &ComponentId::Screen,
                             Attribute::Text,
-                            AttrValue::Payload(PropPayload::Vec(vec![PropValue::TextSpan(
-                                TextSpan::new("TODO".to_owned()),
-                            )])),
+                            AttrValue::Payload(PropPayload::Vec(identity_spans)),
                         )
                         .unwrap();
                     None
