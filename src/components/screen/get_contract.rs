@@ -2,7 +2,7 @@
 
 //! Contract screen module.
 
-use tui_realm_stdlib::{Textarea};
+use tui_realm_stdlib::Textarea;
 use tuirealm::{
     command::{Cmd, CmdResult},
     event::{Key, KeyEvent, KeyModifiers},
@@ -10,7 +10,7 @@ use tuirealm::{
 };
 
 use crate::{
-    app::{Message},
+    app::Message,
     mock_components::{CommandPallet, CommandPalletKey, KeyType},
 };
 
@@ -66,13 +66,13 @@ impl Component<Message, NoUserEvent> for GetContractScreenCommands {
     fn on(&mut self, ev: Event<NoUserEvent>) -> Option<Message> {
         match ev {
             Event::Keyboard(KeyEvent {
-                                code: Key::Char('q'),
-                                modifiers: KeyModifiers::NONE,
-                            }) => Some(Message::PrevScreen),
+                code: Key::Char('q'),
+                modifiers: KeyModifiers::NONE,
+            }) => Some(Message::PrevScreen),
             Event::Keyboard(KeyEvent {
-                                code: Key::Char('i'),
-                                modifiers: KeyModifiers::NONE,
-                            }) => Some(Message::ExpectingInput),
+                code: Key::Char('i'),
+                modifiers: KeyModifiers::NONE,
+            }) => Some(Message::ExpectingInput),
             _ => None,
         }
     }

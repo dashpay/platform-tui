@@ -84,9 +84,9 @@ impl Component<Message, NoUserEvent> for MainScreenCommands {
                 modifiers: KeyModifiers::NONE,
             }) => Some(Message::NextScreen(Screen::Identity)),
             Event::Keyboard(KeyEvent {
-                                code: Key::Char('c'),
-                                modifiers: KeyModifiers::NONE,
-                            }) => Some(Message::NextScreen(Screen::Contracts)),
+                code: Key::Char('c'),
+                modifiers: KeyModifiers::NONE,
+            }) => Some(Message::NextScreen(Screen::Contracts)),
             _ => None,
         }
     }

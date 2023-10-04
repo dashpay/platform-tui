@@ -61,13 +61,13 @@ impl Component<Message, NoUserEvent> for ContractScreenCommands {
     fn on(&mut self, ev: Event<NoUserEvent>) -> Option<Message> {
         match ev {
             Event::Keyboard(KeyEvent {
-                                code: Key::Char('q'),
-                                modifiers: KeyModifiers::NONE,
-                            }) => Some(Message::PrevScreen),
+                code: Key::Char('q'),
+                modifiers: KeyModifiers::NONE,
+            }) => Some(Message::PrevScreen),
             Event::Keyboard(KeyEvent {
-                                code: Key::Char('g'),
-                                modifiers: KeyModifiers::NONE,
-                            }) => Some(Message::NextScreen(Screen::GetContract)),
+                code: Key::Char('g'),
+                modifiers: KeyModifiers::NONE,
+            }) => Some(Message::NextScreen(Screen::GetContract)),
             _ => None,
         }
     }
