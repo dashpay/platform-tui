@@ -2,16 +2,15 @@
 
 //! Identity screen module.
 
-use tui_realm_stdlib::{Paragraph, Table, Textarea};
+use tui_realm_stdlib::Textarea;
 use tuirealm::{
     command::{Cmd, CmdResult},
     event::{Key, KeyEvent, KeyModifiers},
-    props::TextSpan,
     Component, Event, MockComponent, NoUserEvent, State, StateValue,
 };
 
 use crate::{
-    app::{Message, Screen},
+    app::Message,
     mock_components::{
         key_event_to_cmd, CommandPallet, CommandPalletKey, CompletingInput,
         HistoryCompletionEngine, KeyType,
@@ -102,7 +101,15 @@ pub(crate) struct IdentityIdInput {
 impl IdentityIdInput {
     pub(crate) fn new() -> Self {
         let mut completions = HistoryCompletionEngine::default();
+        // TODO: should be a history item not hardcoded but it's useful for development
         completions.add_history_item("5PhRFRrWZc5Mj8NqtpHNXCmmEQkcZE8akyDkKhsUVD4k".to_owned());
+        completions.add_history_item("test1".to_owned());
+        completions.add_history_item("test12".to_owned());
+        completions.add_history_item("test13".to_owned());
+        completions.add_history_item("test14".to_owned());
+        completions.add_history_item("test15".to_owned());
+        completions.add_history_item("test16".to_owned());
+        completions.add_history_item("test17".to_owned());
         Self {
             component: CompletingInput::new(completions, "base58 Identity ID"),
         }
@@ -115,11 +122,11 @@ impl Component<Message, NoUserEvent> for IdentityIdInput {
             Event::Keyboard(key_event) => {
                 let cmd = key_event_to_cmd(key_event);
                 match self.component.perform(cmd) {
-                    CmdResult::Changed(_) => Some(Message::Redraw),
                     CmdResult::Submit(State::One(StateValue::String(s))) => {
                         Some(Message::FetchIdentityById(s))
                     }
-                    _ => None,
+                    CmdResult::Submit(State::None) => Some(Message::ReloadScreen),
+                    _ => Some(Message::Redraw),
                 }
             }
             _ => None,

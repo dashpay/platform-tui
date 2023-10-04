@@ -1,10 +1,7 @@
 //! Get contract screen
 
-//! Contract screen module.
-
 use tui_realm_stdlib::Textarea;
 use tuirealm::{
-    command::{Cmd, CmdResult},
     event::{Key, KeyEvent, KeyModifiers},
     Component, Event, MockComponent, NoUserEvent,
 };

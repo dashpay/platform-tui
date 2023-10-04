@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use rs_dapi_client::DapiClient;
 use tuirealm::{
-    props::{PropPayload, PropValue, TextSpan},
+    props::PropPayload,
     terminal::TerminalBridge,
     tui::prelude::{Constraint, Direction, Layout},
     Application, ApplicationError, AttrValue, Attribute, EventListenerCfg, NoUserEvent, Update,
@@ -45,6 +45,7 @@ pub(super) enum Message {
     AppClose,
     NextScreen(Screen),
     PrevScreen,
+    ReloadScreen,
     ExpectingInput,
     Redraw,
     FetchIdentityById(String),
@@ -261,6 +262,10 @@ impl Update<Message> for Model<'_> {
                         .expect("must not be triggered on the main screen");
                     self.current_screen = screen;
                     self.set_screen(screen);
+                    None
+                }
+                Message::ReloadScreen => {
+                    self.set_screen(self.current_screen);
                     None
                 }
                 Message::ExpectingInput => {

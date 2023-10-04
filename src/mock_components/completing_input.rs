@@ -7,30 +7,54 @@ use std::ops::Deref;
 use tui_realm_stdlib::{Input, List};
 use tuirealm::{
     command::{self, Cmd, CmdResult},
-    event::{Key, KeyEvent},
-    props::{Alignment, Color, InputType, Style, TextSpan},
+    event::{Key, KeyEvent, KeyModifiers},
+    props::{Color, InputType, Style, TextSpan},
     tui::prelude::{Constraint, Direction, Layout, Rect},
-    AttrValue, Attribute, Frame, MockComponent, Props, State, StateValue,
+    AttrValue, Attribute, Frame, MockComponent, State, StateValue,
 };
 
 pub(crate) use completions::*;
 
 pub(crate) fn key_event_to_cmd(key: KeyEvent) -> Cmd {
-    let code = key.code;
-    match code {
-        Key::Backspace => Cmd::Delete,
-        Key::Enter => Cmd::Submit,
-        Key::Left => Cmd::Move(command::Direction::Left),
-        Key::Right => Cmd::Move(command::Direction::Right),
-        Key::Up => Cmd::Move(command::Direction::Up),
-        Key::Down => Cmd::Move(command::Direction::Down),
-        Key::Char(c) => Cmd::Type(c),
+    match key {
+        KeyEvent {
+            code: Key::Backspace,
+            ..
+        } => Cmd::Delete,
+        KeyEvent {
+            code: Key::Enter, ..
+        } => Cmd::Submit,
+        KeyEvent {
+            code: Key::Left, ..
+        } => Cmd::Move(command::Direction::Left),
+        KeyEvent {
+            code: Key::Right, ..
+        } => Cmd::Move(command::Direction::Right),
+        KeyEvent { code: Key::Up, .. } => Cmd::Move(command::Direction::Up),
+        KeyEvent {
+            code: Key::Down, ..
+        } => Cmd::Move(command::Direction::Down),
+        KeyEvent {
+            code: Key::Char('n'),
+            modifiers: KeyModifiers::CONTROL,
+        } => Cmd::Move(command::Direction::Down),
+        KeyEvent {
+            code: Key::Char('p'),
+            modifiers: KeyModifiers::CONTROL,
+        } => Cmd::Move(command::Direction::Up),
+        KeyEvent {
+            code: Key::Char('q'),
+            modifiers: KeyModifiers::CONTROL,
+        } => Cmd::Cancel,
+        KeyEvent {
+            code: Key::Char(c), ..
+        } => Cmd::Type(c),
         _ => Cmd::None,
     }
 }
 
 pub(crate) struct CompletingInput<C> {
-    completion_engine: C,
+    _completion_engine: C,
     input: Input,
     variants: List,
     choosing_completion: bool,
@@ -47,12 +71,25 @@ impl<C: CompletionEngine> CompletingInput<C> {
             .get_completions_list("")
             .map(|c| vec![TextSpan::new(c.deref())])
             .collect();
+
+        let variants = List::default()
+            .rows(completions)
+            .highlighted_color(Color::LightYellow);
+
         Self {
-            completion_engine,
+            _completion_engine: completion_engine,
             input,
-            variants: List::default().rows(completions),
+            variants,
             choosing_completion: false,
         }
+    }
+
+    fn cancel_completion(&mut self) -> CmdResult {
+        self.variants
+            .attr(Attribute::Scroll, AttrValue::Flag(false));
+        self.variants.attr(Attribute::Focus, AttrValue::Flag(false));
+        self.choosing_completion = false;
+        CmdResult::None
     }
 }
 
@@ -66,40 +103,61 @@ impl<C: CompletionEngine> MockComponent for CompletingInput<C> {
         self.variants.view(frame, layout[1]);
     }
 
-    fn query(&self, attr: Attribute) -> Option<AttrValue> {
+    fn query(&self, _attr: Attribute) -> Option<AttrValue> {
         None
     }
 
-    fn attr(&mut self, attr: Attribute, value: AttrValue) {}
+    fn attr(&mut self, _attr: Attribute, _value: AttrValue) {}
 
     fn state(&self) -> State {
         State::None
     }
 
     fn perform(&mut self, cmd: Cmd) -> CmdResult {
-        match cmd {
-            char_input @ Cmd::Type(_) => self.input.perform(char_input),
-            Cmd::Delete => self.input.perform(Cmd::Delete),
-            move_input @ Cmd::Move(_) => self.input.perform(move_input),
-            Cmd::Scroll(command::Direction::Down) => todo!(),
-            Cmd::Scroll(command::Direction::Up) => todo!(),
-            Cmd::Cancel => todo!(),
-            Cmd::Submit => {
-                if self.choosing_completion {
-                    self.choosing_completion = false;
+        if self.choosing_completion {
+            match cmd {
+                move_input @ Cmd::Move(command::Direction::Up | command::Direction::Down) => {
+                    self.variants.perform(move_input);
+                    CmdResult::None
+                }
+                Cmd::Submit => {
                     match self.variants.state() {
-                        State::One(StateValue::String(s)) => {
-                            self.input.attr(Attribute::Value, AttrValue::String(s))
+                        State::One(StateValue::Usize(idx)) => {
+                            if let AttrValue::Table(table) = self
+                                .variants
+                                .query(Attribute::Content)
+                                .expect("list always has a content table")
+                            {
+                                self.input.attr(
+                                    Attribute::Value,
+                                    AttrValue::String(table[idx][0].content.clone()),
+                                )
+                            }
                         }
                         _ => (),
                     };
-
-                    CmdResult::None
-                } else {
-                    CmdResult::Submit(self.input.state())
+                    self.cancel_completion()
                 }
+                Cmd::Cancel => self.cancel_completion(),
+                _ => CmdResult::None,
             }
-            _ => CmdResult::None,
+        } else {
+            match cmd {
+                char_input @ Cmd::Type(_) => self.input.perform(char_input),
+                Cmd::Delete => self.input.perform(Cmd::Delete),
+                move_input @ Cmd::Move(command::Direction::Left | command::Direction::Right) => {
+                    self.input.perform(move_input)
+                }
+                Cmd::Move(command::Direction::Up | command::Direction::Down) => {
+                    self.choosing_completion = true;
+                    self.variants.attr(Attribute::Scroll, AttrValue::Flag(true));
+                    self.variants.attr(Attribute::Focus, AttrValue::Flag(true));
+                    CmdResult::None
+                }
+                Cmd::Submit => CmdResult::Submit(self.input.state()),
+                Cmd::Cancel => CmdResult::Submit(State::None),
+                _ => CmdResult::None,
+            }
         }
     }
 }

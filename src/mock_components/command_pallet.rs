@@ -1,8 +1,6 @@
 //! Command Pallet is a "mock component" that helps to quickly setup keystroke navigation
 //! for each screen including execution of actions with togglable flags.
 
-use std::collections::HashMap;
-
 use tui_realm_stdlib::Table;
 use tuirealm::{
     command::{Cmd, CmdResult},
@@ -79,11 +77,11 @@ impl MockComponent for CommandPallet {
         Table::default().table(table_vec).view(frame, area);
     }
 
-    fn query(&self, attr: Attribute) -> Option<AttrValue> {
+    fn query(&self, _attr: Attribute) -> Option<AttrValue> {
         None
     }
 
-    fn attr(&mut self, attr: Attribute, value: AttrValue) {}
+    fn attr(&mut self, _attr: Attribute, _value: AttrValue) {}
 
     fn state(&self) -> State {
         self.state.clone()

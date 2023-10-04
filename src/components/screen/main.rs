@@ -1,8 +1,7 @@
 //! Main screen module, also known as a welcome screen.
 
-use tui_realm_stdlib::{Paragraph, Table};
+use tui_realm_stdlib::Paragraph;
 use tuirealm::{
-    command::{Cmd, CmdResult},
     event::{Key, KeyEvent, KeyModifiers},
     props::TextSpan,
     Component, Event, MockComponent, NoUserEvent,
@@ -30,6 +29,9 @@ impl MainScreen {
                     TextSpan::new(""),
                     TextSpan::new("Italics are used to mark flags.").italic(),
                     TextSpan::new("Bold italics are flags that are enabled.").italic().bold(),
+                    TextSpan::new(""),
+                    TextSpan::new("Text inputs with completions support both arrows and Ctrl+n / Ctrl+p keys for selection."),
+                    TextSpan::new("Use Ctrl+q to go back from completion list or once again to leave input at all.")
                 ]
                 .as_ref(),
             ),

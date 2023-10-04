@@ -1,8 +1,7 @@
 //! Contract screen module.
 
-use tui_realm_stdlib::{Paragraph, Table};
+use tui_realm_stdlib::Paragraph;
 use tuirealm::{
-    command::{Cmd, CmdResult},
     event::{Key, KeyEvent, KeyModifiers},
     props::TextSpan,
     Component, Event, MockComponent, NoUserEvent,

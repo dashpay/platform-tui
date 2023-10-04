@@ -5,6 +5,4 @@ mod command_pallet;
 mod completing_input;
 
 pub(crate) use command_pallet::{CommandPallet, CommandPalletKey, KeyType};
-pub(crate) use completing_input::{
-    key_event_to_cmd, CompletingInput, CompletionEngine, HistoryCompletionEngine,
-};
+pub(crate) use completing_input::{key_event_to_cmd, CompletingInput, HistoryCompletionEngine};
