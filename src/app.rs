@@ -6,13 +6,48 @@ use std::time::Duration;
 
 use rs_dapi_client::DapiClient;
 use tuirealm::{
+    event::{Key, KeyEvent, KeyModifiers},
     props::PropPayload,
     terminal::TerminalBridge,
     tui::prelude::{Constraint, Direction, Layout},
-    Application, ApplicationError, AttrValue, Attribute, EventListenerCfg, NoUserEvent, Update,
+    Application, ApplicationError, AttrValue, Attribute, EventListenerCfg, NoUserEvent, Sub,
+    SubClause, SubEventClause, Update,
 };
 
 use crate::components::*;
+
+fn make_screen_subs() -> Vec<Sub<ComponentId, NoUserEvent>> {
+    vec![
+        Sub::new(
+            SubEventClause::Keyboard(KeyEvent {
+                code: Key::Up,
+                modifiers: KeyModifiers::NONE,
+            }),
+            SubClause::IsMounted(ComponentId::CommandPallet),
+        ),
+        Sub::new(
+            SubEventClause::Keyboard(KeyEvent {
+                code: Key::Down,
+                modifiers: KeyModifiers::NONE,
+            }),
+            SubClause::IsMounted(ComponentId::CommandPallet),
+        ),
+        Sub::new(
+            SubEventClause::Keyboard(KeyEvent {
+                code: Key::Char('n'),
+                modifiers: KeyModifiers::CONTROL,
+            }),
+            SubClause::IsMounted(ComponentId::CommandPallet),
+        ),
+        Sub::new(
+            SubEventClause::Keyboard(KeyEvent {
+                code: Key::Char('p'),
+                modifiers: KeyModifiers::CONTROL,
+            }),
+            SubClause::IsMounted(ComponentId::CommandPallet),
+        ),
+    ]
+}
 
 /// Screen identifiers
 #[derive(Debug, Hash, Clone, Eq, PartialEq, Copy, strum::AsRefStr)]
@@ -32,6 +67,7 @@ pub(super) enum ComponentId {
     Screen,
     Status,
     Breadcrumbs,
+    Input,
 }
 
 impl Default for Screen {
@@ -90,7 +126,11 @@ impl<'a> Model<'a> {
         );
 
         // Mount components
-        app.mount(ComponentId::Screen, Box::new(MainScreen::new()), Vec::new())?;
+        app.mount(
+            ComponentId::Screen,
+            Box::new(MainScreen::new()),
+            make_screen_subs(),
+        )?;
         app.mount(
             ComponentId::CommandPallet,
             Box::new(MainScreenCommands::new()),
@@ -129,8 +169,13 @@ impl<'a> Model<'a> {
                     .split(outer_layout[2]);
 
                 self.app.view(&ComponentId::Screen, f, outer_layout[0]);
-                self.app
-                    .view(&ComponentId::CommandPallet, f, outer_layout[1]);
+
+                if self.app.mounted(&ComponentId::CommandPallet) {
+                    self.app
+                        .view(&ComponentId::CommandPallet, f, outer_layout[1]);
+                } else if self.app.mounted(&ComponentId::Input) {
+                    self.app.view(&ComponentId::Input, f, outer_layout[1]);
+                }
 
                 self.app
                     .view(&ComponentId::Breadcrumbs, f, status_bar_layout[0]);
@@ -143,7 +188,11 @@ impl<'a> Model<'a> {
         match screen {
             Screen::Main => {
                 self.app
-                    .remount(ComponentId::Screen, Box::new(MainScreen::new()), Vec::new())
+                    .remount(
+                        ComponentId::Screen,
+                        Box::new(MainScreen::new()),
+                        make_screen_subs(),
+                    )
                     .expect("unable to remount screen");
                 self.app
                     .remount(
@@ -158,7 +207,7 @@ impl<'a> Model<'a> {
                     .remount(
                         ComponentId::Screen,
                         Box::new(IdentityScreen::new()),
-                        Vec::new(),
+                        make_screen_subs(),
                     )
                     .expect("unable to remount screen");
                 self.app
@@ -174,7 +223,7 @@ impl<'a> Model<'a> {
                     .remount(
                         ComponentId::Screen,
                         Box::new(ContractScreen::new()),
-                        Vec::new(),
+                        make_screen_subs(),
                     )
                     .expect("unable to remount screen");
                 self.app
@@ -190,7 +239,7 @@ impl<'a> Model<'a> {
                     .remount(
                         ComponentId::Screen,
                         Box::new(GetIdentityScreen::new()),
-                        Vec::new(),
+                        make_screen_subs(),
                     )
                     .expect("unable to remount screen");
                 self.app
@@ -206,7 +255,7 @@ impl<'a> Model<'a> {
                     .remount(
                         ComponentId::Screen,
                         Box::new(GetContractScreen::new()),
-                        Vec::new(),
+                        make_screen_subs(),
                     )
                     .expect("unable to remount screen");
                 self.app
@@ -235,6 +284,9 @@ impl<'a> Model<'a> {
                 ),
             )
             .expect("cannot set breadcrumbs");
+        self.app
+            .active(&ComponentId::CommandPallet)
+            .expect("cannot set active");
     }
 }
 
@@ -270,27 +322,36 @@ impl Update<Message> for Model<'_> {
                 }
                 Message::ExpectingInput => {
                     self.app
-                        .remount(
-                            ComponentId::CommandPallet,
-                            Box::new(IdentityIdInput::new()),
-                            vec![],
-                        )
-                        .expect("unable to remount component");
+                        .umount(&ComponentId::CommandPallet)
+                        .expect("unable to umount component");
+                    self.app
+                        .mount(ComponentId::Input, Box::new(IdentityIdInput::new()), vec![])
+                        .expect("unable to mount component");
+                    self.app
+                        .active(&ComponentId::Input)
+                        .expect("cannot set active");
                     None
                 }
                 Message::Redraw => None,
                 Message::FetchIdentityById(s) => {
                     self.app
-                        .remount(
+                        .umount(&ComponentId::Input)
+                        .expect("unable to umount component");
+                    self.app
+                        .mount(
                             ComponentId::CommandPallet,
                             Box::new(GetIdentityScreenCommands::new()),
                             vec![],
                         )
-                        .expect("unable to remount component");
+                        .expect("unable to mount component");
+                    self.app
+                        .active(&ComponentId::CommandPallet)
+                        .expect("cannot set active");
                     let identity_spans =
                         identity::fetch_identity_bytes_by_b58_id(self.dapi_client, s)
                             .and_then(|bytes| identity::identity_bytes_to_spans(&bytes))
                             .expect("TODO error handling");
+
                     self.app
                         .attr(
                             &ComponentId::Screen,

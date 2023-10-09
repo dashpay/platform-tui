@@ -1,11 +1,10 @@
 //! Application screens module.
 
 mod contract;
+mod get_contract;
 mod get_identity;
 mod identity;
 mod main;
-
-mod get_contract;
 
 pub(crate) use contract::ContractScreen;
 pub(crate) use contract::ContractScreenCommands;

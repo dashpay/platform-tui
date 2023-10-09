@@ -4,7 +4,7 @@
 
 use tui_realm_stdlib::Textarea;
 use tuirealm::{
-    command::{Cmd, CmdResult},
+    command::{Cmd, CmdResult, Direction},
     event::{Key, KeyEvent, KeyModifiers},
     Component, Event, MockComponent, NoUserEvent, State, StateValue,
 };
@@ -25,14 +25,38 @@ pub(crate) struct GetIdentityScreen {
 impl GetIdentityScreen {
     pub(crate) fn new() -> Self {
         GetIdentityScreen {
-            component: Textarea::default(),
+            component: Textarea::default().highlighted_str(">"),
         }
     }
 }
 
 impl Component<Message, NoUserEvent> for GetIdentityScreen {
-    fn on(&mut self, _ev: Event<NoUserEvent>) -> Option<Message> {
-        None
+    fn on(&mut self, ev: Event<NoUserEvent>) -> Option<Message> {
+        match ev {
+            Event::Keyboard(
+                KeyEvent { code: Key::Up, .. }
+                | KeyEvent {
+                    code: Key::Char('p'),
+                    modifiers: KeyModifiers::CONTROL,
+                },
+            ) => {
+                self.component.perform(Cmd::Scroll(Direction::Up));
+                Some(Message::Redraw)
+            }
+            Event::Keyboard(
+                KeyEvent {
+                    code: Key::Down, ..
+                }
+                | KeyEvent {
+                    code: Key::Char('n'),
+                    modifiers: KeyModifiers::CONTROL,
+                },
+            ) => {
+                self.component.perform(Cmd::Scroll(Direction::Down));
+                Some(Message::Redraw)
+            }
+            _ => None,
+        }
     }
 }
 
@@ -81,13 +105,6 @@ impl Component<Message, NoUserEvent> for GetIdentityScreenCommands {
                 code: Key::Char('i'),
                 modifiers: KeyModifiers::NONE,
             }) => Some(Message::ExpectingInput),
-            Event::Keyboard(KeyEvent {
-                code: Key::Char(c),
-                modifiers: KeyModifiers::NONE,
-            }) => {
-                self.perform(Cmd::Type(c));
-                Some(Message::Redraw)
-            }
             _ => None,
         }
     }

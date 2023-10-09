@@ -19,7 +19,6 @@ pub(super) enum Error {
 
 pub(super) fn identity_bytes_to_spans(bytes: &[u8]) -> Result<Vec<PropValue>, Error> {
     let identity = Identity::deserialize_from_bytes(&bytes)?;
-
     let textual = toml::to_string_pretty(&identity).expect("identity is serializable");
     Ok(textual
         .lines()

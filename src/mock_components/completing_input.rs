@@ -15,6 +15,7 @@ use tuirealm::{
 
 pub(crate) use completions::*;
 
+// Helper function to translate key events to widget commands
 pub(crate) fn key_event_to_cmd(key: KeyEvent) -> Cmd {
     match key {
         KeyEvent {
@@ -24,12 +25,24 @@ pub(crate) fn key_event_to_cmd(key: KeyEvent) -> Cmd {
         KeyEvent {
             code: Key::Enter, ..
         } => Cmd::Submit,
+
+        // Commands to navigate input
         KeyEvent {
             code: Key::Left, ..
         } => Cmd::Move(command::Direction::Left),
         KeyEvent {
             code: Key::Right, ..
         } => Cmd::Move(command::Direction::Right),
+        KeyEvent {
+            code: Key::Char('b'),
+            modifiers: KeyModifiers::CONTROL,
+        } => Cmd::Move(command::Direction::Left),
+        KeyEvent {
+            code: Key::Char('f'),
+            modifiers: KeyModifiers::CONTROL,
+        } => Cmd::Move(command::Direction::Right),
+
+        // Commands to navigate completions list
         KeyEvent { code: Key::Up, .. } => Cmd::Move(command::Direction::Up),
         KeyEvent {
             code: Key::Down, ..
@@ -42,6 +55,7 @@ pub(crate) fn key_event_to_cmd(key: KeyEvent) -> Cmd {
             code: Key::Char('p'),
             modifiers: KeyModifiers::CONTROL,
         } => Cmd::Move(command::Direction::Up),
+
         KeyEvent {
             code: Key::Char('q'),
             modifiers: KeyModifiers::CONTROL,
