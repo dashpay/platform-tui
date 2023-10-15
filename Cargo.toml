@@ -16,3 +16,4 @@ toml = { version = "0.8.2", features = ["display"] }
 dapi-grpc = { path = "../platform/packages/dapi-grpc/", features = ["client"]}
 rs-dapi-client = { path = "../platform/packages/rs-dapi-client/"}
 tokio = { version = "1.32.0", features = ["full"] }
+rs-sdk = { path = "../platform/packages/rs-sdk/"}

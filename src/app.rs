@@ -1,6 +1,10 @@
 //! Application logic module, includes model and screen ids.
 
 mod identity;
+mod state;
+mod wallet;
+mod error;
+mod contract;
 
 use std::time::Duration;
 
@@ -13,6 +17,7 @@ use tuirealm::{
     Application, ApplicationError, AttrValue, Attribute, EventListenerCfg, NoUserEvent, Sub,
     SubClause, SubEventClause, Update,
 };
+use crate::app::state::AppState;
 
 use crate::components::*;
 
@@ -57,6 +62,8 @@ pub(super) enum Screen {
     GetIdentity,
     Contracts,
     GetContract,
+    Wallet,
+    AddWallet,
 }
 
 /// Component identifiers, required to triggers screen switch which involves mounting and
@@ -77,19 +84,32 @@ impl Default for Screen {
 }
 
 #[derive(Debug, PartialEq)]
+pub(super) enum InputType {
+    Base58IdentityId,
+    Base58ContractId,
+    SeedPhrase,
+    WalletPrivateKey,
+}
+
+#[derive(Debug, PartialEq)]
 pub(super) enum Message {
     AppClose,
     NextScreen(Screen),
     PrevScreen,
     ReloadScreen,
-    ExpectingInput,
+    ExpectingInput(InputType),
     Redraw,
     FetchIdentityById(String),
+    FetchContractById(String),
+    SaveSingleKeyWallet(String),
+    FetchSingleKeyWalletBalance(Vec<u8>),
 }
 
 pub(super) struct Model<'a> {
     /// Application
     pub app: Application<ComponentId, Message, NoUserEvent>,
+    /// State
+    pub state: AppState,
     /// Indicates that the application must quit
     pub quit: bool,
     /// Tells whether to redraw interface
@@ -108,6 +128,7 @@ impl<'a> Model<'a> {
     pub(crate) fn new(dapi_client: &'a mut DapiClient) -> Self {
         Self {
             app: Self::init_app().expect("Unable to init the application"),
+            state: AppState::default(),
             quit: false,
             redraw: true,
             current_screen: Screen::Main,
@@ -266,6 +287,38 @@ impl<'a> Model<'a> {
                     )
                     .expect("unable to remount screen");
             }
+            Screen::Wallet => {
+                self.app
+                    .remount(
+                        ComponentId::Screen,
+                        Box::new(WalletScreen::new()),
+                        make_screen_subs(),
+                    )
+                    .expect("unable to remount screen");
+                self.app
+                    .remount(
+                        ComponentId::CommandPallet,
+                        Box::new(WalletScreenCommands::new()),
+                        Vec::new(),
+                    )
+                    .expect("unable to remount screen");
+            }
+            Screen::AddWallet => {
+                self.app
+                    .remount(
+                        ComponentId::Screen,
+                        Box::new(AddWalletScreen::new()),
+                        make_screen_subs(),
+                    )
+                    .expect("unable to remount screen");
+                self.app
+                    .remount(
+                        ComponentId::CommandPallet,
+                        Box::new(AddWalletScreenCommands::new()),
+                        Vec::new(),
+                    )
+                    .expect("unable to remount screen");
+            }
         }
         self.app
             .attr(
@@ -320,13 +373,35 @@ impl Update<Message> for Model<'_> {
                     self.set_screen(self.current_screen);
                     None
                 }
-                Message::ExpectingInput => {
+                Message::ExpectingInput(input_type) => {
                     self.app
                         .umount(&ComponentId::CommandPallet)
                         .expect("unable to umount component");
-                    self.app
-                        .mount(ComponentId::Input, Box::new(IdentityIdInput::new()), vec![])
-                        .expect("unable to mount component");
+
+                    match input_type {
+                        InputType::Base58IdentityId => {
+                            self.app
+                                .mount(ComponentId::Input, Box::new(IdentityIdInput::new()), vec![])
+                                .expect("unable to mount component");
+                        }
+                        InputType::Base58ContractId => {
+                            self.app
+                                .mount(ComponentId::Input, Box::new(ContractIdInput::new()), vec![])
+                                .expect("unable to mount component");
+                        }
+                        InputType::SeedPhrase => {
+                            self.app
+                                .mount(ComponentId::Input, Box::new(ContractIdInput::new()), vec![])
+                                .expect("unable to mount component");
+                        }
+                        InputType::WalletPrivateKey => {
+                            self.app
+                                .mount(ComponentId::Input, Box::new(ContractIdInput::new()), vec![])
+                                .expect("unable to mount component");
+                        }
+                    }
+
+
                     self.app
                         .active(&ComponentId::Input)
                         .expect("cannot set active");
@@ -361,6 +436,45 @@ impl Update<Message> for Model<'_> {
                         .unwrap();
                     None
                 }
+                Message::FetchSingleKeyWalletBalance(address) => {
+                    // self.app
+                    //     .attr(
+                    //         &ComponentId::Screen,
+                    //         Attribute::Text,
+                    //         AttrValue::Payload(PropPayload::Vec(identity_spans)),
+                    //     )
+                    //     .unwrap();
+                    None
+                }
+                Message::FetchContractById(s) => {
+                    self.app
+                        .umount(&ComponentId::Input)
+                        .expect("unable to umount component");
+                    self.app
+                        .mount(
+                            ComponentId::CommandPallet,
+                            Box::new(GetIdentityScreenCommands::new()),
+                            vec![],
+                        )
+                        .expect("unable to mount component");
+                    self.app
+                        .active(&ComponentId::CommandPallet)
+                        .expect("cannot set active");
+                    let identity_spans =
+                        identity::fetch_identity_bytes_by_b58_id(self.dapi_client, s)
+                            .and_then(|bytes| identity::identity_bytes_to_spans(&bytes))
+                            .expect("TODO error handling");
+
+                    self.app
+                        .attr(
+                            &ComponentId::Screen,
+                            Attribute::Text,
+                            AttrValue::Payload(PropPayload::Vec(identity_spans)),
+                        )
+                        .unwrap();
+                    None
+                }
+                Message::SaveSingleKeyWallet(_) => {}
             }
         } else {
             None
