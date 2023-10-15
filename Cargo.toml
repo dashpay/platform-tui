@@ -14,6 +14,7 @@ thiserror = "1.0.49"
 serde = "1.0.188"
 toml = { version = "0.8.2", features = ["display"] }
 dapi-grpc = { path = "../platform/packages/dapi-grpc", features = ["client"]}
+dashcore = {path = "../rust-dashcore/dash"}
 rs-dapi-client = { path = "../platform/packages/rs-dapi-client"}
 tokio = { version = "1.32.0", features = ["full"] }
 rs-sdk = { path = "../platform/packages/rs-sdk"}

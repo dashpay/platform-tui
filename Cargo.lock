@@ -984,18 +984,36 @@ dependencies = [
 [[package]]
 name = "dashcore"
 version = "0.30.0"
+dependencies = [
+ "anyhow",
+ "bech32",
+ "dashcore-private 0.1.0",
+ "dashcore_hashes 0.12.0",
+ "hex",
+ "hex_lit",
+ "rustversion",
+ "secp256k1",
+]
+
+[[package]]
+name = "dashcore"
+version = "0.30.0"
 source = "git+https://github.com/dashpay/rust-dashcore?branch=master#db8794eef7b0b03ee718cf07bb5a07e9b2b0e7c7"
 dependencies = [
  "anyhow",
  "bech32",
- "dashcore-private",
- "dashcore_hashes",
+ "dashcore-private 0.1.0 (git+https://github.com/dashpay/rust-dashcore?branch=master)",
+ "dashcore_hashes 0.12.0 (git+https://github.com/dashpay/rust-dashcore?branch=master)",
  "hex",
  "hex_lit",
  "rustversion",
  "secp256k1",
  "serde",
 ]
+
+[[package]]
+name = "dashcore-private"
+version = "0.1.0"
 
 [[package]]
 name = "dashcore-private"
@@ -1007,7 +1025,7 @@ name = "dashcore-rpc"
 version = "0.15.1"
 source = "git+https://github.com/dashpay/rust-dashcore-rpc?tag=v0.15.1#fafdd807d24dec8147df4ea91654679d9f6ce2d3"
 dependencies = [
- "dashcore-private",
+ "dashcore-private 0.1.0 (git+https://github.com/dashpay/rust-dashcore?branch=master)",
  "dashcore-rpc-json",
  "env_logger 0.10.0",
  "jsonrpc",
@@ -1022,7 +1040,7 @@ version = "0.15.1"
 source = "git+https://github.com/dashpay/rust-dashcore-rpc?tag=v0.15.1#fafdd807d24dec8147df4ea91654679d9f6ce2d3"
 dependencies = [
  "bincode 2.0.0-rc.3",
- "dashcore",
+ "dashcore 0.30.0 (git+https://github.com/dashpay/rust-dashcore?branch=master)",
  "hex",
  "serde",
  "serde_json",
@@ -1033,9 +1051,18 @@ dependencies = [
 [[package]]
 name = "dashcore_hashes"
 version = "0.12.0"
+dependencies = [
+ "dashcore-private 0.1.0",
+ "rs-x11-hash",
+ "secp256k1",
+]
+
+[[package]]
+name = "dashcore_hashes"
+version = "0.12.0"
 source = "git+https://github.com/dashpay/rust-dashcore?branch=master#db8794eef7b0b03ee718cf07bb5a07e9b2b0e7c7"
 dependencies = [
- "dashcore-private",
+ "dashcore-private 0.1.0 (git+https://github.com/dashpay/rust-dashcore?branch=master)",
  "rs-x11-hash",
  "secp256k1",
  "serde",
@@ -1155,7 +1182,7 @@ dependencies = [
  "byteorder",
  "chrono",
  "ciborium",
- "dashcore",
+ "dashcore 0.30.0 (git+https://github.com/dashpay/rust-dashcore?branch=master)",
  "data-contracts",
  "derive_more",
  "ed25519-dalek",
@@ -3387,6 +3414,7 @@ dependencies = [
  "bincode 2.0.0-rc.3",
  "bs58 0.5.0",
  "dapi-grpc",
+ "dashcore 0.30.0",
  "dpp",
  "rs-dapi-client",
  "rs-sdk",
@@ -3873,6 +3901,7 @@ name = "simple-signer"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bincode 2.0.0-rc.3",
  "dashcore-rpc",
  "dpp",
 ]

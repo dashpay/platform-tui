@@ -7,6 +7,10 @@ mod error;
 mod contract;
 
 use std::time::Duration;
+use dashcore::PrivateKey;
+use dashcore::secp256k1::Secp256k1;
+use dpp::platform_value::string_encoding::Encoding;
+use dpp::prelude::Identifier;
 
 use rs_dapi_client::DapiClient;
 use tuirealm::{
@@ -18,6 +22,7 @@ use tuirealm::{
     SubClause, SubEventClause, Update,
 };
 use crate::app::state::AppState;
+use crate::app::wallet::{SingleKeyWallet, Wallet};
 
 use crate::components::*;
 
@@ -101,7 +106,7 @@ pub(super) enum Message {
     Redraw,
     FetchIdentityById(String),
     FetchContractById(String),
-    SaveSingleKeyWallet(String),
+    AddSingleKeyWallet(String),
     FetchSingleKeyWalletBalance(Vec<u8>),
 }
 
@@ -474,7 +479,18 @@ impl Update<Message> for Model<'_> {
                         .unwrap();
                     None
                 }
-                Message::SaveSingleKeyWallet(_) => {}
+                Message::AddSingleKeyWallet(private_key) => {
+                    let private_key = PrivateKey::from_wif(private_key.as_str()).expect("expected WIF key");
+                    let secp = Secp256k1::new();
+                    let wallet = Wallet::SingleKeyWallet(SingleKeyWallet {
+                        private_key: private_key.inner.secret_bytes(),
+                        public_key: private_key.public_key(&secp).to_bytes(),
+                        balance: 0,
+                    });
+                    self.state.loaded_wallet = Some(wallet);
+                    self.state.save();
+                    None
+                }
             }
         } else {
             None

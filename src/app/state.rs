@@ -6,9 +6,12 @@ use dpp::prelude::{DataContract, Identity};
 use dpp::ProtocolError;
 use dpp::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
 use dpp::serialization::{PlatformDeserializableWithPotentialValidationFromVersionedStructure, PlatformSerializableWithPlatformVersion};
+use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::PlatformVersion;
 use strategy_tests::Strategy;
 use crate::app::wallet::Wallet;
+
+const CURRENT_PROTOCOL_VERSION: ProtocolVersion = 1;
 
 #[derive(Debug, Default)]
 pub struct AppState {
@@ -130,110 +133,25 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
 }
 
 impl AppState {
-    fn load() -> AppState{
-        let path = Path::new("explorer.config");
+    pub fn load() -> AppState{
+        let path = Path::new("explorer.state");
 
-        let read_result = fs::read(path);
-        let config = match read_result {
-            Ok(data) => bincode::decode_from_slice(&data).expect("config file is corrupted"),
-            Err(_) => HashMap::new(),
+        let Ok(read_result) = fs::read(path) else {
+            return AppState::default()
         };
 
-        let path = Path::new("explorer.contracts");
-
-        let read_result = fs::read(path);
-        let contract_paths: BTreeMap<String, String> = match read_result {
-            Ok(data) => bincode::decode_from_slice(&data).expect("contracts file is corrupted"),
-            Err(_) => BTreeMap::new(),
+        let Ok(app_state) = AppState::versioned_deserialize(read_result.as_slice(), false, PlatformVersion::get(CURRENT_PROTOCOL_VERSION).unwrap()) else {
+            return AppState::default()
         };
 
-        let available_contracts = contract_paths
-            .iter()
-            .filter_map(|(alias, path)| {
-                open_contract(&platform.drive, path)
-                    .map_or(None, |contract| Some((alias.clone(), contract)))
-            })
-            .collect();
-
-        let path = Path::new("explorer.strategies");
-
-        let read_result = fs::read(path);
-        let available_strategies: BTreeMap<String, Strategy> = match read_result {
-            Ok(data) => bincode::decode_from_slice(&data).expect("strategies file is corrupted"),
-            Err(_) => BTreeMap::new(),
-        };
-
-        AppState {
-            screen: MainScreen,
-            last_block: None,
-            current_epoch: None,
-            masternodes: IndexMap::default(),
-            current_execution_strategy: None,
-            config,
-            contract_paths,
-            available_contracts,
-            available_strategies,
-        }
+        app_state
     }
 
-    fn save_config(&self) {
-        let config = bincode::serialize(&self.config).expect("unable to serialize config");
-        let path = Path::new("explorer.config");
+    pub fn save(&self) {
+        let platform_version = PlatformVersion::get(CURRENT_PROTOCOL_VERSION).unwrap();
+        let path = Path::new("explorer.state");
 
-        fs::write(path, config).unwrap();
-    }
-
-    fn save_available_contracts(&self) {
-        let contracts =
-            bincode::serialize(&self.contract_paths).expect("unable to serialize contract paths");
-        let path = Path::new("explorer.contracts");
-
-        fs::write(path, contracts).unwrap();
-    }
-
-    fn save_available_strategies(&self) {
-        let strategies =
-            bincode::serialize(&self.available_strategies).expect("unable to serialize strategies");
-        let path = Path::new("explorer.strategies");
-
-        fs::write(path, strategies).unwrap();
-    }
-
-    fn load_last_contract(&self, drive: &Drive) -> Option<Contract> {
-        let last_contract_path = self.config.get(LAST_CONTRACT_PATH)?;
-        let db_transaction = drive.grove.start_transaction();
-
-        let mut rng = rand::rngs::StdRng::from_entropy();
-        let contract_id = rng.gen::<[u8; 32]>();
-        let contract = common::setup_contract(
-            &drive,
-            last_contract_path,
-            Some(contract_id),
-            Some(&db_transaction),
-        );
-        drive
-            .grove
-            .commit_transaction(db_transaction)
-            .unwrap()
-            .expect("expected to commit transaction");
-        Some(contract)
-    }
-
-    fn load_contract(&mut self, drive: &Drive, contract_path: &str) -> Result<Contract, Error> {
-        let db_transaction = drive.grove.start_transaction();
-
-        let mut rng = rand::rngs::StdRng::from_entropy();
-        let contract_id = rng.gen::<[u8; 32]>();
-        let contract = common::setup_contract(
-            &drive,
-            contract_path,
-            Some(contract_id),
-            Some(&db_transaction),
-        );
-        drive.commit_transaction(db_transaction)?;
-        self.config
-            .insert(LAST_CONTRACT_PATH.to_string(), contract_path.to_string());
-        self.save_config();
-        Ok(contract)
+        let serialized_state = self.serialize_to_bytes_with_platform_version(platform_version).expect("expected to save state");
+        fs::write(path, serialized_state).unwrap();
     }
 }

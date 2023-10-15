@@ -103,7 +103,7 @@ impl Component<Message, NoUserEvent> for PrivateKeyInput {
                 let cmd = key_event_to_cmd(key_event);
                 match self.component.perform(cmd) {
                     CmdResult::Submit(State::One(StateValue::String(s))) => {
-                        Some(Message::SaveSingleKeyWallet(s))
+                        Some(Message::AddSingleKeyWallet(s))
                     }
                     CmdResult::Submit(State::None) => Some(Message::ReloadScreen),
                     _ => Some(Message::Redraw),
