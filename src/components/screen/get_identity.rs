@@ -16,6 +16,7 @@ use crate::{
         HistoryCompletionEngine, KeyType,
     },
 };
+use crate::app::InputType::Base58IdentityId;
 
 #[derive(MockComponent)]
 pub(crate) struct GetIdentityScreen {
@@ -104,7 +105,7 @@ impl Component<Message, NoUserEvent> for GetIdentityScreenCommands {
             Event::Keyboard(KeyEvent {
                 code: Key::Char('i'),
                 modifiers: KeyModifiers::NONE,
-            }) => Some(Message::ExpectingInput),
+            }) => Some(Message::ExpectingInput(Base58IdentityId)),
             _ => None,
         }
     }

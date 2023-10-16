@@ -1,13 +1,15 @@
 mod app;
 mod components;
 mod mock_components;
+mod managers;
 
 use rs_dapi_client::{AddressList, DapiClient, RequestSettings};
 use tuirealm::{application::PollStrategy, AttrValue, Attribute, Update};
 
 use app::{ComponentId, Model};
 
-fn main() {
+#[tokio::main]
+async fn main() {
     // Setup DAPI client
     let mut address_list = AddressList::new();
     address_list.add_uri(rs_dapi_client::Uri::from_static(
@@ -17,6 +19,7 @@ fn main() {
 
     // Setup model
     let mut model = Model::new(&mut dapi_client);
+
     // Enter alternate screen
     let _ = model.terminal.enter_alternate_screen();
     let _ = model.terminal.enable_raw_mode();
