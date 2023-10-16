@@ -1,16 +1,17 @@
 //! Application logic module, includes model and screen ids.
 
 mod identity;
-mod state;
+pub(crate) mod state;
 mod wallet;
-mod error;
+pub(crate) mod error;
 mod contract;
 
 use std::time::Duration;
-use dashcore::PrivateKey;
+use dashcore::{Address, Network, PrivateKey, Script};
 use dashcore::secp256k1::Secp256k1;
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::prelude::Identifier;
+use dpp::util::vec::decode_hex;
 
 use rs_dapi_client::DapiClient;
 use tuirealm::{
@@ -23,6 +24,7 @@ use tuirealm::{
 };
 use crate::app::state::AppState;
 use crate::app::wallet::{SingleKeyWallet, Wallet};
+
 
 use crate::components::*;
 
@@ -107,7 +109,7 @@ pub(super) enum Message {
     FetchIdentityById(String),
     FetchContractById(String),
     AddSingleKeyWallet(String),
-    FetchSingleKeyWalletBalance(Vec<u8>),
+    UpdateLoadedWalletUTXOsAndBalance,
 }
 
 pub(super) struct Model<'a> {
@@ -133,7 +135,7 @@ impl<'a> Model<'a> {
     pub(crate) fn new(dapi_client: &'a mut DapiClient) -> Self {
         Self {
             app: Self::init_app().expect("Unable to init the application"),
-            state: AppState::default(),
+            state: AppState::load(),
             quit: false,
             redraw: true,
             current_screen: Screen::Main,
@@ -296,7 +298,7 @@ impl<'a> Model<'a> {
                 self.app
                     .remount(
                         ComponentId::Screen,
-                        Box::new(WalletScreen::new()),
+                        Box::new(WalletScreen::new(&self.state)),
                         make_screen_subs(),
                     )
                     .expect("unable to remount screen");
@@ -396,12 +398,12 @@ impl Update<Message> for Model<'_> {
                         }
                         InputType::SeedPhrase => {
                             self.app
-                                .mount(ComponentId::Input, Box::new(ContractIdInput::new()), vec![])
+                                .mount(ComponentId::Input, Box::new(PrivateKeyInput::new()), vec![])
                                 .expect("unable to mount component");
                         }
                         InputType::WalletPrivateKey => {
                             self.app
-                                .mount(ComponentId::Input, Box::new(ContractIdInput::new()), vec![])
+                                .mount(ComponentId::Input, Box::new(PrivateKeyInput::new()), vec![])
                                 .expect("unable to mount component");
                         }
                     }
@@ -441,7 +443,7 @@ impl Update<Message> for Model<'_> {
                         .unwrap();
                     None
                 }
-                Message::FetchSingleKeyWalletBalance(address) => {
+                Message::UpdateLoadedWalletUTXOsAndBalance => {
                     // self.app
                     //     .attr(
                     //         &ComponentId::Screen,
@@ -480,14 +482,26 @@ impl Update<Message> for Model<'_> {
                     None
                 }
                 Message::AddSingleKeyWallet(private_key) => {
-                    let private_key = PrivateKey::from_wif(private_key.as_str()).expect("expected WIF key");
+                    let private_key = if private_key.len() == 64 {
+                        // hex
+                        let bytes = hex::decode(private_key).expect("expected hex");
+                        PrivateKey::from_slice(bytes.as_slice(), Network::Testnet).expect("expected private key")
+                    } else {
+                        PrivateKey::from_wif(private_key.as_str()).expect("expected WIF key")
+                    };
+
                     let secp = Secp256k1::new();
+                    let public_key = private_key.public_key(&secp);
+                    //todo: make the network be part of state
+                    let address = Address::p2pkh(&public_key, Network::Testnet);
                     let wallet = Wallet::SingleKeyWallet(SingleKeyWallet {
                         private_key: private_key.inner.secret_bytes(),
-                        public_key: private_key.public_key(&secp).to_bytes(),
-                        balance: 0,
+                        public_key: public_key.to_bytes(),
+                        address: address.to_string(),
+                        utxos: Default::default(),
                     });
-                    self.state.loaded_wallet = Some(wallet);
+
+                    self.state.loaded_wallet = Some(wallet.into());
                     self.state.save();
                     None
                 }

@@ -12,6 +12,7 @@ bs58 = "0.5.0"
 dpp = { path = "../platform/packages/rs-dpp", features = ["identity-serialization", "identity-serde-conversion", "random-documents", "random-document-types", "state-transition-signing"]}
 thiserror = "1.0.49"
 serde = "1.0.188"
+serde_json = "1.0.107"
 toml = { version = "0.8.2", features = ["display"] }
 dapi-grpc = { path = "../platform/packages/dapi-grpc", features = ["client"]}
 dashcore = {path = "../rust-dashcore/dash"}
@@ -21,3 +22,5 @@ rs-sdk = { path = "../platform/packages/rs-sdk"}
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
 strategy-tests = {path = "../platform/packages/strategy-tests"}
 simple-signer = {path = "../platform/packages/simple-signer"}
+reqwest = { version = "0.11.22", features = ["json"] }
+hex = { version = "0.4.3"}

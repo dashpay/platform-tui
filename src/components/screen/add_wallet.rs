@@ -89,7 +89,7 @@ impl PrivateKeyInput {
     pub(crate) fn new() -> Self {
         let mut completions = HistoryCompletionEngine::default();
         // TODO: should be a history item not hardcoded but it's useful for development
-        completions.add_history_item("5PhRFRrWZc5Mj8NqtpHNXCmmEQkcZE8akyDkKhsUVD4k".to_owned());
+        completions.add_history_item("XDJrw9kEp7X2noMVayg4nkYZ7PKAWWtD2Y9w9XWDb59UCvR2i3La".to_owned());
         Self {
             component: CompletingInput::new(completions, "hex private key"),
         }

@@ -24,3 +24,4 @@ pub(crate) use wallet::WalletScreen;
 pub(crate) use wallet::WalletScreenCommands;
 pub(crate) use add_wallet::AddWalletScreen;
 pub(crate) use add_wallet::AddWalletScreenCommands;
+pub(crate) use add_wallet::PrivateKeyInput;

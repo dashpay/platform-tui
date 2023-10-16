@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 use std::fs;
+use std::ops::Deref;
 use std::path::Path;
+use std::sync::Arc;
 use bincode::{Decode, Encode};
 use dpp::prelude::{DataContract, Identity};
 use dpp::ProtocolError;
@@ -9,14 +11,15 @@ use dpp::serialization::{PlatformDeserializableWithPotentialValidationFromVersio
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::PlatformVersion;
 use strategy_tests::Strategy;
+use tokio::task;
 use crate::app::wallet::Wallet;
 
 const CURRENT_PROTOCOL_VERSION: ProtocolVersion = 1;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct AppState {
     pub loaded_identity : Option<Identity>,
-    pub loaded_wallet: Option<Wallet>,
+    pub loaded_wallet: Option<Arc<Wallet>>,
     pub known_identities: BTreeMap<String, Identity>,
     pub known_contracts: BTreeMap<String, DataContract>,
     pub available_strategies: BTreeMap<String, Strategy>,
@@ -69,7 +72,7 @@ impl PlatformSerializableWithPlatformVersion for AppState {
 
         let app_state_in_serialization_format = AppStateInSerializationFormat {
             loaded_identity,
-            loaded_wallet,
+            loaded_wallet: loaded_wallet.map(|wallet| wallet.deref().clone()),
             known_identities,
             known_contracts: known_contracts_in_serialization_format,
             available_strategies: available_strategies_in_serialization_format,
@@ -124,7 +127,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
 
         Ok(AppState {
             loaded_identity,
-            loaded_wallet,
+            loaded_wallet: loaded_wallet.map(|loaded_wallet| Arc::new(loaded_wallet)),
             known_identities,
             known_contracts,
             available_strategies,
@@ -143,6 +146,13 @@ impl AppState {
         let Ok(app_state) = AppState::versioned_deserialize(read_result.as_slice(), false, PlatformVersion::get(CURRENT_PROTOCOL_VERSION).unwrap()) else {
             return AppState::default()
         };
+
+        if let Some(wallet) = app_state.loaded_wallet.as_ref() {
+            let wallet = wallet.clone();
+            task::spawn(async move {
+                let _ = wallet.reload_utxos().await;
+            });
+        }
 
         app_state
     }
