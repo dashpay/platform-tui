@@ -5,13 +5,11 @@ pub(crate) mod state;
 mod wallet;
 pub(crate) mod error;
 mod contract;
+mod strategies;
 
 use std::time::Duration;
-use dashcore::{Address, Network, PrivateKey, Script};
+use dashcore::{Address, Network, PrivateKey};
 use dashcore::secp256k1::Secp256k1;
-use dpp::platform_value::string_encoding::Encoding;
-use dpp::prelude::Identifier;
-use dpp::util::vec::decode_hex;
 
 use rs_dapi_client::DapiClient;
 use tuirealm::{
@@ -72,6 +70,8 @@ pub(super) enum Screen {
     Wallet,
     AddWallet,
     Strategies,
+    SavedStrategies,
+    CreateStrategy,
 }
 
 /// Component identifiers, required to triggers screen switch which involves mounting and
@@ -343,6 +343,38 @@ impl<'a> Model<'a> {
                     )
                     .expect("unable to remount screen");
             },
+            Screen::SavedStrategies => {
+                self.app
+                    .remount(
+                        ComponentId::Screen,
+                        Box::new(SelectStrategyScreen::new()),
+                        make_screen_subs(),
+                    )
+                    .expect("unable to remount screen");
+                self.app
+                    .remount(
+                        ComponentId::CommandPallet,
+                        Box::new(SelectStrategyScreenCommands::new()),
+                        Vec::new(),
+                    )
+                    .expect("unable to remount screen");
+            },
+            Screen::CreateStrategy => {
+                self.app
+                    .remount(
+                        ComponentId::Screen,
+                        Box::new(CreateStrategyScreen::new()),
+                        make_screen_subs(),
+                    )
+                    .expect("unable to remount screen");
+                self.app
+                    .remount(
+                        ComponentId::CommandPallet,
+                        Box::new(CreateStrategyScreenCommands::new()),
+                        Vec::new(),
+                    )
+                    .expect("unable to remount screen");
+            }
         }
         self.app
             .attr(

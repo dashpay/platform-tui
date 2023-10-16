@@ -7,6 +7,7 @@ pub(crate) use screen::{
     ContractScreen, ContractScreenCommands, GetContractScreen, GetContractScreenCommands, ContractIdInput,
     GetIdentityScreen, GetIdentityScreenCommands, IdentityIdInput, IdentityScreen,
     IdentityScreenCommands, MainScreen, MainScreenCommands, WalletScreen, WalletScreenCommands,
-    AddWalletScreen, AddWalletScreenCommands, PrivateKeyInput,
+    AddWalletScreen, AddWalletScreenCommands, PrivateKeyInput, StrategiesScreen, StrategiesScreenCommands,
+    SelectStrategyScreen, SelectStrategyScreenCommands, CreateStrategyScreen, CreateStrategyScreenCommands,
 };
 pub(crate) use status::Status;

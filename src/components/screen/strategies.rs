@@ -1,4 +1,7 @@
-
+use tuirealm::{MockComponent, Component, props::TextSpan, Event, NoUserEvent, event::{KeyEvent, KeyModifiers, Key}};
+use tui_realm_stdlib::Paragraph;
+use crate::app::{Message, Screen};
+use crate::mock_components::{CommandPallet, CommandPalletKey, KeyType};
 
 #[derive(MockComponent)]
 pub(crate) struct StrategiesScreen {
@@ -49,7 +52,7 @@ impl StrategiesScreenCommands {
     }
 }
 
-impl Component<Message, NoUserEvent> for WalletScreenCommands {
+impl Component<Message, NoUserEvent> for StrategiesScreenCommands {
     fn on(&mut self, ev: Event<NoUserEvent>) -> Option<Message> {
         match ev {
             Event::Keyboard(KeyEvent {
