@@ -71,6 +71,7 @@ pub(super) enum Screen {
     GetContract,
     Wallet,
     AddWallet,
+    Strategies,
 }
 
 /// Component identifiers, required to triggers screen switch which involves mounting and
@@ -325,7 +326,23 @@ impl<'a> Model<'a> {
                         Vec::new(),
                     )
                     .expect("unable to remount screen");
-            }
+            },
+            Screen::Strategies => {
+                self.app
+                    .remount(
+                        ComponentId::Screen,
+                        Box::new(StrategiesScreen::new()),
+                        make_screen_subs(),
+                    )
+                    .expect("unable to remount screen");
+                self.app
+                    .remount(
+                        ComponentId::CommandPallet,
+                        Box::new(StrategiesScreenCommands::new()),
+                        Vec::new(),
+                    )
+                    .expect("unable to remount screen");
+            },
         }
         self.app
             .attr(
