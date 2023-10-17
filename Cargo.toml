@@ -18,7 +18,7 @@ dapi-grpc = { path = "../platform/packages/dapi-grpc", features = ["client"]}
 dashcore = {path = "../rust-dashcore/dash"}
 rs-dapi-client = { path = "../platform/packages/rs-dapi-client"}
 tokio = { version = "1.32.0", features = ["full"] }
-rs-sdk = { path = "../platform/packages/rs-sdk"}
+# rs-sdk = { path = "../platform/packages/rs-sdk"}
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
 strategy-tests = {path = "../platform/packages/strategy-tests"}
 simple-signer = {path = "../platform/packages/simple-signer"}

@@ -2,6 +2,11 @@
 
 use crate::app::error::Error;
 use crate::app::state::AppState;
+use dapi_grpc::core::v0::transactions_with_proofs_request::FromBlock;
+use dapi_grpc::core::v0::{
+    self as core_proto, transactions_with_proofs_response, InstantSendLockMessages,
+    TransactionsWithProofsResponse,
+};
 use dapi_grpc::platform::v0::{
     self as platform_proto, get_identity_response::Result as ProtoResult, GetIdentityResponse,
 };
@@ -41,10 +46,16 @@ pub(super) async fn fetch_identity_bytes_by_b58_id(
     }
 }
 
+#[derive(Debug)]
+pub struct RegisterIdentityError(String);
+
 impl AppState {
-    pub fn register_identity(&mut self) {
+    pub async fn register_identity(
+        &mut self,
+        dapi_client: &mut DapiClient,
+    ) -> Result<(), RegisterIdentityError> {
         let Some(wallet) = self.loaded_wallet.as_ref() else {
-            return;
+            return Ok(());
         };
 
         //// Core steps
@@ -60,9 +71,38 @@ impl AppState {
 
         // we should subscribe and listen to transactions from core todo() -> Evgeny
 
+        let block_hash: Vec<u8> = (core_proto::GetStatusRequest {})
+            .execute(dapi_client, RequestSettings::default())
+            .await
+            .map_err(|e| RegisterIdentityError(e.to_string()))?
+            .chain
+            .map(|chain| chain.best_block_hash)
+            .ok_or_else(|| RegisterIdentityError("missing `chain` field".to_owned()))?;
+
+        let core_transactions_stream = core_proto::TransactionsWithProofsRequest {
+            bloom_filter: todo!(),
+            count: 0,
+            send_transaction_hashes: false,
+            from_block: Some(FromBlock::FromBlockHash(block_hash)),
+        }
+        .execute(dapi_client, RequestSettings::default())
+        .await
+        .map_err(|e| RegisterIdentityError(e.to_string()))?;
+
         // we need to broadcast the transaction to core todo() -> Evgeny
+        core_proto::BroadcastTransactionRequest {
+            transaction: todo!(), //transaction but how to encode it as bytes?,
+            allow_high_fees: false,
+            bypass_limits: false,
+        }
+        .execute(&mut dapi_client, RequestSettings::default())
+        .await
+        .map_err(|e| RegisterIdentityError(e.to_string()))?;
 
         // Get the instant send lock back todo() -> Evgeny
+        // Here we intentionally block our UI for now
+        let mut instant_send_lock_messages =
+            wait_for_instant_send_lock_messages(core_transactions_stream).await?;
 
         //// Platform steps
 
@@ -75,5 +115,36 @@ impl AppState {
         // Verify proof and get identity todo() -> Sam
 
         // Add Identity as the current identity in the state todo() -> Sam
+
+        Ok(())
     }
+}
+
+async fn wait_for_instant_send_lock_messages(
+    mut stream: rs_dapi_client::tonic::Streaming<TransactionsWithProofsResponse>,
+) -> Result<InstantSendLockMessages, RegisterIdentityError> {
+    let instant_send_lock_messages;
+    loop {
+        if let Some(TransactionsWithProofsResponse { responses }) = stream
+            .message()
+            .await
+            .map_err(|e| RegisterIdentityError(e.to_string()))?
+        {
+            match responses {
+                Some(transactions_with_proofs_response::Responses::InstantSendLockMessages(
+                    messages,
+                )) => {
+                    instant_send_lock_messages = messages;
+                    break;
+                }
+                _ => continue,
+            }
+        } else {
+            return Err(RegisterIdentityError(
+                "steam closed unexpectedly".to_owned(),
+            ));
+        }
+    }
+
+    Ok(instant_send_lock_messages)
 }
