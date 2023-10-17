@@ -1,5 +1,5 @@
-use dpp::ProtocolError;
 use crate::app::error::Error::ParsingError;
+use dpp::ProtocolError;
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum Error {
@@ -10,7 +10,7 @@ pub(crate) enum Error {
     #[error("ID encoding error")]
     Base58IdEncoding(#[from] bs58::decode::Error),
     #[error("Insight error {0}")]
-    InsightError(String)
+    InsightError(String),
 }
 
 impl From<dpp::platform_value::Error> for Error {
