@@ -95,9 +95,9 @@ impl Component<Message, NoUserEvent> for MainScreenCommands {
                 modifiers: KeyModifiers::NONE,
             }) => Some(Message::NextScreen(Screen::Contracts)),
             Event::Keyboard(KeyEvent {
-                                code: Key::Char('w'),
-                                modifiers: KeyModifiers::NONE,
-                            }) => Some(Message::NextScreen(Screen::Wallet)),
+                code: Key::Char('w'),
+                modifiers: KeyModifiers::NONE,
+            }) => Some(Message::NextScreen(Screen::Wallet)),
             _ => None,
         }
     }

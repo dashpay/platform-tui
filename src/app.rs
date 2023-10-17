@@ -1,19 +1,20 @@
 //! Application logic module, includes model and screen ids.
 
+mod contract;
+pub(crate) mod error;
 mod identity;
 pub(crate) mod state;
 mod wallet;
-pub(crate) mod error;
-mod contract;
+
+use dashcore::secp256k1::Secp256k1;
+use dashcore::{Address, Network, PrivateKey};
 
 use std::time::Duration;
-use dashcore::{Address, Network, PrivateKey, Script};
-use dashcore::secp256k1::Secp256k1;
-use dpp::platform_value::string_encoding::Encoding;
-use dpp::prelude::Identifier;
-use dpp::util::vec::decode_hex;
 
+use crate::app::state::AppState;
+use crate::app::wallet::{SingleKeyWallet, Wallet};
 use rs_dapi_client::DapiClient;
+use tokio::runtime::Runtime;
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
     props::PropPayload,
@@ -22,9 +23,6 @@ use tuirealm::{
     Application, ApplicationError, AttrValue, Attribute, EventListenerCfg, NoUserEvent, Sub,
     SubClause, SubEventClause, Update,
 };
-use crate::app::state::AppState;
-use crate::app::wallet::{SingleKeyWallet, Wallet};
-
 
 use crate::components::*;
 
@@ -130,19 +128,23 @@ pub(super) struct Model<'a> {
     pub terminal: TerminalBridge,
     /// DAPI Client
     pub dapi_client: &'a mut DapiClient,
+    /// Tokio runtime
+    pub runtime: Runtime,
 }
 
 impl<'a> Model<'a> {
     pub(crate) fn new(dapi_client: &'a mut DapiClient) -> Self {
+        let runtime = Runtime::new().expect("cannot start Tokio runtime");
         Self {
             app: Self::init_app().expect("Unable to init the application"),
-            state: AppState::load(),
+            state: runtime.block_on(AppState::load()),
             quit: false,
             redraw: true,
             current_screen: Screen::Main,
             breadcrumbs: Vec::new(),
             terminal: TerminalBridge::new().expect("Cannot initialize terminal"),
             dapi_client,
+            runtime,
         }
     }
 
@@ -409,7 +411,6 @@ impl Update<Message> for Model<'_> {
                         }
                     }
 
-
                     self.app
                         .active(&ComponentId::Input)
                         .expect("cannot set active");
@@ -430,10 +431,14 @@ impl Update<Message> for Model<'_> {
                     self.app
                         .active(&ComponentId::CommandPallet)
                         .expect("cannot set active");
-                    let identity_spans =
-                        identity::fetch_identity_bytes_by_b58_id(self.dapi_client, s)
-                            .and_then(|bytes| identity::identity_bytes_to_spans(&bytes))
-                            .expect("TODO error handling");
+                    let identity_spans = self
+                        .runtime
+                        .block_on(identity::fetch_identity_bytes_by_b58_id(
+                            self.dapi_client,
+                            s,
+                        ))
+                        .and_then(|bytes| identity::identity_bytes_to_spans(&bytes))
+                        .expect("TODO error handling");
 
                     self.app
                         .attr(
@@ -468,10 +473,14 @@ impl Update<Message> for Model<'_> {
                     self.app
                         .active(&ComponentId::CommandPallet)
                         .expect("cannot set active");
-                    let identity_spans =
-                        identity::fetch_identity_bytes_by_b58_id(self.dapi_client, s)
-                            .and_then(|bytes| identity::identity_bytes_to_spans(&bytes))
-                            .expect("TODO error handling");
+                    let identity_spans = self
+                        .runtime
+                        .block_on(identity::fetch_identity_bytes_by_b58_id(
+                            self.dapi_client,
+                            s,
+                        ))
+                        .and_then(|bytes| identity::identity_bytes_to_spans(&bytes))
+                        .expect("TODO error handling");
 
                     self.app
                         .attr(
@@ -486,7 +495,8 @@ impl Update<Message> for Model<'_> {
                     let private_key = if private_key.len() == 64 {
                         // hex
                         let bytes = hex::decode(private_key).expect("expected hex");
-                        PrivateKey::from_slice(bytes.as_slice(), Network::Testnet).expect("expected private key")
+                        PrivateKey::from_slice(bytes.as_slice(), Network::Testnet)
+                            .expect("expected private key")
                     } else {
                         PrivateKey::from_wif(private_key.as_str()).expect("expected WIF key")
                     };
@@ -508,7 +518,8 @@ impl Update<Message> for Model<'_> {
                 }
                 Message::RegisterIdentity => {
                     // first we need to make the transaction
-                    self.state.register_identity()
+                    //                    self.state.register_identity()
+                    None
                 }
             }
         } else {
