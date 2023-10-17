@@ -60,8 +60,13 @@ impl WalletScreenCommands {
                     key_type: KeyType::Command,
                 },
                 CommandPalletKey {
-                    key: 'f',
-                    description: "Fetch utxos and balance",
+                    key: 'i',
+                    description: "Register identity",
+                    key_type: KeyType::Command,
+                },
+                CommandPalletKey {
+                    key: 'r',
+                    description: "Refresh utxos and balance",
                     key_type: KeyType::Command,
                 },
             ]),
@@ -81,7 +86,11 @@ impl Component<Message, NoUserEvent> for WalletScreenCommands {
                                 modifiers: KeyModifiers::NONE,
                             }) => Some(Message::NextScreen(Screen::AddWallet)),
             Event::Keyboard(KeyEvent {
-                                code: Key::Char('f'),
+                                code: Key::Char('i'),
+                                modifiers: KeyModifiers::NONE,
+                            }) => Some(Message::RegisterIdentity),
+            Event::Keyboard(KeyEvent {
+                                code: Key::Char('r'),
                                 modifiers: KeyModifiers::NONE,
                             }) => Some(Message::UpdateLoadedWalletUTXOsAndBalance),
             _ => None,

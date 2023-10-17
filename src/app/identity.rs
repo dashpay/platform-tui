@@ -9,6 +9,7 @@ use dpp::prelude::Identifier;
 use rs_dapi_client::{DapiClient, DapiRequest, RequestSettings};
 use tuirealm::props::{PropValue, TextSpan};
 use crate::app::error::Error;
+use crate::app::state::AppState;
 
 pub(super) fn identity_bytes_to_spans(bytes: &[u8]) -> Result<Vec<PropValue>, Error> {
     let identity = Identity::deserialize_from_bytes(&bytes)?;
@@ -35,5 +36,38 @@ pub(super) fn fetch_identity_bytes_by_b58_id(
         Ok(bytes)
     } else {
         Err(Error::DapiError)
+    }
+}
+
+impl AppState {
+    pub fn register_identity(&mut self) {
+        let Some(wallet) = self.loaded_wallet.as_ref() else {
+            return;
+        };
+
+        // first we create the wallet registration transaction
+        let (transaction, private_key) = wallet.registration_transaction();
+
+        self.identity_creation_private_key = Some(private_key.inner.secret_bytes());
+
+        // create the bloom filter
+
+        // let bloom_filter = wallet.bloom_filter() todo() -> Sam
+
+        // we should subscribe and listen to transactions from core todo() -> Evgeny
+
+        // we need to broadcast the transaction to core todo() -> Evgeny
+
+        // Get the instant send lock back todo() -> Evgeny
+
+        // Create the identity create state transition todo() -> Sam
+
+        // Subscribe to state transition result todo() -> Evgeny
+
+        // Through sdk send this transaction and get back proof that the identity was created todo() -> Evgeny
+
+        // Verify proof and get identity todo() -> Sam
+
+        // Add Identity as the current identity in the state todo() -> Sam
     }
 }

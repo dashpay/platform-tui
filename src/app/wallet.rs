@@ -4,7 +4,7 @@ use bincode::{BorrowDecode, Decode, Encode};
 use bincode::de::{BorrowDecoder, Decoder};
 use bincode::enc::Encoder;
 use bincode::error::{DecodeError, EncodeError};
-use dashcore::{Address, Network, OutPoint, PrivateKey, ScriptBuf, TxOut};
+use dashcore::{Address, Network, OutPoint, PrivateKey, ScriptBuf, Transaction, TxOut};
 use dashcore::secp256k1::Secp256k1;
 use crate::app::error::Error::InsightError;
 use crate::managers::insight::utxos_with_amount_for_addresses;
@@ -15,6 +15,10 @@ pub enum  Wallet {
 }
 
 impl Wallet {
+    pub fn registration_transaction(&self) -> (Transaction, PrivateKey) {
+        todo!()
+    }
+
     pub fn description(&self) -> String {
         match self {
             Wallet::SingleKeyWallet(wallet) => {

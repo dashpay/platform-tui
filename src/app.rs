@@ -110,6 +110,7 @@ pub(super) enum Message {
     FetchContractById(String),
     AddSingleKeyWallet(String),
     UpdateLoadedWalletUTXOsAndBalance,
+    RegisterIdentity,
 }
 
 pub(super) struct Model<'a> {
@@ -504,6 +505,10 @@ impl Update<Message> for Model<'_> {
                     self.state.loaded_wallet = Some(wallet.into());
                     self.state.save();
                     None
+                }
+                Message::RegisterIdentity => {
+                    // first we need to make the transaction
+                    self.state.register_identity()
                 }
             }
         } else {

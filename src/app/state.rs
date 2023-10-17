@@ -10,6 +10,7 @@ use dpp::ProtocolError::{PlatformDeserializationError, PlatformSerializationErro
 use dpp::serialization::{PlatformDeserializableWithPotentialValidationFromVersionedStructure, PlatformSerializableWithPlatformVersion};
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::PlatformVersion;
+use simple_signer::signer::SimpleSigner;
 use strategy_tests::Strategy;
 use tokio::task;
 use crate::app::wallet::Wallet;
@@ -19,16 +20,17 @@ const CURRENT_PROTOCOL_VERSION: ProtocolVersion = 1;
 #[derive(Debug, Default, Clone)]
 pub struct AppState {
     pub loaded_identity : Option<Identity>,
+    pub identity_creation_private_key: Option<[u8;32]>,
     pub loaded_wallet: Option<Arc<Wallet>>,
     pub known_identities: BTreeMap<String, Identity>,
     pub known_contracts: BTreeMap<String, DataContract>,
     pub available_strategies: BTreeMap<String, Strategy>,
 }
 
-
 #[derive(Clone, Debug, Encode, Decode)]
 struct AppStateInSerializationFormat {
     pub loaded_identity : Option<Identity>,
+    pub identity_creation_private_key: Option<[u8;32]>,
     pub loaded_wallet: Option<Wallet>,
     pub known_identities: BTreeMap<String, Identity>,
     pub known_contracts: BTreeMap<String, Vec<u8>>,
@@ -51,7 +53,7 @@ impl PlatformSerializableWithPlatformVersion for AppState {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, ProtocolError> {
         let AppState {
-            loaded_identity, loaded_wallet, known_identities, known_contracts, available_strategies
+            loaded_identity, identity_creation_private_key, loaded_wallet, known_identities, known_contracts, available_strategies
         } = self;
 
         let known_contracts_in_serialization_format = known_contracts
@@ -72,6 +74,7 @@ impl PlatformSerializableWithPlatformVersion for AppState {
 
         let app_state_in_serialization_format = AppStateInSerializationFormat {
             loaded_identity,
+            identity_creation_private_key,
             loaded_wallet: loaded_wallet.map(|wallet| wallet.deref().clone()),
             known_identities,
             known_contracts: known_contracts_in_serialization_format,
@@ -106,7 +109,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
                 .0;
 
         let AppStateInSerializationFormat {
-            loaded_identity, loaded_wallet, known_identities, known_contracts, available_strategies
+            loaded_identity, identity_creation_private_key, loaded_wallet, known_identities, known_contracts, available_strategies
         } = app_state;
 
         let known_contracts = known_contracts
@@ -127,6 +130,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
 
         Ok(AppState {
             loaded_identity,
+            identity_creation_private_key,
             loaded_wallet: loaded_wallet.map(|loaded_wallet| Arc::new(loaded_wallet)),
             known_identities,
             known_contracts,
