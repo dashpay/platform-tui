@@ -109,8 +109,21 @@ impl AppState {
         // Create the identity create state transition todo() -> Sam
 
         // Subscribe to state transition result todo() -> Evgeny
+        let state_transition_proof = platform_proto::WaitForStateTransitionResultRequest {
+            state_transition_hash: todo!(),
+            prove: true,
+        }
+        .execute(dapi_client, RequestSettings::default())
+        .await
+        .map_err(|e| RegisterIdentityError(e.to_string()))?;
 
         // Through sdk send this transaction and get back proof that the identity was created todo() -> Evgeny
+        platform_proto::BroadcastStateTransitionRequest {
+            state_transition: todo!(),
+        }
+        .execute(dapi_client, RequestSettings::default())
+        .await
+        .map_err(|e| RegisterIdentityError(e.to_string()))?;
 
         // Verify proof and get identity todo() -> Sam
 
