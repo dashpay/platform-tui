@@ -8,7 +8,10 @@ mod wallet;
 
 use dashcore::secp256k1::Secp256k1;
 use dashcore::{Address, Network, PrivateKey};
+use serde::Serialize;
+use tuirealm::Component;
 
+use std::fmt::Display;
 use std::time::Duration;
 
 use crate::app::state::AppState;
@@ -351,6 +354,20 @@ impl<'a> Model<'a> {
             .active(&ComponentId::CommandPallet)
             .expect("cannot set active");
     }
+
+    fn show_at_info(&mut self, data: Result<impl Serialize, impl Display>) {
+        let info_component: Box<dyn Component<_, _>> = match data {
+            Ok(x) => Box::new(Info::new_scrollable(
+                toml::to_string_pretty(&x)
+                    .as_deref()
+                    .unwrap_or("cannot serialize as TOML"),
+            )),
+            Err(e) => Box::new(Info::new_error(&e.to_string())),
+        };
+        self.app
+            .remount(ComponentId::Screen, info_component, make_screen_subs())
+            .expect("cannot remount info component");
+    }
 }
 
 impl Update<Message> for Model<'_> {
@@ -431,22 +448,11 @@ impl Update<Message> for Model<'_> {
                     self.app
                         .active(&ComponentId::CommandPallet)
                         .expect("cannot set active");
-                    let identity_spans = self
+                    let identity = self
                         .runtime
-                        .block_on(identity::fetch_identity_bytes_by_b58_id(
-                            self.dapi_client,
-                            s,
-                        ))
-                        .and_then(|bytes| identity::identity_bytes_to_spans(&bytes))
-                        .expect("TODO error handling");
+                        .block_on(identity::fetch_identity_by_b58_id(self.dapi_client, s));
 
-                    self.app
-                        .attr(
-                            &ComponentId::Screen,
-                            Attribute::Text,
-                            AttrValue::Payload(PropPayload::Vec(identity_spans)),
-                        )
-                        .unwrap();
+                    self.show_at_info(identity);
                     None
                 }
                 Message::UpdateLoadedWalletUTXOsAndBalance => {
@@ -473,22 +479,9 @@ impl Update<Message> for Model<'_> {
                     self.app
                         .active(&ComponentId::CommandPallet)
                         .expect("cannot set active");
-                    let identity_spans = self
-                        .runtime
-                        .block_on(identity::fetch_identity_bytes_by_b58_id(
-                            self.dapi_client,
-                            s,
-                        ))
-                        .and_then(|bytes| identity::identity_bytes_to_spans(&bytes))
-                        .expect("TODO error handling");
 
-                    self.app
-                        .attr(
-                            &ComponentId::Screen,
-                            Attribute::Text,
-                            AttrValue::Payload(PropPayload::Vec(identity_spans)),
-                        )
-                        .unwrap();
+                    self.show_at_info(Err::<(), _>("unimplemented"));
+
                     None
                 }
                 Message::AddSingleKeyWallet(private_key) => {

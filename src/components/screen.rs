@@ -6,6 +6,7 @@ mod get_contract;
 mod get_identity;
 mod identity;
 mod main;
+mod shared;
 mod wallet;
 
 pub(crate) use add_wallet::AddWalletScreen;
@@ -23,5 +24,6 @@ pub(crate) use identity::IdentityScreen;
 pub(crate) use identity::IdentityScreenCommands;
 pub(crate) use main::MainScreen;
 pub(crate) use main::MainScreenCommands;
+pub(crate) use shared::Info;
 pub(crate) use wallet::WalletScreen;
 pub(crate) use wallet::WalletScreenCommands;
