@@ -72,6 +72,7 @@ pub(super) enum Screen {
     Strategies,
     SavedStrategies,
     CreateStrategy,
+    ConfirmStrategy,
 }
 
 /// Component identifiers, required to triggers screen switch which involves mounting and
@@ -111,6 +112,7 @@ pub(super) enum Message {
     FetchContractById(String),
     AddSingleKeyWallet(String),
     UpdateLoadedWalletUTXOsAndBalance,
+    SelectedStrategy(usize),
 }
 
 pub(super) struct Model<'a> {
@@ -374,6 +376,22 @@ impl<'a> Model<'a> {
                         Vec::new(),
                     )
                     .expect("unable to remount screen");
+            },
+            Screen::ConfirmStrategy => {
+                self.app
+                    .remount(
+                        ComponentId::Screen,
+                        Box::new(ConfirmStrategyScreen::new(&self.state)),
+                        make_screen_subs(),
+                    )
+                    .expect("unable to remount screen");
+                self.app
+                    .remount(
+                        ComponentId::CommandPallet,
+                        Box::new(ConfirmStrategyScreenCommands::new()),
+                        Vec::new(),
+                    )
+                    .expect("unable to remount screen");
             }
         }
         self.app
@@ -553,7 +571,11 @@ impl Update<Message> for Model<'_> {
                     self.state.loaded_wallet = Some(wallet.into());
                     self.state.save();
                     None
-                }
+                },
+                Message::SelectedStrategy(index) => {
+                    self.state.selected_strategy = Some(self.state.available_strategies.iter().nth(index).map(|(k, _)| k.clone()).unwrap());
+                    Some(Message::NextScreen(Screen::ConfirmStrategy))
+                },    
             }
         } else {
             None

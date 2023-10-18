@@ -16,6 +16,7 @@ use strategy_tests::Strategy;
 use strategy_tests::frequency::Frequency;
 use tokio::task;
 use crate::app::wallet::Wallet;
+use crate::app::strategies::StrategyDetails;
 
 const CURRENT_PROTOCOL_VERSION: ProtocolVersion = 1;
 
@@ -25,7 +26,8 @@ pub struct AppState {
     pub loaded_wallet: Option<Arc<Wallet>>,
     pub known_identities: BTreeMap<String, Identity>,
     pub known_contracts: BTreeMap<String, CreatedDataContract>,
-    pub available_strategies: BTreeMap<String, Strategy>,
+    pub available_strategies: BTreeMap<String, StrategyDetails>,
+    pub selected_strategy: Option<String>,
 }
 
 impl Default for AppState {
@@ -45,35 +47,44 @@ impl Default for AppState {
         known_contracts.insert(String::from("dashpay2"), default_contract_1.clone());
         known_contracts.insert(String::from("dashpay3"), default_contract_1.clone());
 
-        let default_strategy_1 = Strategy {
-            contracts_with_updates: vec![(known_contracts.get(&String::from("dashpay1")).unwrap().clone(), None)],
-            operations: vec![],
-            start_identities: vec![],
-            identities_inserts: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
-            signer: None,
+        let default_strategy_1 = StrategyDetails {
+            strategy: Strategy {
+                    contracts_with_updates: vec![(known_contracts.get(&String::from("dashpay1")).unwrap().clone(), None)],
+                    operations: vec![],
+                    start_identities: vec![],
+                    identities_inserts: Frequency {
+                        times_per_block_range: Default::default(),
+                        chance_per_block: None,
+                    },
+                    signer: None,
+                },
+            description: "default everything with dashpay contract 1".to_string()
         };
-        let default_strategy_2 = Strategy {
-            contracts_with_updates: vec![(known_contracts.get(&String::from("dashpay2")).unwrap().clone(), None)],
-            operations: vec![],
-            start_identities: vec![],
-            identities_inserts: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
-            signer: None,
+        let default_strategy_2 = StrategyDetails {
+            strategy: Strategy {
+                    contracts_with_updates: vec![(known_contracts.get(&String::from("dashpay2")).unwrap().clone(), None)],
+                    operations: vec![],
+                    start_identities: vec![],
+                    identities_inserts: Frequency {
+                        times_per_block_range: Default::default(),
+                        chance_per_block: None,
+                    },
+                    signer: None,
+                },
+            description: "default everything with dashpay contract 2".to_string()
         };
-        let default_strategy_3 = Strategy {
-            contracts_with_updates: vec![(known_contracts.get(&String::from("dashpay3")).unwrap().clone(), None)],
-            operations: vec![],
-            start_identities: vec![],
-            identities_inserts: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
-            signer: None,
+        let default_strategy_3 = StrategyDetails {
+            strategy: Strategy {
+                    contracts_with_updates: vec![(known_contracts.get(&String::from("dashpay3")).unwrap().clone(), None)],
+                    operations: vec![],
+                    start_identities: vec![],
+                    identities_inserts: Frequency {
+                        times_per_block_range: Default::default(),
+                        chance_per_block: None,
+                    },
+                    signer: None,
+                },
+            description: "default everything with dashpay contract 3".to_string()
         };
         
         available_strategies.insert(String::from("default_strategy_1"), default_strategy_1);
@@ -86,6 +97,7 @@ impl Default for AppState {
             known_identities: BTreeMap::new(),
             known_contracts,
             available_strategies,
+            selected_strategy: None,
         }
     }
 }
@@ -97,6 +109,7 @@ struct AppStateInSerializationFormat {
     pub known_identities: BTreeMap<String, Identity>,
     pub known_contracts: BTreeMap<String, Vec<u8>>,
     pub available_strategies: BTreeMap<String, Vec<u8>>,
+    pub selected_strategy: Option<String>,
 }
 
 impl PlatformSerializableWithPlatformVersion for AppState {
@@ -115,7 +128,7 @@ impl PlatformSerializableWithPlatformVersion for AppState {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, ProtocolError> {
         let AppState {
-            loaded_identity, loaded_wallet, known_identities, known_contracts, available_strategies
+            loaded_identity, loaded_wallet, known_identities, known_contracts, available_strategies, selected_strategy
         } = self;
 
         let known_contracts_in_serialization_format = known_contracts
@@ -129,7 +142,7 @@ impl PlatformSerializableWithPlatformVersion for AppState {
         let available_strategies_in_serialization_format = available_strategies
             .into_iter()
             .map(|(key, strategy)| {
-                let serialized_strategy = strategy.serialize_consume_to_bytes_with_platform_version(platform_version)?;
+                let serialized_strategy = strategy.strategy.serialize_consume_to_bytes_with_platform_version(platform_version)?;
                 Ok((key, serialized_strategy))
             })
             .collect::<Result<BTreeMap<String, Vec<u8>>, ProtocolError>>()?;
@@ -140,6 +153,7 @@ impl PlatformSerializableWithPlatformVersion for AppState {
             known_identities,
             known_contracts: known_contracts_in_serialization_format,
             available_strategies: available_strategies_in_serialization_format,
+            selected_strategy,
         };
 
         let config = bincode::config::standard()
@@ -170,7 +184,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
                 .0;
 
         let AppStateInSerializationFormat {
-            loaded_identity, loaded_wallet, known_identities, known_contracts, available_strategies
+            loaded_identity, loaded_wallet, known_identities, known_contracts, available_strategies, selected_strategy
         } = app_state;
 
         let known_contracts = known_contracts
@@ -184,10 +198,10 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
         let available_strategies = available_strategies
             .into_iter()
             .map(|(key, strategy)| {
-                let strategy = Strategy::versioned_deserialize(strategy.as_slice(), validate, platform_version)?;
+                let strategy = StrategyDetails::versioned_deserialize(strategy.as_slice(), validate, platform_version)?;
                 Ok((key, strategy))
             })
-            .collect::<Result<BTreeMap<String, Strategy>, ProtocolError>>()?;
+            .collect::<Result<BTreeMap<String, StrategyDetails>, ProtocolError>>()?;
 
         Ok(AppState {
             loaded_identity,
@@ -195,6 +209,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
             known_identities,
             known_contracts,
             available_strategies,
+            selected_strategy,
         })
     }
 }
