@@ -32,7 +32,7 @@ impl SelectStrategyScreen {
                 .title("Select a Strategy", Alignment::Center)
                 .scroll(true)
                 .highlighted_color(Color::LightYellow)
-                .highlighted_str("🚀 ")
+                .highlighted_str("> ")
                 .rewind(true)
                 .step(1)
                 .rows(rows.build())
@@ -43,31 +43,51 @@ impl SelectStrategyScreen {
 
 impl Component<Message, NoUserEvent> for SelectStrategyScreen {
     fn on(&mut self, ev: Event<NoUserEvent>) -> Option<Message> {
-        let _ = match ev {
+        match ev {
             Event::Keyboard(KeyEvent {
                 code: Key::Down, ..
-            }) => self.perform(Cmd::Move(Direction::Down)),
+            }) => {
+                self.perform(Cmd::Move(Direction::Down));
+                Some(Message::Redraw)
+            },
             Event::Keyboard(KeyEvent { 
                 code: Key::Up, .. 
-            }) => self.perform(Cmd::Move(Direction::Up)),
+            }) => {
+                self.perform(Cmd::Move(Direction::Up));
+                Some(Message::Redraw)
+            },
             Event::Keyboard(KeyEvent {
                 code: Key::PageDown, ..
-            }) => self.perform(Cmd::Scroll(Direction::Down)),
+            }) => {
+                self.perform(Cmd::Scroll(Direction::Down));
+                Some(Message::Redraw)
+            },
             Event::Keyboard(KeyEvent {
                 code: Key::PageUp, ..
-            }) => self.perform(Cmd::Scroll(Direction::Up)),
+            }) => {
+                self.perform(Cmd::Scroll(Direction::Up));
+                Some(Message::Redraw)
+            },
             Event::Keyboard(KeyEvent {
                 code: Key::Home, ..
-            }) => self.perform(Cmd::GoTo(Position::Begin)),
+            }) => {
+                self.perform(Cmd::GoTo(Position::Begin));
+                Some(Message::Redraw)
+            },
             Event::Keyboard(KeyEvent { 
                 code: Key::End, .. 
-            }) => self.perform(Cmd::GoTo(Position::End)),
+            }) => {
+                self.perform(Cmd::GoTo(Position::End));
+                Some(Message::Redraw)
+            },
             Event::Keyboard(KeyEvent { 
                 code: Key::Enter, .. 
-            }) => self.perform(Cmd::Submit),
-            _ => CmdResult::None,
-        };
-        None
+            }) => {
+                self.perform(Cmd::Submit);
+                Some(Message::Redraw)
+            },
+            _ => None,
+        }
     }
 }
 
