@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use crate::app::error::Error::InsightError;
 use crate::managers::insight::utxos_with_amount_for_addresses;
 use bincode::de::{BorrowDecoder, Decoder};
@@ -8,6 +9,10 @@ use dashcore::secp256k1::Secp256k1;
 use dashcore::{Address, Network, OutPoint, PrivateKey, ScriptBuf, Transaction, TxOut};
 use std::str::FromStr;
 use std::sync::RwLock;
+use dashcore::secp256k1::rand::prelude::StdRng;
+use dashcore::secp256k1::rand::{Rng, SeedableRng};
+use dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
+use dashcore::transaction::special_transaction::TransactionPayload;
 
 #[derive(Debug, Clone, Encode, Decode)]
 pub enum Wallet {
@@ -15,8 +20,56 @@ pub enum Wallet {
 }
 
 impl Wallet {
-    pub fn registration_transaction(&self) -> (Transaction, PrivateKey) {
-        todo!()
+    pub fn registration_transaction(&self, seed: Option<u64>, amount: u64) -> (Transaction, PrivateKey) {
+        let mut rng = match seed {
+            None => StdRng::from_entropy(),
+            Some(seed_value) => StdRng::seed_from_u64(seed_value),
+        };
+        let random_private_key : [u8;32] = rng.gen();
+        let private_key = PrivateKey::from_slice(&random_private_key, Network::Testnet).expect("expected a private key");
+
+        let secp = Secp256k1::new();
+        let public_key = private_key.public_key(&secp);
+
+        let one_time_key_hash = public_key.pubkey_hash();
+
+        let (utxos, change) = self.unspent_utxos_for(amount);
+
+        let address = self.change_address();
+
+        let burn_output = TxOut {
+            value: 100000000, // 1 Dash
+            script_pubkey: ScriptBuf::new_p2pkh(&one_time_key_hash),
+        };
+        let payload_output = TxOut {
+            value: 100000000, // 1 Dash
+            script_pubkey: ScriptBuf::new_op_return(&[]),
+        };
+        let change_output = TxOut {
+            value: change,
+            script_pubkey: ScriptBuf::new_p2pkh(&public_key_hash),
+        };
+        let payload = AssetLockPayload {
+            version: 0,
+            credit_outputs: vec![payload_output],
+        };
+
+
+        (Transaction {
+            version: 0,
+            lock_time: 0,
+            input: vec![input],
+            output: vec![burn_output, change_output],
+            special_transaction_payload: Some(TransactionPayload::AssetLockPayloadType(payload)),
+        }, random_private_key)
+    }
+
+    pub fn change_address(&self) -> Address {
+        match self {
+            Wallet::SingleKeyWallet(wallet) => {
+                wallet.change_address()
+            }
+        }
     }
 
     pub fn description(&self) -> String {
@@ -44,6 +97,12 @@ impl Wallet {
         }
     }
 
+    pub fn unspent_utxos_for(&self, amount: u64) -> (Vec<(OutPoint, TxOut)>, u64) {
+        match self {
+            Wallet::SingleKeyWallet(wallet) => wallet.unspent_utxos_for(amount),
+        }
+    }
+
     pub async fn reload_utxos(&self) {
         match self {
             Wallet::SingleKeyWallet(wallet) => {
@@ -61,8 +120,8 @@ impl Wallet {
 pub struct SingleKeyWallet {
     pub private_key: [u8; 32],
     pub public_key: Vec<u8>,
-    pub address: String,
-    pub utxos: RwLock<Vec<(OutPoint, TxOut)>>,
+    pub address: Address,
+    pub utxos: RwLock<HashMap<OutPoint, TxOut>>,
 }
 
 impl Clone for SingleKeyWallet {
@@ -121,12 +180,12 @@ impl Decode for SingleKeyWallet {
                     },
                 )
             })
-            .collect::<Vec<_>>();
+            .collect::<HashMap<_, _>>();
 
         Ok(SingleKeyWallet {
             private_key: private_key.inner.secret_bytes(),
             public_key: public_key.to_bytes(),
-            address: address.to_string(),
+            address,
             utxos: RwLock::new(utxos),
         })
     }
@@ -159,12 +218,12 @@ impl<'a> BorrowDecode<'a> for SingleKeyWallet {
                     },
                 )
             })
-            .collect::<Vec<_>>();
+            .collect::<HashMap<_, _>>();
 
         Ok(SingleKeyWallet {
             private_key: private_key.inner.secret_bytes(),
             public_key: public_key.to_bytes(),
-            address: address.to_string(),
+            address,
             utxos: RwLock::new(utxos),
         })
     }
@@ -180,5 +239,14 @@ impl SingleKeyWallet {
     pub fn balance(&self) -> u64 {
         let utxos = self.utxos.read().unwrap();
         utxos.iter().map(|(_, out)| out.value).sum()
+    }
+
+    pub fn unspent_utxos_for(&self, amount: u64) -> (Vec<(OutPoint, TxOut)>, u64) {
+        let change = amount as i64;
+        while change > 0 &&
+    }
+
+    pub fn change_address(&self) -> Address {
+        self.address.clone()
     }
 }

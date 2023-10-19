@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use crate::app::error::Error;
 use crate::app::error::Error::InsightError;
 use dashcore::{OutPoint, ScriptBuf, TxOut, Txid};
@@ -11,7 +12,7 @@ const TESTNET_INSIGHT_URL: &str = "https://insight.testnet.networks.dash.org:300
 pub(crate) async fn utxos_with_amount_for_addresses(
     addresses: &[&str],
     is_mainnet: bool,
-) -> Result<Vec<(OutPoint, TxOut)>, Error> {
+) -> Result<HashMap<OutPoint, TxOut>, Error> {
     let insight_url = if is_mainnet {
         INSIGHT_URL
     } else {
@@ -30,7 +31,7 @@ pub(crate) async fn utxos_with_amount_for_addresses(
     }
 }
 
-async fn utxos(insight_url: &str, addresses: &[&str]) -> Result<Vec<(OutPoint, TxOut)>, Error> {
+async fn utxos(insight_url: &str, addresses: &[&str]) -> Result<HashMap<OutPoint, TxOut>, Error> {
     let url = format!("{}/{}", insight_url, ADDRESS_UTXO_PATH);
 
     let addr_str = addresses.join(",");
@@ -57,7 +58,7 @@ async fn utxos(insight_url: &str, addresses: &[&str]) -> Result<Vec<(OutPoint, T
 
     let json: Vec<serde_json::Value> =
         resp.json().await.map_err(|e| InsightError(e.to_string()))?;
-    let mut utxos = Vec::new();
+    let mut utxos = HashMap::new();
     for utxo in json.iter() {
         let txid_str = utxo
             .get("txid")
@@ -82,13 +83,13 @@ async fn utxos(insight_url: &str, addresses: &[&str]) -> Result<Vec<(OutPoint, T
         let script = ScriptBuf::from_hex(script_buf_str)
             .map_err(|_| InsightError("Invalid scriptPubKey format".into()))?;
 
-        utxos.push((
+        utxos.insert(
             OutPoint { txid, vout },
             TxOut {
                 value,
                 script_pubkey: script,
             },
-        ));
+        );
     }
 
     Ok(utxos)

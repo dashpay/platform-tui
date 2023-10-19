@@ -61,7 +61,7 @@ impl AppState {
         //// Core steps
 
         // first we create the wallet registration transaction, this locks funds that we can transfer from core to platform
-        let (transaction, private_key) = wallet.registration_transaction();
+        let (transaction, private_key) = wallet.registration_transaction(None);
 
         self.identity_creation_private_key = Some(private_key.inner.secret_bytes());
 
