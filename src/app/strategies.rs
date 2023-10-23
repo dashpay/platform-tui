@@ -4,6 +4,7 @@ use bincode::{Encode, Decode};
 use dpp::data_contract::created_data_contract::CreatedDataContract;
 use dpp::{version::PlatformVersion, serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure, ProtocolError, prelude::Identity, state_transition::StateTransition};
 use dpp::ProtocolError::PlatformDeserializationError;
+use serde::Serialize;
 use simple_signer::signer::SimpleSigner;
 use strategy_tests::operations::Operation;
 use strategy_tests::{Strategy, frequency::Frequency};

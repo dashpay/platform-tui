@@ -12,9 +12,17 @@ pub(crate) struct ConfirmStrategyScreen {
 
 impl ConfirmStrategyScreen {
     pub(crate) fn new(app_state: &AppState) -> Self {
+        // Fetch the strategy name based on the selected index from the app_state.
+        // This assumes that app_state has a field like selected_strategy_index and 
+        // available_strategies is a Vec or similar indexed collection.
+        let selected_strategy = &app_state.selected_strategy;
+
+        // Create the full message
+        let message = format!("Confirm you would like to run the strategy: {}", selected_strategy.clone().unwrap_or_default());
+
         ConfirmStrategyScreen {
             component: Paragraph::default()
-                .text([TextSpan::new("Confirm you would like to run this strategy")].as_ref()),
+                .text([TextSpan::new(&message)].as_ref())
         }
     }
 }
@@ -39,6 +47,11 @@ impl ConfirmStrategyScreenCommands {
                     description: "Back to Strategies List",
                     key_type: KeyType::Command,
                 },
+                CommandPalletKey {
+                    key: 'c',
+                    description: "Confirm",
+                    key_type: KeyType::Command,
+                },
             ]),
         }
     }
@@ -48,9 +61,16 @@ impl Component<Message, NoUserEvent> for ConfirmStrategyScreenCommands {
     fn on(&mut self, ev: Event<NoUserEvent>) -> Option<Message> {
         match ev {
             Event::Keyboard(KeyEvent {
-                                code: Key::Char('q'),
-                                modifiers: KeyModifiers::NONE,
-                            }) => Some(Message::PrevScreen),
+                code: Key::Char('q'),
+                modifiers: KeyModifiers::NONE,
+            }) => Some(Message::PrevScreen),
+            Event::Keyboard(KeyEvent {
+                code: Key::Char('c'),
+                modifiers: KeyModifiers::NONE,
+            }) => {
+                // TO DO: Run the strategy now
+                None
+            },
             _ => None,
         }
     }

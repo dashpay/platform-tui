@@ -70,7 +70,6 @@ pub(super) enum Screen {
     Wallet,
     AddWallet,
     Strategies,
-    SavedStrategies,
     CreateStrategy,
     ConfirmStrategy,
 }
@@ -98,6 +97,7 @@ pub(super) enum InputType {
     Base58ContractId,
     SeedPhrase,
     WalletPrivateKey,
+    SelectedStrategy,
 }
 
 #[derive(Debug, PartialEq)]
@@ -345,22 +345,6 @@ impl<'a> Model<'a> {
                     )
                     .expect("unable to remount screen");
             },
-            Screen::SavedStrategies => {
-                self.app
-                    .remount(
-                        ComponentId::Screen,
-                        Box::new(SelectStrategyScreen::new(&self.state)),
-                        make_screen_subs(),
-                    )
-                    .expect("unable to remount screen");
-                self.app
-                    .remount(
-                        ComponentId::CommandPallet,
-                        Box::new(SelectStrategyScreenCommands::new()),
-                        Vec::new(),
-                    )
-                    .expect("unable to remount screen");
-            },
             Screen::CreateStrategy => {
                 self.app
                     .remount(
@@ -473,6 +457,11 @@ impl Update<Message> for Model<'_> {
                                 .mount(ComponentId::Input, Box::new(PrivateKeyInput::new()), vec![])
                                 .expect("unable to mount component");
                         }
+                        InputType::SelectedStrategy => {
+                            self.app
+                                .mount(ComponentId::Input, Box::new(StrategySelect::new(&self.state)), vec![])
+                                .expect("unable to mount component");
+                        }
                     }
 
 
@@ -573,9 +562,14 @@ impl Update<Message> for Model<'_> {
                     None
                 },
                 Message::SelectedStrategy(index) => {
-                    self.state.selected_strategy = Some(self.state.available_strategies.iter().nth(index).map(|(k, _)| k.clone()).unwrap());
-                    Some(Message::NextScreen(Screen::ConfirmStrategy))
-                },    
+                    let strategy = self.state.available_strategies.iter().nth(index).map(|(k, _)| k.clone()).unwrap_or_default();
+                    self.state.selected_strategy = Some(strategy);
+                    self.state.save();
+                    self.breadcrumbs.push(self.current_screen);
+                    self.current_screen = Screen::ConfirmStrategy;
+                    self.set_screen(Screen::ConfirmStrategy);
+                    None
+                },
             }
         } else {
             None

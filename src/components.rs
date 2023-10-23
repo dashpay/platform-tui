@@ -8,7 +8,6 @@ pub(crate) use screen::{
     GetIdentityScreen, GetIdentityScreenCommands, IdentityIdInput, IdentityScreen,
     IdentityScreenCommands, MainScreen, MainScreenCommands, WalletScreen, WalletScreenCommands,
     AddWalletScreen, AddWalletScreenCommands, PrivateKeyInput, StrategiesScreen, StrategiesScreenCommands,
-    SelectStrategyScreen, SelectStrategyScreenCommands, CreateStrategyScreen, CreateStrategyScreenCommands,
-    ConfirmStrategyScreen, ConfirmStrategyScreenCommands,
+    CreateStrategyScreen, CreateStrategyScreenCommands, ConfirmStrategyScreen, ConfirmStrategyScreenCommands, StrategySelect,
 };
 pub(crate) use status::Status;
