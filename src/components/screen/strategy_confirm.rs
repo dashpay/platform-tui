@@ -12,12 +12,7 @@ pub(crate) struct ConfirmStrategyScreen {
 
 impl ConfirmStrategyScreen {
     pub(crate) fn new(app_state: &AppState) -> Self {
-        // Fetch the strategy name based on the selected index from the app_state.
-        // This assumes that app_state has a field like selected_strategy_index and 
-        // available_strategies is a Vec or similar indexed collection.
         let selected_strategy = &app_state.selected_strategy;
-
-        // Create the full message
         let message = format!("Confirm you would like to run the strategy: {}", selected_strategy.clone().unwrap_or_default());
 
         ConfirmStrategyScreen {
