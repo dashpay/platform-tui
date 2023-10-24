@@ -9,5 +9,6 @@ pub(crate) use screen::{
     IdentityScreenCommands, MainScreen, MainScreenCommands, WalletScreen, WalletScreenCommands,
     AddWalletScreen, AddWalletScreenCommands, PrivateKeyInput, StrategiesScreen, StrategiesScreenCommands,
     CreateStrategyScreen, CreateStrategyScreenCommands, ConfirmStrategyScreen, ConfirmStrategyScreenCommands, StrategySelect,
+    EditContractsStruct,
 };
 pub(crate) use status::Status;

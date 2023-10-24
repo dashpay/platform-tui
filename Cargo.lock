@@ -3561,6 +3561,7 @@ dependencies = [
  "toml 0.8.2",
  "tui-realm-stdlib",
  "tuirealm",
+ "walkdir",
 ]
 
 [[package]]

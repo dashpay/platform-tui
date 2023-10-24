@@ -33,5 +33,6 @@ pub(crate) use strategies::StrategiesScreenCommands;
 pub(crate) use strategies::StrategySelect;
 pub(crate) use strategy_create::CreateStrategyScreen;
 pub(crate) use strategy_create::CreateStrategyScreenCommands;
+pub(crate) use strategy_create::EditContractsStruct;
 pub(crate) use strategy_confirm::ConfirmStrategyScreen;
 pub(crate) use strategy_confirm::ConfirmStrategyScreenCommands;

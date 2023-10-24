@@ -5,7 +5,7 @@ pub(crate) mod state;
 mod wallet;
 pub(crate) mod error;
 mod contract;
-mod strategies;
+pub(crate) mod strategies;
 
 use std::time::Duration;
 use dashcore::{Address, Network, PrivateKey};
@@ -98,6 +98,10 @@ pub(super) enum InputType {
     SeedPhrase,
     WalletPrivateKey,
     SelectedStrategy,
+    EditContracts,
+    // EditOperations,
+    // EditStartIdentities,
+    // EditIdentityInserts,
 }
 
 #[derive(Debug, PartialEq)]
@@ -113,6 +117,7 @@ pub(super) enum Message {
     AddSingleKeyWallet(String),
     UpdateLoadedWalletUTXOsAndBalance,
     SelectedStrategy(usize),
+    AddStrategyContract(usize),
 }
 
 pub(super) struct Model<'a> {
@@ -432,6 +437,12 @@ impl Update<Message> for Model<'_> {
                     None
                 }
                 Message::ExpectingInput(input_type) => {
+                    if self.app.mounted(&ComponentId::Input) {
+                        self.app
+                            .umount(&ComponentId::Input)
+                            .expect("unable to umount Input");
+                    }
+                    
                     self.app
                         .umount(&ComponentId::CommandPallet)
                         .expect("unable to umount component");
@@ -462,6 +473,26 @@ impl Update<Message> for Model<'_> {
                                 .mount(ComponentId::Input, Box::new(StrategySelect::new(&self.state)), vec![])
                                 .expect("unable to mount component");
                         }
+                        InputType::EditContracts => {
+                            self.app
+                                .mount(ComponentId::Input, Box::new(EditContractsStruct::new(&mut self.state)), vec![])
+                                .expect("unable to mount component");
+                        }
+                        // InputType::EditOperations => {
+                        //     self.app
+                        //         .mount(ComponentId::Input, Box::new(EditOperationsStruct::new(&self.state)), vec![])
+                        //         .expect("unable to mount component");
+                        // }
+                        // InputType::EditStartIdentities => {
+                        //     self.app
+                        //         .mount(ComponentId::Input, Box::new(EditStartIdentitiesStruct::new(&self.state)), vec![])
+                        //         .expect("unable to mount component");
+                        // }
+                        // InputType::EditIdentityInserts => {
+                        //     self.app
+                        //         .mount(ComponentId::Input, Box::new(EditIdentityInsertsStruct::new(&self.state)), vec![])
+                        //         .expect("unable to mount component");
+                        // }
                     }
 
 
@@ -569,6 +600,14 @@ impl Update<Message> for Model<'_> {
                     self.current_screen = Screen::ConfirmStrategy;
                     self.set_screen(Screen::ConfirmStrategy);
                     None
+                },
+                Message::AddStrategyContract(index) => {
+                    let contract = self.state.known_contracts.iter().nth(index).map(|(_, v)| v.clone()).unwrap();
+                    let current = self.state.current_strategy.clone().unwrap_or_default();
+                    let strategy = self.state.available_strategies.get_mut(&current);
+                    strategy.unwrap().strategy.contracts_with_updates.push((contract, None));
+                    self.state.save();
+                    Some(Message::PrevScreen)
                 },
             }
         } else {

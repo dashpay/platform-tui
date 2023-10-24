@@ -13,11 +13,12 @@ pub(crate) struct ConfirmStrategyScreen {
 impl ConfirmStrategyScreen {
     pub(crate) fn new(app_state: &AppState) -> Self {
         let selected_strategy = &app_state.selected_strategy;
-        let message = format!("Confirm you would like to run the strategy: {}", selected_strategy.clone().unwrap_or_default());
+        let introduction = TextSpan::new("Confirm you would like to run the strategy:");
+        let strategy_name = TextSpan::new(selected_strategy.clone().unwrap_or_default()).bold();
 
         ConfirmStrategyScreen {
             component: Paragraph::default()
-                .text([TextSpan::new(&message)].as_ref())
+                .text([introduction, strategy_name].as_ref())
         }
     }
 }

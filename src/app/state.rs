@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use walkdir::{WalkDir, DirEntry};
 use std::fs;
 use std::ops::Deref;
 use std::path::Path;
@@ -27,6 +28,7 @@ pub struct AppState {
     pub known_identities: BTreeMap<String, Identity>,
     pub known_contracts: BTreeMap<String, CreatedDataContract>,
     pub available_strategies: BTreeMap<String, StrategyDetails>,
+    pub current_strategy: Option<String>,
     pub selected_strategy: Option<String>,
 }
 
@@ -36,20 +38,31 @@ impl Default for AppState {
         let mut available_strategies = BTreeMap::new();
         
         let platform_version = PlatformVersion::latest();
-        let default_contract_1 = json_document_to_created_contract(
-            "supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
-            true,
-            platform_version,
-        )
-        .expect("expected to get contract from a json document");
 
-        known_contracts.insert(String::from("dashpay1"), default_contract_1.clone());
-        known_contracts.insert(String::from("dashpay2"), default_contract_1.clone());
-        known_contracts.insert(String::from("dashpay3"), default_contract_1.clone());
+        fn is_json(entry: &DirEntry) -> bool {
+            entry.path().extension().and_then(|s| s.to_str()) == Some("json")
+        }
+
+        for entry in WalkDir::new("supporting_files/contract")
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(is_json) 
+        {
+            let path = entry.path();
+            let contract_name = path.file_stem().unwrap().to_str().unwrap().to_string();
+            
+            let contract = json_document_to_created_contract(
+                &path, 
+                true,
+                platform_version,
+            ).expect("expected to get contract from a json document");
+
+            known_contracts.insert(contract_name, contract);
+        }
 
         let default_strategy_1 = StrategyDetails {
             strategy: Strategy {
-                    contracts_with_updates: vec![(known_contracts.get(&String::from("dashpay1")).unwrap().clone(), None)],
+                    contracts_with_updates: vec![(known_contracts.get(&String::from("dashpay-contract-all-mutable")).unwrap().clone(), None)],
                     operations: vec![],
                     start_identities: vec![],
                     identities_inserts: Frequency {
@@ -62,7 +75,7 @@ impl Default for AppState {
         };
         let default_strategy_2 = StrategyDetails {
             strategy: Strategy {
-                    contracts_with_updates: vec![(known_contracts.get(&String::from("dashpay2")).unwrap().clone(), None)],
+                    contracts_with_updates: vec![(known_contracts.get(&String::from("dashpay-contract-all-mutable-update-1")).unwrap().clone(), None)],
                     operations: vec![],
                     start_identities: vec![],
                     identities_inserts: Frequency {
@@ -75,7 +88,7 @@ impl Default for AppState {
         };
         let default_strategy_3 = StrategyDetails {
             strategy: Strategy {
-                    contracts_with_updates: vec![(known_contracts.get(&String::from("dashpay3")).unwrap().clone(), None)],
+                    contracts_with_updates: vec![(known_contracts.get(&String::from("dashpay-contract-all-mutable-update-2")).unwrap().clone(), None)],
                     operations: vec![],
                     start_identities: vec![],
                     identities_inserts: Frequency {
@@ -97,6 +110,7 @@ impl Default for AppState {
             known_identities: BTreeMap::new(),
             known_contracts,
             available_strategies,
+            current_strategy: None,
             selected_strategy: None,
         }
     }
@@ -109,6 +123,7 @@ struct AppStateInSerializationFormat {
     pub known_identities: BTreeMap<String, Identity>,
     pub known_contracts: BTreeMap<String, Vec<u8>>,
     pub available_strategies: BTreeMap<String, Vec<u8>>,
+    pub current_strategy: Option<String>,
     pub selected_strategy: Option<String>,
 }
 
@@ -128,7 +143,7 @@ impl PlatformSerializableWithPlatformVersion for AppState {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, ProtocolError> {
         let AppState {
-            loaded_identity, loaded_wallet, known_identities, known_contracts, available_strategies, selected_strategy
+            loaded_identity, loaded_wallet, known_identities, known_contracts, available_strategies, current_strategy, selected_strategy
         } = self;
 
         let known_contracts_in_serialization_format = known_contracts
@@ -153,6 +168,7 @@ impl PlatformSerializableWithPlatformVersion for AppState {
             known_identities,
             known_contracts: known_contracts_in_serialization_format,
             available_strategies: available_strategies_in_serialization_format,
+            current_strategy,
             selected_strategy,
         };
 
@@ -184,7 +200,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
                 .0;
 
         let AppStateInSerializationFormat {
-            loaded_identity, loaded_wallet, known_identities, known_contracts, available_strategies, selected_strategy
+            loaded_identity, loaded_wallet, known_identities, known_contracts, available_strategies, current_strategy, selected_strategy
         } = app_state;
 
         let known_contracts = known_contracts
@@ -209,6 +225,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
             known_identities,
             known_contracts,
             available_strategies,
+            current_strategy,
             selected_strategy,
         })
     }

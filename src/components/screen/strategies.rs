@@ -1,3 +1,5 @@
+//! Strategies screen
+
 use tuirealm::{MockComponent, Component, props::{TextSpan, TableBuilder, Color, Alignment}, Event, NoUserEvent, event::{KeyEvent, KeyModifiers, Key}, command::{Cmd, Direction}};
 use tui_realm_stdlib::{Paragraph, List};
 use crate::app::{Message, Screen, state::AppState};
@@ -57,17 +59,17 @@ impl Component<Message, NoUserEvent> for StrategiesScreenCommands {
     fn on(&mut self, ev: Event<NoUserEvent>) -> Option<Message> {
         match ev {
             Event::Keyboard(KeyEvent {
-                                code: Key::Char('q'),
-                                modifiers: KeyModifiers::NONE,
-                            }) => Some(Message::PrevScreen),
+                code: Key::Char('q'),
+                modifiers: KeyModifiers::NONE,
+            }) => Some(Message::PrevScreen),
             Event::Keyboard(KeyEvent {
-                                code: Key::Char('s'),
-                                modifiers: KeyModifiers::NONE,
-                            }) => Some(Message::ExpectingInput(SelectedStrategy)),
+                code: Key::Char('s'),
+                modifiers: KeyModifiers::NONE,
+            }) => Some(Message::ExpectingInput(SelectedStrategy)),
             Event::Keyboard(KeyEvent {
-                                code: Key::Char('c'),
-                                modifiers: KeyModifiers::NONE,
-                            }) => Some(Message::NextScreen(Screen::CreateStrategy)),
+                code: Key::Char('c'),
+                modifiers: KeyModifiers::NONE,
+            }) => Some(Message::NextScreen(Screen::CreateStrategy)),
             _ => None,
         }
     }

@@ -1,3 +1,6 @@
+//! StrategyDetails struct and strategy serialization stuff
+//! 
+
 use std::collections::BTreeMap;
 
 use bincode::{Encode, Decode};
