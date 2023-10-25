@@ -2,6 +2,7 @@
 
 use crate::app::error::Error;
 use crate::app::state::AppState;
+use bip37_bloom_filter::{BloomFilter, BloomFilterData};
 use dapi_grpc::core::v0::transactions_with_proofs_request::FromBlock;
 use dapi_grpc::core::v0::{
     self as core_proto, transactions_with_proofs_response, InstantSendLockMessages,
@@ -57,6 +58,26 @@ impl AppState {
 
         // create the bloom filter
 
+        let bloom_filter = BloomFilter::builder(todo!(), 0.0001)
+            .expect("this FP rate allows up to 10000 items")
+            .add_element(todo!()) // TODO add transactions and set the n_elements accordingly
+            .add_element(todo!())
+            .build();
+
+        let bloom_filter_proto = {
+            let BloomFilterData {
+                v_data,
+                n_hash_funcs,
+                n_tweak,
+                n_flags,
+            } = bloom_filter.into();
+            core_proto::BloomFilter {
+                v_data,
+                n_hash_funcs,
+                n_tweak,
+                n_flags,
+            }
+        };
         // let bloom_filter = wallet.bloom_filter() todo() -> Sam
 
         // we should subscribe and listen to transactions from core todo() -> Evgeny
@@ -70,7 +91,7 @@ impl AppState {
             .ok_or_else(|| RegisterIdentityError("missing `chain` field".to_owned()))?;
 
         let core_transactions_stream = core_proto::TransactionsWithProofsRequest {
-            bloom_filter: todo!(),
+            bloom_filter: Some(bloom_filter_proto),
             count: 0,
             send_transaction_hashes: false,
             from_block: Some(FromBlock::FromBlockHash(block_hash)),
