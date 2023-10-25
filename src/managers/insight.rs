@@ -1,7 +1,7 @@
-use crate::app::error::Error;
-use crate::app::error::Error::InsightError;
 use dashcore::{OutPoint, ScriptBuf, TxOut, Txid};
 use reqwest;
+
+use crate::app::error::{Error, Error::InsightError};
 
 const ADDRESS_UTXO_PATH: &str = "addrs/utxo";
 const INSIGHT_URL: &str = "https://insight.dash.org/insight-api-dash";

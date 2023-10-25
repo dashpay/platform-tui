@@ -1,20 +1,23 @@
 //! Identities backend logic.
 
-use crate::app::error::Error;
-use crate::app::state::AppState;
 use bip37_bloom_filter::{BloomFilter, BloomFilterData};
-use dapi_grpc::core::v0::transactions_with_proofs_request::FromBlock;
-use dapi_grpc::core::v0::{
-    self as core_proto, transactions_with_proofs_response, InstantSendLockMessages,
-    TransactionsWithProofsResponse,
+use dapi_grpc::{
+    core::v0::{
+        self as core_proto, transactions_with_proofs_request::FromBlock,
+        transactions_with_proofs_response, InstantSendLockMessages, TransactionsWithProofsResponse,
+    },
+    platform::v0::{
+        self as platform_proto, get_identity_response::Result as ProtoResult, GetIdentityResponse,
+    },
 };
-use dapi_grpc::platform::v0::{
-    self as platform_proto, get_identity_response::Result as ProtoResult, GetIdentityResponse,
+use dpp::{
+    platform_value::string_encoding::Encoding,
+    prelude::{Identifier, Identity},
+    serialization::PlatformDeserializable,
 };
-use dpp::platform_value::string_encoding::Encoding;
-use dpp::prelude::Identifier;
-use dpp::{prelude::Identity, serialization::PlatformDeserializable};
 use rs_dapi_client::{DapiClient, DapiRequest, RequestSettings};
+
+use crate::app::{error::Error, state::AppState};
 
 pub(super) async fn fetch_identity_by_b58_id(
     client: &mut DapiClient,
@@ -51,7 +54,8 @@ impl AppState {
 
         //// Core steps
 
-        // first we create the wallet registration transaction, this locks funds that we can transfer from core to platform
+        // first we create the wallet registration transaction, this locks funds that we
+        // can transfer from core to platform
         let (transaction, private_key) = wallet.registration_transaction();
 
         self.identity_creation_private_key = Some(private_key.inner.secret_bytes());
@@ -102,7 +106,7 @@ impl AppState {
 
         // we need to broadcast the transaction to core todo() -> Evgeny
         core_proto::BroadcastTransactionRequest {
-            transaction: todo!(), //transaction but how to encode it as bytes?,
+            transaction: todo!(), // transaction but how to encode it as bytes?,
             allow_high_fees: false,
             bypass_limits: false,
         }
@@ -128,7 +132,8 @@ impl AppState {
         .await
         .map_err(|e| RegisterIdentityError(e.to_string()))?;
 
-        // Through sdk send this transaction and get back proof that the identity was created todo() -> Evgeny
+        // Through sdk send this transaction and get back proof that the identity was
+        // created todo() -> Evgeny
         platform_proto::BroadcastStateTransitionRequest {
             state_transition: todo!(),
         }

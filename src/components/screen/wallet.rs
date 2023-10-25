@@ -7,9 +7,8 @@ use tuirealm::{
     Component, Event, MockComponent, NoUserEvent,
 };
 
-use crate::app::state::AppState;
 use crate::{
-    app::{Message, Screen},
+    app::{state::AppState, Message, Screen},
     mock_components::{CommandPallet, CommandPalletKey, KeyType},
 };
 

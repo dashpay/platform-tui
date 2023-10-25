@@ -63,15 +63,14 @@ impl Info<true, false> {
 
 impl Info<false, false> {
     pub(crate) fn new_fixed(text: &str) -> Info<false, false> {
-        let component = Textarea::default()
-            .highlighted_str(">")
-            .text_rows(&str_to_spans(text));
+        let component = Textarea::default().text_rows(&str_to_spans(text));
         Info { component }
     }
 }
 
 /// # Events
-/// In case of scrollable [Info], it reacts on up/down keys or C-p / C-n shortcuts
+/// In case of scrollable [Info], it reacts on up/down keys or C-p / C-n
+/// shortcuts
 impl<const ERROR_INFO: bool> Component<Message, NoUserEvent> for Info<true, ERROR_INFO> {
     fn on(&mut self, ev: Event<NoUserEvent>) -> Option<Message> {
         match ev {

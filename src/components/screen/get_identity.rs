@@ -9,9 +9,8 @@ use tuirealm::{
     Component, Event, MockComponent, NoUserEvent, State, StateValue,
 };
 
-use crate::app::InputType::Base58IdentityId;
 use crate::{
-    app::Message,
+    app::{InputType::Base58IdentityId, Message},
     mock_components::{
         key_event_to_cmd, CommandPallet, CommandPalletKey, CompletingInput,
         HistoryCompletionEngine, KeyType,

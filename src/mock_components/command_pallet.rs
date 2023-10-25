@@ -1,5 +1,6 @@
-//! Command Pallet is a "mock component" that helps to quickly setup keystroke navigation
-//! for each screen including execution of actions with togglable flags.
+//! Command Pallet is a "mock component" that helps to quickly setup keystroke
+//! navigation for each screen including execution of actions with togglable
+//! flags.
 
 use tui_realm_stdlib::Table;
 use tuirealm::{

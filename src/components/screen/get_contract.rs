@@ -1,17 +1,18 @@
 //! Get contract screen
 
 use tui_realm_stdlib::Textarea;
-use tuirealm::command::CmdResult;
 use tuirealm::{
+    command::CmdResult,
     event::{Key, KeyEvent, KeyModifiers},
     Component, Event, MockComponent, NoUserEvent, State, StateValue,
 };
 
-use crate::app::InputType::Base58ContractId;
-use crate::mock_components::{key_event_to_cmd, CompletingInput, HistoryCompletionEngine};
 use crate::{
-    app::Message,
-    mock_components::{CommandPallet, CommandPalletKey, KeyType},
+    app::{InputType::Base58ContractId, Message},
+    mock_components::{
+        key_event_to_cmd, CommandPallet, CommandPalletKey, CompletingInput,
+        HistoryCompletionEngine, KeyType,
+    },
 };
 
 #[derive(MockComponent)]

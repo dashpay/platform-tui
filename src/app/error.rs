@@ -1,5 +1,6 @@
-use crate::app::error::Error::ParsingError;
 use dpp::ProtocolError;
+
+use crate::app::error::Error::ParsingError;
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum Error {

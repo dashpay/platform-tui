@@ -4,6 +4,7 @@ mod completions;
 
 use std::ops::Deref;
 
+pub(crate) use completions::*;
 use tui_realm_stdlib::{Input, List};
 use tuirealm::{
     command::{self, Cmd, CmdResult},
@@ -12,8 +13,6 @@ use tuirealm::{
     tui::prelude::{Constraint, Direction, Layout, Rect},
     AttrValue, Attribute, Frame, MockComponent, State, StateValue,
 };
-
-pub(crate) use completions::*;
 
 // Helper function to translate key events to widget commands
 pub(crate) fn key_event_to_cmd(key: KeyEvent) -> Cmd {
