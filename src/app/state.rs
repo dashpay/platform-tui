@@ -17,7 +17,7 @@ use strategy_tests::Strategy;
 use strategy_tests::frequency::Frequency;
 use tokio::task;
 use crate::app::wallet::Wallet;
-use crate::app::strategies::StrategyDetails;
+use crate::app::strategies::{StrategyDetails, default_strategy_description};
 
 const CURRENT_PROTOCOL_VERSION: ProtocolVersion = 1;
 
@@ -60,6 +60,13 @@ impl Default for AppState {
             known_contracts.insert(contract_name, contract);
         }
 
+        let mut description1 = default_strategy_description(BTreeMap::new());
+        let mut description2 = default_strategy_description(BTreeMap::new());
+        let mut description3 = default_strategy_description(BTreeMap::new());
+        description1.insert("contracts_with_updates".to_string(), "dashpay1".to_string());
+        description2.insert("contracts_with_updates".to_string(), "dashpay2".to_string());
+        description3.insert("contracts_with_updates".to_string(), "dashpay3".to_string());
+
         let default_strategy_1 = StrategyDetails {
             strategy: Strategy {
                     contracts_with_updates: vec![(known_contracts.get(&String::from("dashpay-contract-all-mutable")).unwrap().clone(), None)],
@@ -71,7 +78,7 @@ impl Default for AppState {
                     },
                     signer: None,
                 },
-            description: "default everything with dashpay contract 1".to_string()
+            description: description1
         };
         let default_strategy_2 = StrategyDetails {
             strategy: Strategy {
@@ -84,7 +91,7 @@ impl Default for AppState {
                     },
                     signer: None,
                 },
-            description: "default everything with dashpay contract 2".to_string()
+            description: description2
         };
         let default_strategy_3 = StrategyDetails {
             strategy: Strategy {
@@ -97,7 +104,7 @@ impl Default for AppState {
                     },
                     signer: None,
                 },
-            description: "default everything with dashpay contract 3".to_string()
+            description: description3
         };
         
         available_strategies.insert(String::from("default_strategy_1"), default_strategy_1);

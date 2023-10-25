@@ -1,6 +1,6 @@
 //! Strategies screen
 
-use tuirealm::{MockComponent, Component, props::{TextSpan, TableBuilder, Color, Alignment}, Event, NoUserEvent, event::{KeyEvent, KeyModifiers, Key}, command::{Cmd, Direction}};
+use tuirealm::{MockComponent, Component, props::{TextSpan, TableBuilder, Alignment}, Event, NoUserEvent, event::{KeyEvent, KeyModifiers, Key}, command::{Cmd, Direction}};
 use tui_realm_stdlib::{Paragraph, List};
 use crate::app::{Message, Screen, state::AppState};
 use crate::mock_components::{CommandPallet, CommandPalletKey, KeyType};
@@ -41,13 +41,13 @@ impl StrategiesScreenCommands {
                     key_type: KeyType::Command,
                 },
                 CommandPalletKey {
-                    key: 's',
-                    description: "Select a strategy",
+                    key: 'r',
+                    description: "Run an existing strategy",
                     key_type: KeyType::Command,
                 },
                 CommandPalletKey {
                     key: 'c',
-                    description: "Create a new strategy",
+                    description: "Create or edit a strategy",
                     key_type: KeyType::Command,
                 },
             ]),
@@ -63,7 +63,7 @@ impl Component<Message, NoUserEvent> for StrategiesScreenCommands {
                 modifiers: KeyModifiers::NONE,
             }) => Some(Message::PrevScreen),
             Event::Keyboard(KeyEvent {
-                code: Key::Char('s'),
+                code: Key::Char('r'),
                 modifiers: KeyModifiers::NONE,
             }) => Some(Message::ExpectingInput(SelectedStrategy)),
             Event::Keyboard(KeyEvent {
@@ -95,7 +95,6 @@ impl StrategySelect {
             component: List::default()
                     .title("Select a Strategy. Navigate with your arrow keys and press ENTER to select.", Alignment::Center)
                     .scroll(true)
-                    .highlighted_color(Color::LightYellow)
                     .highlighted_str("> ")
                     .rewind(true)
                     .step(1)
@@ -112,8 +111,11 @@ impl Component<Message, NoUserEvent> for StrategySelect {
             Event::Keyboard(KeyEvent {
                 code: Key::Down, ..
             }) => {
-                self.selected_index = self.selected_index + 1;
-                self.perform(Cmd::Move(Direction::Down));
+                let max_index = self.component.states.list_len-2;
+                if self.selected_index < max_index {
+                    self.selected_index = self.selected_index + 1;
+                    self.perform(Cmd::Move(Direction::Down));
+                }
                 Some(Message::Redraw)
             },
             Event::Keyboard(KeyEvent { 
@@ -121,8 +123,8 @@ impl Component<Message, NoUserEvent> for StrategySelect {
             }) => {
                 if self.selected_index > 0 {
                     self.selected_index -= 1;
+                    self.perform(Cmd::Move(Direction::Up));
                 }            
-                self.perform(Cmd::Move(Direction::Up));
                 Some(Message::Redraw)
             },
             Event::Keyboard(KeyEvent {

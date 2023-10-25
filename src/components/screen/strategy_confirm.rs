@@ -16,9 +16,31 @@ impl ConfirmStrategyScreen {
         let introduction = TextSpan::new("Confirm you would like to run the strategy:");
         let strategy_name = TextSpan::new(selected_strategy.clone().unwrap_or_default()).bold();
 
+        let description_spans = match &app_state.selected_strategy {
+            Some(strategy_key) => {
+                if let Some(strategy) = app_state.available_strategies.get(strategy_key) {
+                    strategy.description.iter()
+                        .map(|(key, value)| TextSpan::new(&format!("{}: {}", key, value)))
+                        .collect()
+                } else {
+                    // Handle the case where the strategy_key doesn't exist in available_strategies
+                    vec![TextSpan::new("Error: strategy not found.")]
+                }
+            },
+            None => {
+                // Handle the case where app_state.selected_strategy is None
+                vec![TextSpan::new("No selected strategy.")]
+            }
+        };
+
+        let mut combined_spans = Vec::new();
+        combined_spans.push(introduction);
+        combined_spans.push(TextSpan::new(" "));
+        combined_spans.push(strategy_name);
+        combined_spans.extend(description_spans);
+
         ConfirmStrategyScreen {
-            component: Paragraph::default()
-                .text([introduction, strategy_name].as_ref())
+            component: Paragraph::default().text(combined_spans.as_ref())
         }
     }
 }
@@ -40,7 +62,7 @@ impl ConfirmStrategyScreenCommands {
             component: CommandPallet::new(vec![
                 CommandPalletKey {
                     key: 'q',
-                    description: "Back to Strategies List",
+                    description: "Go Back",
                     key_type: KeyType::Command,
                 },
                 CommandPalletKey {

@@ -14,7 +14,32 @@ use strategy_tests::{Strategy, frequency::Frequency};
 #[derive(Debug, Clone)]
 pub struct StrategyDetails {
     pub(crate) strategy: Strategy,
-    pub(crate) description: String,
+    pub(crate) description: BTreeMap<String, String>,
+}
+
+pub fn default_strategy_details() -> StrategyDetails {
+    StrategyDetails { 
+        strategy: Strategy { 
+            contracts_with_updates: vec![],
+            operations: vec![],
+            start_identities: vec![],
+            identities_inserts: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
+            signer: None,
+        },
+        description: default_strategy_description(BTreeMap::new()) 
+    }
+}
+
+pub fn default_strategy_description(mut map: BTreeMap<String, String>) -> BTreeMap<String, String> {
+    map.insert("contracts_with_updates".to_string(), "-".to_string());
+    map.insert("operations".to_string(), "-".to_string());
+    map.insert("start_identities".to_string(), "-".to_string());
+    map.insert("identities_inserts".to_string(), "-".to_string());
+    map.insert("signer".to_string(), "-".to_string());
+    map
 }
 
 #[derive(Clone, Debug, Encode, Decode)]
@@ -29,7 +54,7 @@ struct StrategyInSerializationFormat {
 #[derive(Clone, Debug, Encode, Decode)]
 struct StrategyDetailsInSerializationFormat {
     strategy: StrategyInSerializationFormat,
-    description: String
+    description: BTreeMap<String, String>,
 }
 
 
@@ -111,7 +136,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Str
                 identities_inserts,
                 signer,
             },
-            description: description
+            description
         })
     }
 }

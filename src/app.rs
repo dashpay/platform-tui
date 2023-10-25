@@ -7,11 +7,17 @@ pub(crate) mod error;
 mod contract;
 pub(crate) mod strategies;
 
+use std::thread::current;
 use std::time::Duration;
 use dashcore::{Address, Network, PrivateKey};
 use dashcore::secp256k1::Secp256k1;
 
+use dpp::data_contract::document_type::DocumentType;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::prelude::DataContract;
 use rs_dapi_client::DapiClient;
+use strategy_tests::frequency::Frequency;
+use strategy_tests::operations::{DocumentAction, DocumentOp, Operation, OperationType};
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
     props::PropPayload,
@@ -99,9 +105,18 @@ pub(super) enum InputType {
     WalletPrivateKey,
     SelectedStrategy,
     EditContracts,
-    // EditOperations,
+    SelectOperationType,
     // EditStartIdentities,
     // EditIdentityInserts,
+    LoadStrategy,
+    RenameStrategy,
+    Document,
+    // IdentityTopUp,
+    // IdentityUpdate,
+    // IdentityWithdrawal,
+    // ContractCreate,
+    // ContractUpdate,
+    // IdentityTransfer,
 }
 
 #[derive(Debug, PartialEq)]
@@ -118,6 +133,10 @@ pub(super) enum Message {
     UpdateLoadedWalletUTXOsAndBalance,
     SelectedStrategy(usize),
     AddStrategyContract(usize),
+    RenameStrategy(String, String),
+    LoadStrategy(usize),
+    SelectOperationType(usize),
+    DocumentOp(DataContract, DocumentType, DocumentAction),
 }
 
 pub(super) struct Model<'a> {
@@ -354,7 +373,7 @@ impl<'a> Model<'a> {
                 self.app
                     .remount(
                         ComponentId::Screen,
-                        Box::new(CreateStrategyScreen::new()),
+                        Box::new(CreateStrategyScreen::new(&self.state)),
                         make_screen_subs(),
                     )
                     .expect("unable to remount screen");
@@ -478,11 +497,11 @@ impl Update<Message> for Model<'_> {
                                 .mount(ComponentId::Input, Box::new(EditContractsStruct::new(&mut self.state)), vec![])
                                 .expect("unable to mount component");
                         }
-                        // InputType::EditOperations => {
-                        //     self.app
-                        //         .mount(ComponentId::Input, Box::new(EditOperationsStruct::new(&self.state)), vec![])
-                        //         .expect("unable to mount component");
-                        // }
+                        InputType::SelectOperationType => {
+                            self.app
+                                .mount(ComponentId::Input, Box::new(SelectOperationTypeStruct::new(&mut self.state)), vec![])
+                                .expect("unable to mount component");
+                        }
                         // InputType::EditStartIdentities => {
                         //     self.app
                         //         .mount(ComponentId::Input, Box::new(EditStartIdentitiesStruct::new(&self.state)), vec![])
@@ -493,12 +512,58 @@ impl Update<Message> for Model<'_> {
                         //         .mount(ComponentId::Input, Box::new(EditIdentityInsertsStruct::new(&self.state)), vec![])
                         //         .expect("unable to mount component");
                         // }
+                        InputType::LoadStrategy => {
+                            self.app
+                                .mount(ComponentId::Input, Box::new(LoadStrategyStruct::new(&mut self.state)), vec![])
+                                .expect("unable to mount component");
+                        }
+                        InputType::RenameStrategy => {
+                            self.app
+                                .mount(ComponentId::Input, Box::new(RenameStrategyStruct::new(&mut self.state)), vec![])
+                                .expect("unable to mount component");
+                        }
+                        InputType::Document => {
+                            self.app
+                                .mount(ComponentId::Input, Box::new(DocumentStruct::new(&mut self.state)), vec![])
+                                .expect("unable to mount component");
+                        }
+                        // InputType::IdentityTopUp => {
+                        //     self.app
+                        //         .mount(ComponentId::Input, Box::new(IdentityTopUpStruct::new(&mut self.state)), vec![])
+                        //         .expect("unable to mount component");
+                        // }
+                        // InputType::IdentityUpdate => {
+                        //     self.app
+                        //         .mount(ComponentId::Input, Box::new(IdentityUpdateStruct::new(&mut self.state)), vec![])
+                        //         .expect("unable to mount component");
+                        // }
+                        // InputType::IdentityWithdrawal => {
+                        //     self.app
+                        //         .mount(ComponentId::Input, Box::new(IdentityWithdrawalStruct::new(&mut self.state)), vec![])
+                        //         .expect("unable to mount component");
+                        // }
+                        // InputType::ContractCreate => {
+                        //     self.app
+                        //         .mount(ComponentId::Input, Box::new(ContractCreateStruct::new(&mut self.state)), vec![])
+                        //         .expect("unable to mount component");
+                        // }
+                        // InputType::ContractUpdate => {
+                        //     self.app
+                        //         .mount(ComponentId::Input, Box::new(ContractUpdateStruct::new(&mut self.state)), vec![])
+                        //         .expect("unable to mount component");
+                        // }
+                        // InputType::IdentityTransfer => {
+                        //     self.app
+                        //         .mount(ComponentId::Input, Box::new(IdentityTransferStruct::new(&mut self.state)), vec![])
+                        //         .expect("unable to mount component");
+                        // }
                     }
 
 
                     self.app
                         .active(&ComponentId::Input)
                         .expect("cannot set active");
+
                     None
                 }
                 Message::Redraw => None,
@@ -596,18 +661,202 @@ impl Update<Message> for Model<'_> {
                     let strategy = self.state.available_strategies.iter().nth(index).map(|(k, _)| k.clone()).unwrap_or_default();
                     self.state.selected_strategy = Some(strategy);
                     self.state.save();
-                    self.breadcrumbs.push(self.current_screen);
-                    self.current_screen = Screen::ConfirmStrategy;
-                    self.set_screen(Screen::ConfirmStrategy);
-                    None
+                    Some(Message::NextScreen(Screen::ConfirmStrategy))
                 },
                 Message::AddStrategyContract(index) => {
-                    let contract = self.state.known_contracts.iter().nth(index).map(|(_, v)| v.clone()).unwrap();
+                    self.app
+                        .umount(&ComponentId::Input)
+                        .expect("unable to umount component");
+                    self.app
+                        .mount(
+                            ComponentId::CommandPallet,
+                            Box::new(CreateStrategyScreenCommands::new()),
+                            vec![],
+                        )
+                        .expect("unable to mount component");
+                    self.app
+                        .active(&ComponentId::CommandPallet)
+                        .expect("cannot set active");
+
+                    let (name, contract) = self.state.known_contracts.iter().nth(index).map(|(k, v)| (k.clone(), v.clone())).unwrap();
                     let current = self.state.current_strategy.clone().unwrap_or_default();
-                    let strategy = self.state.available_strategies.get_mut(&current);
-                    strategy.unwrap().strategy.contracts_with_updates.push((contract, None));
+                    if let Some(strategy) = self.state.available_strategies.get_mut(&current) {
+                        strategy.strategy.contracts_with_updates.push((contract, None));
+                        
+                        let description_entry = strategy.description.entry("contracts_with_updates".to_string()).or_insert("-".to_string());
+                        if description_entry == "-" {
+                            *description_entry = name;
+                        } else {
+                            description_entry.push_str(&format!(", {}", name));
+                        }
+                    }
                     self.state.save();
-                    Some(Message::PrevScreen)
+                        
+                    self.app
+                    .remount(
+                        ComponentId::Screen,
+                        Box::new(CreateStrategyScreen::new(&self.state)),
+                        make_screen_subs(),
+                    )
+                    .expect("unable to remount screen");
+
+                    Some(Message::Redraw)
+                },
+                Message::RenameStrategy(old, new) => {
+                    self.app
+                        .umount(&ComponentId::Input)
+                        .expect("unable to umount component");
+                    self.app
+                        .mount(
+                            ComponentId::CommandPallet,
+                            Box::new(CreateStrategyScreenCommands::new()),
+                            vec![],
+                        )
+                        .expect("unable to mount component");
+                    self.app
+                        .active(&ComponentId::CommandPallet)
+                        .expect("cannot set active");
+
+                    let strategy = self.state.available_strategies.get(&old);
+                    self.state.current_strategy = Some(new.clone());
+                    self.state.available_strategies.insert(new, strategy.unwrap().clone());
+                    self.state.available_strategies.remove(&old);
+
+                    self.app
+                    .remount(
+                        ComponentId::Screen,
+                        Box::new(CreateStrategyScreen::new(&self.state)),
+                        make_screen_subs(),
+                    )
+                    .expect("unable to remount screen");
+
+                    Some(Message::Redraw)
+                },
+                Message::LoadStrategy(index) => {
+                    self.app
+                        .umount(&ComponentId::Input)
+                        .expect("unable to umount component");
+                    self.app
+                        .mount(
+                            ComponentId::CommandPallet,
+                            Box::new(CreateStrategyScreenCommands::new()),
+                            vec![],
+                        )
+                        .expect("unable to mount component");
+                    self.app
+                        .active(&ComponentId::CommandPallet)
+                        .expect("cannot set active");
+
+                    let strategy = self.state.available_strategies.iter().nth(index).map(|(k, _)| k.clone()).unwrap_or_default();
+                    self.state.current_strategy = Some(strategy);
+                    self.state.save();
+    
+                    self.app
+                    .remount(
+                        ComponentId::Screen,
+                        Box::new(CreateStrategyScreen::new(&self.state)),
+                        make_screen_subs(),
+                    )
+                    .expect("unable to remount screen");
+
+                    Some(Message::Redraw)
+                },
+                Message::SelectOperationType(index) => {
+                    self.app
+                        .umount(&ComponentId::Input)
+                        .expect("unable to umount component");
+                    self.app
+                        .mount(
+                            ComponentId::CommandPallet,
+                            Box::new(CreateStrategyScreenCommands::new()),
+                            vec![],
+                        )
+                        .expect("unable to mount component");
+                    self.app
+                        .active(&ComponentId::CommandPallet)
+                        .expect("cannot set active");
+
+                    let op_types = vec![
+                        "Document", 
+                        "IdentityTopUp", 
+                        "IdentityUpdate", 
+                        "IdentityWithdrawal",
+                        "ContractCreate",
+                        "ContractUpdate",
+                        "IdentityTransfer",
+                    ];
+                                
+                    match op_types.get(index) {
+                        Some(&"Document") => Some(Message::ExpectingInput(InputType::Document)),
+                        // Some(&"IdentityTopUp") => Some(Message::ExpectingInput(InputType::IdentityTopUp)),
+                        // Some(&"IdentityUpdate") => Some(Message::ExpectingInput(InputType::IdentityUpdate)),
+                        // Some(&"IdentityWithdrawal") => Some(Message::ExpectingInput(InputType::IdentityWithdrawal)),
+                        // Some(&"ContractCreate") => Some(Message::ExpectingInput(InputType::ContractCreate)),
+                        // Some(&"ContractUpdate") => Some(Message::ExpectingInput(InputType::ContractUpdate)),
+                        // Some(&"IdentityTransfer") => Some(Message::ExpectingInput(InputType::IdentityTransfer)),
+                        _ => None,
+                    }
+                },
+                Message::DocumentOp(contract, doc_type, action) => {
+                    self.app
+                        .umount(&ComponentId::Input)
+                        .expect("unable to umount component");
+                    self.app
+                        .mount(
+                            ComponentId::CommandPallet,
+                            Box::new(CreateStrategyScreenCommands::new()),
+                            vec![],
+                        )
+                        .expect("unable to mount component");
+                    self.app
+                        .active(&ComponentId::CommandPallet)
+                        .expect("cannot set active");
+
+                    let doc_op = DocumentOp {
+                        contract: contract.clone(),
+                        document_type: doc_type.clone(),
+                        action: action.clone()
+                    };
+                    let mut op_vec = Vec::new();
+                    op_vec.push(doc_op.clone());
+                    let current_strategy_key = self.state.current_strategy.clone().unwrap();
+                    let current_strategy_details = self.state.available_strategies.get_mut(&current_strategy_key).unwrap();
+                    let mut current_strategy = current_strategy_details.strategy.clone();
+                    current_strategy.operations.push(Operation {
+                        op_type: OperationType::Document(doc_op),
+                        frequency: Frequency::default(),
+                    });
+
+                    let action_name = match action {
+                        DocumentAction::DocumentActionInsertRandom(_, _) => "InsertRandom",
+                        DocumentAction::DocumentActionDelete => "Delete",
+                        DocumentAction::DocumentActionReplace => "Replace",
+                        DocumentAction::DocumentActionInsertSpecific(_, _, _, _) => "InsertSpecific",
+                    };
+
+                    let op_description = format!("DocumentOp::{}::{}", 
+                        doc_type.name(), 
+                        action_name
+                    );
+                    
+                    let description_entry = current_strategy_details.description.entry("operations".to_string()).or_insert("-".to_string());
+                    if description_entry == "-" {
+                        *description_entry = op_description;
+                    } else {
+                        description_entry.push_str(&format!(", {}", op_description));
+                    }
+
+                    self.state.save();
+
+                    self.app
+                    .remount(
+                        ComponentId::Screen,
+                        Box::new(CreateStrategyScreen::new(&self.state)),
+                        make_screen_subs(),
+                    )
+                    .expect("unable to remount screen");
+
+                    Some(Message::Redraw)
                 },
             }
         } else {
