@@ -17,6 +17,7 @@ use dpp::prelude::DataContract;
 use rs_dapi_client::DapiClient;
 use strategy_tests::frequency::Frequency;
 use strategy_tests::operations::{DocumentAction, DocumentOp, Operation, OperationType};
+use tui_realm_stdlib::Input;
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
     props::PropPayload,
@@ -140,7 +141,7 @@ pub(super) enum Message {
     RenameStrategy(String, String),
     LoadStrategy(usize),
     SelectOperationType(usize),
-    DocumentOp(DataContract, DocumentType, DocumentAction),
+    DocumentOp(DataContract, DocumentType, DocumentAction, u16),
     AddNewStrategy,
     DeleteStrategy(usize),
 }
@@ -718,7 +719,7 @@ impl Update<Message> for Model<'_> {
                         }
                     }
                     self.state.save();
-                        
+
                     self.app
                     .remount(
                         ComponentId::Screen,
@@ -845,7 +846,7 @@ impl Update<Message> for Model<'_> {
                         _ => None,
                     }
                 },
-                Message::DocumentOp(contract, doc_type, action) => {
+                Message::DocumentOp(contract, doc_type, action, tpbr) => {
                     self.app
                         .umount(&ComponentId::Input)
                         .expect("unable to umount component");
@@ -872,7 +873,10 @@ impl Update<Message> for Model<'_> {
                     let mut current_strategy = current_strategy_details.strategy.clone();
                     current_strategy.operations.push(Operation {
                         op_type: OperationType::Document(doc_op),
-                        frequency: Frequency::default(),
+                        frequency: Frequency {
+                            times_per_block_range: 1..tpbr,
+                            chance_per_block: None,
+                        },
                     });
 
                     let action_name = match action {
@@ -882,9 +886,10 @@ impl Update<Message> for Model<'_> {
                         DocumentAction::DocumentActionInsertSpecific(_, _, _, _) => "InsertSpecific",
                     };
 
-                    let op_description = format!("DocumentOp::{}::{}", 
+                    let op_description = format!("DocumentOp::{}::{}::{}", 
                         doc_type.name(), 
-                        action_name
+                        action_name,
+                        format!("TPBR=1..{}",tpbr),
                     );
                     
                     let description_entry = current_strategy_details.description.entry("operations".to_string()).or_insert("-".to_string());
