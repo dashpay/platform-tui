@@ -141,7 +141,7 @@ pub(super) enum Message {
     RenameStrategy(String, String),
     LoadStrategy(usize),
     SelectOperationType(usize),
-    DocumentOp(DataContract, DocumentType, DocumentAction, u16),
+    DocumentOp(DataContract, DocumentType, DocumentAction, u16, f64),
     RemoveOperation,
     AddNewStrategy,
     DeleteStrategy(usize),
@@ -863,7 +863,7 @@ impl Update<Message> for Model<'_> {
                         _ => None,
                     }
                 },
-                Message::DocumentOp(contract, doc_type, action, tpbr) => {
+                Message::DocumentOp(contract, doc_type, action, tpbr, cpb) => {
                     self.app
                         .umount(&ComponentId::Input)
                         .expect("unable to umount component");
@@ -892,7 +892,7 @@ impl Update<Message> for Model<'_> {
                         op_type: OperationType::Document(doc_op),
                         frequency: Frequency {
                             times_per_block_range: 1..tpbr,
-                            chance_per_block: None,
+                            chance_per_block: Some(cpb),
                         },
                     });
 
@@ -903,10 +903,11 @@ impl Update<Message> for Model<'_> {
                         DocumentAction::DocumentActionInsertSpecific(_, _, _, _) => "InsertSpecific",
                     };
 
-                    let op_description = format!("DocumentOp::{}::{}::{}", 
+                    let op_description = format!("DocumentOp::{}::{}::{}::{}", 
                         doc_type.name(), 
                         action_name,
-                        format!("TPBR=1..{}",tpbr),
+                        format!("MTPB={}",tpbr),
+                        format!("CPB={}",cpb),
                     );
                     
                     let description_entry = current_strategy_details.description.entry("operations".to_string()).or_insert("".to_string());

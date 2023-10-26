@@ -183,7 +183,7 @@ enum DocumentSelectionState {
     SelectingDocumentType { contract: DataContract },
     SelectingAction { contract: DataContract, doc_type: DocumentType },
     SelectingTimesPerBlockRange { contract: DataContract, doc_type: DocumentType, action: DocumentAction },
-    // SelectingChancePerBlock,
+    SelectingChancePerBlock { contract: DataContract, doc_type: DocumentType, action: DocumentAction, tpbr: u16 },
 }
 
 #[derive(MockComponent)]
@@ -232,7 +232,7 @@ impl DocumentStruct {
             .selected_line(0);
     }
 
-    fn update_component_for_frequency(&mut self) {
+    fn update_component_for_tpbr(&mut self) {
         self.selected_index = 0;
         let ranges = vec!["1", "2", "5", "10", "20", "40"];
         let mut rows = TableBuilder::default();
@@ -250,6 +250,23 @@ impl DocumentStruct {
             .selected_line(0);
     }
 
+    fn update_component_for_cpb(&mut self) {
+        self.selected_index = 0;
+        let chances = vec!["1.0", "0.75", "0.5", "0.25", "0.1", "0.01"];
+        let mut rows = TableBuilder::default();
+        for chance in chances {
+            rows.add_col(TextSpan::from(chance));
+            rows.add_row();
+        }
+        self.component = List::default()
+            .title("Select the chance per block for the action to occur", Alignment::Center)
+            .scroll(true)
+            .highlighted_str("> ")
+            .rewind(true)
+            .step(1)
+            .rows(rows.build())
+            .selected_line(0);
+    }
 
     pub(crate) fn new(app_state: &mut AppState) -> Self {
         if app_state.current_strategy.is_none() {
@@ -341,7 +358,7 @@ impl Component<Message, NoUserEvent> for DocumentStruct {
                             action: action.clone(),
                         };
 
-                        self.update_component_for_frequency();
+                        self.update_component_for_tpbr();
 
                         Some(Message::Redraw)
                     },
@@ -353,18 +370,42 @@ impl Component<Message, NoUserEvent> for DocumentStruct {
                             3 => 10,
                             4 => 20,
                             5 => 40,
+                            6 => 100,
+                            7 => 1000,
+                            _ => panic!("Invalid tpbr index"),
+                        };
+
+                        self.selection_state = DocumentSelectionState::SelectingChancePerBlock { 
+                            contract: contract.clone(),
+                            doc_type: doc_type.clone(),
+                            action: action.clone(),
+                            tpbr,
+                        };
+
+                        self.update_component_for_cpb();
+
+                        Some(Message::Redraw)
+                    },
+                    DocumentSelectionState::SelectingChancePerBlock { contract, doc_type, action, tpbr } => {
+                        let cpb = match self.selected_index {
+                            0 => 1.0,
+                            1 => 0.9,
+                            2 => 0.75,
+                            3 => 0.5,
+                            4 => 0.25,
+                            5 => 0.1,
+                            6 => 0.05,
+                            7 => 0.01,
                             _ => panic!("Invalid tpbr index"),
                         };
                         Some(Message::DocumentOp(
                             contract.clone(), 
                             doc_type.clone(),
                             action.clone(),
-                            tpbr, 
+                            tpbr.clone(),
+                            cpb,
                         ))
                     },
-                    // DocumentSelectionState::SelectingChancePerBlock => {
-
-                    // },
                 }
             }
             Event::Keyboard(KeyEvent {

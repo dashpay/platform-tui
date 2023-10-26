@@ -34,11 +34,10 @@ pub fn default_strategy_details() -> StrategyDetails {
 }
 
 pub fn default_strategy_description(mut map: BTreeMap<String, String>) -> BTreeMap<String, String> {
-    map.insert("contracts_with_updates".to_string(), "-".to_string());
-    map.insert("operations".to_string(), "-".to_string());
-    map.insert("start_identities".to_string(), "-".to_string());
-    map.insert("identities_inserts".to_string(), "-".to_string());
-    map.insert("signer".to_string(), "-".to_string());
+    map.insert("contracts_with_updates".to_string(), "".to_string());
+    map.insert("operations".to_string(), "".to_string());
+    map.insert("start_identities".to_string(), "".to_string());
+    map.insert("identities_inserts".to_string(), "".to_string());
     map
 }
 

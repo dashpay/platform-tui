@@ -1,15 +1,10 @@
 //! Create strategy
 
-use std::collections::BTreeMap;
-
-use strategy_tests::operations::DocumentAction;
 use tui_realm_stdlib::{Paragraph, List, Input};
 use tuirealm::{MockComponent, Component, NoUserEvent, Event, event::{KeyEvent, Key, KeyModifiers}, props::{TextSpan, TableBuilder, Alignment}, command::{Cmd, Direction, CmdResult}, State, StateValue};
 
 use crate::{app::{Message, state::AppState, strategies::default_strategy_details, Screen}, mock_components::{CommandPallet, CommandPalletKey, KeyType, key_event_to_cmd}};
-use crate::app::InputType::{RenameStrategy, LoadStrategy, SelectOperationType};
-use dpp::{data_contract::{created_data_contract::CreatedDataContract, document_type::{DocumentType, random_document::{DocumentFieldFillSize, DocumentFieldFillType}}, accessors::v0::DataContractV0Getters}, prelude::DataContract};
-
+use crate::app::InputType::{RenameStrategy, LoadStrategy};
 
 #[derive(MockComponent)]
 pub(crate) struct CreateStrategyScreen {
