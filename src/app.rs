@@ -17,7 +17,6 @@ use dpp::prelude::DataContract;
 use rs_dapi_client::DapiClient;
 use strategy_tests::frequency::Frequency;
 use strategy_tests::operations::{DocumentAction, DocumentOp, Operation, OperationType};
-use tui_realm_stdlib::Input;
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
     props::PropPayload,
@@ -81,6 +80,7 @@ pub(super) enum Screen {
     CreateStrategy,
     ConfirmStrategy,
     StrategyContracts,
+    StrategyOperations,
 }
 
 /// Component identifiers, required to triggers screen switch which involves mounting and
@@ -142,6 +142,7 @@ pub(super) enum Message {
     LoadStrategy(usize),
     SelectOperationType(usize),
     DocumentOp(DataContract, DocumentType, DocumentAction, u16),
+    RemoveOperation,
     AddNewStrategy,
     DeleteStrategy(usize),
 }
@@ -423,7 +424,23 @@ impl<'a> Model<'a> {
                         Vec::new(),
                     )
                     .expect("unable to remount screen");
-            }
+            },
+            Screen::StrategyOperations => {
+                self.app
+                    .remount(
+                        ComponentId::Screen,
+                        Box::new(StrategyOperationsScreen::new(&self.state)),
+                        make_screen_subs(),
+                    )
+                    .expect("unable to remount screen");
+                self.app
+                    .remount(
+                        ComponentId::CommandPallet,
+                        Box::new(StrategyOperationsScreenCommands::new()),
+                        Vec::new(),
+                    )
+                    .expect("unable to remount screen");
+            },
         }
         self.app
             .attr(
@@ -711,7 +728,7 @@ impl Update<Message> for Model<'_> {
                     if let Some(strategy) = self.state.available_strategies.get_mut(&current) {
                         strategy.strategy.contracts_with_updates.push((contract, None));
                         
-                        let description_entry = strategy.description.entry("contracts_with_updates".to_string()).or_insert("-".to_string());
+                        let description_entry = strategy.description.entry("contracts_with_updates".to_string()).or_insert("".to_string());
                         if description_entry.is_empty() || description_entry == "-" {
                             *description_entry = name.to_string();
                         } else {
@@ -853,7 +870,7 @@ impl Update<Message> for Model<'_> {
                     self.app
                         .mount(
                             ComponentId::CommandPallet,
-                            Box::new(CreateStrategyScreenCommands::new()),
+                            Box::new(StrategyOperationsScreenCommands::new()),
                             vec![],
                         )
                         .expect("unable to mount component");
@@ -892,8 +909,8 @@ impl Update<Message> for Model<'_> {
                         format!("TPBR=1..{}",tpbr),
                     );
                     
-                    let description_entry = current_strategy_details.description.entry("operations".to_string()).or_insert("-".to_string());
-                    if description_entry == "-" {
+                    let description_entry = current_strategy_details.description.entry("operations".to_string()).or_insert("".to_string());
+                    if description_entry.is_empty() || description_entry == "-" {
                         *description_entry = op_description;
                     } else {
                         description_entry.push_str(&format!(", {}", op_description));
@@ -904,11 +921,32 @@ impl Update<Message> for Model<'_> {
                     self.app
                     .remount(
                         ComponentId::Screen,
-                        Box::new(CreateStrategyScreen::new(&self.state)),
+                        Box::new(StrategyOperationsScreen::new(&self.state)),
                         make_screen_subs(),
                     )
                     .expect("unable to remount screen");
 
+                    Some(Message::Redraw)
+                },
+                Message::RemoveOperation => {
+                    let current_name = self.state.current_strategy.clone().unwrap();
+                    let current_strategy_details = self.state.available_strategies.get_mut(&current_name).unwrap();
+                    current_strategy_details.strategy.operations.pop();
+                    let description_contracts = current_strategy_details.description.get_mut("operations").unwrap();
+                    let mut values: Vec<&str> = description_contracts.split(',').collect();
+                    values.pop();
+                    *description_contracts = values.join(",");
+                
+                    self.state.save();
+                
+                    self.app
+                    .remount(
+                        ComponentId::Screen,
+                        Box::new(StrategyOperationsScreen::new(&self.state)),
+                        make_screen_subs(),
+                    )
+                    .expect("unable to remount screen");
+                
                     Some(Message::Redraw)
                 },
                 Message::AddNewStrategy => {

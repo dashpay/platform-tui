@@ -10,6 +10,6 @@ pub(crate) use screen::{
     AddWalletScreen, AddWalletScreenCommands, PrivateKeyInput, StrategiesScreen, StrategiesScreenCommands,
     CreateStrategyScreen, CreateStrategyScreenCommands, ConfirmStrategyScreen, ConfirmStrategyScreenCommands, StrategySelect,
     AddContractStruct, RenameStrategyStruct, LoadStrategyStruct, SelectOperationTypeStruct, DocumentStruct, DeleteStrategyStruct,
-    StrategyContractsScreen, StrategyContractsScreenCommands
+    StrategyContractsScreen, StrategyContractsScreenCommands, StrategyOperationsScreen, StrategyOperationsScreenCommands,
 };
 pub(crate) use status::Status;
