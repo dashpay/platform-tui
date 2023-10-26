@@ -10,6 +10,7 @@ mod add_wallet;
 mod strategies;
 mod strategy_create;
 mod strategy_confirm;
+mod strategy_contracts;
 
 pub(crate) use contract::ContractScreen;
 pub(crate) use contract::ContractScreenCommands;
@@ -34,10 +35,14 @@ pub(crate) use strategies::StrategySelect;
 pub(crate) use strategies::DeleteStrategyStruct;
 pub(crate) use strategy_create::CreateStrategyScreen;
 pub(crate) use strategy_create::CreateStrategyScreenCommands;
-pub(crate) use strategy_create::EditContractsStruct;
 pub(crate) use strategy_create::RenameStrategyStruct;
 pub(crate) use strategy_create::LoadStrategyStruct;
 pub(crate) use strategy_create::SelectOperationTypeStruct;
 pub(crate) use strategy_create::DocumentStruct;
 pub(crate) use strategy_confirm::ConfirmStrategyScreen;
 pub(crate) use strategy_confirm::ConfirmStrategyScreenCommands;
+pub(crate) use strategy_contracts::AddContractStruct;
+pub(crate) use strategy_contracts::StrategyContractsScreen;
+pub(crate) use strategy_contracts::StrategyContractsScreenCommands;
+
+

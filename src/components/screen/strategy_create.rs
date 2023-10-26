@@ -1,15 +1,15 @@
 //! Create strategy
 
-
 use std::collections::BTreeMap;
 
 use strategy_tests::operations::DocumentAction;
 use tui_realm_stdlib::{Paragraph, List, Input};
 use tuirealm::{MockComponent, Component, NoUserEvent, Event, event::{KeyEvent, Key, KeyModifiers}, props::{TextSpan, TableBuilder, Alignment}, command::{Cmd, Direction, CmdResult}, State, StateValue};
 
-use crate::{app::{Message, state::AppState, strategies::default_strategy_details}, mock_components::{CommandPallet, CommandPalletKey, KeyType, key_event_to_cmd}};
-use crate::app::InputType::{EditContracts, RenameStrategy, LoadStrategy, SelectOperationType};
+use crate::{app::{Message, state::AppState, strategies::default_strategy_details, Screen}, mock_components::{CommandPallet, CommandPalletKey, KeyType, key_event_to_cmd}};
+use crate::app::InputType::{RenameStrategy, LoadStrategy, SelectOperationType};
 use dpp::{data_contract::{created_data_contract::CreatedDataContract, document_type::{DocumentType, random_document::{DocumentFieldFillSize, DocumentFieldFillType}}, accessors::v0::DataContractV0Getters}, prelude::DataContract};
+
 
 #[derive(MockComponent)]
 pub(crate) struct CreateStrategyScreen {
@@ -114,7 +114,7 @@ impl Component<Message, NoUserEvent> for CreateStrategyScreenCommands {
             Event::Keyboard(KeyEvent {
                 code: Key::Char('c'),
                 modifiers: KeyModifiers::NONE,
-            }) => Some(Message::ExpectingInput(EditContracts)),
+            }) => Some(Message::NextScreen(Screen::StrategyContracts)),
             Event::Keyboard(KeyEvent {
                 code: Key::Char('o'),
                 modifiers: KeyModifiers::NONE,
@@ -139,79 +139,6 @@ impl Component<Message, NoUserEvent> for CreateStrategyScreenCommands {
                 code: Key::Char('a'),
                 modifiers: KeyModifiers::NONE,
             }) => Some(Message::AddNewStrategy),
-            _ => None,
-        }
-    }
-}
-
-#[derive(MockComponent)]
-pub(crate) struct EditContractsStruct {
-    component: List,
-    selected_index: usize,
-}
-
-impl EditContractsStruct {
-    pub(crate) fn new(app_state: &mut AppState) -> Self {
-        if app_state.current_strategy.is_none() {
-            app_state.current_strategy = Some("new_strategy".to_string());
-            app_state.available_strategies.insert("new_strategy".to_string(), default_strategy_details(),
-            );
-        }
-
-        let contracts = &app_state.known_contracts;
-                
-        let mut rows = TableBuilder::default();
-        for (name, _) in contracts.iter() {
-            rows.add_col(TextSpan::from(name));
-            rows.add_row();
-        }
-
-        Self {
-            component: List::default()
-                    .title("Select a contract. Navigate with your arrow keys and press ENTER to select. Press 'q' to go back.", Alignment::Center)
-                    .scroll(true)
-                    .highlighted_str("> ")
-                    .rewind(true)
-                    .step(1)
-                    .rows(rows.build())
-                    .selected_line(0),
-                selected_index: 0,
-        }
-    }
-}
-
-impl Component<Message, NoUserEvent> for EditContractsStruct {
-    fn on(&mut self, ev: Event<NoUserEvent>) -> Option<Message> {
-        match ev {
-            Event::Keyboard(KeyEvent {
-                code: Key::Down, ..
-            }) => {
-                let max_index = self.component.states.list_len-2;
-                if self.selected_index < max_index {
-                    self.selected_index = self.selected_index + 1;
-                    self.perform(Cmd::Move(Direction::Down));
-                }
-                Some(Message::Redraw)
-            },
-            Event::Keyboard(KeyEvent { 
-                code: Key::Up, .. 
-            }) => {
-                if self.selected_index > 0 {
-                    self.selected_index -= 1;
-                    self.perform(Cmd::Move(Direction::Up));
-                }            
-                Some(Message::Redraw)
-            },
-            Event::Keyboard(KeyEvent {
-                code: Key::Enter, ..
-            }) => {
-                Some(Message::AddStrategyContract(self.selected_index))
-            }
-            Event::Keyboard(KeyEvent {
-                code: Key::Char('q'), ..
-            }) => {
-                Some(Message::ReloadScreen)
-            }
             _ => None,
         }
     }

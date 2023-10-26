@@ -79,6 +79,7 @@ pub(super) enum Screen {
     Strategies,
     CreateStrategy,
     ConfirmStrategy,
+    StrategyContracts,
 }
 
 /// Component identifiers, required to triggers screen switch which involves mounting and
@@ -105,7 +106,7 @@ pub(super) enum InputType {
     SeedPhrase,
     WalletPrivateKey,
     SelectedStrategy,
-    EditContracts,
+    AddContract,
     SelectOperationType,
     // EditStartIdentities,
     // EditIdentityInserts,
@@ -135,6 +136,7 @@ pub(super) enum Message {
     UpdateLoadedWalletUTXOsAndBalance,
     SelectedStrategy(usize),
     AddStrategyContract(usize),
+    RemoveContract,
     RenameStrategy(String, String),
     LoadStrategy(usize),
     SelectOperationType(usize),
@@ -404,6 +406,22 @@ impl<'a> Model<'a> {
                         Vec::new(),
                     )
                     .expect("unable to remount screen");
+            },
+            Screen::StrategyContracts => {
+                self.app
+                    .remount(
+                        ComponentId::Screen,
+                        Box::new(StrategyContractsScreen::new(&self.state)),
+                        make_screen_subs(),
+                    )
+                    .expect("unable to remount screen");
+                self.app
+                    .remount(
+                        ComponentId::CommandPallet,
+                        Box::new(StrategyContractsScreenCommands::new()),
+                        Vec::new(),
+                    )
+                    .expect("unable to remount screen");
             }
         }
         self.app
@@ -496,9 +514,9 @@ impl Update<Message> for Model<'_> {
                                 .mount(ComponentId::Input, Box::new(StrategySelect::new(&self.state)), vec![])
                                 .expect("unable to mount component");
                         }
-                        InputType::EditContracts => {
+                        InputType::AddContract => {
                             self.app
-                                .mount(ComponentId::Input, Box::new(EditContractsStruct::new(&mut self.state)), vec![])
+                                .mount(ComponentId::Input, Box::new(AddContractStruct::new(&mut self.state)), vec![])
                                 .expect("unable to mount component");
                         }
                         InputType::SelectOperationType => {
@@ -679,7 +697,7 @@ impl Update<Message> for Model<'_> {
                     self.app
                         .mount(
                             ComponentId::CommandPallet,
-                            Box::new(CreateStrategyScreenCommands::new()),
+                            Box::new(StrategyContractsScreenCommands::new()),
                             vec![],
                         )
                         .expect("unable to mount component");
@@ -693,8 +711,8 @@ impl Update<Message> for Model<'_> {
                         strategy.strategy.contracts_with_updates.push((contract, None));
                         
                         let description_entry = strategy.description.entry("contracts_with_updates".to_string()).or_insert("-".to_string());
-                        if description_entry == "-" {
-                            *description_entry = name;
+                        if description_entry.is_empty() || description_entry == "-" {
+                            *description_entry = name.to_string();
                         } else {
                             description_entry.push_str(&format!(", {}", name));
                         }
@@ -704,11 +722,32 @@ impl Update<Message> for Model<'_> {
                     self.app
                     .remount(
                         ComponentId::Screen,
-                        Box::new(CreateStrategyScreen::new(&self.state)),
+                        Box::new(StrategyContractsScreen::new(&self.state)),
                         make_screen_subs(),
                     )
                     .expect("unable to remount screen");
 
+                    Some(Message::Redraw)
+                },
+                Message::RemoveContract => {
+                    let current_name = self.state.current_strategy.clone().unwrap();
+                    let current_strategy_details = self.state.available_strategies.get_mut(&current_name).unwrap();
+                    current_strategy_details.strategy.contracts_with_updates.pop();
+                    let description_contracts = current_strategy_details.description.get_mut("contracts_with_updates").unwrap();
+                    let mut values: Vec<&str> = description_contracts.split(',').collect();
+                    values.pop();
+                    *description_contracts = values.join(",");
+                
+                    self.state.save();
+                
+                    self.app
+                    .remount(
+                        ComponentId::Screen,
+                        Box::new(CreateStrategyScreen::new(&self.state)),
+                        make_screen_subs(),
+                    )
+                    .expect("unable to remount screen");
+                
                     Some(Message::Redraw)
                 },
                 Message::RenameStrategy(old, new) => {
