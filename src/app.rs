@@ -32,6 +32,8 @@ use crate::app::wallet::{SingleKeyWallet, Wallet};
 
 use crate::components::*;
 
+use self::strategies::default_strategy_details;
+
 fn make_screen_subs() -> Vec<Sub<ComponentId, NoUserEvent>> {
     vec![
         Sub::new(
@@ -137,6 +139,7 @@ pub(super) enum Message {
     LoadStrategy(usize),
     SelectOperationType(usize),
     DocumentOp(DataContract, DocumentType, DocumentAction),
+    AddNewStrategy,
 }
 
 pub(super) struct Model<'a> {
@@ -846,6 +849,21 @@ impl Update<Message> for Model<'_> {
                         description_entry.push_str(&format!(", {}", op_description));
                     }
 
+                    self.state.save();
+
+                    self.app
+                    .remount(
+                        ComponentId::Screen,
+                        Box::new(CreateStrategyScreen::new(&self.state)),
+                        make_screen_subs(),
+                    )
+                    .expect("unable to remount screen");
+
+                    Some(Message::Redraw)
+                },
+                Message::AddNewStrategy => {
+                    self.state.available_strategies.insert("new_strategy".to_string(), default_strategy_details());
+                    self.state.current_strategy = Some("new_strategy".to_string());
                     self.state.save();
 
                     self.app

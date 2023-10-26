@@ -27,10 +27,14 @@ impl CreateStrategyScreen {
         if let Some(strategy_key) = &app_state.current_strategy {
             // Append the current strategy name in bold to combined_spans
             combined_spans.push(TextSpan::new(strategy_key).bold());
-
+        
             if let Some(strategy) = app_state.available_strategies.get(strategy_key) {
                 for (key, value) in &strategy.description {
-                    combined_spans.push(TextSpan::new(&format!("{}: {}", key, value)));
+                    // Append key in normal style
+                    combined_spans.push(TextSpan::new(&format!("{}: ", key)));
+                    
+                    // Append value in italic style
+                    combined_spans.push(TextSpan::new(&format!("    {}",value)).italic());
                 }
             } else {
                 // Handle the case where the strategy_key doesn't exist in available_strategies
@@ -40,7 +44,7 @@ impl CreateStrategyScreen {
             // Handle the case where app_state.current_strategy is None
             combined_spans.push(TextSpan::new("No strategy loaded.").bold());
         }
-
+        
         CreateStrategyScreen {
             component: Paragraph::default().text(combined_spans.as_ref()),
         }
@@ -68,6 +72,22 @@ impl CreateStrategyScreenCommands {
                     key_type: KeyType::Command,
                 },
                 CommandPalletKey {
+                    key: 'a',
+                    description: "Add new empty strategy",
+                    key_type: KeyType::Command,
+                },
+                CommandPalletKey {
+                    key: 'l',
+                    description: "Load an existing strategy",
+                    key_type: KeyType::Command,
+                },
+                CommandPalletKey {
+                    key: 'r',
+                    description: "Rename current strategy",
+                    key_type: KeyType::Command,
+                },
+                // to do: add "e" for edit and navigate to the edit options below
+                CommandPalletKey {
                     key: 'c',
                     description: "Edit Contracts field",
                     key_type: KeyType::Command,
@@ -85,16 +105,6 @@ impl CreateStrategyScreenCommands {
                 CommandPalletKey {
                     key: 'i',
                     description: "Edit Identity Insertions field",
-                    key_type: KeyType::Command,
-                },
-                CommandPalletKey {
-                    key: 'l',
-                    description: "Load an existing strategy",
-                    key_type: KeyType::Command,
-                },
-                CommandPalletKey {
-                    key: 'r',
-                    description: "Rename strategy",
                     key_type: KeyType::Command,
                 },
             ]),
@@ -133,6 +143,10 @@ impl Component<Message, NoUserEvent> for CreateStrategyScreenCommands {
                 code: Key::Char('r'),
                 modifiers: KeyModifiers::NONE,
             }) => Some(Message::ExpectingInput(RenameStrategy)),
+            Event::Keyboard(KeyEvent {
+                code: Key::Char('a'),
+                modifiers: KeyModifiers::NONE,
+            }) => Some(Message::AddNewStrategy),
             _ => None,
         }
     }
