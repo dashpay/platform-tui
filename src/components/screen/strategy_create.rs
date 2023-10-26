@@ -59,29 +59,19 @@ impl CreateStrategyScreenCommands {
                     key_type: KeyType::Command,
                 },
                 CommandPalletKey {
-                    key: 'a',
-                    description: "Add new empty strategy",
-                    key_type: KeyType::Command,
-                },
-                CommandPalletKey {
-                    key: 'l',
-                    description: "Load an existing strategy",
-                    key_type: KeyType::Command,
-                },
-                CommandPalletKey {
                     key: 'r',
-                    description: "Rename current strategy",
+                    description: "Rename",
                     key_type: KeyType::Command,
                 },
                 // to do: add "e" for edit and navigate to the edit options below
                 CommandPalletKey {
                     key: 'c',
-                    description: "Edit Contracts field",
+                    description: "Contracts edit",
                     key_type: KeyType::Command,
                 },
                 CommandPalletKey {
                     key: 'o',
-                    description: "Edit Operations field",
+                    description: "Operations edit",
                     key_type: KeyType::Command,
                 },
                 // CommandPalletKey {
@@ -123,17 +113,9 @@ impl Component<Message, NoUserEvent> for CreateStrategyScreenCommands {
             //     modifiers: KeyModifiers::NONE,
             // }) => Some(Message::ExpectingInput(EditIdentityInserts)),
             Event::Keyboard(KeyEvent {
-                code: Key::Char('l'),
-                modifiers: KeyModifiers::NONE,
-            }) => Some(Message::ExpectingInput(LoadStrategy)),
-            Event::Keyboard(KeyEvent {
                 code: Key::Char('r'),
                 modifiers: KeyModifiers::NONE,
             }) => Some(Message::ExpectingInput(RenameStrategy)),
-            Event::Keyboard(KeyEvent {
-                code: Key::Char('a'),
-                modifiers: KeyModifiers::NONE,
-            }) => Some(Message::AddNewStrategy),
             _ => None,
         }
     }
@@ -178,70 +160,4 @@ impl Component<Message, NoUserEvent> for RenameStrategyStruct {
     }
 }
 
-#[derive(MockComponent)]
-pub(crate) struct LoadStrategyStruct {
-    component: List,
-    selected_index: usize,
-}
-
-impl LoadStrategyStruct {
-    pub(crate) fn new(app_state: &AppState) -> Self {
-        let strategies = &app_state.available_strategies;
-                
-        let mut rows = TableBuilder::default();
-        for (name, _) in strategies.iter() {
-            rows.add_col(TextSpan::from(name));
-            rows.add_row();
-        }
-
-        Self {
-            component: List::default()
-                    .title("Select a Strategy. Navigate with your arrow keys and press ENTER to select. Press 'q' to go back.", Alignment::Center)
-                    .scroll(true)
-                    .highlighted_str("> ")
-                    .rewind(true)
-                    .step(1)
-                    .rows(rows.build())
-                    .selected_line(0),
-                selected_index: 0,
-        }
-    }
-}
-
-impl Component<Message, NoUserEvent> for LoadStrategyStruct {
-    fn on(&mut self, ev: Event<NoUserEvent>) -> Option<Message> {
-        match ev {
-            Event::Keyboard(KeyEvent {
-                code: Key::Down, ..
-            }) => {
-                let max_index = self.component.states.list_len-2;
-                if self.selected_index < max_index {
-                    self.selected_index = self.selected_index + 1;
-                    self.perform(Cmd::Move(Direction::Down));
-                }
-                Some(Message::Redraw)
-            },
-            Event::Keyboard(KeyEvent { 
-                code: Key::Up, .. 
-            }) => {
-                if self.selected_index > 0 {
-                    self.selected_index -= 1;
-                    self.perform(Cmd::Move(Direction::Up));
-                }            
-                Some(Message::Redraw)
-            },
-            Event::Keyboard(KeyEvent {
-                code: Key::Enter, ..
-            }) => {
-                Some(Message::LoadStrategy(self.selected_index))
-            }
-            Event::Keyboard(KeyEvent {
-                code: Key::Char('q'), ..
-            }) => {
-                Some(Message::ReloadScreen)
-            }
-            _ => None,
-        }
-    }
-}
 

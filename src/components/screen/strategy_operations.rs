@@ -234,7 +234,7 @@ impl DocumentStruct {
 
     fn update_component_for_tpbr(&mut self) {
         self.selected_index = 0;
-        let ranges = vec!["1", "2", "5", "10", "20", "40"];
+        let ranges = vec!["1", "2", "5", "10", "20", "40", "100", "1000"];
         let mut rows = TableBuilder::default();
         for range in ranges {
             rows.add_col(TextSpan::from(range));
@@ -252,7 +252,7 @@ impl DocumentStruct {
 
     fn update_component_for_cpb(&mut self) {
         self.selected_index = 0;
-        let chances = vec!["1.0", "0.75", "0.5", "0.25", "0.1", "0.01"];
+        let chances = vec!["1.0", "0.9", "0.75", "0.5", "0.25", "0.1", "0.05", "0.01"];
         let mut rows = TableBuilder::default();
         for chance in chances {
             rows.add_col(TextSpan::from(chance));

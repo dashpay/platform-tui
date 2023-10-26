@@ -11,5 +11,6 @@ pub(crate) use screen::{
     CreateStrategyScreen, CreateStrategyScreenCommands, ConfirmStrategyScreen, ConfirmStrategyScreenCommands, StrategySelect,
     AddContractStruct, RenameStrategyStruct, LoadStrategyStruct, SelectOperationTypeStruct, DocumentStruct, DeleteStrategyStruct,
     StrategyContractsScreen, StrategyContractsScreenCommands, StrategyOperationsScreen, StrategyOperationsScreenCommands,
+    LoadStrategyScreen, LoadStrategyScreenCommands
 };
 pub(crate) use status::Status;

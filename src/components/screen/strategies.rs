@@ -74,7 +74,7 @@ impl Component<Message, NoUserEvent> for StrategiesScreenCommands {
             Event::Keyboard(KeyEvent {
                 code: Key::Char('c'),
                 modifiers: KeyModifiers::NONE,
-            }) => Some(Message::NextScreen(Screen::CreateStrategy)),
+            }) => Some(Message::NextScreen(Screen::LoadStrategy)),
             Event::Keyboard(KeyEvent {
                 code: Key::Char('d'),
                 modifiers: KeyModifiers::NONE,

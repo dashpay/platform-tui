@@ -77,6 +77,7 @@ pub(super) enum Screen {
     Wallet,
     AddWallet,
     Strategies,
+    LoadStrategy,
     CreateStrategy,
     ConfirmStrategy,
     StrategyContracts,
@@ -144,6 +145,7 @@ pub(super) enum Message {
     DocumentOp(DataContract, DocumentType, DocumentAction, u16, f64),
     RemoveOperation,
     AddNewStrategy,
+    DuplicateStrategy,
     DeleteStrategy(usize),
 }
 
@@ -373,6 +375,22 @@ impl<'a> Model<'a> {
                     .remount(
                         ComponentId::CommandPallet,
                         Box::new(StrategiesScreenCommands::new()),
+                        Vec::new(),
+                    )
+                    .expect("unable to remount screen");
+            },
+            Screen::LoadStrategy => {
+                self.app
+                    .remount(
+                        ComponentId::Screen,
+                        Box::new(LoadStrategyScreen::new(&self.state)),
+                        make_screen_subs(),
+                    )
+                    .expect("unable to remount screen");
+                self.app
+                    .remount(
+                        ComponentId::CommandPallet,
+                        Box::new(LoadStrategyScreenCommands::new()),
                         Vec::new(),
                     )
                     .expect("unable to remount screen");
@@ -805,7 +823,7 @@ impl Update<Message> for Model<'_> {
                     self.app
                         .mount(
                             ComponentId::CommandPallet,
-                            Box::new(CreateStrategyScreenCommands::new()),
+                            Box::new(LoadStrategyScreenCommands::new()),
                             vec![],
                         )
                         .expect("unable to mount component");
@@ -820,7 +838,7 @@ impl Update<Message> for Model<'_> {
                     self.app
                     .remount(
                         ComponentId::Screen,
-                        Box::new(CreateStrategyScreen::new(&self.state)),
+                        Box::new(LoadStrategyScreen::new(&self.state)),
                         make_screen_subs(),
                     )
                     .expect("unable to remount screen");
@@ -958,12 +976,30 @@ impl Update<Message> for Model<'_> {
                     self.app
                     .remount(
                         ComponentId::Screen,
-                        Box::new(CreateStrategyScreen::new(&self.state)),
+                        Box::new(LoadStrategyScreen::new(&self.state)),
                         make_screen_subs(),
                     )
                     .expect("unable to remount screen");
 
-                    Some(Message::ExpectingInput(InputType::RenameStrategy))
+                    Some(Message::Redraw)
+                },
+                Message::DuplicateStrategy => {
+                    if self.state.current_strategy.is_some() {
+                        let current = self.state.available_strategies.get(&self.state.current_strategy.clone().unwrap_or_default()).unwrap();
+                        self.state.available_strategies.insert("new_clone".to_string(), current.clone());
+                        self.state.current_strategy = Some("new_clone".to_string());
+                        self.state.save();
+
+                        self.app
+                        .remount(
+                            ComponentId::Screen,
+                            Box::new(LoadStrategyScreen::new(&self.state)),
+                            make_screen_subs(),
+                        )
+                        .expect("unable to remount screen");
+
+                        Some(Message::Redraw)
+                    } else { None }
                 },
                 Message::DeleteStrategy(index) => {
                     self.app
