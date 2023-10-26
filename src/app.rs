@@ -7,7 +7,6 @@ pub(crate) mod error;
 mod contract;
 pub(crate) mod strategies;
 
-use std::thread::current;
 use std::time::Duration;
 use dashcore::{Address, Network, PrivateKey};
 use dashcore::secp256k1::Secp256k1;
@@ -881,7 +880,7 @@ impl Update<Message> for Model<'_> {
                     )
                     .expect("unable to remount screen");
 
-                    Some(Message::Redraw)
+                    Some(Message::ExpectingInput(InputType::RenameStrategy))
                 },
                 Message::DeleteStrategy(index) => {
                     self.app

@@ -21,16 +21,12 @@ impl CreateStrategyScreen {
         let mut combined_spans = Vec::new();
         if let Some(strategy_key) = &app_state.current_strategy {
             // Append the current strategy name in bold to combined_spans
-            combined_spans.push(TextSpan::new(&format!("--- {} ---", strategy_key)).bold());
-            combined_spans.push(TextSpan::new(" "));
+            combined_spans.push(TextSpan::new(&format!("{}:", strategy_key)).bold());
         
             if let Some(strategy) = app_state.available_strategies.get(strategy_key) {
                 for (key, value) in &strategy.description {
-                    // Append key in normal style
-                    combined_spans.push(TextSpan::new(&format!("{}: ", key)).bold());
-                    
-                    // Append value in italic style
-                    combined_spans.push(TextSpan::new(&format!("{}",value)));
+                    combined_spans.push(TextSpan::new(&format!("  {}:", key)).bold());
+                    combined_spans.push(TextSpan::new(&format!("    {}",value)));
                 }
             } else {
                 // Handle the case where the strategy_key doesn't exist in available_strategies
