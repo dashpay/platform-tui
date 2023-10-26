@@ -119,6 +119,7 @@ pub(super) enum InputType {
     // ContractCreate,
     // ContractUpdate,
     // IdentityTransfer,
+    DeleteStrategy,
 }
 
 #[derive(Debug, PartialEq)]
@@ -140,6 +141,7 @@ pub(super) enum Message {
     SelectOperationType(usize),
     DocumentOp(DataContract, DocumentType, DocumentAction),
     AddNewStrategy,
+    DeleteStrategy(usize),
 }
 
 pub(super) struct Model<'a> {
@@ -520,6 +522,11 @@ impl Update<Message> for Model<'_> {
                                 .mount(ComponentId::Input, Box::new(LoadStrategyStruct::new(&mut self.state)), vec![])
                                 .expect("unable to mount component");
                         }
+                        InputType::DeleteStrategy => {
+                            self.app
+                                .mount(ComponentId::Input, Box::new(DeleteStrategyStruct::new(&mut self.state)), vec![])
+                                .expect("unable to mount component");
+                        }
                         InputType::RenameStrategy => {
                             self.app
                                 .mount(ComponentId::Input, Box::new(RenameStrategyStruct::new(&mut self.state)), vec![])
@@ -870,6 +877,38 @@ impl Update<Message> for Model<'_> {
                     .remount(
                         ComponentId::Screen,
                         Box::new(CreateStrategyScreen::new(&self.state)),
+                        make_screen_subs(),
+                    )
+                    .expect("unable to remount screen");
+
+                    Some(Message::Redraw)
+                },
+                Message::DeleteStrategy(index) => {
+                    self.app
+                        .umount(&ComponentId::Input)
+                        .expect("unable to umount component");
+                    self.app
+                        .mount(
+                            ComponentId::CommandPallet,
+                            Box::new(StrategiesScreenCommands::new()),
+                            vec![],
+                        )
+                        .expect("unable to mount component");
+                    self.app
+                        .active(&ComponentId::CommandPallet)
+                        .expect("cannot set active");
+
+                    self.state.current_strategy = None;
+                    if let Some(key) = self.state.available_strategies.keys().nth(index).cloned() {
+                        self.state.available_strategies.remove(&key);
+                    }
+                    self.state.save();
+
+                    self.app
+
+                    .remount(
+                        ComponentId::Screen,
+                        Box::new(StrategiesScreen::new()),
                         make_screen_subs(),
                     )
                     .expect("unable to remount screen");

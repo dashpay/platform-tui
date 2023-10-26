@@ -31,6 +31,7 @@ pub(crate) use add_wallet::PrivateKeyInput;
 pub(crate) use strategies::StrategiesScreen;
 pub(crate) use strategies::StrategiesScreenCommands;
 pub(crate) use strategies::StrategySelect;
+pub(crate) use strategies::DeleteStrategyStruct;
 pub(crate) use strategy_create::CreateStrategyScreen;
 pub(crate) use strategy_create::CreateStrategyScreenCommands;
 pub(crate) use strategy_create::EditContractsStruct;

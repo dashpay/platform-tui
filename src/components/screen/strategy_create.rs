@@ -8,7 +8,7 @@ use tui_realm_stdlib::{Paragraph, List, Input};
 use tuirealm::{MockComponent, Component, NoUserEvent, Event, event::{KeyEvent, Key, KeyModifiers}, props::{TextSpan, TableBuilder, Alignment}, command::{Cmd, Direction, CmdResult}, State, StateValue};
 
 use crate::{app::{Message, state::AppState, strategies::default_strategy_details}, mock_components::{CommandPallet, CommandPalletKey, KeyType, key_event_to_cmd}};
-use crate::app::InputType::{EditContracts, RenameStrategy, LoadStrategy, Document, SelectOperationType};
+use crate::app::InputType::{EditContracts, RenameStrategy, LoadStrategy, SelectOperationType};
 use dpp::{data_contract::{created_data_contract::CreatedDataContract, document_type::{DocumentType, random_document::{DocumentFieldFillSize, DocumentFieldFillType}}, accessors::v0::DataContractV0Getters}, prelude::DataContract};
 
 #[derive(MockComponent)]
@@ -19,22 +19,18 @@ pub(crate) struct CreateStrategyScreen {
 impl CreateStrategyScreen {
     pub(crate) fn new(app_state: &AppState) -> Self {
         let mut combined_spans = Vec::new();
-        combined_spans.push(TextSpan::new("Strategy creation commands"));
-        combined_spans.push(TextSpan::new(" "));
-        combined_spans.push(TextSpan::new("Current strategy:"));
-        combined_spans.push(TextSpan::new(" "));
-
         if let Some(strategy_key) = &app_state.current_strategy {
             // Append the current strategy name in bold to combined_spans
-            combined_spans.push(TextSpan::new(strategy_key).bold());
+            combined_spans.push(TextSpan::new(&format!("--- {} ---", strategy_key)).bold());
+            combined_spans.push(TextSpan::new(" "));
         
             if let Some(strategy) = app_state.available_strategies.get(strategy_key) {
                 for (key, value) in &strategy.description {
                     // Append key in normal style
-                    combined_spans.push(TextSpan::new(&format!("{}: ", key)));
+                    combined_spans.push(TextSpan::new(&format!("{}: ", key)).bold());
                     
                     // Append value in italic style
-                    combined_spans.push(TextSpan::new(&format!("    {}",value)).italic());
+                    combined_spans.push(TextSpan::new(&format!("{}",value)));
                 }
             } else {
                 // Handle the case where the strategy_key doesn't exist in available_strategies
@@ -97,16 +93,16 @@ impl CreateStrategyScreenCommands {
                     description: "Edit Operations field",
                     key_type: KeyType::Command,
                 },
-                CommandPalletKey {
-                    key: 's',
-                    description: "Edit Start Identities field",
-                    key_type: KeyType::Command,
-                },
-                CommandPalletKey {
-                    key: 'i',
-                    description: "Edit Identity Insertions field",
-                    key_type: KeyType::Command,
-                },
+                // CommandPalletKey {
+                //     key: 's',
+                //     description: "Edit Start Identities field",
+                //     key_type: KeyType::Command,
+                // },
+                // CommandPalletKey {
+                //     key: 'i',
+                //     description: "Edit Identity Insertions field",
+                //     key_type: KeyType::Command,
+                // },
             ]),
         }
     }
@@ -176,7 +172,7 @@ impl EditContractsStruct {
 
         Self {
             component: List::default()
-                    .title("Select a contract. Navigate with your arrow keys and press ENTER to select.", Alignment::Center)
+                    .title("Select a contract. Navigate with your arrow keys and press ENTER to select. Press 'q' to go back.", Alignment::Center)
                     .scroll(true)
                     .highlighted_str("> ")
                     .rewind(true)
@@ -214,6 +210,11 @@ impl Component<Message, NoUserEvent> for EditContractsStruct {
                 code: Key::Enter, ..
             }) => {
                 Some(Message::AddStrategyContract(self.selected_index))
+            }
+            Event::Keyboard(KeyEvent {
+                code: Key::Char('q'), ..
+            }) => {
+                Some(Message::ReloadScreen)
             }
             _ => None,
         }
@@ -277,7 +278,7 @@ impl LoadStrategyStruct {
 
         Self {
             component: List::default()
-                    .title("Select a Strategy. Navigate with your arrow keys and press ENTER to select.", Alignment::Center)
+                    .title("Select a Strategy. Navigate with your arrow keys and press ENTER to select. Press 'q' to go back.", Alignment::Center)
                     .scroll(true)
                     .highlighted_str("> ")
                     .rewind(true)
@@ -316,6 +317,11 @@ impl Component<Message, NoUserEvent> for LoadStrategyStruct {
             }) => {
                 Some(Message::LoadStrategy(self.selected_index))
             }
+            Event::Keyboard(KeyEvent {
+                code: Key::Char('q'), ..
+            }) => {
+                Some(Message::ReloadScreen)
+            }
             _ => None,
         }
     }
@@ -352,7 +358,7 @@ impl SelectOperationTypeStruct {
 
         Self {
             component: List::default()
-                    .title("Select an operation type. Navigate with your arrow keys and press ENTER to select.", Alignment::Center)
+                    .title("Select an operation type. Navigate with your arrow keys and press ENTER to select. Press 'q' to go back.", Alignment::Center)
                     .scroll(true)
                     .highlighted_str("> ")
                     .rewind(true)
@@ -390,6 +396,11 @@ impl Component<Message, NoUserEvent> for SelectOperationTypeStruct {
                 code: Key::Enter, ..
             }) => {
                 Some(Message::SelectOperationType(self.selected_index))
+            }
+            Event::Keyboard(KeyEvent {
+                code: Key::Char('q'), ..
+            }) => {
+                Some(Message::ReloadScreen)
             }
             _ => None,
         }
@@ -463,7 +474,7 @@ impl DocumentStruct {
 
         Self {
             component: List::default()
-                .title("Select an contract. Navigate with your arrow keys and press ENTER to select.", Alignment::Center)
+                .title("Select a contract. Navigate with your arrow keys and press ENTER to select. Press 'q' to go back.", Alignment::Center)
                 .scroll(true)
                 .highlighted_str("> ")
                 .rewind(true)
@@ -538,6 +549,11 @@ impl Component<Message, NoUserEvent> for DocumentStruct {
                         ))
                     }
                 }
+            }
+            Event::Keyboard(KeyEvent {
+                code: Key::Char('q'), ..
+            }) => {
+                Some(Message::ReloadScreen)
             }
             _ => None,
         }
