@@ -1,5 +1,8 @@
 //! Strategy Contracts screen
 
+use std::collections::BTreeMap;
+
+use dpp::data_contract::created_data_contract::CreatedDataContract;
 use tui_realm_stdlib::{Paragraph, List};
 use tuirealm::{MockComponent, Component, NoUserEvent, Event, event::{KeyEvent, Key, KeyModifiers}, props::{TextSpan, TableBuilder, Alignment}, command::{Cmd, Direction}};
 
@@ -56,17 +59,17 @@ impl StrategyContractsScreenCommands {
             component: CommandPallet::new(vec![
                 CommandPalletKey {
                     key: 'q',
-                    description: "Go Back",
+                    description: "Back",
                     key_type: KeyType::Command,
                 },
                 CommandPalletKey {
                     key: 'a',
-                    description: "Add contract",
+                    description: "Add",
                     key_type: KeyType::Command,
                 },
                 CommandPalletKey {
                     key: 'r',
-                    description: "Remove last contract",
+                    description: "Remove last",
                     key_type: KeyType::Command,
                 },
             ]),
@@ -94,13 +97,57 @@ impl Component<Message, NoUserEvent> for StrategyContractsScreenCommands {
     }
 }
 
+pub enum StrategySelectionState {
+    SelectFirst,
+    UpdatesOption { contracts: Vec<String> },
+    SelectSubsequent { contracts: Vec<String> },
+}
+
 #[derive(MockComponent)]
 pub(crate) struct AddContractStruct {
     component: List,
     selected_index: usize,
+    selection_state: StrategySelectionState,
+    known_contracts: BTreeMap<String, CreatedDataContract>,
 }
 
 impl AddContractStruct {
+    fn update_component_for_contract_update_option(&mut self) {
+        self.selected_index = 0;
+        let options = vec!["yes", "no"];
+        let mut rows = TableBuilder::default();
+        for option in options {
+            rows.add_col(TextSpan::from(option));
+            rows.add_row();
+        }
+        self.component = List::default()
+            .title("Would you like to add a contract update?", Alignment::Center)
+            .scroll(true)
+            .highlighted_str("> ")
+            .rewind(true)
+            .step(1)
+            .rows(rows.build())
+            .selected_line(0);
+    }
+
+    fn update_component_for_contract_update(&mut self) {
+        self.selected_index = 0;
+        let options = self.known_contracts.keys();
+        let mut rows = TableBuilder::default();
+        for option in options {
+            rows.add_col(TextSpan::from(option));
+            rows.add_row();
+        }
+        self.component = List::default()
+            .title("Select a contract update or press 'q' to go back", Alignment::Center)
+            .scroll(true)
+            .highlighted_str("> ")
+            .rewind(true)
+            .step(1)
+            .rows(rows.build())
+            .selected_line(0);
+    }
+
     pub(crate) fn new(app_state: &mut AppState) -> Self {
         if app_state.current_strategy.is_none() {
             app_state.current_strategy = Some("new_strategy".to_string());
@@ -125,7 +172,9 @@ impl AddContractStruct {
                     .step(1)
                     .rows(rows.build())
                     .selected_line(0),
-                selected_index: 0,
+            selected_index: 0,
+            selection_state: StrategySelectionState::SelectFirst,
+            known_contracts: app_state.known_contracts.clone(),
         }
     }
 }
@@ -155,7 +204,46 @@ impl Component<Message, NoUserEvent> for AddContractStruct {
             Event::Keyboard(KeyEvent {
                 code: Key::Enter, ..
             }) => {
-                Some(Message::AddStrategyContract(self.selected_index))
+                match &mut self.selection_state {
+                    StrategySelectionState::SelectFirst => {
+                        let mut contracts_with_updates = Vec::new();
+                        let (name, _) = self.known_contracts.iter().nth(self.selected_index).map(|(k, v)| (k.clone(), v.clone())).unwrap();
+                        contracts_with_updates.push(name);
+
+                        self.selection_state = StrategySelectionState::UpdatesOption { contracts: contracts_with_updates };
+                        self.update_component_for_contract_update_option();
+                        
+                        Some(Message::Redraw)                        
+                    },
+                    StrategySelectionState::UpdatesOption { contracts } => {
+                        // would you like to add contract updates?
+                        match self.selected_index {
+                            // yes
+                            0 => {
+                                self.selection_state = StrategySelectionState::SelectSubsequent { contracts: contracts.clone() };
+                                self.update_component_for_contract_update();
+                                
+                                Some(Message::Redraw)                                
+                            },
+                            // no
+                            1 => {
+                                Some(Message::AddStrategyContract(contracts.clone()))
+                            },
+                            _ => {
+                                panic!("invalid index in StrategySelectionState::UpdatesOption")
+                            }
+                        }
+                    },
+                    StrategySelectionState::SelectSubsequent { contracts } => {
+                        let (name, _) = self.known_contracts.iter().nth(self.selected_index).map(|(k, v)| (k.clone(), v.clone())).unwrap();
+                        contracts.push(name);
+
+                        self.selection_state = StrategySelectionState::UpdatesOption { contracts: contracts.clone() };
+                        self.update_component_for_contract_update_option();
+                        
+                        Some(Message::Redraw)                        
+                    }
+                }
             }
             Event::Keyboard(KeyEvent {
                 code: Key::Char('q'), ..

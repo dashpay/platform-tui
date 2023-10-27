@@ -55,17 +55,17 @@ impl LoadStrategyScreenCommands {
             component: CommandPallet::new(vec![
                 CommandPalletKey {
                     key: 'q',
-                    description: "Go Back",
+                    description: "Back",
                     key_type: KeyType::Command,
                 },
                 CommandPalletKey {
                     key: 'c',
-                    description: "Create new",
+                    description: "Create",
                     key_type: KeyType::Command,
                 },
                 CommandPalletKey {
                     key: 'l',
-                    description: "Load existing",
+                    description: "Load",
                     key_type: KeyType::Command,
                 },
                 CommandPalletKey {

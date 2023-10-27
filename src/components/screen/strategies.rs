@@ -37,22 +37,22 @@ impl StrategiesScreenCommands {
             component: CommandPallet::new(vec![
                 CommandPalletKey {
                     key: 'q',
-                    description: "Go back",
+                    description: "Back",
                     key_type: KeyType::Command,
                 },
                 CommandPalletKey {
                     key: 'r',
-                    description: "Run existing strategy",
+                    description: "Run",
                     key_type: KeyType::Command,
                 },
                 CommandPalletKey {
                     key: 'c',
-                    description: "Create or edit a strategy",
+                    description: "Create and edit",
                     key_type: KeyType::Command,
                 },
                 CommandPalletKey {
                     key: 'd',
-                    description: "Delete a strategy",
+                    description: "Delete",
                     key_type: KeyType::Command,
                 },
             ]),

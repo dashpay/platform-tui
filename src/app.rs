@@ -7,6 +7,7 @@ pub(crate) mod error;
 mod contract;
 pub(crate) mod strategies;
 
+use std::collections::BTreeMap;
 use std::time::Duration;
 use dashcore::{Address, Network, PrivateKey};
 use dashcore::secp256k1::Secp256k1;
@@ -137,7 +138,7 @@ pub(super) enum Message {
     AddSingleKeyWallet(String),
     UpdateLoadedWalletUTXOsAndBalance,
     SelectedStrategy(usize),
-    AddStrategyContract(usize),
+    AddStrategyContract(Vec<String>),
     RemoveContract,
     RenameStrategy(String, String),
     LoadStrategy(usize),
@@ -736,7 +737,7 @@ impl Update<Message> for Model<'_> {
                     self.state.save();
                     Some(Message::NextScreen(Screen::ConfirmStrategy))
                 },
-                Message::AddStrategyContract(index) => {
+                Message::AddStrategyContract(contracts) => {
                     self.app
                         .umount(&ComponentId::Input)
                         .expect("unable to umount component");
@@ -750,18 +751,35 @@ impl Update<Message> for Model<'_> {
                     self.app
                         .active(&ComponentId::CommandPallet)
                         .expect("cannot set active");
-
-                    let (name, contract) = self.state.known_contracts.iter().nth(index).map(|(k, v)| (k.clone(), v.clone())).unwrap();
+                        
                     let current = self.state.current_strategy.clone().unwrap_or_default();
                     if let Some(strategy) = self.state.available_strategies.get_mut(&current) {
-                        strategy.strategy.contracts_with_updates.push((contract, None));
+                        if let Some(first_contract_key) = contracts.get(0) {
+                            if let Some(first_contract) = self.state.known_contracts.get(first_contract_key) {
+                                if contracts.len() == 1 {
+                                    strategy.strategy.contracts_with_updates.push((first_contract.clone(), None));
+                                } else {
+                                    let mut contract_updates = BTreeMap::new();
                         
-                        let description_entry = strategy.description.entry("contracts_with_updates".to_string()).or_insert("".to_string());
-                        if description_entry.is_empty() || description_entry == "-" {
-                            *description_entry = name.to_string();
-                        } else {
-                            description_entry.push_str(&format!(", {}", name));
+                                    for (index, contract_key) in contracts.iter().enumerate().skip(1) {
+                                        if let Some(contract) = self.state.known_contracts.get(contract_key) {
+                                            contract_updates.insert(index as u64, contract.clone());
+                                        }
+                                    }
+                        
+                                    strategy.strategy.contracts_with_updates.push((first_contract.clone(), Some(contract_updates)));
+                                }
+                            }
                         }
+                            
+                        let description_entry = strategy.description.entry("contracts_with_updates".to_string()).or_insert("".to_string());
+                        
+                        let new_contracts_formatted = contracts.join("::");
+                        
+                        if !description_entry.is_empty() {
+                            description_entry.push_str(", ");
+                        }
+                        description_entry.push_str(&new_contracts_formatted);
                     }
                     self.state.save();
 

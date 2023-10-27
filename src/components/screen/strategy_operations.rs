@@ -60,17 +60,17 @@ impl StrategyOperationsScreenCommands {
             component: CommandPallet::new(vec![
                 CommandPalletKey {
                     key: 'q',
-                    description: "Go Back",
+                    description: "Back",
                     key_type: KeyType::Command,
                 },
                 CommandPalletKey {
                     key: 'a',
-                    description: "Add operation",
+                    description: "Add",
                     key_type: KeyType::Command,
                 },
                 CommandPalletKey {
                     key: 'r',
-                    description: "Remove last operation",
+                    description: "Remove last",
                     key_type: KeyType::Command,
                 },
             ]),

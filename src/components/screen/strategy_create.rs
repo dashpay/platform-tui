@@ -54,7 +54,7 @@ impl CreateStrategyScreenCommands {
             component: CommandPallet::new(vec![
                 CommandPalletKey {
                     key: 'q',
-                    description: "Go Back",
+                    description: "Back",
                     key_type: KeyType::Command,
                 },
                 CommandPalletKey {
