@@ -581,9 +581,19 @@ impl Update<Message> for Model<'_> {
                                 .expect("unable to mount component");
                         }
                         InputType::RenameStrategy => {
-                            self.app
+                            if self.state.current_strategy.is_some() {
+                                self.app
                                 .mount(ComponentId::Input, Box::new(RenameStrategyStruct::new(&mut self.state)), vec![])
                                 .expect("unable to mount component");
+                            } else {
+                                self.app
+                                    .mount(ComponentId::CommandPallet, Box::new(LoadStrategyScreenCommands::new()), vec![])
+                                    .expect("unable to mount component");
+                                self.app
+                                    .active(&ComponentId::CommandPallet)
+                                    .expect("cannot set active");
+                                return None
+                            }
                         }
                         InputType::Document => {
                             self.app
@@ -793,7 +803,7 @@ impl Update<Message> for Model<'_> {
                     self.app
                         .mount(
                             ComponentId::CommandPallet,
-                            Box::new(CreateStrategyScreenCommands::new()),
+                            Box::new(LoadStrategyScreenCommands::new()),
                             vec![],
                         )
                         .expect("unable to mount component");
@@ -809,7 +819,7 @@ impl Update<Message> for Model<'_> {
                     self.app
                     .remount(
                         ComponentId::Screen,
-                        Box::new(CreateStrategyScreen::new(&self.state)),
+                        Box::new(LoadStrategyScreen::new(&self.state)),
                         make_screen_subs(),
                     )
                     .expect("unable to remount screen");
@@ -981,7 +991,7 @@ impl Update<Message> for Model<'_> {
                     )
                     .expect("unable to remount screen");
 
-                    Some(Message::Redraw)
+                    Some(Message::ExpectingInput(InputType::RenameStrategy))
                 },
                 Message::DuplicateStrategy => {
                     if self.state.current_strategy.is_some() {
