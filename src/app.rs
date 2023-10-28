@@ -118,10 +118,8 @@ pub(super) enum InputType {
     Frequency,
     Document,
     // IdentityUpdate,
-    // IdentityWithdrawal,
     // ContractCreate,
     // ContractUpdate,
-    // IdentityTransfer,
     DeleteStrategy,
 }
 
@@ -146,6 +144,8 @@ pub(super) enum Message {
     Frequency(u16, f64),
     DocumentOp(DataContract, DocumentType, DocumentAction),
     IdentityTopUp,
+    IdentityWithdrawal,
+    IdentityTransfer,
     RemoveOperation,
     AddNewStrategy,
     DuplicateStrategy,
@@ -899,10 +899,10 @@ impl Update<Message> for Model<'_> {
                     let op_types = vec![
                         "Document", 
                         "IdentityTopUp", 
-                        "IdentityUpdate", 
+                        // "IdentityUpdate", 
                         "IdentityWithdrawal",
-                        "ContractCreate",
-                        "ContractUpdate",
+                        // "ContractCreate",
+                        // "ContractUpdate",
                         "IdentityTransfer",
                     ];
                                 
@@ -910,10 +910,10 @@ impl Update<Message> for Model<'_> {
                         Some(&"Document") => Some(Message::ExpectingInput(InputType::Document)),
                         Some(&"IdentityTopUp") => Some(Message::IdentityTopUp),
                         // Some(&"IdentityUpdate") => Some(Message::ExpectingInput(InputType::IdentityUpdate)),
-                        // Some(&"IdentityWithdrawal") => Some(Message::ExpectingInput(InputType::IdentityWithdrawal)),
+                        Some(&"IdentityWithdrawal") => Some(Message::IdentityWithdrawal),
                         // Some(&"ContractCreate") => Some(Message::ExpectingInput(InputType::ContractCreate)),
                         // Some(&"ContractUpdate") => Some(Message::ExpectingInput(InputType::ContractUpdate)),
-                        // Some(&"IdentityTransfer") => Some(Message::ExpectingInput(InputType::IdentityTransfer)),
+                        Some(&"IdentityTransfer") => Some(Message::IdentityTransfer),
                         _ => None,
                     }
                 },
@@ -1021,8 +1021,6 @@ impl Update<Message> for Model<'_> {
                         frequency: Frequency::default(),
                     });
 
-                    println!("operation pushed");
-
                     let op_description = "IdentityTopUp".to_string();
                     
                     let description_entry = current_strategy_details.description.entry("operations".to_string()).or_insert("".to_string());
@@ -1031,16 +1029,47 @@ impl Update<Message> for Model<'_> {
                     } else {
                         description_entry.push_str(&format!(", {}", op_description));
                     }
-
-                    self.app
-                        .remount(
-                            ComponentId::Screen,
-                            Box::new(StrategyOperationsScreen::new(&self.state)),
-                            make_screen_subs(),
-                        )
-                        .expect("unable to remount screen");
                     
-                    println!("about to call frequency");
+                    Some(Message::ExpectingInput(InputType::Frequency))
+                },
+                Message::IdentityWithdrawal => {
+                    let current_strategy_key = self.state.current_strategy.clone().unwrap();
+                    let current_strategy_details = self.state.available_strategies.get_mut(&current_strategy_key).unwrap();
+                    let current_strategy = &mut current_strategy_details.strategy;
+                    current_strategy.operations.push(Operation {
+                        op_type: OperationType::IdentityWithdrawal,
+                        frequency: Frequency::default(),
+                    });
+
+                    let op_description = "IdentityWithdrawal".to_string();
+                    
+                    let description_entry = current_strategy_details.description.entry("operations".to_string()).or_insert("".to_string());
+                    if description_entry.is_empty() || description_entry == "-" {
+                        *description_entry = op_description;
+                    } else {
+                        description_entry.push_str(&format!(", {}", op_description));
+                    }
+                    
+                    Some(Message::ExpectingInput(InputType::Frequency))
+                },
+                Message::IdentityTransfer => {
+                    let current_strategy_key = self.state.current_strategy.clone().unwrap();
+                    let current_strategy_details = self.state.available_strategies.get_mut(&current_strategy_key).unwrap();
+                    let current_strategy = &mut current_strategy_details.strategy;
+                    current_strategy.operations.push(Operation {
+                        op_type: OperationType::IdentityTransfer,
+                        frequency: Frequency::default(),
+                    });
+
+                    let op_description = "IdentityTransfer".to_string();
+                    
+                    let description_entry = current_strategy_details.description.entry("operations".to_string()).or_insert("".to_string());
+                    if description_entry.is_empty() || description_entry == "-" {
+                        *description_entry = op_description;
+                    } else {
+                        description_entry.push_str(&format!(", {}", op_description));
+                    }
+                    
                     Some(Message::ExpectingInput(InputType::Frequency))
                 },
                 Message::RemoveOperation => {

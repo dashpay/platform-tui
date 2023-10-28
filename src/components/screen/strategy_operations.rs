@@ -115,10 +115,10 @@ impl SelectOperationTypeStruct {
             "Document".to_string(), 
             "IdentityTopUp".to_string(), 
             // "IdentityUpdate".to_string(), 
-            // "IdentityWithdrawal".to_string(),
+            "IdentityWithdrawal".to_string(),
             // "ContractCreate".to_string(),
             // "ContractUpdate".to_string(),
-            // "IdentityTransfer".to_string(),
+            "IdentityTransfer".to_string(),
             ];
                 
         let mut rows = TableBuilder::default();
