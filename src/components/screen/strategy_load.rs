@@ -47,75 +47,118 @@ impl Component<Message, NoUserEvent> for LoadStrategyScreen {
 #[derive(MockComponent)]
 pub(crate) struct LoadStrategyScreenCommands {
     component: CommandPallet,
+    state: AppState,
 }
 
 impl LoadStrategyScreenCommands {
-    pub(crate) fn new() -> Self {
-        Self {
-            component: CommandPallet::new(vec![
-                CommandPalletKey {
-                    key: 'q',
-                    description: "Back",
-                    key_type: KeyType::Command,
-                },
-                CommandPalletKey {
-                    key: 'c',
-                    description: "Create",
-                    key_type: KeyType::Command,
-                },
-                CommandPalletKey {
-                    key: 'l',
-                    description: "Load",
-                    key_type: KeyType::Command,
-                },
-                CommandPalletKey {
-                    key: 'e',
-                    description: "Edit",
-                    key_type: KeyType::Command,
-                },
-                CommandPalletKey {
-                    key: 'r',
-                    description: "Rename",
-                    key_type: KeyType::Command,
-                },
-                CommandPalletKey {
-                    key: 'd',
-                    description: "Duplicate",
-                    key_type: KeyType::Command,
-                },
-            ]),
+    pub(crate) fn new(app_state: &AppState) -> Self {
+        if app_state.current_strategy.is_some() {
+            Self {
+                component: CommandPallet::new(vec![
+                    CommandPalletKey {
+                        key: 'q',
+                        description: "Back",
+                        key_type: KeyType::Command,
+                    },
+                    CommandPalletKey {
+                        key: 'e',
+                        description: "Edit",
+                        key_type: KeyType::Command,
+                    },
+                    CommandPalletKey {
+                        key: 'r',
+                        description: "Rename",
+                        key_type: KeyType::Command,
+                    },
+                    CommandPalletKey {
+                        key: 'd',
+                        description: "Duplicate",
+                        key_type: KeyType::Command,
+                    },
+                    CommandPalletKey {
+                        key: 'c',
+                        description: "Create",
+                        key_type: KeyType::Command,
+                    },
+                    CommandPalletKey {
+                        key: 'l',
+                        description: "Load",
+                        key_type: KeyType::Command,
+                    },
+                ]),
+                state: app_state.clone(),
+            }
+        } else {
+            Self {
+                component: CommandPallet::new(vec![
+                    CommandPalletKey {
+                        key: 'q',
+                        description: "Back",
+                        key_type: KeyType::Command,
+                    },
+                    CommandPalletKey {
+                        key: 'c',
+                        description: "Create",
+                        key_type: KeyType::Command,
+                    },
+                    CommandPalletKey {
+                        key: 'l',
+                        description: "Load",
+                        key_type: KeyType::Command,
+                    },
+                ]),
+                state: app_state.clone(),
+            }
         }
     }
 }
 
 impl Component<Message, NoUserEvent> for LoadStrategyScreenCommands {
     fn on(&mut self, ev: Event<NoUserEvent>) -> Option<Message> {
-        match ev {
-            Event::Keyboard(KeyEvent {
-                code: Key::Char('q'),
-                modifiers: KeyModifiers::NONE,
-            }) => Some(Message::PrevScreen),
-            Event::Keyboard(KeyEvent {
-                code: Key::Char('l'),
-                modifiers: KeyModifiers::NONE,
-            }) => Some(Message::ExpectingInput(LoadStrategy)),
-            Event::Keyboard(KeyEvent {
-                code: Key::Char('c'),
-                modifiers: KeyModifiers::NONE,
-            }) => Some(Message::AddNewStrategy),
-            Event::Keyboard(KeyEvent {
-                code: Key::Char('e'),
-                modifiers: KeyModifiers::NONE,
-            }) => Some(Message::NextScreen(Screen::CreateStrategy)),
-            Event::Keyboard(KeyEvent {
-                code: Key::Char('r'),
-                modifiers: KeyModifiers::NONE,
-            }) => Some(Message::ExpectingInput(RenameStrategy)),
-            Event::Keyboard(KeyEvent {
-                code: Key::Char('d'),
-                modifiers: KeyModifiers::NONE,
-            }) => Some(Message::DuplicateStrategy),
-            _ => None,
+        if self.state.current_strategy.is_some() {
+            match ev {
+                Event::Keyboard(KeyEvent {
+                    code: Key::Char('q'),
+                    modifiers: KeyModifiers::NONE,
+                }) => Some(Message::PrevScreen),
+                Event::Keyboard(KeyEvent {
+                    code: Key::Char('e'),
+                    modifiers: KeyModifiers::NONE,
+                }) => Some(Message::NextScreen(Screen::CreateStrategy)),
+                Event::Keyboard(KeyEvent {
+                    code: Key::Char('r'),
+                    modifiers: KeyModifiers::NONE,
+                }) => Some(Message::ExpectingInput(RenameStrategy)),
+                Event::Keyboard(KeyEvent {
+                    code: Key::Char('d'),
+                    modifiers: KeyModifiers::NONE,
+                }) => Some(Message::DuplicateStrategy),
+                Event::Keyboard(KeyEvent {
+                    code: Key::Char('l'),
+                    modifiers: KeyModifiers::NONE,
+                }) => Some(Message::ExpectingInput(LoadStrategy)),
+                Event::Keyboard(KeyEvent {
+                    code: Key::Char('c'),
+                    modifiers: KeyModifiers::NONE,
+                }) => Some(Message::AddNewStrategy),
+                _ => None,
+            }
+        } else {
+            match ev {
+                Event::Keyboard(KeyEvent {
+                    code: Key::Char('q'),
+                    modifiers: KeyModifiers::NONE,
+                }) => Some(Message::PrevScreen),
+                Event::Keyboard(KeyEvent {
+                    code: Key::Char('l'),
+                    modifiers: KeyModifiers::NONE,
+                }) => Some(Message::ExpectingInput(LoadStrategy)),
+                Event::Keyboard(KeyEvent {
+                    code: Key::Char('c'),
+                    modifiers: KeyModifiers::NONE,
+                }) => Some(Message::AddNewStrategy),
+                _ => None,
+            }
         }
     }
 }

@@ -113,7 +113,7 @@ impl SelectOperationTypeStruct {
 
         let op_types: Vec<String> = vec![
             "Document".to_string(), 
-            // "IdentityTopUp".to_string(), 
+            "IdentityTopUp".to_string(), 
             // "IdentityUpdate".to_string(), 
             // "IdentityWithdrawal".to_string(),
             // "ContractCreate".to_string(),
@@ -178,12 +178,138 @@ impl Component<Message, NoUserEvent> for SelectOperationTypeStruct {
     }
 }
 
+enum FrequencySelectionState {
+    SelectingTimesPerBlockRange,
+    SelectingChancePerBlock { tpbr: u16 },
+}
+
+#[derive(MockComponent)]
+pub(crate) struct FrequencyStruct {
+    component: List,
+    selected_index: usize,
+    selection_state: FrequencySelectionState,
+}
+
+impl FrequencyStruct {
+    fn update_component_for_cpb(&mut self) {
+        self.selected_index = 0;
+        let chances = vec!["1.0", "0.9", "0.75", "0.5", "0.25", "0.1", "0.05", "0.01"];
+        let mut rows = TableBuilder::default();
+        for chance in chances {
+            rows.add_col(TextSpan::from(chance));
+            rows.add_row();
+        }
+        self.component = List::default()
+            .title("Select the chance per block for the action to occur", Alignment::Center)
+            .scroll(true)
+            .highlighted_str("> ")
+            .rewind(true)
+            .step(1)
+            .rows(rows.build())
+            .selected_line(0);
+    }
+
+    pub(crate) fn new(app_state: &mut AppState) -> Self {
+        let ranges = vec!["1", "2", "5", "10", "20", "40", "100", "1000"];
+        let mut rows = TableBuilder::default();
+        for range in ranges.iter() {
+            rows.add_col(TextSpan::from(range));
+            rows.add_row();
+        }
+
+        Self {
+            component: List::default()
+                .title("Select the maximum times per block for the action to occur", Alignment::Center)
+                .scroll(true)
+                .highlighted_str("> ")
+                .rewind(true)
+                .step(1)
+                .rows(rows.build())
+                .selected_line(0),
+            selected_index: 0,
+            selection_state: FrequencySelectionState::SelectingTimesPerBlockRange,
+        }
+    }
+}
+
+impl Component<Message, NoUserEvent> for FrequencyStruct {
+    fn on(&mut self, ev: Event<NoUserEvent>) -> Option<Message> {
+        match ev {
+            Event::Keyboard(KeyEvent {
+                code: Key::Down, ..
+            }) => {
+                let max_index = self.component.states.list_len-2;
+                if self.selected_index < max_index {
+                    self.selected_index = self.selected_index + 1;
+                    self.perform(Cmd::Move(Direction::Down));
+                }
+                Some(Message::Redraw)
+            },
+            Event::Keyboard(KeyEvent { 
+                code: Key::Up, .. 
+            }) => {
+                if self.selected_index > 0 {
+                    self.selected_index -= 1;
+                    self.perform(Cmd::Move(Direction::Up));
+                }            
+                Some(Message::Redraw)
+            },
+            Event::Keyboard(KeyEvent { code: Key::Enter, .. }) => {
+                match &mut self.selection_state {
+                    FrequencySelectionState::SelectingTimesPerBlockRange => {
+                        let tpbr = match self.selected_index {
+                            0 => 1,
+                            1 => 2,
+                            2 => 5,
+                            3 => 10,
+                            4 => 20,
+                            5 => 40,
+                            6 => 100,
+                            7 => 1000,
+                            _ => panic!("Invalid tpbr index"),
+                        };
+
+                        self.selection_state = FrequencySelectionState::SelectingChancePerBlock { 
+                            tpbr,
+                        };
+
+                        self.update_component_for_cpb();
+
+                        Some(Message::Redraw)
+                    },
+                    FrequencySelectionState::SelectingChancePerBlock { tpbr } => {
+                        let cpb = match self.selected_index {
+                            0 => 1.0,
+                            1 => 0.9,
+                            2 => 0.75,
+                            3 => 0.5,
+                            4 => 0.25,
+                            5 => 0.1,
+                            6 => 0.05,
+                            7 => 0.01,
+                            _ => panic!("Invalid tpbr index"),
+                        };
+                        Some(Message::Frequency(
+                            tpbr.clone(),
+                            cpb,
+                        ))
+                    },
+                }
+            }
+            Event::Keyboard(KeyEvent {
+                code: Key::Char('q'), ..
+            }) => {
+                Some(Message::ReloadScreen)
+            }
+            _ => None,
+        }
+    }
+}
+
 enum DocumentSelectionState {
     SelectingContract,
     SelectingDocumentType { contract: DataContract },
     SelectingAction { contract: DataContract, doc_type: DocumentType },
-    SelectingTimesPerBlockRange { contract: DataContract, doc_type: DocumentType, action: DocumentAction },
-    SelectingChancePerBlock { contract: DataContract, doc_type: DocumentType, action: DocumentAction, tpbr: u16 },
 }
 
 #[derive(MockComponent)]
@@ -224,42 +350,6 @@ impl DocumentStruct {
         }
         self.component = List::default()
             .title("Select an action. Navigate with your arrow keys and press ENTER to select.", Alignment::Center)
-            .scroll(true)
-            .highlighted_str("> ")
-            .rewind(true)
-            .step(1)
-            .rows(rows.build())
-            .selected_line(0);
-    }
-
-    fn update_component_for_tpbr(&mut self) {
-        self.selected_index = 0;
-        let ranges = vec!["1", "2", "5", "10", "20", "40", "100", "1000"];
-        let mut rows = TableBuilder::default();
-        for range in ranges {
-            rows.add_col(TextSpan::from(range));
-            rows.add_row();
-        }
-        self.component = List::default()
-            .title("Select the maximum times per block for the action to occur", Alignment::Center)
-            .scroll(true)
-            .highlighted_str("> ")
-            .rewind(true)
-            .step(1)
-            .rows(rows.build())
-            .selected_line(0);
-    }
-
-    fn update_component_for_cpb(&mut self) {
-        self.selected_index = 0;
-        let chances = vec!["1.0", "0.9", "0.75", "0.5", "0.25", "0.1", "0.05", "0.01"];
-        let mut rows = TableBuilder::default();
-        for chance in chances {
-            rows.add_col(TextSpan::from(chance));
-            rows.add_row();
-        }
-        self.component = List::default()
-            .title("Select the chance per block for the action to occur", Alignment::Center)
             .scroll(true)
             .highlighted_str("> ")
             .rewind(true)
@@ -352,58 +442,10 @@ impl Component<Message, NoUserEvent> for DocumentStruct {
                             _ => panic!("Invalid action index"),
                         };
 
-                        self.selection_state = DocumentSelectionState::SelectingTimesPerBlockRange { 
-                            contract: contract.clone(),
-                            doc_type: doc_type.clone(),
-                            action: action.clone(),
-                        };
-
-                        self.update_component_for_tpbr();
-
-                        Some(Message::Redraw)
-                    },
-                    DocumentSelectionState::SelectingTimesPerBlockRange { contract, doc_type, action } => {
-                        let tpbr = match self.selected_index {
-                            0 => 1,
-                            1 => 2,
-                            2 => 5,
-                            3 => 10,
-                            4 => 20,
-                            5 => 40,
-                            6 => 100,
-                            7 => 1000,
-                            _ => panic!("Invalid tpbr index"),
-                        };
-
-                        self.selection_state = DocumentSelectionState::SelectingChancePerBlock { 
-                            contract: contract.clone(),
-                            doc_type: doc_type.clone(),
-                            action: action.clone(),
-                            tpbr,
-                        };
-
-                        self.update_component_for_cpb();
-
-                        Some(Message::Redraw)
-                    },
-                    DocumentSelectionState::SelectingChancePerBlock { contract, doc_type, action, tpbr } => {
-                        let cpb = match self.selected_index {
-                            0 => 1.0,
-                            1 => 0.9,
-                            2 => 0.75,
-                            3 => 0.5,
-                            4 => 0.25,
-                            5 => 0.1,
-                            6 => 0.05,
-                            7 => 0.01,
-                            _ => panic!("Invalid tpbr index"),
-                        };
                         Some(Message::DocumentOp(
                             contract.clone(), 
                             doc_type.clone(),
                             action.clone(),
-                            tpbr.clone(),
-                            cpb,
                         ))
                     },
                 }

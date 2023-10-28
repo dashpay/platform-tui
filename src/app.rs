@@ -115,8 +115,8 @@ pub(super) enum InputType {
     // EditIdentityInserts,
     LoadStrategy,
     RenameStrategy,
+    Frequency,
     Document,
-    // IdentityTopUp,
     // IdentityUpdate,
     // IdentityWithdrawal,
     // ContractCreate,
@@ -143,7 +143,9 @@ pub(super) enum Message {
     RenameStrategy(String, String),
     LoadStrategy(usize),
     SelectOperationType(usize),
-    DocumentOp(DataContract, DocumentType, DocumentAction, u16, f64),
+    Frequency(u16, f64),
+    DocumentOp(DataContract, DocumentType, DocumentAction),
+    IdentityTopUp,
     RemoveOperation,
     AddNewStrategy,
     DuplicateStrategy,
@@ -391,7 +393,7 @@ impl<'a> Model<'a> {
                 self.app
                     .remount(
                         ComponentId::CommandPallet,
-                        Box::new(LoadStrategyScreenCommands::new()),
+                        Box::new(LoadStrategyScreenCommands::new(&self.state)),
                         Vec::new(),
                     )
                     .expect("unable to remount screen");
@@ -588,13 +590,18 @@ impl Update<Message> for Model<'_> {
                                 .expect("unable to mount component");
                             } else {
                                 self.app
-                                    .mount(ComponentId::CommandPallet, Box::new(LoadStrategyScreenCommands::new()), vec![])
+                                    .mount(ComponentId::CommandPallet, Box::new(LoadStrategyScreenCommands::new(&self.state)), vec![])
                                     .expect("unable to mount component");
                                 self.app
                                     .active(&ComponentId::CommandPallet)
                                     .expect("cannot set active");
                                 return None
                             }
+                        }
+                        InputType::Frequency => {
+                            self.app
+                                .mount(ComponentId::Input, Box::new(FrequencyStruct::new(&mut self.state)), vec![])
+                                .expect("unable to mount component");
                         }
                         InputType::Document => {
                             self.app
@@ -821,7 +828,7 @@ impl Update<Message> for Model<'_> {
                     self.app
                         .mount(
                             ComponentId::CommandPallet,
-                            Box::new(LoadStrategyScreenCommands::new()),
+                            Box::new(LoadStrategyScreenCommands::new(&self.state)),
                             vec![],
                         )
                         .expect("unable to mount component");
@@ -845,23 +852,24 @@ impl Update<Message> for Model<'_> {
                     Some(Message::Redraw)
                 },
                 Message::LoadStrategy(index) => {
+
+                    let strategy = self.state.available_strategies.iter().nth(index).map(|(k, _)| k.clone()).unwrap_or_default();
+                    self.state.current_strategy = Some(strategy);
+                    self.state.save();
+
                     self.app
                         .umount(&ComponentId::Input)
                         .expect("unable to umount component");
                     self.app
                         .mount(
                             ComponentId::CommandPallet,
-                            Box::new(LoadStrategyScreenCommands::new()),
+                            Box::new(LoadStrategyScreenCommands::new(&self.state)),
                             vec![],
                         )
                         .expect("unable to mount component");
                     self.app
                         .active(&ComponentId::CommandPallet)
                         .expect("cannot set active");
-
-                    let strategy = self.state.available_strategies.iter().nth(index).map(|(k, _)| k.clone()).unwrap_or_default();
-                    self.state.current_strategy = Some(strategy);
-                    self.state.save();
     
                     self.app
                     .remount(
@@ -900,7 +908,7 @@ impl Update<Message> for Model<'_> {
                                 
                     match op_types.get(index) {
                         Some(&"Document") => Some(Message::ExpectingInput(InputType::Document)),
-                        // Some(&"IdentityTopUp") => Some(Message::ExpectingInput(InputType::IdentityTopUp)),
+                        Some(&"IdentityTopUp") => Some(Message::IdentityTopUp),
                         // Some(&"IdentityUpdate") => Some(Message::ExpectingInput(InputType::IdentityUpdate)),
                         // Some(&"IdentityWithdrawal") => Some(Message::ExpectingInput(InputType::IdentityWithdrawal)),
                         // Some(&"ContractCreate") => Some(Message::ExpectingInput(InputType::ContractCreate)),
@@ -909,7 +917,49 @@ impl Update<Message> for Model<'_> {
                         _ => None,
                     }
                 },
-                Message::DocumentOp(contract, doc_type, action, tpbr, cpb) => {
+                Message::Frequency(tpbr, cpb) => {
+                    self.app
+                        .umount(&ComponentId::Input)
+                        .expect("unable to umount component");
+                    self.app
+                        .mount(
+                            ComponentId::CommandPallet,
+                            Box::new(StrategyOperationsScreenCommands::new()),
+                            vec![],
+                        )
+                        .expect("unable to mount component");
+                    self.app
+                        .active(&ComponentId::CommandPallet)
+                        .expect("cannot set active");
+
+                    let current_name = &self.state.current_strategy;
+                    let current_strategy = self.state.available_strategies.get_mut(&current_name.clone().unwrap()).unwrap();
+                    let mut last_op = current_strategy.strategy.operations.pop().unwrap();
+                    last_op.frequency = Frequency { times_per_block_range: 1..tpbr, chance_per_block: Some(cpb) };
+                    current_strategy.strategy.operations.push(last_op);
+
+                    let description = current_strategy.description.get(&"operations".to_string());
+                    let mut values: Vec<&str> = description.unwrap().split(',').collect();
+                    let last_value = values.pop().unwrap_or(&"");
+                    let freq = format!("::TBPR={}::CPB={}", tpbr, cpb);
+                    let new_value = last_value.clone().to_string() + &freq;
+                    values.push(&new_value);
+                    let desc: String = values.join(",");
+                    current_strategy.description.insert("operations".to_string(), desc);
+
+                    self.state.save();
+
+                    self.app
+                        .remount(
+                            ComponentId::Screen,
+                            Box::new(StrategyOperationsScreen::new(&self.state)),
+                            make_screen_subs(),
+                        )
+                        .expect("unable to remount screen");
+    
+                    Some(Message::Redraw)
+                },
+                Message::DocumentOp(contract, doc_type, action) => {
                     self.app
                         .umount(&ComponentId::Input)
                         .expect("unable to umount component");
@@ -933,13 +983,10 @@ impl Update<Message> for Model<'_> {
                     op_vec.push(doc_op.clone());
                     let current_strategy_key = self.state.current_strategy.clone().unwrap();
                     let current_strategy_details = self.state.available_strategies.get_mut(&current_strategy_key).unwrap();
-                    let mut current_strategy = current_strategy_details.strategy.clone();
+                    let current_strategy = &mut current_strategy_details.strategy;
                     current_strategy.operations.push(Operation {
                         op_type: OperationType::Document(doc_op),
-                        frequency: Frequency {
-                            times_per_block_range: 1..tpbr,
-                            chance_per_block: Some(cpb),
-                        },
+                        frequency: Frequency::default(),
                     });
 
                     let action_name = match action {
@@ -949,12 +996,34 @@ impl Update<Message> for Model<'_> {
                         DocumentAction::DocumentActionInsertSpecific(_, _, _, _) => "InsertSpecific",
                     };
 
-                    let op_description = format!("DocumentOp::{}::{}::{}::{}", 
+                    let op_description = format!("DocumentOp::{}::{}", 
                         doc_type.name(), 
                         action_name,
-                        format!("MTPB={}",tpbr),
-                        format!("CPB={}",cpb),
                     );
+                    
+                    let description_entry = current_strategy_details.description.entry("operations".to_string()).or_insert("".to_string());
+                    if description_entry.is_empty() {
+                        *description_entry = op_description;
+                    } else {
+                        description_entry.push_str(&format!(", {}", op_description));
+                    }
+
+                    self.state.save();
+
+                    Some(Message::ExpectingInput(InputType::Frequency))
+                },
+                Message::IdentityTopUp => {
+                    let current_strategy_key = self.state.current_strategy.clone().unwrap();
+                    let current_strategy_details = self.state.available_strategies.get_mut(&current_strategy_key).unwrap();
+                    let current_strategy = &mut current_strategy_details.strategy;
+                    current_strategy.operations.push(Operation {
+                        op_type: OperationType::IdentityTopUp,
+                        frequency: Frequency::default(),
+                    });
+
+                    println!("operation pushed");
+
+                    let op_description = "IdentityTopUp".to_string();
                     
                     let description_entry = current_strategy_details.description.entry("operations".to_string()).or_insert("".to_string());
                     if description_entry.is_empty() || description_entry == "-" {
@@ -963,17 +1032,16 @@ impl Update<Message> for Model<'_> {
                         description_entry.push_str(&format!(", {}", op_description));
                     }
 
-                    self.state.save();
-
                     self.app
-                    .remount(
-                        ComponentId::Screen,
-                        Box::new(StrategyOperationsScreen::new(&self.state)),
-                        make_screen_subs(),
-                    )
-                    .expect("unable to remount screen");
-
-                    Some(Message::Redraw)
+                        .remount(
+                            ComponentId::Screen,
+                            Box::new(StrategyOperationsScreen::new(&self.state)),
+                            make_screen_subs(),
+                        )
+                        .expect("unable to remount screen");
+                    
+                    println!("about to call frequency");
+                    Some(Message::ExpectingInput(InputType::Frequency))
                 },
                 Message::RemoveOperation => {
                     let current_name = self.state.current_strategy.clone().unwrap();
@@ -1026,7 +1094,7 @@ impl Update<Message> for Model<'_> {
                         )
                         .expect("unable to remount screen");
 
-                        Some(Message::Redraw)
+                        Some(Message::ExpectingInput(InputType::RenameStrategy))
                     } else { None }
                 },
                 Message::DeleteStrategy(index) => {
@@ -1044,8 +1112,10 @@ impl Update<Message> for Model<'_> {
                         .active(&ComponentId::CommandPallet)
                         .expect("cannot set active");
 
-                    self.state.current_strategy = None;
                     if let Some(key) = self.state.available_strategies.keys().nth(index).cloned() {
+                        if self.state.current_strategy == Some(key.clone()) {
+                            self.state.current_strategy = None
+                        }
                         self.state.available_strategies.remove(&key);
                     }
                     self.state.save();

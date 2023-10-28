@@ -42,6 +42,7 @@ pub(crate) use strategy_load::RenameStrategyStruct;
 pub(crate) use strategy_create::CreateStrategyScreen;
 pub(crate) use strategy_create::CreateStrategyScreenCommands;
 pub(crate) use strategy_operations::SelectOperationTypeStruct;
+pub(crate) use strategy_operations::FrequencyStruct;
 pub(crate) use strategy_operations::DocumentStruct;
 pub(crate) use strategy_operations::StrategyOperationsScreen;
 pub(crate) use strategy_operations::StrategyOperationsScreenCommands;
