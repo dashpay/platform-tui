@@ -102,7 +102,7 @@ impl StrategySelect {
 
         Self {
             component: List::default()
-                    .title("Select a Strategy. Navigate with your arrow keys and press ENTER to select. Press 'q' to go back.", Alignment::Center)
+                    .title("Select a Strategy. Press 'q' to go back.", Alignment::Center)
                     .scroll(true)
                     .highlighted_str("> ")
                     .rewind(true)
@@ -169,7 +169,7 @@ impl DeleteStrategyStruct {
 
         Self {
             component: List::default()
-                    .title("Select a Strategy. Navigate with your arrow keys and press ENTER to select. Press 'q' to go back.", Alignment::Center)
+                    .title("Select a Strategy. Press 'q' to go back.", Alignment::Center)
                     .scroll(true)
                     .highlighted_str("> ")
                     .rewind(true)

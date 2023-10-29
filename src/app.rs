@@ -17,7 +17,7 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::prelude::DataContract;
 use rs_dapi_client::DapiClient;
 use strategy_tests::frequency::Frequency;
-use strategy_tests::operations::{DocumentAction, DocumentOp, Operation, OperationType};
+use strategy_tests::operations::{DocumentAction, DocumentOp, Operation, OperationType, IdentityUpdateOp};
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
     props::PropPayload,
@@ -117,7 +117,7 @@ pub(super) enum InputType {
     RenameStrategy,
     Frequency,
     Document,
-    // IdentityUpdate,
+    IdentityUpdate,
     // ContractCreate,
     // ContractUpdate,
     DeleteStrategy,
@@ -146,6 +146,7 @@ pub(super) enum Message {
     IdentityTopUp,
     IdentityWithdrawal,
     IdentityTransfer,
+    IdentityUpdate(String, u16),
     RemoveOperation,
     AddNewStrategy,
     DuplicateStrategy,
@@ -600,7 +601,7 @@ impl Update<Message> for Model<'_> {
                         }
                         InputType::Frequency => {
                             self.app
-                                .mount(ComponentId::Input, Box::new(FrequencyStruct::new(&mut self.state)), vec![])
+                                .mount(ComponentId::Input, Box::new(FrequencyStruct::new()), vec![])
                                 .expect("unable to mount component");
                         }
                         InputType::Document => {
@@ -608,21 +609,11 @@ impl Update<Message> for Model<'_> {
                                 .mount(ComponentId::Input, Box::new(DocumentStruct::new(&mut self.state)), vec![])
                                 .expect("unable to mount component");
                         }
-                        // InputType::IdentityTopUp => {
-                        //     self.app
-                        //         .mount(ComponentId::Input, Box::new(IdentityTopUpStruct::new(&mut self.state)), vec![])
-                        //         .expect("unable to mount component");
-                        // }
-                        // InputType::IdentityUpdate => {
-                        //     self.app
-                        //         .mount(ComponentId::Input, Box::new(IdentityUpdateStruct::new(&mut self.state)), vec![])
-                        //         .expect("unable to mount component");
-                        // }
-                        // InputType::IdentityWithdrawal => {
-                        //     self.app
-                        //         .mount(ComponentId::Input, Box::new(IdentityWithdrawalStruct::new(&mut self.state)), vec![])
-                        //         .expect("unable to mount component");
-                        // }
+                        InputType::IdentityUpdate => {
+                            self.app
+                                .mount(ComponentId::Input, Box::new(IdentityUpdateStruct::new(&mut self.state)), vec![])
+                                .expect("unable to mount component");
+                        }
                         // InputType::ContractCreate => {
                         //     self.app
                         //         .mount(ComponentId::Input, Box::new(ContractCreateStruct::new(&mut self.state)), vec![])
@@ -631,11 +622,6 @@ impl Update<Message> for Model<'_> {
                         // InputType::ContractUpdate => {
                         //     self.app
                         //         .mount(ComponentId::Input, Box::new(ContractUpdateStruct::new(&mut self.state)), vec![])
-                        //         .expect("unable to mount component");
-                        // }
-                        // InputType::IdentityTransfer => {
-                        //     self.app
-                        //         .mount(ComponentId::Input, Box::new(IdentityTransferStruct::new(&mut self.state)), vec![])
                         //         .expect("unable to mount component");
                         // }
                     }
@@ -899,7 +885,7 @@ impl Update<Message> for Model<'_> {
                     let op_types = vec![
                         "Document", 
                         "IdentityTopUp", 
-                        // "IdentityUpdate", 
+                        "IdentityUpdate", 
                         "IdentityWithdrawal",
                         // "ContractCreate",
                         // "ContractUpdate",
@@ -909,7 +895,7 @@ impl Update<Message> for Model<'_> {
                     match op_types.get(index) {
                         Some(&"Document") => Some(Message::ExpectingInput(InputType::Document)),
                         Some(&"IdentityTopUp") => Some(Message::IdentityTopUp),
-                        // Some(&"IdentityUpdate") => Some(Message::ExpectingInput(InputType::IdentityUpdate)),
+                        Some(&"IdentityUpdate") => Some(Message::ExpectingInput(InputType::IdentityUpdate)),
                         Some(&"IdentityWithdrawal") => Some(Message::IdentityWithdrawal),
                         // Some(&"ContractCreate") => Some(Message::ExpectingInput(InputType::ContractCreate)),
                         // Some(&"ContractUpdate") => Some(Message::ExpectingInput(InputType::ContractUpdate)),
@@ -1070,6 +1056,58 @@ impl Update<Message> for Model<'_> {
                         description_entry.push_str(&format!(", {}", op_description));
                     }
                     
+                    Some(Message::ExpectingInput(InputType::Frequency))
+                },
+                Message::IdentityUpdate(op, count) => {
+                    self.app
+                        .umount(&ComponentId::Input)
+                        .expect("unable to umount component");
+                    self.app
+                        .mount(
+                            ComponentId::CommandPallet,
+                            Box::new(StrategyOperationsScreenCommands::new()),
+                            vec![],
+                        )
+                        .expect("unable to mount component");
+                    self.app
+                        .active(&ComponentId::CommandPallet)
+                        .expect("cannot set active");
+
+                    let op = match op.as_str() {
+                        "add" => IdentityUpdateOp::IdentityUpdateAddKeys(count),
+                        "disable" => IdentityUpdateOp::IdentityUpdateDisableKey(count),
+                        _ => panic!("not an IdentityUpdate variant")
+                    };
+                    
+                    let mut op_vec = Vec::new();
+                    op_vec.push(op.clone());
+                    let current_strategy_key = self.state.current_strategy.clone().unwrap();
+                    let current_strategy_details = self.state.available_strategies.get_mut(&current_strategy_key).unwrap();
+                    let current_strategy = &mut current_strategy_details.strategy;
+                    current_strategy.operations.push(Operation {
+                        op_type: OperationType::IdentityUpdate(op.clone()),
+                        frequency: Frequency::default(),
+                    });
+
+                    let op_type = match op {
+                        IdentityUpdateOp::IdentityUpdateAddKeys(_) => "AddKeys",
+                        IdentityUpdateOp::IdentityUpdateDisableKey(_) => "DisableKey",
+                    };
+
+                    let op_description = format!("IdentityUpdate::{}::{}", 
+                        op_type, 
+                        count,
+                    );
+                    
+                    let description_entry = current_strategy_details.description.entry("operations".to_string()).or_insert("".to_string());
+                    if description_entry.is_empty() {
+                        *description_entry = op_description;
+                    } else {
+                        description_entry.push_str(&format!(", {}", op_description));
+                    }
+
+                    self.state.save();
+
                     Some(Message::ExpectingInput(InputType::Frequency))
                 },
                 Message::RemoveOperation => {

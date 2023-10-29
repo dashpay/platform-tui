@@ -165,7 +165,7 @@ impl AddContractStruct {
 
         Self {
             component: List::default()
-                    .title("Select a contract. Navigate with your arrow keys and press ENTER to select. Press 'q' to go back.", Alignment::Center)
+                    .title("Select a contract. Press 'q' to go back.", Alignment::Center)
                     .scroll(true)
                     .highlighted_str("> ")
                     .rewind(true)

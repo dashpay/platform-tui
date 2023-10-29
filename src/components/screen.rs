@@ -44,6 +44,7 @@ pub(crate) use strategy_create::CreateStrategyScreenCommands;
 pub(crate) use strategy_operations::SelectOperationTypeStruct;
 pub(crate) use strategy_operations::FrequencyStruct;
 pub(crate) use strategy_operations::DocumentStruct;
+pub(crate) use strategy_operations::IdentityUpdateStruct;
 pub(crate) use strategy_operations::StrategyOperationsScreen;
 pub(crate) use strategy_operations::StrategyOperationsScreenCommands;
 pub(crate) use strategy_confirm::ConfirmStrategyScreen;

@@ -114,7 +114,7 @@ impl SelectOperationTypeStruct {
         let op_types: Vec<String> = vec![
             "Document".to_string(), 
             "IdentityTopUp".to_string(), 
-            // "IdentityUpdate".to_string(), 
+            "IdentityUpdate".to_string(), 
             "IdentityWithdrawal".to_string(),
             // "ContractCreate".to_string(),
             // "ContractUpdate".to_string(),
@@ -129,7 +129,7 @@ impl SelectOperationTypeStruct {
 
         Self {
             component: List::default()
-                    .title("Select an operation type. Navigate with your arrow keys and press ENTER to select. Press 'q' to go back.", Alignment::Center)
+                    .title("Select an operation type. Press 'q' to go back.", Alignment::Center)
                     .scroll(true)
                     .highlighted_str("> ")
                     .rewind(true)
@@ -209,7 +209,7 @@ impl FrequencyStruct {
             .selected_line(0);
     }
 
-    pub(crate) fn new(app_state: &mut AppState) -> Self {
+    pub(crate) fn new() -> Self {
         let ranges = vec!["1", "2", "5", "10", "20", "40", "100", "1000"];
         let mut rows = TableBuilder::default();
         for range in ranges.iter() {
@@ -331,7 +331,7 @@ impl DocumentStruct {
             rows.add_row();
         }
         self.component = List::default()
-            .title("Select a document type. Navigate with your arrow keys and press ENTER to select.", Alignment::Center)
+            .title("Select a document type. Press 'q' to go back.", Alignment::Center)
             .scroll(true)
             .highlighted_str("> ")
             .rewind(true)
@@ -349,7 +349,7 @@ impl DocumentStruct {
             rows.add_row();
         }
         self.component = List::default()
-            .title("Select an action. Navigate with your arrow keys and press ENTER to select.", Alignment::Center)
+            .title("Select an action. Press 'q' to go back.", Alignment::Center)
             .scroll(true)
             .highlighted_str("> ")
             .rewind(true)
@@ -373,7 +373,7 @@ impl DocumentStruct {
 
         Self {
             component: List::default()
-                .title("Select a contract. Navigate with your arrow keys and press ENTER to select. Press 'q' to go back.", Alignment::Center)
+                .title("Select a contract. Press 'q' to go back.", Alignment::Center)
                 .scroll(true)
                 .highlighted_str("> ")
                 .rewind(true)
@@ -447,6 +447,164 @@ impl Component<Message, NoUserEvent> for DocumentStruct {
                             doc_type.clone(),
                             action.clone(),
                         ))
+                    },
+                }
+            }
+            Event::Keyboard(KeyEvent {
+                code: Key::Char('q'), ..
+            }) => {
+                Some(Message::ReloadScreen)
+            }
+            _ => None,
+        }
+    }
+}
+
+enum IdentityUpdateSelectionState {
+    SelectingOp,
+    SelectingAddKeys { op: String },
+    SelectingDisableKeys { op: String },
+}
+
+#[derive(MockComponent)]
+pub(crate) struct IdentityUpdateStruct {
+    component: List,
+    selected_index: usize,
+    selection_state: IdentityUpdateSelectionState,
+}
+
+impl IdentityUpdateStruct {
+
+    fn update_component_for_add_keys(&mut self) {
+        self.selected_index = 0;
+
+        let options = vec!["1", "10", "100", "1000", "10000", "65535"];
+
+        let mut rows = TableBuilder::default();
+        for option in options {
+            rows.add_col(TextSpan::from(option));
+            rows.add_row();
+        }
+        self.component = List::default()
+            .title("How many keys to add? Press 'q' to go back.", Alignment::Center)
+            .scroll(true)
+            .highlighted_str("> ")
+            .rewind(true)
+            .step(1)
+            .rows(rows.build())
+            .selected_line(0);
+    }
+
+    fn update_component_for_disable_keys(&mut self) {
+        self.selected_index = 0;
+
+        let options = vec!["1", "10", "100", "1000", "10000", "65535"];
+
+        let mut rows = TableBuilder::default();
+        for option in options {
+            rows.add_col(TextSpan::from(option));
+            rows.add_row();
+        }
+        self.component = List::default()
+            .title("How many keys to disable? Press 'q' to go back.", Alignment::Center)
+            .scroll(true)
+            .highlighted_str("> ")
+            .rewind(true)
+            .step(1)
+            .rows(rows.build())
+            .selected_line(0);
+    }
+
+    pub(crate) fn new(app_state: &mut AppState) -> Self {
+
+        let options = vec!["Add keys","Disable keys"];
+        let mut rows = TableBuilder::default();
+        for option in options {
+            rows.add_col(TextSpan::from(option));
+            rows.add_row();
+        }
+
+        Self {
+            component: List::default()
+                .title("Select an IdentityUpdate operation. Press 'q' to go back.", Alignment::Center)
+                .scroll(true)
+                .highlighted_str("> ")
+                .rewind(true)
+                .step(1)
+                .rows(rows.build())
+                .selected_line(0),
+            selected_index: 0,
+            selection_state: IdentityUpdateSelectionState::SelectingOp,
+        }
+    }
+}
+
+impl Component<Message, NoUserEvent> for IdentityUpdateStruct {
+    fn on(&mut self, ev: Event<NoUserEvent>) -> Option<Message> {
+        match ev {
+            Event::Keyboard(KeyEvent {
+                code: Key::Down, ..
+            }) => {
+                let max_index = self.component.states.list_len-2;
+                if self.selected_index < max_index {
+                    self.selected_index = self.selected_index + 1;
+                    self.perform(Cmd::Move(Direction::Down));
+                }
+                Some(Message::Redraw)
+            },
+            Event::Keyboard(KeyEvent { 
+                code: Key::Up, .. 
+            }) => {
+                if self.selected_index > 0 {
+                    self.selected_index -= 1;
+                    self.perform(Cmd::Move(Direction::Up));
+                }            
+                Some(Message::Redraw)
+            },
+            Event::Keyboard(KeyEvent { code: Key::Enter, .. }) => {
+                match &mut self.selection_state {
+                    IdentityUpdateSelectionState::SelectingOp => {
+                        match self.selected_index {
+                            0 => {
+                                self.selection_state = IdentityUpdateSelectionState::SelectingAddKeys { op: "add".to_string() };
+                                self.update_component_for_add_keys();
+                            },
+                            1 => {
+                                self.selection_state = IdentityUpdateSelectionState::SelectingDisableKeys { op: "disable".to_string() };
+                                self.update_component_for_disable_keys();
+                            },
+                            _ => panic!("IdentityUpdateSelectionState::SelectingOp index out of bounds"),
+                        };
+
+                        Some(Message::Redraw)
+                    },
+                    IdentityUpdateSelectionState::SelectingAddKeys { op: op } => {     
+
+                        let count: u16 = match self.selected_index {
+                            0 => 1,
+                            1 => 10,
+                            2 => 100,
+                            3 => 1000,
+                            4 => 10000,
+                            5 => 65535,
+                            _ => panic!("IdentityUpdateSelectionState::SelectingAddKeys index out of bounds"),
+                        };
+                        
+                        Some(Message::IdentityUpdate(op.to_string(), count))
+                    },
+                    IdentityUpdateSelectionState::SelectingDisableKeys { op: op } => {
+                        
+                        let count: u16 = match self.selected_index {
+                            0 => 1,
+                            1 => 10,
+                            2 => 100,
+                            3 => 1000,
+                            4 => 10000,
+                            5 => 65535,
+                            _ => panic!("IdentityUpdateSelectionState::SelectingDisableKeys index out of bounds"),
+                        };
+                        
+                        Some(Message::IdentityUpdate(op.to_string(), count))
                     },
                 }
             }
