@@ -611,7 +611,7 @@ impl Update<Message> for Model<'_> {
                         }
                         InputType::IdentityUpdate => {
                             self.app
-                                .mount(ComponentId::Input, Box::new(IdentityUpdateStruct::new(&mut self.state)), vec![])
+                                .mount(ComponentId::Input, Box::new(IdentityUpdateStruct::new()), vec![])
                                 .expect("unable to mount component");
                         }
                         // InputType::ContractCreate => {
@@ -1171,7 +1171,7 @@ impl Update<Message> for Model<'_> {
                     self.app
                         .mount(
                             ComponentId::CommandPallet,
-                            Box::new(StrategiesScreenCommands::new()),
+                            Box::new(LoadStrategyScreenCommands::new(&self.state)),
                             vec![],
                         )
                         .expect("unable to mount component");
@@ -1191,7 +1191,7 @@ impl Update<Message> for Model<'_> {
 
                     .remount(
                         ComponentId::Screen,
-                        Box::new(StrategiesScreen::new()),
+                        Box::new(LoadStrategyScreen::new(&self.state)),
                         make_screen_subs(),
                     )
                     .expect("unable to remount screen");

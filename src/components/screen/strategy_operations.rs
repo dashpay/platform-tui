@@ -515,7 +515,7 @@ impl IdentityUpdateStruct {
             .selected_line(0);
     }
 
-    pub(crate) fn new(app_state: &mut AppState) -> Self {
+    pub(crate) fn new() -> Self {
 
         let options = vec!["Add keys","Disable keys"];
         let mut rows = TableBuilder::default();
@@ -578,7 +578,7 @@ impl Component<Message, NoUserEvent> for IdentityUpdateStruct {
 
                         Some(Message::Redraw)
                     },
-                    IdentityUpdateSelectionState::SelectingAddKeys { op: op } => {     
+                    IdentityUpdateSelectionState::SelectingAddKeys { op } => {     
 
                         let count: u16 = match self.selected_index {
                             0 => 1,
@@ -592,7 +592,7 @@ impl Component<Message, NoUserEvent> for IdentityUpdateStruct {
                         
                         Some(Message::IdentityUpdate(op.to_string(), count))
                     },
-                    IdentityUpdateSelectionState::SelectingDisableKeys { op: op } => {
+                    IdentityUpdateSelectionState::SelectingDisableKeys { op } => {
                         
                         let count: u16 = match self.selected_index {
                             0 => 1,
