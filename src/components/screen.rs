@@ -13,6 +13,8 @@ mod strategy_create;
 mod strategy_confirm;
 mod strategy_contracts;
 mod strategy_operations;
+mod strategy_start_identities;
+mod strategy_identity_inserts;
 
 pub(crate) use contract::ContractScreen;
 pub(crate) use contract::ContractScreenCommands;
@@ -52,5 +54,14 @@ pub(crate) use strategy_confirm::ConfirmStrategyScreenCommands;
 pub(crate) use strategy_contracts::AddContractStruct;
 pub(crate) use strategy_contracts::StrategyContractsScreen;
 pub(crate) use strategy_contracts::StrategyContractsScreenCommands;
+pub(crate) use strategy_start_identities::StrategyStartIdentitiesScreen;
+pub(crate) use strategy_start_identities::StrategyStartIdentitiesScreenCommands;
+pub(crate) use strategy_start_identities::StartIdentitiesStruct;
+pub(crate) use strategy_identity_inserts::IdentitiesInsertsStruct;
+pub(crate) use strategy_identity_inserts::StrategyIdentityInsertsScreen;
+pub(crate) use strategy_identity_inserts::StrategyIdentityInsertsScreenCommands;
+
+
+
 
 

@@ -188,6 +188,7 @@ pub(crate) struct FrequencyStruct {
     component: List,
     selected_index: usize,
     selection_state: FrequencySelectionState,
+    field: String
 }
 
 impl FrequencyStruct {
@@ -209,7 +210,7 @@ impl FrequencyStruct {
             .selected_line(0);
     }
 
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(field: String) -> Self {
         let ranges = vec!["1", "2", "5", "10", "20", "40", "100", "1000"];
         let mut rows = TableBuilder::default();
         for range in ranges.iter() {
@@ -228,6 +229,7 @@ impl FrequencyStruct {
                 .selected_line(0),
             selected_index: 0,
             selection_state: FrequencySelectionState::SelectingTimesPerBlockRange,
+            field: field,
         }
     }
 }
@@ -290,6 +292,7 @@ impl Component<Message, NoUserEvent> for FrequencyStruct {
                             _ => panic!("Invalid tpbr index"),
                         };
                         Some(Message::Frequency(
+                            self.field.clone(),
                             tpbr.clone(),
                             cpb,
                         ))

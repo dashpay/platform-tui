@@ -4,6 +4,7 @@ use tui_realm_stdlib::Paragraph;
 use tuirealm::{MockComponent, Component, NoUserEvent, Event, event::{KeyEvent, Key, KeyModifiers}, props::TextSpan};
 
 use crate::{app::{Message, state::AppState, Screen}, mock_components::{CommandPallet, CommandPalletKey, KeyType}};
+use crate::app::InputType::StartIdentities;
 
 #[derive(MockComponent)]
 pub(crate) struct CreateStrategyScreen {
@@ -67,16 +68,16 @@ impl CreateStrategyScreenCommands {
                     description: "Operations",
                     key_type: KeyType::Command,
                 },
-                // CommandPalletKey {
-                //     key: 's',
-                //     description: "Edit Start Identities field",
-                //     key_type: KeyType::Command,
-                // },
-                // CommandPalletKey {
-                //     key: 'i',
-                //     description: "Edit Identity Insertions field",
-                //     key_type: KeyType::Command,
-                // },
+                CommandPalletKey {
+                    key: 's',
+                    description: "Start Identities",
+                    key_type: KeyType::Command,
+                },
+                CommandPalletKey {
+                    key: 'i',
+                    description: "Identities Inserts",
+                    key_type: KeyType::Command,
+                },
             ]),
         }
     }
@@ -97,14 +98,14 @@ impl Component<Message, NoUserEvent> for CreateStrategyScreenCommands {
                 code: Key::Char('o'),
                 modifiers: KeyModifiers::NONE,
             }) => Some(Message::NextScreen(Screen::StrategyOperations)),
-            // Event::Keyboard(KeyEvent {
-            //     code: Key::Char('s'),
-            //     modifiers: KeyModifiers::NONE,
-            // }) => Some(Message::ExpectingInput(EditStartIdentities)),
-            // Event::Keyboard(KeyEvent {
-            //     code: Key::Char('i'),
-            //     modifiers: KeyModifiers::NONE,
-            // }) => Some(Message::ExpectingInput(EditIdentityInserts)),
+            Event::Keyboard(KeyEvent {
+                code: Key::Char('s'),
+                modifiers: KeyModifiers::NONE,
+            }) => Some(Message::NextScreen(Screen::StartIdentities)),
+            Event::Keyboard(KeyEvent {
+                code: Key::Char('i'),
+                modifiers: KeyModifiers::NONE,
+            }) => Some(Message::NextScreen(Screen::IdentityInserts)),
             _ => None,
         }
     }

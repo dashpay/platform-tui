@@ -9,15 +9,20 @@ pub(crate) mod strategies;
 
 use std::collections::BTreeMap;
 use std::time::Duration;
+use dashcore::secp256k1::rand::SeedableRng;
+use dashcore::secp256k1::rand::rngs::StdRng;
 use dashcore::{Address, Network, PrivateKey};
 use dashcore::secp256k1::Secp256k1;
 
 use dpp::data_contract::document_type::DocumentType;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::prelude::DataContract;
+use dpp::version::PlatformVersion;
 use rs_dapi_client::DapiClient;
+use simple_signer::signer::SimpleSigner;
 use strategy_tests::frequency::Frequency;
 use strategy_tests::operations::{DocumentAction, DocumentOp, Operation, OperationType, IdentityUpdateOp};
+use strategy_tests::transitions::create_identities_state_transitions;
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
     props::PropPayload,
@@ -83,6 +88,8 @@ pub(super) enum Screen {
     ConfirmStrategy,
     StrategyContracts,
     StrategyOperations,
+    IdentityInserts,
+    StartIdentities,
 }
 
 /// Component identifiers, required to triggers screen switch which involves mounting and
@@ -111,11 +118,10 @@ pub(super) enum InputType {
     SelectedStrategy,
     AddContract,
     SelectOperationType,
-    // EditStartIdentities,
-    // EditIdentityInserts,
+    StartIdentities,
     LoadStrategy,
     RenameStrategy,
-    Frequency,
+    Frequency(String),
     Document,
     IdentityUpdate,
     // ContractCreate,
@@ -141,7 +147,7 @@ pub(super) enum Message {
     RenameStrategy(String, String),
     LoadStrategy(usize),
     SelectOperationType(usize),
-    Frequency(u16, f64),
+    Frequency(String, u16, f64),
     DocumentOp(DataContract, DocumentType, DocumentAction),
     IdentityTopUp,
     IdentityWithdrawal,
@@ -151,6 +157,10 @@ pub(super) enum Message {
     AddNewStrategy,
     DuplicateStrategy,
     DeleteStrategy(usize),
+    IdentityInserts,
+    RemoveIdentityInserts,
+    StartIdentities(u16, u32),
+    RemoveStartIdentities,
 }
 
 pub(super) struct Model<'a> {
@@ -463,6 +473,38 @@ impl<'a> Model<'a> {
                     )
                     .expect("unable to remount screen");
             },
+            Screen::IdentityInserts => {
+                self.app
+                    .remount(
+                        ComponentId::Screen,
+                        Box::new(StrategyIdentityInsertsScreen::new(&self.state)),
+                        make_screen_subs(),
+                    )
+                    .expect("unable to remount screen");
+                self.app
+                    .remount(
+                        ComponentId::CommandPallet,
+                        Box::new(StrategyIdentityInsertsScreenCommands::new()),
+                        Vec::new(),
+                    )
+                    .expect("unable to remount screen");
+            },
+            Screen::StartIdentities => {
+                self.app
+                    .remount(
+                        ComponentId::Screen,
+                        Box::new(StrategyStartIdentitiesScreen::new(&self.state)),
+                        make_screen_subs(),
+                    )
+                    .expect("unable to remount screen");
+                self.app
+                    .remount(
+                        ComponentId::CommandPallet,
+                        Box::new(StrategyStartIdentitiesScreenCommands::new()),
+                        Vec::new(),
+                    )
+                    .expect("unable to remount screen");
+            }
         }
         self.app
             .attr(
@@ -564,16 +606,11 @@ impl Update<Message> for Model<'_> {
                                 .mount(ComponentId::Input, Box::new(SelectOperationTypeStruct::new(&mut self.state)), vec![])
                                 .expect("unable to mount component");
                         }
-                        // InputType::EditStartIdentities => {
-                        //     self.app
-                        //         .mount(ComponentId::Input, Box::new(EditStartIdentitiesStruct::new(&self.state)), vec![])
-                        //         .expect("unable to mount component");
-                        // }
-                        // InputType::EditIdentityInserts => {
-                        //     self.app
-                        //         .mount(ComponentId::Input, Box::new(EditIdentityInsertsStruct::new(&self.state)), vec![])
-                        //         .expect("unable to mount component");
-                        // }
+                        InputType::StartIdentities => {
+                            self.app
+                                .mount(ComponentId::Input, Box::new(StartIdentitiesStruct::new(&mut self.state)), vec![])
+                                .expect("unable to mount component");
+                        }
                         InputType::LoadStrategy => {
                             self.app
                                 .mount(ComponentId::Input, Box::new(LoadStrategyStruct::new(&mut self.state)), vec![])
@@ -599,9 +636,9 @@ impl Update<Message> for Model<'_> {
                                 return None
                             }
                         }
-                        InputType::Frequency => {
+                        InputType::Frequency(field) => {
                             self.app
-                                .mount(ComponentId::Input, Box::new(FrequencyStruct::new()), vec![])
+                                .mount(ComponentId::Input, Box::new(FrequencyStruct::new(field)), vec![])
                                 .expect("unable to mount component");
                         }
                         InputType::Document => {
@@ -903,45 +940,76 @@ impl Update<Message> for Model<'_> {
                         _ => None,
                     }
                 },
-                Message::Frequency(tpbr, cpb) => {
+                Message::Frequency(field, tpbr, cpb) => {
                     self.app
                         .umount(&ComponentId::Input)
                         .expect("unable to umount component");
-                    self.app
-                        .mount(
-                            ComponentId::CommandPallet,
-                            Box::new(StrategyOperationsScreenCommands::new()),
-                            vec![],
-                        )
-                        .expect("unable to mount component");
-                    self.app
-                        .active(&ComponentId::CommandPallet)
-                        .expect("cannot set active");
 
                     let current_name = &self.state.current_strategy;
                     let current_strategy = self.state.available_strategies.get_mut(&current_name.clone().unwrap()).unwrap();
-                    let mut last_op = current_strategy.strategy.operations.pop().unwrap();
-                    last_op.frequency = Frequency { times_per_block_range: 1..tpbr, chance_per_block: Some(cpb) };
-                    current_strategy.strategy.operations.push(last_op);
 
-                    let description = current_strategy.description.get(&"operations".to_string());
-                    let mut values: Vec<&str> = description.unwrap().split(',').collect();
-                    let last_value = values.pop().unwrap_or(&"");
-                    let freq = format!("::TBPR={}::CPB={}", tpbr, cpb);
-                    let new_value = last_value.clone().to_string() + &freq;
-                    values.push(&new_value);
-                    let desc: String = values.join(",");
-                    current_strategy.description.insert("operations".to_string(), desc);
+                    match field.as_str() {
+                        "operations" => {
+                            self.app
+                            .mount(
+                                ComponentId::CommandPallet,
+                                Box::new(StrategyOperationsScreenCommands::new()),
+                                vec![],
+                            )
+                            .expect("unable to mount component");
+                            self.app
+                                .active(&ComponentId::CommandPallet)
+                                .expect("cannot set active");
 
-                    self.state.save();
+                            let description = current_strategy.description.get(&"operations".to_string());
+                            let mut values: Vec<&str> = description.unwrap().split(',').collect();
+                            let last_value = values.pop().unwrap_or(&"");
+                            let freq = format!("::TBPR={}::CPB={}", tpbr, cpb);
+                            let new_value = last_value.clone().to_string() + &freq;
+                            values.push(&new_value);
+                            let desc: String = values.join(",");
+                            current_strategy.description.insert("operations".to_string(), desc);
 
-                    self.app
-                        .remount(
-                            ComponentId::Screen,
-                            Box::new(StrategyOperationsScreen::new(&self.state)),
-                            make_screen_subs(),
-                        )
-                        .expect("unable to remount screen");
+                            self.state.save();
+
+                            self.app
+                                .remount(
+                                    ComponentId::Screen,
+                                    Box::new(StrategyOperationsScreen::new(&self.state)),
+                                    make_screen_subs(),
+                                )
+                                .expect("unable to remount screen");
+                        },
+                        "identities_inserts" => {
+                            self.app
+                                .mount(
+                                    ComponentId::CommandPallet,
+                                    Box::new(StrategyIdentityInsertsScreenCommands::new()),
+                                    vec![],
+                                )
+                                .expect("unable to mount component");    
+                            self.app
+                                .active(&ComponentId::CommandPallet)
+                                .expect("cannot set active");
+
+                            let freq = format!("TBPR={}::CPB={}", tpbr, cpb);
+                            current_strategy.description.insert("identities_inserts".to_string(), freq);
+
+                            self.state.save();
+
+                            self.app
+                                .remount(
+                                    ComponentId::Screen,
+                                    Box::new(StrategyIdentityInsertsScreen::new(&self.state)),
+                                    make_screen_subs(),
+                                )
+                                .expect("unable to remount screen");
+
+                        },
+                        _ => {
+                            panic!("this is not a valid strategy struct field")
+                        }
+                    }
     
                     Some(Message::Redraw)
                 },
@@ -996,7 +1064,7 @@ impl Update<Message> for Model<'_> {
 
                     self.state.save();
 
-                    Some(Message::ExpectingInput(InputType::Frequency))
+                    Some(Message::ExpectingInput(InputType::Frequency("operations".to_string())))
                 },
                 Message::IdentityTopUp => {
                     let current_strategy_key = self.state.current_strategy.clone().unwrap();
@@ -1016,7 +1084,7 @@ impl Update<Message> for Model<'_> {
                         description_entry.push_str(&format!(", {}", op_description));
                     }
                     
-                    Some(Message::ExpectingInput(InputType::Frequency))
+                    Some(Message::ExpectingInput(InputType::Frequency("operations".to_string())))
                 },
                 Message::IdentityWithdrawal => {
                     let current_strategy_key = self.state.current_strategy.clone().unwrap();
@@ -1036,7 +1104,7 @@ impl Update<Message> for Model<'_> {
                         description_entry.push_str(&format!(", {}", op_description));
                     }
                     
-                    Some(Message::ExpectingInput(InputType::Frequency))
+                    Some(Message::ExpectingInput(InputType::Frequency("operations".to_string())))
                 },
                 Message::IdentityTransfer => {
                     let current_strategy_key = self.state.current_strategy.clone().unwrap();
@@ -1056,7 +1124,7 @@ impl Update<Message> for Model<'_> {
                         description_entry.push_str(&format!(", {}", op_description));
                     }
                     
-                    Some(Message::ExpectingInput(InputType::Frequency))
+                    Some(Message::ExpectingInput(InputType::Frequency("operations".to_string())))
                 },
                 Message::IdentityUpdate(op, count) => {
                     self.app
@@ -1108,7 +1176,7 @@ impl Update<Message> for Model<'_> {
 
                     self.state.save();
 
-                    Some(Message::ExpectingInput(InputType::Frequency))
+                    Some(Message::ExpectingInput(InputType::Frequency("operations".to_string())))
                 },
                 Message::RemoveOperation => {
                     let current_name = self.state.current_strategy.clone().unwrap();
@@ -1188,14 +1256,113 @@ impl Update<Message> for Model<'_> {
                     self.state.save();
 
                     self.app
+                        .remount(
+                            ComponentId::Screen,
+                            Box::new(LoadStrategyScreen::new(&self.state)),
+                            make_screen_subs(),
+                        )
+                        .expect("unable to remount screen");
 
+                    Some(Message::Redraw)
+                },
+                Message::IdentityInserts => {
+                    let current_strategy_key = self.state.current_strategy.clone().unwrap();
+                    let current_strategy_details = self.state.available_strategies.get_mut(&current_strategy_key).unwrap();
+                    let current_strategy = &mut current_strategy_details.strategy;
+                    current_strategy.identities_inserts = Frequency::default();
+
+                    let op_description = "IdentityInserts".to_string();
+                    
+                    let description_entry = current_strategy_details.description.entry("identities_inserts".to_string()).or_insert("".to_string());
+                    if description_entry.is_empty() || description_entry == "-" {
+                        *description_entry = op_description;
+                    } else {
+                        description_entry.push_str(&format!(", {}", op_description));
+                    }
+                    
+                    Some(Message::ExpectingInput(InputType::Frequency("identities_inserts".to_string())))
+                },
+                Message::RemoveIdentityInserts => {
+                    let current_name = self.state.current_strategy.clone().unwrap();
+                    let current_strategy_details = self.state.available_strategies.get_mut(&current_name).unwrap();
+                    current_strategy_details.strategy.identities_inserts = Frequency::default();
+                    current_strategy_details.description.insert("identities_inserts".to_string(), "".to_string());
+                
+                    self.state.save();
+                
+                    self.app
                     .remount(
                         ComponentId::Screen,
-                        Box::new(LoadStrategyScreen::new(&self.state)),
+                        Box::new(CreateStrategyScreen::new(&self.state)),
                         make_screen_subs(),
                     )
                     .expect("unable to remount screen");
+                
+                    Some(Message::Redraw)
+                },
+                Message::StartIdentities(count, key_count) => {
+                    self.app
+                        .umount(&ComponentId::Input)
+                        .expect("unable to umount component");
+                    self.app
+                        .mount(
+                            ComponentId::CommandPallet,
+                            Box::new(StrategyStartIdentitiesScreenCommands::new()),
+                            vec![],
+                        )
+                        .expect("unable to mount component");
+                    self.app
+                        .active(&ComponentId::CommandPallet)
+                        .expect("cannot set active");
 
+
+                    let current_strategy_key = self.state.current_strategy.clone().unwrap();
+                    let current_strategy_details = self.state.available_strategies.get_mut(&current_strategy_key).unwrap();
+                    let current_strategy = &mut current_strategy_details.strategy;
+
+                    let identities = create_identities_state_transitions(
+                        count,
+                        key_count,
+                        &mut SimpleSigner::default(),
+                        &mut StdRng::seed_from_u64(567),
+                        PlatformVersion::latest(),
+                    );
+
+                    current_strategy.start_identities = identities;
+
+                    let op_description = format!("Identities={}::Keys={}", count, key_count);
+                    
+                    let description_entry = current_strategy_details.description.entry("start_identities".to_string()).or_insert("".to_string());
+                    *description_entry = op_description;
+
+                    self.state.save();
+
+                    self.app
+                        .remount(
+                            ComponentId::Screen,
+                            Box::new(StrategyStartIdentitiesScreen::new(&self.state)),
+                            make_screen_subs(),
+                        )
+                        .expect("unable to remount screen");
+
+                    Some(Message::Redraw)
+                },
+                Message::RemoveStartIdentities => {
+                    let current_name = self.state.current_strategy.clone().unwrap();
+                    let current_strategy_details = self.state.available_strategies.get_mut(&current_name).unwrap();
+                    current_strategy_details.strategy.start_identities = vec![];
+                    current_strategy_details.description.insert("start_identities".to_string(), "".to_string());
+                
+                    self.state.save();
+                
+                    self.app
+                    .remount(
+                        ComponentId::Screen,
+                        Box::new(CreateStrategyScreen::new(&self.state)),
+                        make_screen_subs(),
+                    )
+                    .expect("unable to remount screen");
+                
                     Some(Message::Redraw)
                 },
             }
