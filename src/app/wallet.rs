@@ -9,10 +9,13 @@ use dashcore::secp256k1::Secp256k1;
 use dashcore::{Address, Network, OutPoint, PrivateKey, ScriptBuf, Transaction, TxOut};
 use std::str::FromStr;
 use std::sync::RwLock;
+use dashcore::hashes::Hash;
 use dashcore::secp256k1::rand::prelude::StdRng;
 use dashcore::secp256k1::rand::{Rng, SeedableRng};
+use dashcore::sighash::{LegacySighash, SighashCache};
 use dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
 use dashcore::transaction::special_transaction::TransactionPayload;
+use crate::app::error::Error;
 
 #[derive(Debug, Clone, Encode, Decode)]
 pub enum Wallet {
@@ -20,7 +23,7 @@ pub enum Wallet {
 }
 
 impl Wallet {
-    pub fn registration_transaction(&self, seed: Option<u64>, amount: u64) -> (Transaction, PrivateKey) {
+    pub fn registration_transaction(&self, seed: Option<u64>, amount: u64) -> Result<(Transaction, PrivateKey), Error> {
         let mut rng = match seed {
             None => StdRng::from_entropy(),
             Some(seed_value) => StdRng::seed_from_u64(seed_value),
@@ -33,12 +36,12 @@ impl Wallet {
 
         let one_time_key_hash = public_key.pubkey_hash();
 
-        let (utxos, change) = self.unspent_utxos_for(amount);
+        let (utxos, change) = self.take_unspent_utxos_for(amount).ok_or(Error::WalletError("Not enough balance in wallet".to_string()))?;
 
         let address = self.change_address();
 
         let burn_output = TxOut {
-            value: 100000000, // 1 Dash
+            value: amount, // 1 Dash
             script_pubkey: ScriptBuf::new_p2pkh(&one_time_key_hash),
         };
         let payload_output = TxOut {
@@ -54,14 +57,26 @@ impl Wallet {
             credit_outputs: vec![payload_output],
         };
 
+        let mut writer = LegacySighash::engine();
+        let input_index = 0;
+        let script_pubkey = dashcore::ScriptBuf::new();
+        let sighash_u32 = 0u32;
 
-        (Transaction {
-            version: 0,
+        let tx: Transaction = Transaction {
+            version: 3,
             lock_time: 0,
             input: vec![input],
             output: vec![burn_output, change_output],
             special_transaction_payload: Some(TransactionPayload::AssetLockPayloadType(payload)),
-        }, random_private_key)
+        };
+        let cache = SighashCache::new(&tx);
+        let result = cache.legacy_encode_signing_data_to(&mut writer, input_index, &script_pubkey, sighash_u32)
+                .is_sighash_single_bug()
+                .expect("writer can't fail");
+
+
+
+        (, random_private_key)
     }
 
     pub fn change_address(&self) -> Address {
@@ -97,9 +112,9 @@ impl Wallet {
         }
     }
 
-    pub fn unspent_utxos_for(&self, amount: u64) -> (Vec<(OutPoint, TxOut)>, u64) {
+    pub fn take_unspent_utxos_for(&self, amount: u64) -> Option<(Vec<(OutPoint, TxOut)>, u64)> {
         match self {
-            Wallet::SingleKeyWallet(wallet) => wallet.unspent_utxos_for(amount),
+            Wallet::SingleKeyWallet(wallet) => wallet.take_unspent_utxos_for(amount),
         }
     }
 
@@ -241,9 +256,31 @@ impl SingleKeyWallet {
         utxos.iter().map(|(_, out)| out.value).sum()
     }
 
-    pub fn unspent_utxos_for(&self, amount: u64) -> (Vec<(OutPoint, TxOut)>, u64) {
-        let change = amount as i64;
-        while change > 0 &&
+    pub fn take_unspent_utxos_for(&self, amount: u64) -> Option<(Vec<(OutPoint, TxOut)>, u64)> {
+        let mut utxos = self.utxos.write().unwrap();
+
+        let mut required: i64 = amount as i64;
+        let mut taken_utxos = vec![];
+
+        for (outpoint, utxo) in utxos.iter() {
+            if required <= 0 {
+                break;
+            }
+            required -= utxo.value as i64;
+            taken_utxos.push((outpoint.clone(), utxo.clone()));
+        }
+
+        // If we didn't gather enough UTXOs to cover the required amount
+        if required > 0 {
+            return None;
+        }
+
+        // Remove taken UTXOs from the original list
+        for (outpoint, _) in &taken_utxos {
+            utxos.remove(outpoint);
+        }
+
+        Some((taken_utxos, required.abs() as u64))
     }
 
     pub fn change_address(&self) -> Address {
