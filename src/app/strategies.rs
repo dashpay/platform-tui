@@ -76,6 +76,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Str
                 })?
                 .0;
 
+
         let StrategyDetailsInSerializationFormat {
             strategy: StrategyInSerializationFormat {
                 contracts_with_updates,
@@ -126,6 +127,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Str
                 Operation::versioned_deserialize(operation.as_slice(), validate, platform_version)
             })
             .collect::<Result<Vec<Operation>, ProtocolError>>()?;
+
 
         Ok(StrategyDetails {
             strategy: Strategy {

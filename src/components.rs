@@ -12,7 +12,7 @@ pub(crate) use screen::{
     AddContractStruct, RenameStrategyStruct, LoadStrategyStruct, SelectOperationTypeStruct, DocumentStruct, DeleteStrategyStruct,
     StrategyContractsScreen, StrategyContractsScreenCommands, StrategyOperationsScreen, StrategyOperationsScreenCommands,
     LoadStrategyScreen, LoadStrategyScreenCommands, FrequencyStruct, IdentityUpdateStruct, StrategyStartIdentitiesScreen,
-    StrategyStartIdentitiesScreenCommands, StartIdentitiesStruct, IdentitiesInsertsStruct, StrategyIdentityInsertsScreen,
-    StrategyIdentityInsertsScreenCommands
+    StrategyStartIdentitiesScreenCommands, StartIdentitiesStruct, StrategyIdentityInsertsScreen,
+    StrategyIdentityInsertsScreenCommands, ContractUpdateStruct
 };
 pub(crate) use status::Status;

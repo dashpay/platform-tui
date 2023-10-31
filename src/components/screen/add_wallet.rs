@@ -63,17 +63,17 @@ impl Component<Message, NoUserEvent> for AddWalletScreenCommands {
     fn on(&mut self, ev: Event<NoUserEvent>) -> Option<Message> {
         match ev {
             Event::Keyboard(KeyEvent {
-                                code: Key::Char('q'),
-                                modifiers: KeyModifiers::NONE,
-                            }) => Some(Message::PrevScreen),
+                code: Key::Char('q'),
+                modifiers: KeyModifiers::NONE,
+            }) => Some(Message::PrevScreen),
             Event::Keyboard(KeyEvent {
-                                code: Key::Char('p'),
-                                modifiers: KeyModifiers::NONE,
-                            }) => Some(Message::ExpectingInput(WalletPrivateKey)),
+                code: Key::Char('p'),
+                modifiers: KeyModifiers::NONE,
+            }) => Some(Message::ExpectingInput(WalletPrivateKey)),
             Event::Keyboard(KeyEvent {
-                                code: Key::Char('s'),
-                                modifiers: KeyModifiers::NONE,
-                            }) => Some(Message::ExpectingInput(SeedPhrase)),
+                code: Key::Char('s'),
+                modifiers: KeyModifiers::NONE,
+            }) => Some(Message::ExpectingInput(SeedPhrase)),
             _ => None,
         }
     }

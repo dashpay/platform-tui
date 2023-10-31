@@ -116,8 +116,8 @@ impl SelectOperationTypeStruct {
             "IdentityTopUp".to_string(), 
             "IdentityUpdate".to_string(), 
             "IdentityWithdrawal".to_string(),
-            // "ContractCreate".to_string(),
-            // "ContractUpdate".to_string(),
+            "ContractCreate".to_string(),
+            "ContractUpdate".to_string(),
             "IdentityTransfer".to_string(),
             ];
                 
@@ -610,6 +610,74 @@ impl Component<Message, NoUserEvent> for IdentityUpdateStruct {
                         Some(Message::IdentityUpdate(op.to_string(), count))
                     },
                 }
+            }
+            Event::Keyboard(KeyEvent {
+                code: Key::Char('q'), ..
+            }) => {
+                Some(Message::ReloadScreen)
+            }
+            _ => None,
+        }
+    }
+}
+
+#[derive(MockComponent)]
+pub(crate) struct ContractUpdateStruct {
+    component: List,
+    selected_index: usize,
+}
+
+impl ContractUpdateStruct {
+    pub(crate) fn new() -> Self {
+
+        let options = vec!["New Document Types", "New Optional Fields"];
+
+        let mut rows = TableBuilder::default();
+        for option in options.iter() {
+            rows.add_col(TextSpan::from(option));
+            rows.add_row();
+        }
+
+        Self {
+            component: List::default()
+                    .title("What type of contract update would you like to perform?", Alignment::Center)
+                    .scroll(true)
+                    .highlighted_str("> ")
+                    .rewind(true)
+                    .step(1)
+                    .rows(rows.build())
+                    .selected_line(0),
+                selected_index: 0,
+        }
+    }
+}
+
+impl Component<Message, NoUserEvent> for ContractUpdateStruct {
+    fn on(&mut self, ev: Event<NoUserEvent>) -> Option<Message> {
+        match ev {
+            Event::Keyboard(KeyEvent {
+                code: Key::Down, ..
+            }) => {
+                let max_index = self.component.states.list_len-2;
+                if self.selected_index < max_index {
+                    self.selected_index = self.selected_index + 1;
+                    self.perform(Cmd::Move(Direction::Down));
+                }
+                Some(Message::Redraw)
+            },
+            Event::Keyboard(KeyEvent { 
+                code: Key::Up, .. 
+            }) => {
+                if self.selected_index > 0 {
+                    self.selected_index -= 1;
+                    self.perform(Cmd::Move(Direction::Up));
+                }            
+                Some(Message::Redraw)
+            },
+            Event::Keyboard(KeyEvent {
+                code: Key::Enter, ..
+            }) => {
+                Some(Message::ContractUpdate(self.selected_index))
             }
             Event::Keyboard(KeyEvent {
                 code: Key::Char('q'), ..

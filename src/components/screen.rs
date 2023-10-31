@@ -49,6 +49,7 @@ pub(crate) use strategy_operations::DocumentStruct;
 pub(crate) use strategy_operations::IdentityUpdateStruct;
 pub(crate) use strategy_operations::StrategyOperationsScreen;
 pub(crate) use strategy_operations::StrategyOperationsScreenCommands;
+pub(crate) use strategy_operations::ContractUpdateStruct;
 pub(crate) use strategy_confirm::ConfirmStrategyScreen;
 pub(crate) use strategy_confirm::ConfirmStrategyScreenCommands;
 pub(crate) use strategy_contracts::AddContractStruct;
@@ -57,7 +58,6 @@ pub(crate) use strategy_contracts::StrategyContractsScreenCommands;
 pub(crate) use strategy_start_identities::StrategyStartIdentitiesScreen;
 pub(crate) use strategy_start_identities::StrategyStartIdentitiesScreenCommands;
 pub(crate) use strategy_start_identities::StartIdentitiesStruct;
-pub(crate) use strategy_identity_inserts::IdentitiesInsertsStruct;
 pub(crate) use strategy_identity_inserts::StrategyIdentityInsertsScreen;
 pub(crate) use strategy_identity_inserts::StrategyIdentityInsertsScreenCommands;
 

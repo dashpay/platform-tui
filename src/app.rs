@@ -7,6 +7,7 @@ pub(crate) mod error;
 mod contract;
 pub(crate) mod strategies;
 
+use std::cmp::min;
 use std::collections::BTreeMap;
 use std::time::Duration;
 use dashcore::secp256k1::rand::SeedableRng;
@@ -16,12 +17,14 @@ use dashcore::secp256k1::Secp256k1;
 
 use dpp::data_contract::document_type::DocumentType;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::v0::random_document_type::{RandomDocumentTypeParameters, FieldTypeWeights, FieldMinMaxBounds};
 use dpp::prelude::DataContract;
 use dpp::version::PlatformVersion;
+use rand::Rng;
 use rs_dapi_client::DapiClient;
 use simple_signer::signer::SimpleSigner;
 use strategy_tests::frequency::Frequency;
-use strategy_tests::operations::{DocumentAction, DocumentOp, Operation, OperationType, IdentityUpdateOp};
+use strategy_tests::operations::{DocumentAction, DocumentOp, Operation, OperationType, IdentityUpdateOp, DataContractUpdateOp};
 use strategy_tests::transitions::create_identities_state_transitions;
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
@@ -124,9 +127,8 @@ pub(super) enum InputType {
     Frequency(String),
     Document,
     IdentityUpdate,
-    // ContractCreate,
-    // ContractUpdate,
     DeleteStrategy,
+    ContractUpdate,
 }
 
 #[derive(Debug, PartialEq)]
@@ -161,6 +163,8 @@ pub(super) enum Message {
     RemoveIdentityInserts,
     StartIdentities(u16, u32),
     RemoveStartIdentities,
+    ContractCreate,
+    ContractUpdate(usize),
 }
 
 pub(super) struct Model<'a> {
@@ -651,18 +655,12 @@ impl Update<Message> for Model<'_> {
                                 .mount(ComponentId::Input, Box::new(IdentityUpdateStruct::new()), vec![])
                                 .expect("unable to mount component");
                         }
-                        // InputType::ContractCreate => {
-                        //     self.app
-                        //         .mount(ComponentId::Input, Box::new(ContractCreateStruct::new(&mut self.state)), vec![])
-                        //         .expect("unable to mount component");
-                        // }
-                        // InputType::ContractUpdate => {
-                        //     self.app
-                        //         .mount(ComponentId::Input, Box::new(ContractUpdateStruct::new(&mut self.state)), vec![])
-                        //         .expect("unable to mount component");
-                        // }
+                        InputType::ContractUpdate => {
+                            self.app
+                                .mount(ComponentId::Input, Box::new(ContractUpdateStruct::new()), vec![])
+                                .expect("unable to mount component");
+                        }
                     }
-
 
                     self.app
                         .active(&ComponentId::Input)
@@ -861,8 +859,12 @@ impl Update<Message> for Model<'_> {
 
                     let strategy = self.state.available_strategies.get(&old);
                     self.state.current_strategy = Some(new.clone());
-                    self.state.available_strategies.insert(new, strategy.unwrap().clone());
-                    self.state.available_strategies.remove(&old);
+                    self.state.available_strategies.insert(new.clone(), strategy.unwrap().clone());
+                    if new != old {
+                        self.state.available_strategies.remove(&old);
+                    }
+
+                    self.state.save();
 
                     self.app
                     .remount(
@@ -924,8 +926,8 @@ impl Update<Message> for Model<'_> {
                         "IdentityTopUp", 
                         "IdentityUpdate", 
                         "IdentityWithdrawal",
-                        // "ContractCreate",
-                        // "ContractUpdate",
+                        "ContractCreate",
+                        "ContractUpdate",
                         "IdentityTransfer",
                     ];
                                 
@@ -934,8 +936,8 @@ impl Update<Message> for Model<'_> {
                         Some(&"IdentityTopUp") => Some(Message::IdentityTopUp),
                         Some(&"IdentityUpdate") => Some(Message::ExpectingInput(InputType::IdentityUpdate)),
                         Some(&"IdentityWithdrawal") => Some(Message::IdentityWithdrawal),
-                        // Some(&"ContractCreate") => Some(Message::ExpectingInput(InputType::ContractCreate)),
-                        // Some(&"ContractUpdate") => Some(Message::ExpectingInput(InputType::ContractUpdate)),
+                        Some(&"ContractCreate") => Some(Message::ContractCreate),
+                        Some(&"ContractUpdate") => Some(Message::ExpectingInput(InputType::ContractUpdate)),
                         Some(&"IdentityTransfer") => Some(Message::IdentityTransfer),
                         _ => None,
                     }
@@ -1098,7 +1100,7 @@ impl Update<Message> for Model<'_> {
                     let op_description = "IdentityWithdrawal".to_string();
                     
                     let description_entry = current_strategy_details.description.entry("operations".to_string()).or_insert("".to_string());
-                    if description_entry.is_empty() || description_entry == "-" {
+                    if description_entry.is_empty() {
                         *description_entry = op_description;
                     } else {
                         description_entry.push_str(&format!(", {}", op_description));
@@ -1118,7 +1120,7 @@ impl Update<Message> for Model<'_> {
                     let op_description = "IdentityTransfer".to_string();
                     
                     let description_entry = current_strategy_details.description.entry("operations".to_string()).or_insert("".to_string());
-                    if description_entry.is_empty() || description_entry == "-" {
+                    if description_entry.is_empty() {
                         *description_entry = op_description;
                     } else {
                         description_entry.push_str(&format!(", {}", op_description));
@@ -1364,6 +1366,151 @@ impl Update<Message> for Model<'_> {
                     .expect("unable to remount screen");
                 
                     Some(Message::Redraw)
+                },
+                Message::ContractCreate => {
+                    let current_strategy_key = self.state.current_strategy.clone().unwrap();
+                    let current_strategy_details = self.state.available_strategies.get_mut(&current_strategy_key).unwrap();
+                    let current_strategy = &mut current_strategy_details.strategy;
+
+                    let random_number1 = rand::thread_rng().gen_range(1..=50);
+                    let random_number2 = rand::thread_rng().gen_range(1..=50);
+                    let random_number3 = rand::thread_rng().gen::<i64>()-1000000;
+                    
+                    current_strategy.operations.push(Operation {
+                        op_type: OperationType::ContractCreate(
+                            RandomDocumentTypeParameters {
+                                new_fields_optional_count_range: 1..random_number1,
+                                new_fields_required_count_range: 1..random_number2,
+                                new_indexes_count_range: 1..rand::thread_rng().gen_range(1..=(min(random_number1+random_number2, 10))),
+                                field_weights: FieldTypeWeights {
+                                    string_weight: rand::thread_rng().gen_range(1..=100),
+                                    float_weight: rand::thread_rng().gen_range(1..=100),
+                                    integer_weight: rand::thread_rng().gen_range(1..=100),
+                                    date_weight: rand::thread_rng().gen_range(1..=100),
+                                    boolean_weight: rand::thread_rng().gen_range(1..=100),
+                                    byte_array_weight: rand::thread_rng().gen_range(1..=100),
+                                },
+                                field_bounds: FieldMinMaxBounds {
+                                    string_min_len: 1..10,
+                                    string_has_min_len_chance: rand::thread_rng().gen_range(0.01..=1.0),
+                                    string_max_len: 10..63,
+                                    string_has_max_len_chance: rand::thread_rng().gen_range(0.01..=1.0),
+                                    integer_min: 1..10,
+                                    integer_has_min_chance: rand::thread_rng().gen_range(0.01..=1.0),
+                                    integer_max: 10..10000,
+                                    integer_has_max_chance: rand::thread_rng().gen_range(0.01..=1.0),
+                                    float_min: 0.1..10.0,
+                                    float_has_min_chance: rand::thread_rng().gen_range(0.01..=1.0),
+                                    float_max: 10.0..1000.0,
+                                    float_has_max_chance: rand::thread_rng().gen_range(0.01..=1.0),
+                                    date_min: random_number3,
+                                    date_max: random_number3+1000000,
+                                    byte_array_min_len: 1..10,
+                                    byte_array_has_min_len_chance: rand::thread_rng().gen_range(0.01..=1.0),
+                                    byte_array_max_len: 10..255,
+                                    byte_array_has_max_len_chance: rand::thread_rng().gen_range(0.01..=1.0),
+                                },
+                                keep_history_chance: rand::thread_rng().gen_range(0.01..=1.0),
+                                documents_mutable_chance: rand::thread_rng().gen_range(0.01..=1.0),
+                            }, 
+                            1..rand::thread_rng().gen::<u16>()),
+                        frequency: Frequency::default(),
+                    });
+
+                    let op_description = "ContractCreate".to_string();
+                    
+                    let description_entry = current_strategy_details.description.entry("operations".to_string()).or_insert("".to_string());
+                    if description_entry.is_empty() {
+                        *description_entry = op_description;
+                    } else {
+                        description_entry.push_str(&format!(", {}", op_description));
+                    }
+                    
+                    Some(Message::ExpectingInput(InputType::Frequency("operations".to_string())))
+                },
+                Message::ContractUpdate(index) => {
+
+                    self.app
+                        .umount(&ComponentId::Input)
+                        .expect("unable to umount component");
+                    self.app
+                        .mount(
+                            ComponentId::CommandPallet,
+                            Box::new(StrategyOperationsScreenCommands::new()),
+                            vec![],
+                        )
+                        .expect("unable to mount component");
+                    self.app
+                        .active(&ComponentId::CommandPallet)
+                        .expect("cannot set active");
+
+                    let current_strategy_key = self.state.current_strategy.clone().unwrap();
+                    let current_strategy_details = self.state.available_strategies.get_mut(&current_strategy_key).unwrap();
+                    let current_strategy = &mut current_strategy_details.strategy;
+                    
+                    let (op, desc) = match index {
+                        0 => { 
+                            let random_number1 = rand::thread_rng().gen_range(1..=50);
+                            let random_number2 = rand::thread_rng().gen_range(1..=50);
+                            let random_number3 = rand::thread_rng().gen::<i64>()-1000000;
+
+                            (DataContractUpdateOp::DataContractNewDocumentTypes(
+                                RandomDocumentTypeParameters {
+                                    new_fields_optional_count_range: 1..random_number1,
+                                    new_fields_required_count_range: 1..random_number2,
+                                    new_indexes_count_range: 1..rand::thread_rng().gen_range(1..=(min(random_number1+random_number2, 10))),
+                                    field_weights: FieldTypeWeights {
+                                        string_weight: rand::thread_rng().gen_range(1..=100),
+                                        float_weight: rand::thread_rng().gen_range(1..=100),
+                                        integer_weight: rand::thread_rng().gen_range(1..=100),
+                                        date_weight: rand::thread_rng().gen_range(1..=100),
+                                        boolean_weight: rand::thread_rng().gen_range(1..=100),
+                                        byte_array_weight: rand::thread_rng().gen_range(1..=100),
+                                    },
+                                    field_bounds: FieldMinMaxBounds {
+                                        string_min_len: 1..10,
+                                        string_has_min_len_chance: rand::thread_rng().gen_range(0.01..=1.0),
+                                        string_max_len: 10..63,
+                                        string_has_max_len_chance: rand::thread_rng().gen_range(0.01..=1.0),
+                                        integer_min: 1..10,
+                                        integer_has_min_chance: rand::thread_rng().gen_range(0.01..=1.0),
+                                        integer_max: 10..10000,
+                                        integer_has_max_chance: rand::thread_rng().gen_range(0.01..=1.0),
+                                        float_min: 0.1..10.0,
+                                        float_has_min_chance: rand::thread_rng().gen_range(0.01..=1.0),
+                                        float_max: 10.0..1000.0,
+                                        float_has_max_chance: rand::thread_rng().gen_range(0.01..=1.0),
+                                        date_min: random_number3,
+                                        date_max: random_number3+1000000,
+                                        byte_array_min_len: 1..10,
+                                        byte_array_has_min_len_chance: rand::thread_rng().gen_range(0.01..=1.0),
+                                        byte_array_max_len: 10..255,
+                                        byte_array_has_max_len_chance: rand::thread_rng().gen_range(0.01..=1.0),
+                                    },
+                                    keep_history_chance: rand::thread_rng().gen_range(0.01..=1.0),
+                                    documents_mutable_chance: rand::thread_rng().gen_range(0.01..=1.0),
+                                }
+                            ), "NewDocumentTypes".to_string())
+                        },
+                        1 => (DataContractUpdateOp::DataContractNewOptionalFields(1..20, 1..3),"NewOptionalFields".to_string()),
+                        _ => panic!("index out of bounds for DataContractUpdateOp")
+                    };
+
+                    current_strategy.operations.push(Operation {
+                        op_type: OperationType::ContractUpdate(op),
+                        frequency: Frequency::default(),
+                    });
+
+                    let op_description = format!("ContractUpdate::{}", desc);
+                    
+                    let description_entry = current_strategy_details.description.entry("operations".to_string()).or_insert("".to_string());
+                    if description_entry.is_empty() {
+                        *description_entry = op_description;
+                    } else {
+                        description_entry.push_str(&format!(", {}", op_description));
+                    }
+                    
+                    Some(Message::ExpectingInput(InputType::Frequency("operations".to_string())))
                 },
             }
         } else {

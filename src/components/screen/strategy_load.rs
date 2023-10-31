@@ -62,13 +62,23 @@ impl LoadStrategyScreenCommands {
                         key_type: KeyType::Command,
                     },
                     CommandPalletKey {
-                        key: 'e',
-                        description: "Edit",
+                        key: 'n',
+                        description: "New",
+                        key_type: KeyType::Command,
+                    },
+                    CommandPalletKey {
+                        key: 'l',
+                        description: "Load",
                         key_type: KeyType::Command,
                     },
                     CommandPalletKey {
                         key: 'r',
                         description: "Rename",
+                        key_type: KeyType::Command,
+                    },
+                    CommandPalletKey {
+                        key: 'e',
+                        description: "Edit",
                         key_type: KeyType::Command,
                     },
                     CommandPalletKey {
@@ -79,16 +89,6 @@ impl LoadStrategyScreenCommands {
                     CommandPalletKey {
                         key: 'd',
                         description: "Delete",
-                        key_type: KeyType::Command,
-                    },
-                    CommandPalletKey {
-                        key: 'n',
-                        description: "New",
-                        key_type: KeyType::Command,
-                    },
-                    CommandPalletKey {
-                        key: 'l',
-                        description: "Load",
                         key_type: KeyType::Command,
                     },
                 ]),

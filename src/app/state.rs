@@ -21,6 +21,10 @@ use crate::app::strategies::{StrategyDetails, default_strategy_description};
 
 const CURRENT_PROTOCOL_VERSION: ProtocolVersion = 1;
 
+use std::fs::OpenOptions;
+use std::io::Write;
+
+
 #[derive(Debug, Clone)]
 pub struct AppState {
     pub loaded_identity : Option<Identity>,
@@ -37,7 +41,7 @@ impl Default for AppState {
         let mut known_contracts = BTreeMap::new();
         let mut available_strategies = BTreeMap::new();
         
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(CURRENT_PROTOCOL_VERSION).unwrap();
 
         fn is_json(entry: &DirEntry) -> bool {
             entry.path().extension().and_then(|s| s.to_str()) == Some("json")
@@ -202,7 +206,8 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
         let app_state: AppStateInSerializationFormat =
             bincode::borrow_decode_from_slice(data, config)
                 .map_err(|e| {
-                    PlatformDeserializationError(format!("unable to deserialize App State: {}", e))
+                    let msg = format!("Error decoding AppStateInSerializationFormat: {}", e);
+                    PlatformDeserializationError(msg)
                 })?
                 .0;
 
@@ -213,7 +218,11 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
         let known_contracts = known_contracts
             .into_iter()
             .map(|(key, contract)| {
-                let contract = CreatedDataContract::versioned_deserialize(contract.as_slice(), validate, platform_version)?;
+                let contract = CreatedDataContract::versioned_deserialize(contract.as_slice(), validate, platform_version)
+                    .map_err(|e| {
+                        let msg = format!("Error deserializing known_contract for key {}: {}", key, e);
+                        PlatformDeserializationError(msg)
+                    })?;
                 Ok((key, contract))
             })
             .collect::<Result<BTreeMap<String, CreatedDataContract>, ProtocolError>>()?;
@@ -221,7 +230,11 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
         let available_strategies = available_strategies
             .into_iter()
             .map(|(key, strategy)| {
-                let strategy = StrategyDetails::versioned_deserialize(strategy.as_slice(), validate, platform_version)?;
+                let strategy = StrategyDetails::versioned_deserialize(strategy.as_slice(), validate, platform_version)
+                    .map_err(|e| {
+                        let msg = format!("Error deserializing available_strategies for key {}: {}", key, e);
+                        PlatformDeserializationError(msg)
+                    })?;
                 Ok((key, strategy))
             })
             .collect::<Result<BTreeMap<String, StrategyDetails>, ProtocolError>>()?;
@@ -238,18 +251,22 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
     }
 }
 
-impl AppState {
+impl AppState {    
     pub fn load() -> AppState {
         let path = Path::new("explorer.state");
 
-        let Ok(read_result) = fs::read(path) else {
-            return AppState::default()
+        let read_result = if let Ok(result) = fs::read(path) {
+            result
+        } else {
+            return AppState::default();
         };
-
-        let Ok(app_state) = AppState::versioned_deserialize(read_result.as_slice(), false, PlatformVersion::get(CURRENT_PROTOCOL_VERSION).unwrap()) else {
-            return AppState::default()
+        
+        let app_state = if let Ok(state) = AppState::versioned_deserialize(read_result.as_slice(), false, PlatformVersion::get(CURRENT_PROTOCOL_VERSION).unwrap()) {
+            state
+        } else {
+            return AppState::default();
         };
-
+        
         if let Some(wallet) = app_state.loaded_wallet.as_ref() {
             let wallet = wallet.clone();
             task::spawn(async move {
