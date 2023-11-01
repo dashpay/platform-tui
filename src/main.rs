@@ -1,58 +1,72 @@
-mod app;
-mod components;
-mod managers;
-mod mock_components;
+// mod app;
+mod backend;
+// mod components;
+// mod managers;
+// mod mock_components;
+mod ui;
 
-use app::{ComponentId, Model};
+use crossterm::event::{Event as TuiEvent, EventStream};
+use futures::{
+    future::{BoxFuture, OptionFuture},
+    select,
+    stream::FuturesUnordered,
+    FutureExt, StreamExt,
+};
 use rs_dapi_client::{AddressList, DapiClient, RequestSettings};
-use tuirealm::{application::PollStrategy, AttrValue, Attribute, Update};
 
-fn main() {
+use self::{
+    backend::{Backend, BackendEvent, Task},
+    ui::{Event, Ui, UiFeedback},
+};
+
+#[tokio::main]
+async fn main() {
     // Setup DAPI client
     let mut address_list = AddressList::new();
     address_list.add_uri(rs_dapi_client::Uri::from_static(
         "https://54.213.204.85:1443",
     ));
-    let mut dapi_client = DapiClient::new(address_list, RequestSettings::default());
+    let dapi_client = DapiClient::new(address_list, RequestSettings::default());
 
-    // Setup model
-    let mut model = Model::new(&mut dapi_client);
+    let mut ui = Ui::new();
+    let backend = Backend::new(dapi_client);
 
-    // Enter alternate screen
-    let _ = model.terminal.enter_alternate_screen();
-    let _ = model.terminal.enable_raw_mode();
-    // Main loop
-    while !model.quit {
-        // Tick
-        match model.app.tick(PollStrategy::Once) {
-            Err(err) => {
-                assert!(model
-                    .app
-                    .attr(
-                        &ComponentId::Status,
-                        Attribute::Text,
-                        AttrValue::String(format!("Application error: {}", err)),
-                    )
-                    .is_ok());
+    let mut active = true;
+
+    let mut terminal_event_stream = EventStream::new().fuse();
+    let mut backend_task: OptionFuture<_> = None.into();
+
+    while active {
+        let event = select! {
+            terminal_event = terminal_event_stream.next() => match terminal_event {
+                None => panic!("terminal event stream closed unexpectedly"),
+                Some(Err(_)) => panic!("terminal event stream closed unexpectedly"),
+                Some(Ok(TuiEvent::Resize(_, _))) => {ui.redraw(); continue },
+                Some(Ok(TuiEvent::Key(key_event))) => Some(Event::Key(key_event.into())),
+                _ => None
+            },
+            backend_task_finished = backend_task => match backend_task_finished {
+                Some((task, result)) => Some(Event::Backend(BackendEvent::TaskCompleted(task, result))),
+                None => None
+            },
+        };
+
+        let ui_feedback = event.map(|e| ui.on_event(e)).unwrap_or(UiFeedback::None);
+
+        match ui_feedback {
+            UiFeedback::Quit => active = false,
+            UiFeedback::ExecuteTask(task) => {
+                backend_task = Some(
+                    backend
+                        .run_task(task.clone())
+                        .map(move |result| (task.clone(), result))
+                        .boxed()
+                        .fuse(),
+                )
+                .into()
             }
-            Ok(messages) if messages.len() > 0 => {
-                for msg in messages.into_iter() {
-                    let mut msg = Some(msg);
-                    while msg.is_some() {
-                        msg = model.update(msg);
-                    }
-                }
-            }
-            _ => {}
-        }
-        // Redraw
-        if model.redraw {
-            model.view();
-            model.redraw = false;
+            UiFeedback::Redraw => ui.redraw(), // TODO Debounce redraw?
+            UiFeedback::None => (),
         }
     }
-    // Terminate terminal
-    let _ = model.terminal.leave_alternate_screen();
-    let _ = model.terminal.disable_raw_mode();
-    let _ = model.terminal.clear_screen();
 }

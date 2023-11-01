@@ -25,3 +25,7 @@ simple-signer = {path = "../platform/packages/simple-signer"}
 reqwest = { version = "0.11.22", features = ["json"] }
 hex = { version = "0.4.3"}
 bip37-bloom-filter = { git = "https://github.com/dashpay/rs-bip37-bloom-filter", branch = "develop" }
+itertools = "0.11.0"
+crossterm = { version = "0.27.0", features = ["event-stream"] }
+futures = "0.3.29"
+paste = "1.0.14"

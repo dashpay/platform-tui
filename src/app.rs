@@ -4,6 +4,7 @@ mod contract;
 pub(crate) mod error;
 mod identity;
 pub(crate) mod state;
+pub(crate) mod version_upgrade;
 mod wallet;
 
 use std::{fmt::Display, time::Duration};
