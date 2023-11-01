@@ -3,8 +3,7 @@
 use tui_realm_stdlib::Paragraph;
 use tuirealm::{MockComponent, Component, NoUserEvent, Event, event::{KeyEvent, Key, KeyModifiers}, props::TextSpan};
 
-use crate::{app::{Message, state::AppState, Screen}, mock_components::{CommandPallet, CommandPalletKey, KeyType}};
-use crate::app::InputType::StartIdentities;
+use crate::{app::{Message, state::AppState, Screen, strategies::Description}, mock_components::{CommandPallet, CommandPalletKey, KeyType}};
 
 #[derive(MockComponent)]
 pub(crate) struct CreateStrategyScreen {
@@ -19,7 +18,7 @@ impl CreateStrategyScreen {
             combined_spans.push(TextSpan::new(&format!("{}:", strategy_key)).bold());
         
             if let Some(strategy) = app_state.available_strategies.get(strategy_key) {
-                for (key, value) in &strategy.description {
+                for (key, value) in &strategy.strategy_description() {
                     combined_spans.push(TextSpan::new(&format!("  {}:", key)).bold());
                     combined_spans.push(TextSpan::new(&format!("    {}",value)));
                 }

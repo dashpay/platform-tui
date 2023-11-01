@@ -1,143 +1,119 @@
-//! StrategyDetails struct and strategy serialization stuff
+//! Strategy stuff
 //! 
 
 use std::collections::BTreeMap;
 
-use bincode::{Encode, Decode};
-use dpp::data_contract::created_data_contract::CreatedDataContract;
-use dpp::{version::PlatformVersion, serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure, ProtocolError, prelude::Identity, state_transition::StateTransition};
-use dpp::ProtocolError::PlatformDeserializationError;
-use simple_signer::signer::SimpleSigner;
-use strategy_tests::operations::Operation;
-use strategy_tests::{Strategy, frequency::Frequency};
+use dpp::{data_contract::{created_data_contract::CreatedDataContract, accessors::v0::DataContractV0Getters}, prelude::{DataContract, Identity}, platform_value::string_encoding::Encoding};
+use strategy_tests::{Strategy, frequency::Frequency, operations::{OperationType, DocumentAction}};
 
-#[derive(Debug, Clone)]
-pub struct StrategyDetails {
-    pub(crate) strategy: Strategy,
-    pub(crate) description: BTreeMap<String, String>,
-}
-
-pub fn default_strategy_details() -> StrategyDetails {
-    StrategyDetails { 
-        strategy: Strategy { 
-            contracts_with_updates: vec![],
-            operations: vec![],
-            start_identities: vec![],
-            identities_inserts: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
-            signer: None,
+pub fn default_strategy() -> Strategy {
+    Strategy { 
+        contracts_with_updates: vec![],
+        operations: vec![],
+        start_identities: vec![],
+        identities_inserts: Frequency {
+            times_per_block_range: Default::default(),
+            chance_per_block: None,
         },
-        description: default_strategy_description(BTreeMap::new()) 
+        signer: None,
     }
 }
 
-pub fn default_strategy_description(mut map: BTreeMap<String, String>) -> BTreeMap<String, String> {
-    map.insert("contracts_with_updates".to_string(), "".to_string());
-    map.insert("operations".to_string(), "".to_string());
-    map.insert("start_identities".to_string(), "".to_string());
-    map.insert("identities_inserts".to_string(), "".to_string());
-    map
+pub trait Description {
+    fn strategy_description(&self) -> BTreeMap<String, String>;
 }
 
-#[derive(Clone, Debug, Encode, Decode)]
-struct StrategyInSerializationFormat {
-    pub contracts_with_updates: Vec<(Vec<u8>, Option<BTreeMap<u64, Vec<u8>>>)>,
-    pub operations: Vec<Vec<u8>>,
-    pub start_identities: Vec<(Identity, StateTransition)>,
-    pub identities_inserts: Frequency,
-    pub signer: Option<SimpleSigner>,
-}
+impl Description for Strategy {
+    fn strategy_description(&self) -> BTreeMap<String, String> {
+        let mut desc = BTreeMap::new();
 
-#[derive(Clone, Debug, Encode, Decode)]
-struct StrategyDetailsInSerializationFormat {
-    strategy: StrategyInSerializationFormat,
-    description: BTreeMap<String, String>,
-}
+        desc.insert(
+            "contracts_with_updates".to_string(),
+            self.contracts_with_updates
+                .iter()
+                .map(|(contract, updates)| {
+                    let contract_id = match contract {
+                        CreatedDataContract::V0(v0) => match &v0.data_contract {
+                            DataContract::V0(dc_v0) => dc_v0.id().to_string(Encoding::Base58),
+                        },
+                    };
+                    let updates_ids = updates
+                        .as_ref()
+                        .map_or("".to_string(), |map| {
+                            map.values()
+                                .map(|update_contract| {
+                                    match update_contract {
+                                        CreatedDataContract::V0(v0_update) => match &v0_update.data_contract {
+                                            DataContract::V0(dc_v0_update) => dc_v0_update.id().to_string(Encoding::Base58),
+                                        },
+                                    }
+                                })
+                                .collect::<Vec<_>>()
+                                .join("::")
+                        });
+                    format!("{}{}", contract_id, if updates_ids.is_empty() { "".to_string() } else { format!("::{}", updates_ids) })
+                })
+                .collect::<Vec<_>>()
+                .join("; "),
+        );
 
+        desc.insert(
+            "operations".to_string(),
+            self.operations
+                .iter()
+                .map(|operation| {
+                    let op_type_str = match &operation.op_type {
+                        OperationType::Document(doc_op) => {
+                            let action_str = match &doc_op.action {
+                                DocumentAction::DocumentActionInsertRandom(_, _) => "DocumentActionInsertRandom",
+                                DocumentAction::DocumentActionDelete => "DocumentActionDelete",
+                                DocumentAction::DocumentActionReplace => "DocumentActionReplace",
+                                DocumentAction::DocumentActionInsertSpecific(_, _, _, _) => "DocumentActionInsertSpecific",
+                            };
+                            format!("Document::{}", action_str)
+                        },
+                        OperationType::IdentityTopUp => "IdentityTopUp".to_string(),
+                        OperationType::IdentityUpdate(_) => "IdentityUpdate".to_string(),
+                        OperationType::IdentityWithdrawal => "IdentityWithdrawal".to_string(),
+                        OperationType::ContractCreate(_, _) => "ContractCreate".to_string(),
+                        OperationType::ContractUpdate(_) => "ContractUpdate".to_string(),
+                        OperationType::IdentityTransfer => "IdentityTransfer".to_string(),
+                    };
+                    let frequency_str = format!(
+                        "TPBR{}::CPB{}",
+                        operation.frequency.times_per_block_range.end,
+                        operation.frequency.chance_per_block.map_or("None".to_string(), |chance| format!("{:.2}", chance)),
+                    );
+                    format!("{}::{}", op_type_str, frequency_str)
+                })
+                .collect::<Vec<_>>()
+                .join("; "),
+        );
 
-impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for StrategyDetails {
-    fn versioned_deserialize(
-        data: &[u8],
-        validate: bool,
-        platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError>
-    where
-        Self: Sized,
-    {
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
-        let strategy: StrategyDetailsInSerializationFormat =
-            bincode::borrow_decode_from_slice(data, config)
-                .map_err(|e| {
-                    PlatformDeserializationError(format!("unable to deserialize Strategy: {}", e))
-                })?
-                .0;
+        if let Some((first_identity_enum, _)) = self.start_identities.first() {
+            let num_identities = self.start_identities.len();
+            let num_keys = match first_identity_enum {
+                Identity::V0(identity_v0) => identity_v0.public_keys.len(),
+                // Add more variants as they're defined
+            };
+            desc.insert(
+                "start_identities".to_string(),
+                format!("Identities={}::Keys={}", num_identities, num_keys),
+            );
+        } else {
+            // Handle the case where start_identities is empty if needed
+            desc.insert("start_identities".to_string(), "Identities=0::Keys=0".to_string());
+        }
 
+        desc.insert(
+            "identities_inserts".to_string(),
+            format!(
+                "TPBR={}::CPB={}",
+                self.identities_inserts.times_per_block_range.end,
+                self.identities_inserts.chance_per_block.map_or("None".to_string(), |chance| format!("{:.2}", chance))
+            ),
+        );
 
-        let StrategyDetailsInSerializationFormat {
-            strategy: StrategyInSerializationFormat {
-                contracts_with_updates,
-                operations,
-                start_identities,
-                identities_inserts,
-                signer,
-            },
-            description
-        } = strategy;
-
-        let contracts_with_updates = contracts_with_updates
-            .into_iter()
-            .map(|(serialized_contract, maybe_updates)| {
-                let contract = CreatedDataContract::versioned_deserialize(
-                    serialized_contract.as_slice(),
-                    validate,
-                    platform_version,
-                )?;
-                let maybe_updates = maybe_updates
-                    .map(|updates| {
-                        updates
-                            .into_iter()
-                            .map(|(key, serialized_contract_update)| {
-                                let update = CreatedDataContract::versioned_deserialize(
-                                    serialized_contract_update.as_slice(),
-                                    validate,
-                                    platform_version,
-                                )?;
-                                Ok((key, update))
-                            })
-                            .collect::<Result<BTreeMap<u64, CreatedDataContract>, ProtocolError>>()
-                    })
-                    .transpose()?;
-                Ok((contract, maybe_updates))
-            })
-            .collect::<Result<
-                Vec<(
-                    CreatedDataContract,
-                    Option<BTreeMap<u64, CreatedDataContract>>,
-                )>,
-                ProtocolError,
-            >>()?;
-
-        let operations = operations
-            .into_iter()
-            .map(|operation| {
-                Operation::versioned_deserialize(operation.as_slice(), validate, platform_version)
-            })
-            .collect::<Result<Vec<Operation>, ProtocolError>>()?;
-
-
-        Ok(StrategyDetails {
-            strategy: Strategy {
-                contracts_with_updates,
-                operations,
-                start_identities,
-                identities_inserts,
-                signer,
-            },
-            description
-        })
+        desc
     }
 }

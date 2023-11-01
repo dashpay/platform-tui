@@ -1,13 +1,9 @@
 //! Strategy Identity Inserts screen
 
-use std::collections::BTreeMap;
+use tui_realm_stdlib::Paragraph;
+use tuirealm::{MockComponent, Component, NoUserEvent, Event, event::{KeyEvent, Key, KeyModifiers}, props::TextSpan};
 
-use dpp::data_contract::created_data_contract::CreatedDataContract;
-use tui_realm_stdlib::{Paragraph, List};
-use tuirealm::{MockComponent, Component, NoUserEvent, Event, event::{KeyEvent, Key, KeyModifiers}, props::{TextSpan, TableBuilder, Alignment}, command::{Cmd, Direction}};
-
-use crate::{app::{Message, state::AppState, strategies::default_strategy_details}, mock_components::{CommandPallet, CommandPalletKey, KeyType}};
-use crate::app::InputType::AddContract;
+use crate::{app::{Message, state::AppState, strategies::Description, InputType}, mock_components::{CommandPallet, CommandPalletKey, KeyType}};
 
 #[derive(MockComponent)]
 pub(crate) struct StrategyIdentityInsertsScreen {
@@ -23,7 +19,7 @@ impl StrategyIdentityInsertsScreen {
             combined_spans.push(TextSpan::new(&format!("{}:", strategy_key)).bold());
         
             if let Some(strategy) = app_state.available_strategies.get(strategy_key) {
-                for (key, value) in &strategy.description {
+                for (key, value) in &strategy.strategy_description() {
                     combined_spans.push(TextSpan::new(&format!("  {}:", key)).bold());
                     combined_spans.push(TextSpan::new(&format!("    {}",value)));
                 }
@@ -87,169 +83,11 @@ impl Component<Message, NoUserEvent> for StrategyIdentityInsertsScreenCommands {
             Event::Keyboard(KeyEvent {
                 code: Key::Char('a'),
                 modifiers: KeyModifiers::NONE,
-            }) => Some(Message::IdentityInserts),
+            }) => Some(Message::ExpectingInput(InputType::Frequency("identities_inserts".to_string()))),
             Event::Keyboard(KeyEvent {
                 code: Key::Char('r'),
                 modifiers: KeyModifiers::NONE,
             }) => Some(Message::RemoveIdentityInserts),
-            _ => None,
-        }
-    }
-}
-
-pub enum IdentitiesInsertsSelectionState {
-    SelectFirst,
-    UpdatesOption { contracts: Vec<String> },
-    SelectSubsequent { contracts: Vec<String> },
-}
-
-#[derive(MockComponent)]
-pub(crate) struct IdentitiesInsertsStruct {
-    component: List,
-    selected_index: usize,
-    selection_state: IdentitiesInsertsSelectionState,
-    known_contracts: BTreeMap<String, CreatedDataContract>,
-}
-
-impl IdentitiesInsertsStruct {
-    fn update_component_for_contract_update_option(&mut self) {
-        self.selected_index = 0;
-        let options = vec!["yes", "no"];
-        let mut rows = TableBuilder::default();
-        for option in options {
-            rows.add_col(TextSpan::from(option));
-            rows.add_row();
-        }
-        self.component = List::default()
-            .title("Would you like to add a contract update?", Alignment::Center)
-            .scroll(true)
-            .highlighted_str("> ")
-            .rewind(true)
-            .step(1)
-            .rows(rows.build())
-            .selected_line(0);
-    }
-
-    fn update_component_for_contract_update(&mut self) {
-        self.selected_index = 0;
-        let options = self.known_contracts.keys();
-        let mut rows = TableBuilder::default();
-        for option in options {
-            rows.add_col(TextSpan::from(option));
-            rows.add_row();
-        }
-        self.component = List::default()
-            .title("Select a contract update or press 'q' to go back", Alignment::Center)
-            .scroll(true)
-            .highlighted_str("> ")
-            .rewind(true)
-            .step(1)
-            .rows(rows.build())
-            .selected_line(0);
-    }
-
-    pub(crate) fn new(app_state: &mut AppState) -> Self {
-        if app_state.current_strategy.is_none() {
-            app_state.current_strategy = Some("new_strategy".to_string());
-            app_state.available_strategies.insert("new_strategy".to_string(), default_strategy_details(),
-            );
-        }
-
-        let contracts = &app_state.known_contracts;
-                
-        let mut rows = TableBuilder::default();
-        for (name, _) in contracts.iter() {
-            rows.add_col(TextSpan::from(name));
-            rows.add_row();
-        }
-
-        Self {
-            component: List::default()
-                    .title("Select a contract. Press 'q' to go back.", Alignment::Center)
-                    .scroll(true)
-                    .highlighted_str("> ")
-                    .rewind(true)
-                    .step(1)
-                    .rows(rows.build())
-                    .selected_line(0),
-            selected_index: 0,
-            selection_state: IdentitiesInsertsSelectionState::SelectFirst,
-            known_contracts: app_state.known_contracts.clone(),
-        }
-    }
-}
-
-impl Component<Message, NoUserEvent> for IdentitiesInsertsStruct {
-    fn on(&mut self, ev: Event<NoUserEvent>) -> Option<Message> {
-        match ev {
-            Event::Keyboard(KeyEvent {
-                code: Key::Down, ..
-            }) => {
-                let max_index = self.component.states.list_len-2;
-                if self.selected_index < max_index {
-                    self.selected_index = self.selected_index + 1;
-                    self.perform(Cmd::Move(Direction::Down));
-                }
-                Some(Message::Redraw)
-            },
-            Event::Keyboard(KeyEvent { 
-                code: Key::Up, .. 
-            }) => {
-                if self.selected_index > 0 {
-                    self.selected_index -= 1;
-                    self.perform(Cmd::Move(Direction::Up));
-                }            
-                Some(Message::Redraw)
-            },
-            Event::Keyboard(KeyEvent {
-                code: Key::Enter, ..
-            }) => {
-                match &mut self.selection_state {
-                    IdentitiesInsertsSelectionState::SelectFirst => {
-                        let mut contracts_with_updates = Vec::new();
-                        let (name, _) = self.known_contracts.iter().nth(self.selected_index).map(|(k, v)| (k.clone(), v.clone())).unwrap();
-                        contracts_with_updates.push(name);
-
-                        self.selection_state = IdentitiesInsertsSelectionState::UpdatesOption { contracts: contracts_with_updates };
-                        self.update_component_for_contract_update_option();
-                        
-                        Some(Message::Redraw)                        
-                    },
-                    IdentitiesInsertsSelectionState::UpdatesOption { contracts } => {
-                        // would you like to add contract updates?
-                        match self.selected_index {
-                            // yes
-                            0 => {
-                                self.selection_state = IdentitiesInsertsSelectionState::SelectSubsequent { contracts: contracts.clone() };
-                                self.update_component_for_contract_update();
-                                
-                                Some(Message::Redraw)                                
-                            },
-                            // no
-                            1 => {
-                                Some(Message::AddStrategyContract(contracts.clone()))
-                            },
-                            _ => {
-                                panic!("invalid index in IdentitiesInsertsSelectionState::UpdatesOption")
-                            }
-                        }
-                    },
-                    IdentitiesInsertsSelectionState::SelectSubsequent { contracts } => {
-                        let (name, _) = self.known_contracts.iter().nth(self.selected_index).map(|(k, v)| (k.clone(), v.clone())).unwrap();
-                        contracts.push(name);
-
-                        self.selection_state = IdentitiesInsertsSelectionState::UpdatesOption { contracts: contracts.clone() };
-                        self.update_component_for_contract_update_option();
-                        
-                        Some(Message::Redraw)                        
-                    }
-                }
-            }
-            Event::Keyboard(KeyEvent {
-                code: Key::Char('q'), ..
-            }) => {
-                Some(Message::ReloadScreen)
-            }
             _ => None,
         }
     }

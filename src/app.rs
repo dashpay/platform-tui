@@ -37,10 +37,9 @@ use tuirealm::{
 use crate::app::state::AppState;
 use crate::app::wallet::{SingleKeyWallet, Wallet};
 
-
 use crate::components::*;
 
-use self::strategies::default_strategy_details;
+use self::strategies::{Description, default_strategy};
 
 fn make_screen_subs() -> Vec<Sub<ComponentId, NoUserEvent>> {
     vec![
@@ -159,7 +158,6 @@ pub(super) enum Message {
     AddNewStrategy,
     DuplicateStrategy,
     DeleteStrategy(usize),
-    IdentityInserts,
     RemoveIdentityInserts,
     StartIdentities(u16, u32),
     RemoveStartIdentities,
@@ -785,7 +783,7 @@ impl Update<Message> for Model<'_> {
                         if let Some(first_contract_key) = contracts.get(0) {
                             if let Some(first_contract) = self.state.known_contracts.get(first_contract_key) {
                                 if contracts.len() == 1 {
-                                    strategy.strategy.contracts_with_updates.push((first_contract.clone(), None));
+                                    strategy.contracts_with_updates.push((first_contract.clone(), None));
                                 } else {
                                     let mut contract_updates = BTreeMap::new();
                         
@@ -795,19 +793,10 @@ impl Update<Message> for Model<'_> {
                                         }
                                     }
                         
-                                    strategy.strategy.contracts_with_updates.push((first_contract.clone(), Some(contract_updates)));
+                                    strategy.contracts_with_updates.push((first_contract.clone(), Some(contract_updates)));
                                 }
                             }
                         }
-                            
-                        let description_entry = strategy.description.entry("contracts_with_updates".to_string()).or_insert("".to_string());
-                        
-                        let new_contracts_formatted = contracts.join("::");
-                        
-                        if !description_entry.is_empty() {
-                            description_entry.push_str(", ");
-                        }
-                        description_entry.push_str(&new_contracts_formatted);
                     }
                     self.state.save();
 
@@ -824,11 +813,7 @@ impl Update<Message> for Model<'_> {
                 Message::RemoveContract => {
                     let current_name = self.state.current_strategy.clone().unwrap();
                     let current_strategy_details = self.state.available_strategies.get_mut(&current_name).unwrap();
-                    current_strategy_details.strategy.contracts_with_updates.pop();
-                    let description_contracts = current_strategy_details.description.get_mut("contracts_with_updates").unwrap();
-                    let mut values: Vec<&str> = description_contracts.split(',').collect();
-                    values.pop();
-                    *description_contracts = values.join(",");
+                    current_strategy_details.contracts_with_updates.pop();
                 
                     self.state.save();
                 
@@ -963,14 +948,13 @@ impl Update<Message> for Model<'_> {
                                 .active(&ComponentId::CommandPallet)
                                 .expect("cannot set active");
 
-                            let description = current_strategy.description.get(&"operations".to_string());
-                            let mut values: Vec<&str> = description.unwrap().split(',').collect();
-                            let last_value = values.pop().unwrap_or(&"");
-                            let freq = format!("::TBPR={}::CPB={}", tpbr, cpb);
-                            let new_value = last_value.clone().to_string() + &freq;
-                            values.push(&new_value);
-                            let desc: String = values.join(",");
-                            current_strategy.description.insert("operations".to_string(), desc);
+                            let mut last_op = current_strategy.operations.pop().unwrap();
+                            last_op.frequency = Frequency {
+                                times_per_block_range: 1..tpbr,
+                                chance_per_block: Some(cpb)
+                            };
+
+                            current_strategy.operations.push(last_op);
 
                             self.state.save();
 
@@ -994,8 +978,10 @@ impl Update<Message> for Model<'_> {
                                 .active(&ComponentId::CommandPallet)
                                 .expect("cannot set active");
 
-                            let freq = format!("TBPR={}::CPB={}", tpbr, cpb);
-                            current_strategy.description.insert("identities_inserts".to_string(), freq);
+                            current_strategy.identities_inserts = Frequency {
+                                times_per_block_range: 1..tpbr,
+                                chance_per_block: Some(cpb),
+                            };
 
                             self.state.save();
 
@@ -1038,31 +1024,11 @@ impl Update<Message> for Model<'_> {
                     let mut op_vec = Vec::new();
                     op_vec.push(doc_op.clone());
                     let current_strategy_key = self.state.current_strategy.clone().unwrap();
-                    let current_strategy_details = self.state.available_strategies.get_mut(&current_strategy_key).unwrap();
-                    let current_strategy = &mut current_strategy_details.strategy;
+                    let current_strategy = self.state.available_strategies.get_mut(&current_strategy_key).unwrap();
                     current_strategy.operations.push(Operation {
                         op_type: OperationType::Document(doc_op),
                         frequency: Frequency::default(),
                     });
-
-                    let action_name = match action {
-                        DocumentAction::DocumentActionInsertRandom(_, _) => "InsertRandom",
-                        DocumentAction::DocumentActionDelete => "Delete",
-                        DocumentAction::DocumentActionReplace => "Replace",
-                        DocumentAction::DocumentActionInsertSpecific(_, _, _, _) => "InsertSpecific",
-                    };
-
-                    let op_description = format!("DocumentOp::{}::{}", 
-                        doc_type.name(), 
-                        action_name,
-                    );
-                    
-                    let description_entry = current_strategy_details.description.entry("operations".to_string()).or_insert("".to_string());
-                    if description_entry.is_empty() {
-                        *description_entry = op_description;
-                    } else {
-                        description_entry.push_str(&format!(", {}", op_description));
-                    }
 
                     self.state.save();
 
@@ -1070,61 +1036,31 @@ impl Update<Message> for Model<'_> {
                 },
                 Message::IdentityTopUp => {
                     let current_strategy_key = self.state.current_strategy.clone().unwrap();
-                    let current_strategy_details = self.state.available_strategies.get_mut(&current_strategy_key).unwrap();
-                    let current_strategy = &mut current_strategy_details.strategy;
+                    let current_strategy = self.state.available_strategies.get_mut(&current_strategy_key).unwrap();
                     current_strategy.operations.push(Operation {
                         op_type: OperationType::IdentityTopUp,
                         frequency: Frequency::default(),
                     });
-
-                    let op_description = "IdentityTopUp".to_string();
-                    
-                    let description_entry = current_strategy_details.description.entry("operations".to_string()).or_insert("".to_string());
-                    if description_entry.is_empty() || description_entry == "-" {
-                        *description_entry = op_description;
-                    } else {
-                        description_entry.push_str(&format!(", {}", op_description));
-                    }
                     
                     Some(Message::ExpectingInput(InputType::Frequency("operations".to_string())))
                 },
                 Message::IdentityWithdrawal => {
                     let current_strategy_key = self.state.current_strategy.clone().unwrap();
-                    let current_strategy_details = self.state.available_strategies.get_mut(&current_strategy_key).unwrap();
-                    let current_strategy = &mut current_strategy_details.strategy;
+                    let current_strategy = self.state.available_strategies.get_mut(&current_strategy_key).unwrap();
                     current_strategy.operations.push(Operation {
                         op_type: OperationType::IdentityWithdrawal,
                         frequency: Frequency::default(),
                     });
-
-                    let op_description = "IdentityWithdrawal".to_string();
-                    
-                    let description_entry = current_strategy_details.description.entry("operations".to_string()).or_insert("".to_string());
-                    if description_entry.is_empty() {
-                        *description_entry = op_description;
-                    } else {
-                        description_entry.push_str(&format!(", {}", op_description));
-                    }
                     
                     Some(Message::ExpectingInput(InputType::Frequency("operations".to_string())))
                 },
                 Message::IdentityTransfer => {
                     let current_strategy_key = self.state.current_strategy.clone().unwrap();
-                    let current_strategy_details = self.state.available_strategies.get_mut(&current_strategy_key).unwrap();
-                    let current_strategy = &mut current_strategy_details.strategy;
+                    let current_strategy = self.state.available_strategies.get_mut(&current_strategy_key).unwrap();
                     current_strategy.operations.push(Operation {
                         op_type: OperationType::IdentityTransfer,
                         frequency: Frequency::default(),
                     });
-
-                    let op_description = "IdentityTransfer".to_string();
-                    
-                    let description_entry = current_strategy_details.description.entry("operations".to_string()).or_insert("".to_string());
-                    if description_entry.is_empty() {
-                        *description_entry = op_description;
-                    } else {
-                        description_entry.push_str(&format!(", {}", op_description));
-                    }
                     
                     Some(Message::ExpectingInput(InputType::Frequency("operations".to_string())))
                 },
@@ -1152,29 +1088,11 @@ impl Update<Message> for Model<'_> {
                     let mut op_vec = Vec::new();
                     op_vec.push(op.clone());
                     let current_strategy_key = self.state.current_strategy.clone().unwrap();
-                    let current_strategy_details = self.state.available_strategies.get_mut(&current_strategy_key).unwrap();
-                    let current_strategy = &mut current_strategy_details.strategy;
+                    let current_strategy = self.state.available_strategies.get_mut(&current_strategy_key).unwrap();
                     current_strategy.operations.push(Operation {
                         op_type: OperationType::IdentityUpdate(op.clone()),
                         frequency: Frequency::default(),
                     });
-
-                    let op_type = match op {
-                        IdentityUpdateOp::IdentityUpdateAddKeys(_) => "AddKeys",
-                        IdentityUpdateOp::IdentityUpdateDisableKey(_) => "DisableKey",
-                    };
-
-                    let op_description = format!("IdentityUpdate::{}::{}", 
-                        op_type, 
-                        count,
-                    );
-                    
-                    let description_entry = current_strategy_details.description.entry("operations".to_string()).or_insert("".to_string());
-                    if description_entry.is_empty() {
-                        *description_entry = op_description;
-                    } else {
-                        description_entry.push_str(&format!(", {}", op_description));
-                    }
 
                     self.state.save();
 
@@ -1182,12 +1100,8 @@ impl Update<Message> for Model<'_> {
                 },
                 Message::RemoveOperation => {
                     let current_name = self.state.current_strategy.clone().unwrap();
-                    let current_strategy_details = self.state.available_strategies.get_mut(&current_name).unwrap();
-                    current_strategy_details.strategy.operations.pop();
-                    let description_contracts = current_strategy_details.description.get_mut("operations").unwrap();
-                    let mut values: Vec<&str> = description_contracts.split(',').collect();
-                    values.pop();
-                    *description_contracts = values.join(",");
+                    let current_strategy = self.state.available_strategies.get_mut(&current_name).unwrap();
+                    current_strategy.operations.pop();
                 
                     self.state.save();
                 
@@ -1202,7 +1116,7 @@ impl Update<Message> for Model<'_> {
                     Some(Message::Redraw)
                 },
                 Message::AddNewStrategy => {
-                    self.state.available_strategies.insert("new_strategy".to_string(), default_strategy_details());
+                    self.state.available_strategies.insert("new_strategy".to_string(), default_strategy());
                     self.state.current_strategy = Some("new_strategy".to_string());
                     self.state.save();
 
@@ -1267,28 +1181,11 @@ impl Update<Message> for Model<'_> {
 
                     Some(Message::Redraw)
                 },
-                Message::IdentityInserts => {
-                    let current_strategy_key = self.state.current_strategy.clone().unwrap();
-                    let current_strategy_details = self.state.available_strategies.get_mut(&current_strategy_key).unwrap();
-                    let current_strategy = &mut current_strategy_details.strategy;
-                    current_strategy.identities_inserts = Frequency::default();
-
-                    let op_description = "IdentityInserts".to_string();
-                    
-                    let description_entry = current_strategy_details.description.entry("identities_inserts".to_string()).or_insert("".to_string());
-                    if description_entry.is_empty() || description_entry == "-" {
-                        *description_entry = op_description;
-                    } else {
-                        description_entry.push_str(&format!(", {}", op_description));
-                    }
-                    
-                    Some(Message::ExpectingInput(InputType::Frequency("identities_inserts".to_string())))
-                },
                 Message::RemoveIdentityInserts => {
                     let current_name = self.state.current_strategy.clone().unwrap();
-                    let current_strategy_details = self.state.available_strategies.get_mut(&current_name).unwrap();
-                    current_strategy_details.strategy.identities_inserts = Frequency::default();
-                    current_strategy_details.description.insert("identities_inserts".to_string(), "".to_string());
+                    let current_strategy = self.state.available_strategies.get_mut(&current_name).unwrap();
+                    current_strategy.identities_inserts = Frequency::default();
+                    current_strategy.strategy_description().insert("identities_inserts".to_string(), "".to_string());
                 
                     self.state.save();
                 
@@ -1319,8 +1216,7 @@ impl Update<Message> for Model<'_> {
 
 
                     let current_strategy_key = self.state.current_strategy.clone().unwrap();
-                    let current_strategy_details = self.state.available_strategies.get_mut(&current_strategy_key).unwrap();
-                    let current_strategy = &mut current_strategy_details.strategy;
+                    let current_strategy = self.state.available_strategies.get_mut(&current_strategy_key).unwrap();
 
                     let identities = create_identities_state_transitions(
                         count,
@@ -1331,11 +1227,6 @@ impl Update<Message> for Model<'_> {
                     );
 
                     current_strategy.start_identities = identities;
-
-                    let op_description = format!("Identities={}::Keys={}", count, key_count);
-                    
-                    let description_entry = current_strategy_details.description.entry("start_identities".to_string()).or_insert("".to_string());
-                    *description_entry = op_description;
 
                     self.state.save();
 
@@ -1351,9 +1242,8 @@ impl Update<Message> for Model<'_> {
                 },
                 Message::RemoveStartIdentities => {
                     let current_name = self.state.current_strategy.clone().unwrap();
-                    let current_strategy_details = self.state.available_strategies.get_mut(&current_name).unwrap();
-                    current_strategy_details.strategy.start_identities = vec![];
-                    current_strategy_details.description.insert("start_identities".to_string(), "".to_string());
+                    let current_strategy = self.state.available_strategies.get_mut(&current_name).unwrap();
+                    current_strategy.start_identities = vec![];
                 
                     self.state.save();
                 
@@ -1369,8 +1259,7 @@ impl Update<Message> for Model<'_> {
                 },
                 Message::ContractCreate => {
                     let current_strategy_key = self.state.current_strategy.clone().unwrap();
-                    let current_strategy_details = self.state.available_strategies.get_mut(&current_strategy_key).unwrap();
-                    let current_strategy = &mut current_strategy_details.strategy;
+                    let current_strategy = self.state.available_strategies.get_mut(&current_strategy_key).unwrap();
 
                     let random_number1 = rand::thread_rng().gen_range(1..=50);
                     let random_number2 = rand::thread_rng().gen_range(1..=50);
@@ -1416,15 +1305,6 @@ impl Update<Message> for Model<'_> {
                             1..rand::thread_rng().gen::<u16>()),
                         frequency: Frequency::default(),
                     });
-
-                    let op_description = "ContractCreate".to_string();
-                    
-                    let description_entry = current_strategy_details.description.entry("operations".to_string()).or_insert("".to_string());
-                    if description_entry.is_empty() {
-                        *description_entry = op_description;
-                    } else {
-                        description_entry.push_str(&format!(", {}", op_description));
-                    }
                     
                     Some(Message::ExpectingInput(InputType::Frequency("operations".to_string())))
                 },
@@ -1445,16 +1325,15 @@ impl Update<Message> for Model<'_> {
                         .expect("cannot set active");
 
                     let current_strategy_key = self.state.current_strategy.clone().unwrap();
-                    let current_strategy_details = self.state.available_strategies.get_mut(&current_strategy_key).unwrap();
-                    let current_strategy = &mut current_strategy_details.strategy;
+                    let current_strategy = self.state.available_strategies.get_mut(&current_strategy_key).unwrap();
                     
-                    let (op, desc) = match index {
+                    let op = match index {
                         0 => { 
                             let random_number1 = rand::thread_rng().gen_range(1..=50);
                             let random_number2 = rand::thread_rng().gen_range(1..=50);
                             let random_number3 = rand::thread_rng().gen::<i64>()-1000000;
 
-                            (DataContractUpdateOp::DataContractNewDocumentTypes(
+                            DataContractUpdateOp::DataContractNewDocumentTypes(
                                 RandomDocumentTypeParameters {
                                     new_fields_optional_count_range: 1..random_number1,
                                     new_fields_required_count_range: 1..random_number2,
@@ -1490,9 +1369,9 @@ impl Update<Message> for Model<'_> {
                                     keep_history_chance: rand::thread_rng().gen_range(0.01..=1.0),
                                     documents_mutable_chance: rand::thread_rng().gen_range(0.01..=1.0),
                                 }
-                            ), "NewDocumentTypes".to_string())
+                            )
                         },
-                        1 => (DataContractUpdateOp::DataContractNewOptionalFields(1..20, 1..3),"NewOptionalFields".to_string()),
+                        1 => DataContractUpdateOp::DataContractNewOptionalFields(1..20, 1..3),
                         _ => panic!("index out of bounds for DataContractUpdateOp")
                     };
 
@@ -1500,15 +1379,6 @@ impl Update<Message> for Model<'_> {
                         op_type: OperationType::ContractUpdate(op),
                         frequency: Frequency::default(),
                     });
-
-                    let op_description = format!("ContractUpdate::{}", desc);
-                    
-                    let description_entry = current_strategy_details.description.entry("operations".to_string()).or_insert("".to_string());
-                    if description_entry.is_empty() {
-                        *description_entry = op_description;
-                    } else {
-                        description_entry.push_str(&format!(", {}", op_description));
-                    }
                     
                     Some(Message::ExpectingInput(InputType::Frequency("operations".to_string())))
                 },

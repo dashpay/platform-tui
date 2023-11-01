@@ -3,7 +3,7 @@
 use tui_realm_stdlib::Paragraph;
 use tuirealm::{MockComponent, Component, NoUserEvent, Event, event::{KeyEvent, Key, KeyModifiers}, props::TextSpan};
 
-use crate::{app::{Message, state::AppState}, mock_components::{CommandPallet, CommandPalletKey, KeyType}};
+use crate::{app::{Message, state::AppState, strategies::Description}, mock_components::{CommandPallet, CommandPalletKey, KeyType}};
 
 #[derive(MockComponent)]
 pub(crate) struct ConfirmStrategyScreen {
@@ -19,7 +19,7 @@ impl ConfirmStrategyScreen {
         let description_spans = match &app_state.selected_strategy {
             Some(strategy_key) => {
                 if let Some(strategy) = app_state.available_strategies.get(strategy_key) {
-                    strategy.description.iter()
+                    strategy.strategy_description().iter()
                         .map(|(key, value)| TextSpan::new(&format!("{}: {}", key, value)))
                         .collect()
                 } else {

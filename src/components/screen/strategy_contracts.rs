@@ -6,7 +6,7 @@ use dpp::data_contract::created_data_contract::CreatedDataContract;
 use tui_realm_stdlib::{Paragraph, List};
 use tuirealm::{MockComponent, Component, NoUserEvent, Event, event::{KeyEvent, Key, KeyModifiers}, props::{TextSpan, TableBuilder, Alignment}, command::{Cmd, Direction}};
 
-use crate::{app::{Message, state::AppState, strategies::default_strategy_details}, mock_components::{CommandPallet, CommandPalletKey, KeyType}};
+use crate::{app::{Message, state::AppState, strategies::{default_strategy, Description}}, mock_components::{CommandPallet, CommandPalletKey, KeyType}};
 use crate::app::InputType::AddContract;
 
 #[derive(MockComponent)]
@@ -23,7 +23,7 @@ impl StrategyContractsScreen {
             combined_spans.push(TextSpan::new(&format!("{}:", strategy_key)).bold());
         
             if let Some(strategy) = app_state.available_strategies.get(strategy_key) {
-                for (key, value) in &strategy.description {
+                for (key, value) in &strategy.strategy_description() {
                     combined_spans.push(TextSpan::new(&format!("  {}:", key)).bold());
                     combined_spans.push(TextSpan::new(&format!("    {}",value)));
                 }
@@ -151,7 +151,7 @@ impl AddContractStruct {
     pub(crate) fn new(app_state: &mut AppState) -> Self {
         if app_state.current_strategy.is_none() {
             app_state.current_strategy = Some("new_strategy".to_string());
-            app_state.available_strategies.insert("new_strategy".to_string(), default_strategy_details(),
+            app_state.available_strategies.insert("new_strategy".to_string(), default_strategy(),
             );
         }
 

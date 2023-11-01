@@ -3,7 +3,7 @@
 use dapi_grpc::platform::v0::{
     self as platform_proto, get_identity_response::Result as ProtoResult, GetIdentityResponse,
 };
-use dpp::{prelude::Identity, serialization::PlatformDeserializable, ProtocolError};
+use dpp::{prelude::Identity, serialization::PlatformDeserializable};
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::prelude::Identifier;
 use rs_dapi_client::{DapiClient, DapiRequest, RequestSettings};

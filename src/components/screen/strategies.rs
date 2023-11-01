@@ -4,7 +4,7 @@ use tuirealm::{MockComponent, Component, props::{TextSpan, TableBuilder, Alignme
 use tui_realm_stdlib::{Paragraph, List};
 use crate::app::{Message, Screen, state::AppState};
 use crate::mock_components::{CommandPallet, CommandPalletKey, KeyType};
-use crate::app::InputType::{SelectedStrategy, DeleteStrategy};
+use crate::app::InputType::SelectedStrategy;
 
 #[derive(MockComponent)]
 pub(crate) struct StrategiesScreen {
