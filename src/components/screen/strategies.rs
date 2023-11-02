@@ -14,6 +14,8 @@ pub(crate) struct StrategiesScreen {
 impl StrategiesScreen {
     pub(crate) fn new(app_state: &AppState) -> Self {
         let mut strategy_texts: Vec<TextSpan> = vec![];
+        strategy_texts.push(TextSpan::new("Strategy management commands"));
+        strategy_texts.push(TextSpan::new(""));
         strategy_texts.push(TextSpan::new("Strategies are collections of Platform operations meant to be used for stress testing the network."));
         strategy_texts.push(TextSpan::new("Running a strategy from here will submit transactions to the testnet, potentially over the course of many blocks."));
         strategy_texts.push(TextSpan::new(""));
