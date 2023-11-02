@@ -146,7 +146,13 @@ impl Component<Message, NoUserEvent> for LoadStrategyScreenCommands {
                 Event::Keyboard(KeyEvent {
                     code: Key::Char('l'),
                     modifiers: KeyModifiers::NONE,
-                }) => Some(Message::ExpectingInput(LoadStrategy)),
+                }) => { 
+                    if self.state.available_strategies.is_empty() {
+                        None
+                    } else {
+                        Some(Message::ExpectingInput(LoadStrategy))
+                    }
+                },
                 Event::Keyboard(KeyEvent {
                     code: Key::Char('n'),
                     modifiers: KeyModifiers::NONE,
@@ -162,7 +168,13 @@ impl Component<Message, NoUserEvent> for LoadStrategyScreenCommands {
                 Event::Keyboard(KeyEvent {
                     code: Key::Char('l'),
                     modifiers: KeyModifiers::NONE,
-                }) => Some(Message::ExpectingInput(LoadStrategy)),
+                }) => { 
+                    if self.state.available_strategies.is_empty() {
+                        None
+                    } else {
+                        Some(Message::ExpectingInput(LoadStrategy))
+                    }
+                },
                 Event::Keyboard(KeyEvent {
                     code: Key::Char('n'),
                     modifiers: KeyModifiers::NONE,

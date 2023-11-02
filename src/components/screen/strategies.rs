@@ -12,10 +12,26 @@ pub(crate) struct StrategiesScreen {
 }
 
 impl StrategiesScreen {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(app_state: &AppState) -> Self {
+        let mut strategy_texts: Vec<TextSpan>;
+
+        if app_state.available_strategies.is_empty() {
+            strategy_texts = vec![
+                TextSpan::new("No strategies saved").bold(),
+            ];
+        } else {
+            strategy_texts = vec![
+                TextSpan::new("Available Strategies:").bold(),
+            ];
+            
+            for key in app_state.available_strategies.keys() {
+                strategy_texts.push(TextSpan::new(format!(" - {}", &key.to_string())));
+            }
+        }
+
         StrategiesScreen {
             component: Paragraph::default()
-                .text([TextSpan::new("Strategies management commands")].as_ref()),
+                .text(&strategy_texts),
         }
     }
 }
@@ -29,10 +45,11 @@ impl Component<Message, NoUserEvent> for StrategiesScreen {
 #[derive(MockComponent)]
 pub(crate) struct StrategiesScreenCommands {
     component: CommandPallet,
+    state: AppState
 }
 
 impl StrategiesScreenCommands {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(state: &AppState) -> Self {
         StrategiesScreenCommands {
             component: CommandPallet::new(vec![
                 CommandPalletKey {
@@ -51,6 +68,7 @@ impl StrategiesScreenCommands {
                     key_type: KeyType::Command,
                 },
             ]),
+            state: state.clone()
         }
     }
 }
@@ -65,7 +83,13 @@ impl Component<Message, NoUserEvent> for StrategiesScreenCommands {
             Event::Keyboard(KeyEvent {
                 code: Key::Char('r'),
                 modifiers: KeyModifiers::NONE,
-            }) => Some(Message::ExpectingInput(SelectedStrategy)),
+            }) => {
+                if self.state.available_strategies.is_empty() {
+                    None
+                } else {
+                    Some(Message::ExpectingInput(SelectedStrategy))
+                }
+            },
             Event::Keyboard(KeyEvent {
                 code: Key::Char('c'),
                 modifiers: KeyModifiers::NONE,

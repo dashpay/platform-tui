@@ -90,30 +90,32 @@ impl Description for Strategy {
                 .join("; "),
         );
 
-        if let Some((first_identity_enum, _)) = self.start_identities.first() {
+        let start_identities_description = if let Some((first_identity_enum, _)) = self.start_identities.first() {
             let num_identities = self.start_identities.len();
-            let num_keys = match first_identity_enum {
-                Identity::V0(identity_v0) => identity_v0.public_keys.len(),
-                // Add more variants as they're defined
-            };
-            desc.insert(
-                "start_identities".to_string(),
-                format!("Identities={}::Keys={}", num_identities, num_keys),
-            );
+            if num_identities > 0 {
+                let num_keys = match first_identity_enum {
+                    Identity::V0(identity_v0) => identity_v0.public_keys.len(),
+                };
+                format!("Identities={}::Keys={}", num_identities, num_keys)
+            } else {
+                "".to_string()
+            }
         } else {
-            // Handle the case where start_identities is empty if needed
-            desc.insert("start_identities".to_string(), "Identities=0::Keys=0".to_string());
-        }
-
-        desc.insert(
-            "identities_inserts".to_string(),
+            "".to_string() 
+        };
+        desc.insert("start_identities".to_string(), start_identities_description);
+                
+        let insert_description = if self.identities_inserts.times_per_block_range.end > 0 {
             format!(
                 "TPBR={}::CPB={}",
                 self.identities_inserts.times_per_block_range.end,
                 self.identities_inserts.chance_per_block.map_or("None".to_string(), |chance| format!("{:.2}", chance))
-            ),
-        );
-
+            )
+        } else {
+            "".to_string()
+        };
+        desc.insert("identities_inserts".to_string(), insert_description);
+                
         desc
     }
 }

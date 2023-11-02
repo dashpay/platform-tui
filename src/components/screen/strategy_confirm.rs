@@ -12,32 +12,28 @@ pub(crate) struct ConfirmStrategyScreen {
 
 impl ConfirmStrategyScreen {
     pub(crate) fn new(app_state: &AppState) -> Self {
-        let selected_strategy = &app_state.selected_strategy;
-        let introduction = TextSpan::new("Confirm you would like to run the strategy:");
-        let strategy_name = TextSpan::new(selected_strategy.clone().unwrap_or_default()).bold();
-
-        let description_spans = match &app_state.selected_strategy {
-            Some(strategy_key) => {
-                if let Some(strategy) = app_state.available_strategies.get(strategy_key) {
-                    strategy.strategy_description().iter()
-                        .map(|(key, value)| TextSpan::new(&format!("{}: {}", key, value)))
-                        .collect()
-                } else {
-                    // Handle the case where the strategy_key doesn't exist in available_strategies
-                    vec![TextSpan::new("Error: strategy not found.")]
-                }
-            },
-            None => {
-                // Handle the case where app_state.selected_strategy is None
-                vec![TextSpan::new("No selected strategy.")]
-            }
-        };
-
         let mut combined_spans = Vec::new();
+        let introduction = TextSpan::new("Confirm you would like to run the strategy:");
         combined_spans.push(introduction);
         combined_spans.push(TextSpan::new(" "));
-        combined_spans.push(strategy_name);
-        combined_spans.extend(description_spans);
+
+        if let Some(strategy_key) = &app_state.selected_strategy {
+            // Append the current strategy name in bold to combined_spans
+            combined_spans.push(TextSpan::new(&format!("{}:", strategy_key)).bold());
+        
+            if let Some(strategy) = app_state.available_strategies.get(strategy_key) {
+                for (key, value) in &strategy.strategy_description() {
+                    combined_spans.push(TextSpan::new(&format!("  {}:", key)).bold());
+                    combined_spans.push(TextSpan::new(&format!("    {}",value)));
+                }
+            } else {
+                // Handle the case where the strategy_key doesn't exist in available_strategies
+                combined_spans.push(TextSpan::new("Error: current strategy not found in available strategies."));
+            }
+        } else {
+            // Handle the case where app_state.current_strategy is None
+            combined_spans.push(TextSpan::new("No strategy loaded.").bold());
+        }
 
         ConfirmStrategyScreen {
             component: Paragraph::default().text(combined_spans.as_ref())

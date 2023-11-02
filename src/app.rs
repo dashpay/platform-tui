@@ -383,14 +383,14 @@ impl<'a> Model<'a> {
                 self.app
                     .remount(
                         ComponentId::Screen,
-                        Box::new(StrategiesScreen::new()),
+                        Box::new(StrategiesScreen::new(&self.state)),
                         make_screen_subs(),
                     )
                     .expect("unable to remount screen");
                 self.app
                     .remount(
                         ComponentId::CommandPallet,
-                        Box::new(StrategiesScreenCommands::new()),
+                        Box::new(StrategiesScreenCommands::new(&self.state)),
                         Vec::new(),
                     )
                     .expect("unable to remount screen");
