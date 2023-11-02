@@ -16,8 +16,8 @@ pub(crate) struct StrategyContractsScreen {
 
 impl StrategyContractsScreen {
     pub(crate) fn new(app_state: &AppState) -> Self {
-
         let mut combined_spans = Vec::new();
+
         if let Some(strategy_key) = &app_state.current_strategy {
             // Append the current strategy name in bold to combined_spans
             combined_spans.push(TextSpan::new(&format!("{}:", strategy_key)).bold());

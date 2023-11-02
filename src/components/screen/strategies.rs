@@ -13,16 +13,19 @@ pub(crate) struct StrategiesScreen {
 
 impl StrategiesScreen {
     pub(crate) fn new(app_state: &AppState) -> Self {
-        let mut strategy_texts: Vec<TextSpan>;
+        let mut strategy_texts: Vec<TextSpan> = vec![];
+        strategy_texts.push(TextSpan::new("Strategies are collections of Platform operations meant to be used for stress testing the network."));
+        strategy_texts.push(TextSpan::new("Running a strategy from here will submit transactions to the testnet, potentially over the course of many blocks."));
+        strategy_texts.push(TextSpan::new(""));
 
         if app_state.available_strategies.is_empty() {
-            strategy_texts = vec![
-                TextSpan::new("No strategies saved").bold(),
-            ];
+            strategy_texts.push(
+                TextSpan::new("No strategies saved").bold()
+            );
         } else {
-            strategy_texts = vec![
+            strategy_texts.push(
                 TextSpan::new("Available Strategies:").bold(),
-            ];
+            );
             
             for key in app_state.available_strategies.keys() {
                 strategy_texts.push(TextSpan::new(format!(" - {}", &key.to_string())));
@@ -64,7 +67,7 @@ impl StrategiesScreenCommands {
                 },
                 CommandPalletKey {
                     key: 'c',
-                    description: "Create and edit",
+                    description: "Create",
                     key_type: KeyType::Command,
                 },
             ]),
