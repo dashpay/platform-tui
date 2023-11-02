@@ -201,7 +201,7 @@ impl FrequencyStruct {
             rows.add_row();
         }
         self.component = List::default()
-            .title("Select the chance per block for the action to occur", Alignment::Center)
+            .title("Select the chance per block (CPB) for the action to occur", Alignment::Center)
             .scroll(true)
             .highlighted_str("> ")
             .rewind(true)
@@ -220,7 +220,7 @@ impl FrequencyStruct {
 
         Self {
             component: List::default()
-                .title("Select the maximum times per block for the action to occur", Alignment::Center)
+                .title("Select the times per block (TPB) for the action to occur", Alignment::Center)
                 .scroll(true)
                 .highlighted_str("> ")
                 .rewind(true)

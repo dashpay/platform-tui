@@ -950,7 +950,7 @@ impl Update<Message> for Model<'_> {
 
                             let mut last_op = current_strategy.operations.pop().unwrap();
                             last_op.frequency = Frequency {
-                                times_per_block_range: 1..tpbr,
+                                times_per_block_range: tpbr..tpbr+1,
                                 chance_per_block: Some(cpb)
                             };
 

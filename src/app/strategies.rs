@@ -106,8 +106,8 @@ impl Description for Strategy {
                         OperationType::IdentityTransfer => "IdentityTransfer".to_string(),
                     };
                     let frequency_str = format!(
-                        "TPBR={}::CPB={}",
-                        operation.frequency.times_per_block_range.end,
+                        "TPB={}::CPB={}",
+                        operation.frequency.times_per_block_range.start,
                         operation.frequency.chance_per_block.map_or("None".to_string(), |chance| format!("{:.2}", chance)),
                     );
                     format!("{}::{}", op_type_str, frequency_str)
@@ -133,8 +133,8 @@ impl Description for Strategy {
                 
         let insert_description = if self.identities_inserts.times_per_block_range.end > 0 {
             format!(
-                "TPBR={}::CPB={}",
-                self.identities_inserts.times_per_block_range.end,
+                "TPB={}::CPB={}",
+                self.identities_inserts.times_per_block_range.start,
                 self.identities_inserts.chance_per_block.map_or("None".to_string(), |chance| format!("{:.2}", chance))
             )
         } else {
