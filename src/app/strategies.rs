@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 
 use dpp::{data_contract::{created_data_contract::CreatedDataContract, accessors::v0::DataContractV0Getters}, prelude::{DataContract, Identity}, platform_value::string_encoding::Encoding};
-use strategy_tests::{Strategy, frequency::Frequency, operations::{OperationType, DocumentAction}};
+use strategy_tests::{Strategy, frequency::Frequency, operations::{OperationType, DocumentAction, IdentityUpdateOp, DataContractUpdateOp}};
 
 pub fn default_strategy() -> Strategy {
     Strategy { 
@@ -65,22 +65,28 @@ impl Description for Strategy {
                     let op_type_str = match &operation.op_type {
                         OperationType::Document(doc_op) => {
                             let action_str = match &doc_op.action {
-                                DocumentAction::DocumentActionInsertRandom(_, _) => "DocumentActionInsertRandom",
-                                DocumentAction::DocumentActionDelete => "DocumentActionDelete",
-                                DocumentAction::DocumentActionReplace => "DocumentActionReplace",
-                                DocumentAction::DocumentActionInsertSpecific(_, _, _, _) => "DocumentActionInsertSpecific",
+                                DocumentAction::DocumentActionInsertRandom(_, _) => "InsertRandom",
+                                DocumentAction::DocumentActionDelete => "Delete",
+                                DocumentAction::DocumentActionReplace => "Replace",
+                                DocumentAction::DocumentActionInsertSpecific(_, _, _, _) => "InsertSpecific",
                             };
-                            format!("Document::{}", action_str)
+                            format!("DocumentAction::{}", action_str)
                         },
                         OperationType::IdentityTopUp => "IdentityTopUp".to_string(),
-                        OperationType::IdentityUpdate(_) => "IdentityUpdate".to_string(),
+                        OperationType::IdentityUpdate(update_type) => match update_type {
+                            IdentityUpdateOp::IdentityUpdateAddKeys(num) => format!("IdentityUpdate::AddKeys::{}", num),
+                            IdentityUpdateOp::IdentityUpdateDisableKey(num) => format!("IdentityUpdate::DisableKey::{}", num),
+                        },
                         OperationType::IdentityWithdrawal => "IdentityWithdrawal".to_string(),
                         OperationType::ContractCreate(_, _) => "ContractCreate".to_string(),
-                        OperationType::ContractUpdate(_) => "ContractUpdate".to_string(),
+                        OperationType::ContractUpdate(data_contract_update_op) => match data_contract_update_op {
+                            DataContractUpdateOp::DataContractNewDocumentTypes(_) => "ContractUpdate::NewDocTypes".to_string(),
+                            DataContractUpdateOp::DataContractNewOptionalFields(_,_) => "ContractUpdate::NewFields".to_string(),
+                        },
                         OperationType::IdentityTransfer => "IdentityTransfer".to_string(),
                     };
                     let frequency_str = format!(
-                        "TPBR{}::CPB{}",
+                        "TPBR={}::CPB={}",
                         operation.frequency.times_per_block_range.end,
                         operation.frequency.chance_per_block.map_or("None".to_string(), |chance| format!("{:.2}", chance)),
                     );
@@ -89,7 +95,7 @@ impl Description for Strategy {
                 .collect::<Vec<_>>()
                 .join("; "),
         );
-
+                
         let start_identities_description = if let Some((first_identity_enum, _)) = self.start_identities.first() {
             let num_identities = self.start_identities.len();
             if num_identities > 0 {
