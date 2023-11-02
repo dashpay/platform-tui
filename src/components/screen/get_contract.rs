@@ -1,15 +1,18 @@
 //! Get contract screen
 
 use tui_realm_stdlib::Textarea;
-use tuirealm::{event::{Key, KeyEvent, KeyModifiers}, Component, Event, MockComponent, NoUserEvent, State, StateValue};
 use tuirealm::command::CmdResult;
+use tuirealm::{
+    event::{Key, KeyEvent, KeyModifiers},
+    Component, Event, MockComponent, NoUserEvent, State, StateValue,
+};
 
+use crate::app::InputType::Base58ContractId;
+use crate::mock_components::{key_event_to_cmd, CompletingInput, HistoryCompletionEngine};
 use crate::{
     app::Message,
     mock_components::{CommandPallet, CommandPalletKey, KeyType},
 };
-use crate::app::InputType::Base58ContractId;
-use crate::mock_components::{CompletingInput, HistoryCompletionEngine, key_event_to_cmd};
 
 #[derive(MockComponent)]
 pub(crate) struct GetContractScreen {
@@ -75,7 +78,6 @@ impl Component<Message, NoUserEvent> for GetContractScreenCommands {
     }
 }
 
-
 #[derive(MockComponent)]
 pub(crate) struct ContractIdInput {
     component: CompletingInput<HistoryCompletionEngine>,
@@ -116,4 +118,3 @@ impl Component<Message, NoUserEvent> for ContractIdInput {
         }
     }
 }
-

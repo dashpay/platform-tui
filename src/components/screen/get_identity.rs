@@ -9,6 +9,7 @@ use tuirealm::{
     Component, Event, MockComponent, NoUserEvent, State, StateValue,
 };
 
+use crate::app::InputType::Base58IdentityId;
 use crate::{
     app::Message,
     mock_components::{
@@ -16,7 +17,6 @@ use crate::{
         HistoryCompletionEngine, KeyType,
     },
 };
-use crate::app::InputType::Base58IdentityId;
 
 #[derive(MockComponent)]
 pub(crate) struct GetIdentityScreen {

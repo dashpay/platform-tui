@@ -1,5 +1,6 @@
 //! Application screens module.
 
+mod add_wallet;
 mod contract;
 mod get_contract;
 mod get_identity;
@@ -16,11 +17,14 @@ mod strategy_operations;
 mod strategy_start_identities;
 mod strategy_identity_inserts;
 
+pub(crate) use add_wallet::AddWalletScreen;
+pub(crate) use add_wallet::AddWalletScreenCommands;
+pub(crate) use add_wallet::PrivateKeyInput;
 pub(crate) use contract::ContractScreen;
 pub(crate) use contract::ContractScreenCommands;
+pub(crate) use get_contract::ContractIdInput;
 pub(crate) use get_contract::GetContractScreen;
 pub(crate) use get_contract::GetContractScreenCommands;
-pub(crate) use get_contract::ContractIdInput;
 pub(crate) use get_identity::GetIdentityScreen;
 pub(crate) use get_identity::GetIdentityScreenCommands;
 pub(crate) use get_identity::IdentityIdInput;
@@ -60,8 +64,3 @@ pub(crate) use strategy_start_identities::StrategyStartIdentitiesScreenCommands;
 pub(crate) use strategy_start_identities::StartIdentitiesStruct;
 pub(crate) use strategy_identity_inserts::StrategyIdentityInsertsScreen;
 pub(crate) use strategy_identity_inserts::StrategyIdentityInsertsScreenCommands;
-
-
-
-
-

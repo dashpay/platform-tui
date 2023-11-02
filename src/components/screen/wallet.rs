@@ -7,11 +7,11 @@ use tuirealm::{
     Component, Event, MockComponent, NoUserEvent,
 };
 
+use crate::app::state::AppState;
 use crate::{
     app::{Message, Screen},
     mock_components::{CommandPallet, CommandPalletKey, KeyType},
 };
-use crate::app::state::AppState;
 
 #[derive(MockComponent)]
 pub(crate) struct WalletScreen {
@@ -73,17 +73,17 @@ impl Component<Message, NoUserEvent> for WalletScreenCommands {
     fn on(&mut self, ev: Event<NoUserEvent>) -> Option<Message> {
         match ev {
             Event::Keyboard(KeyEvent {
-                                code: Key::Char('q'),
-                                modifiers: KeyModifiers::NONE,
-                            }) => Some(Message::PrevScreen),
+                code: Key::Char('q'),
+                modifiers: KeyModifiers::NONE,
+            }) => Some(Message::PrevScreen),
             Event::Keyboard(KeyEvent {
-                                code: Key::Char('a'),
-                                modifiers: KeyModifiers::NONE,
-                            }) => Some(Message::NextScreen(Screen::AddWallet)),
+                code: Key::Char('a'),
+                modifiers: KeyModifiers::NONE,
+            }) => Some(Message::NextScreen(Screen::AddWallet)),
             Event::Keyboard(KeyEvent {
-                                code: Key::Char('f'),
-                                modifiers: KeyModifiers::NONE,
-                            }) => Some(Message::UpdateLoadedWalletUTXOsAndBalance),
+                code: Key::Char('f'),
+                modifiers: KeyModifiers::NONE,
+            }) => Some(Message::UpdateLoadedWalletUTXOsAndBalance),
             _ => None,
         }
     }

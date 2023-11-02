@@ -1,7 +1,7 @@
 mod app;
 mod components;
-mod mock_components;
 mod managers;
+mod mock_components;
 
 use rs_dapi_client::{AddressList, DapiClient, RequestSettings};
 use tuirealm::{application::PollStrategy, AttrValue, Attribute, Update};
@@ -10,7 +10,6 @@ use app::{ComponentId, Model};
 
 #[tokio::main]
 async fn main() {
-    
     // Setup DAPI client
     let mut address_list = AddressList::new();
     address_list.add_uri(rs_dapi_client::Uri::from_static(
@@ -25,7 +24,6 @@ async fn main() {
     let _ = model.terminal.enter_alternate_screen();
     let _ = model.terminal.enable_raw_mode();
     // Main loop
-    // NOTE: loop until quit; quit is set in update if AppClose is received from counter
     while !model.quit {
         // Tick
         match model.app.tick(PollStrategy::Once) {

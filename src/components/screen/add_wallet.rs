@@ -1,15 +1,18 @@
 //! Add wallet screen
 
 use tui_realm_stdlib::Textarea;
-use tuirealm::{event::{Key, KeyEvent, KeyModifiers}, Component, Event, MockComponent, NoUserEvent, State, StateValue};
 use tuirealm::command::CmdResult;
+use tuirealm::{
+    event::{Key, KeyEvent, KeyModifiers},
+    Component, Event, MockComponent, NoUserEvent, State, StateValue,
+};
 
+use crate::app::InputType::{SeedPhrase, WalletPrivateKey};
+use crate::mock_components::{key_event_to_cmd, CompletingInput, HistoryCompletionEngine};
 use crate::{
     app::Message,
     mock_components::{CommandPallet, CommandPalletKey, KeyType},
 };
-use crate::app::InputType::{SeedPhrase, WalletPrivateKey};
-use crate::mock_components::{CompletingInput, HistoryCompletionEngine, key_event_to_cmd};
 
 #[derive(MockComponent)]
 pub(crate) struct AddWalletScreen {
@@ -79,7 +82,6 @@ impl Component<Message, NoUserEvent> for AddWalletScreenCommands {
     }
 }
 
-
 #[derive(MockComponent)]
 pub(crate) struct PrivateKeyInput {
     component: CompletingInput<HistoryCompletionEngine>,
@@ -89,7 +91,8 @@ impl PrivateKeyInput {
     pub(crate) fn new() -> Self {
         let mut completions = HistoryCompletionEngine::default();
         // TODO: should be a history item not hardcoded but it's useful for development
-        completions.add_history_item("XDJrw9kEp7X2noMVayg4nkYZ7PKAWWtD2Y9w9XWDb59UCvR2i3La".to_owned());
+        completions
+            .add_history_item("XDJrw9kEp7X2noMVayg4nkYZ7PKAWWtD2Y9w9XWDb59UCvR2i3La".to_owned());
         Self {
             component: CompletingInput::new(completions, "hex private key"),
         }

@@ -1,3 +1,14 @@
+use crate::app::wallet::Wallet;
+use bincode::{Decode, Encode};
+use dpp::prelude::{DataContract, Identity};
+use dpp::serialization::{
+    PlatformDeserializableWithPotentialValidationFromVersionedStructure,
+    PlatformSerializableWithPlatformVersion,
+};
+use dpp::util::deserializer::ProtocolVersion;
+use dpp::version::PlatformVersion;
+use dpp::ProtocolError;
+use dpp::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
 use std::collections::BTreeMap;
 use walkdir::{WalkDir, DirEntry};
 use std::fs;
@@ -16,13 +27,12 @@ use dpp::version::PlatformVersion;
 use strategy_tests::Strategy;
 use strategy_tests::frequency::Frequency;
 use tokio::task;
-use crate::app::wallet::Wallet;
 
 const CURRENT_PROTOCOL_VERSION: ProtocolVersion = 1;
 
 #[derive(Debug, Clone)]
 pub struct AppState {
-    pub loaded_identity : Option<Identity>,
+    pub loaded_identity: Option<Identity>,
     pub loaded_wallet: Option<Arc<Wallet>>,
     pub known_identities: BTreeMap<String, Identity>,
     pub known_contracts: BTreeMap<String, CreatedDataContract>,
@@ -123,7 +133,7 @@ impl Default for AppState {
 
 #[derive(Clone, Debug, Encode, Decode)]
 struct AppStateInSerializationFormat {
-    pub loaded_identity : Option<Identity>,
+    pub loaded_identity: Option<Identity>,
     pub loaded_wallet: Option<Wallet>,
     pub known_identities: BTreeMap<String, Identity>,
     pub known_contracts: BTreeMap<String, Vec<u8>>,
@@ -154,7 +164,8 @@ impl PlatformSerializableWithPlatformVersion for AppState {
         let known_contracts_in_serialization_format = known_contracts
             .into_iter()
             .map(|(key, contract)| {
-                let serialized_contract = contract.serialize_consume_to_bytes_with_platform_version(platform_version)?;
+                let serialized_contract =
+                    contract.serialize_consume_to_bytes_with_platform_version(platform_version)?;
                 Ok((key, serialized_contract))
             })
             .collect::<Result<BTreeMap<String, Vec<u8>>, ProtocolError>>()?;
@@ -162,7 +173,8 @@ impl PlatformSerializableWithPlatformVersion for AppState {
         let available_strategies_in_serialization_format = available_strategies
             .into_iter()
             .map(|(key, strategy)| {
-                let serialized_strategy = strategy.serialize_consume_to_bytes_with_platform_version(platform_version)?;
+                let serialized_strategy =
+                    strategy.serialize_consume_to_bytes_with_platform_version(platform_version)?;
                 Ok((key, serialized_strategy))
             })
             .collect::<Result<BTreeMap<String, Vec<u8>>, ProtocolError>>()?;
@@ -180,8 +192,9 @@ impl PlatformSerializableWithPlatformVersion for AppState {
         let config = bincode::config::standard()
             .with_big_endian()
             .with_no_limit();
-        bincode::encode_to_vec(app_state_in_serialization_format, config)
-            .map_err(|e| PlatformSerializationError(format!("unable to serialize App State: {}", e)))
+        bincode::encode_to_vec(app_state_in_serialization_format, config).map_err(|e| {
+            PlatformSerializationError(format!("unable to serialize App State: {}", e))
+        })
     }
 }
 
@@ -191,8 +204,8 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
         validate: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
-        where
-            Self: Sized,
+    where
+        Self: Sized,
     {
         let config = bincode::config::standard()
             .with_big_endian()
@@ -263,9 +276,7 @@ impl AppState {
         
         if let Some(wallet) = app_state.loaded_wallet.as_ref() {
             let wallet = wallet.clone();
-            task::spawn(async move {
-                let _ = wallet.reload_utxos().await;
-            });
+            wallet.reload_utxos().await;
         }
 
         app_state
@@ -275,7 +286,9 @@ impl AppState {
         let platform_version = PlatformVersion::get(CURRENT_PROTOCOL_VERSION).unwrap();
         let path = Path::new("explorer.state");
 
-        let serialized_state = self.serialize_to_bytes_with_platform_version(platform_version).expect("expected to save state");
+        let serialized_state = self
+            .serialize_to_bytes_with_platform_version(platform_version)
+            .expect("expected to save state");
         fs::write(path, serialized_state).unwrap();
     }
 }
