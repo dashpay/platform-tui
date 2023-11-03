@@ -1,19 +1,23 @@
 //! Identities backend logic.
 
-use crate::app::error::Error;
-use crate::app::state::AppState;
-use dapi_grpc::core::v0::transactions_with_proofs_request::FromBlock;
-use dapi_grpc::core::v0::{
-    self as core_proto, transactions_with_proofs_response, InstantSendLockMessages,
-    TransactionsWithProofsResponse,
+use bip37_bloom_filter::{BloomFilter, BloomFilterData};
+use dapi_grpc::{
+    core::v0::{
+        self as core_proto, transactions_with_proofs_request::FromBlock,
+        transactions_with_proofs_response, InstantSendLockMessages, TransactionsWithProofsResponse,
+    },
+    platform::v0::{
+        self as platform_proto, get_identity_response::Result as ProtoResult, GetIdentityResponse,
+    },
 };
-use dapi_grpc::platform::v0::{
-    self as platform_proto, get_identity_response::Result as ProtoResult, GetIdentityResponse,
+use dpp::{
+    platform_value::string_encoding::Encoding,
+    prelude::{Identifier, Identity},
+    serialization::PlatformDeserializable,
 };
-use dpp::platform_value::string_encoding::Encoding;
-use dpp::prelude::Identifier;
-use dpp::{prelude::Identity, serialization::PlatformDeserializable};
 use rs_dapi_client::{DapiClient, DapiRequest, RequestSettings};
+
+use crate::app::{error::Error, state::AppState};
 
 pub(super) async fn fetch_identity_by_b58_id(
     client: &mut DapiClient,
@@ -50,13 +54,34 @@ impl AppState {
 
         //// Core steps
 
-        // first we create the wallet registration transaction, this locks funds that we can transfer from core to platform
-        let (transaction, private_key) = wallet.registration_transaction(None);
+        // first we create the wallet registration transaction, this locks funds that we
+        // can transfer from core to platform
+        let (transaction, private_key) = wallet.registration_transaction();
 
         self.identity_creation_private_key = Some(private_key.inner.secret_bytes());
 
         // create the bloom filter
 
+        let bloom_filter = BloomFilter::builder(todo!(), 0.0001)
+            .expect("this FP rate allows up to 10000 items")
+            .add_element(todo!()) // TODO add transactions and set the n_elements accordingly
+            .add_element(todo!())
+            .build();
+
+        let bloom_filter_proto = {
+            let BloomFilterData {
+                v_data,
+                n_hash_funcs,
+                n_tweak,
+                n_flags,
+            } = bloom_filter.into();
+            core_proto::BloomFilter {
+                v_data,
+                n_hash_funcs,
+                n_tweak,
+                n_flags,
+            }
+        };
         // let bloom_filter = wallet.bloom_filter() todo() -> Sam
 
         // we should subscribe and listen to transactions from core todo() -> Evgeny
@@ -70,7 +95,7 @@ impl AppState {
             .ok_or_else(|| RegisterIdentityError("missing `chain` field".to_owned()))?;
 
         let core_transactions_stream = core_proto::TransactionsWithProofsRequest {
-            bloom_filter: todo!(),
+            bloom_filter: Some(bloom_filter_proto),
             count: 0,
             send_transaction_hashes: false,
             from_block: Some(FromBlock::FromBlockHash(block_hash)),
@@ -81,7 +106,7 @@ impl AppState {
 
         // we need to broadcast the transaction to core todo() -> Evgeny
         core_proto::BroadcastTransactionRequest {
-            transaction: todo!(), //transaction but how to encode it as bytes?,
+            transaction: todo!(), // transaction but how to encode it as bytes?,
             allow_high_fees: false,
             bypass_limits: false,
         }
@@ -107,7 +132,8 @@ impl AppState {
         .await
         .map_err(|e| RegisterIdentityError(e.to_string()))?;
 
-        // Through sdk send this transaction and get back proof that the identity was created todo() -> Evgeny
+        // Through sdk send this transaction and get back proof that the identity was
+        // created todo() -> Evgeny
         platform_proto::BroadcastStateTransitionRequest {
             state_transition: todo!(),
         }

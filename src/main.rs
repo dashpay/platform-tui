@@ -3,10 +3,9 @@ mod components;
 mod managers;
 mod mock_components;
 
+use app::{ComponentId, Model};
 use rs_dapi_client::{AddressList, DapiClient, RequestSettings};
 use tuirealm::{application::PollStrategy, AttrValue, Attribute, Update};
-
-use app::{ComponentId, Model};
 
 fn main() {
     // Setup DAPI client

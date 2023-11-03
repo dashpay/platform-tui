@@ -1,20 +1,20 @@
-use crate::app::wallet::Wallet;
+use std::{collections::BTreeMap, fs, ops::Deref, path::Path, sync::Arc};
+
 use bincode::{Decode, Encode};
-use dpp::prelude::{DataContract, Identity};
-use dpp::serialization::{
-    PlatformDeserializableWithPotentialValidationFromVersionedStructure,
-    PlatformSerializableWithPlatformVersion,
+use dpp::{
+    prelude::{DataContract, Identity},
+    serialization::{
+        PlatformDeserializableWithPotentialValidationFromVersionedStructure,
+        PlatformSerializableWithPlatformVersion,
+    },
+    util::deserializer::ProtocolVersion,
+    version::PlatformVersion,
+    ProtocolError,
+    ProtocolError::{PlatformDeserializationError, PlatformSerializationError},
 };
-use dpp::util::deserializer::ProtocolVersion;
-use dpp::version::PlatformVersion;
-use dpp::ProtocolError;
-use dpp::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
-use std::collections::BTreeMap;
-use std::fs;
-use std::ops::Deref;
-use std::path::Path;
-use std::sync::Arc;
 use strategy_tests::Strategy;
+
+use crate::app::wallet::Wallet;
 
 const CURRENT_PROTOCOL_VERSION: ProtocolVersion = 1;
 
@@ -166,11 +166,15 @@ impl AppState {
         let path = Path::new("explorer.state");
 
         let Ok(read_result) = fs::read(path) else {
-            return AppState::default()
+            return AppState::default();
         };
 
-        let Ok(app_state) = AppState::versioned_deserialize(read_result.as_slice(), false, PlatformVersion::get(CURRENT_PROTOCOL_VERSION).unwrap()) else {
-            return AppState::default()
+        let Ok(app_state) = AppState::versioned_deserialize(
+            read_result.as_slice(),
+            false,
+            PlatformVersion::get(CURRENT_PROTOCOL_VERSION).unwrap(),
+        ) else {
+            return AppState::default();
         };
 
         if let Some(wallet) = app_state.loaded_wallet.as_ref() {

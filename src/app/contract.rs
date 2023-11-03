@@ -1,16 +1,19 @@
 //! Contract backend logic.
 
-use crate::app::error::Error;
 use dapi_grpc::platform::v0::{
     self as platform_proto, get_data_contract_response::Result as ProtoResult,
     GetDataContractResponse,
 };
-use dpp::platform_value::string_encoding::Encoding;
-use dpp::prelude::{DataContract, Identifier};
-use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
-use dpp::version::PlatformVersion;
+use dpp::{
+    platform_value::string_encoding::Encoding,
+    prelude::{DataContract, Identifier},
+    serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure,
+    version::PlatformVersion,
+};
 use rs_dapi_client::{DapiClient, DapiRequest, RequestSettings};
 use tuirealm::props::{PropValue, TextSpan};
+
+use crate::app::error::Error;
 
 pub(super) fn data_contract_bytes_to_spans(bytes: &[u8]) -> Result<Vec<PropValue>, Error> {
     let data_contract =

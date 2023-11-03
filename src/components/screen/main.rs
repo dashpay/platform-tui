@@ -24,14 +24,28 @@ impl MainScreen {
                 [
                     TextSpan::new("Welcome to Platform TUI!"),
                     TextSpan::new(""),
-                    TextSpan::new("Use keys listed in the section below to switch screens and execute commands."),
-                    TextSpan::new("Some of them require signature and are disabled until an identity key is loaded."),
+                    TextSpan::new(
+                        "Use keys listed in the section below to switch screens and execute \
+                         commands.",
+                    ),
+                    TextSpan::new(
+                        "Some of them require signature and are disabled until an identity key is \
+                         loaded.",
+                    ),
                     TextSpan::new(""),
                     TextSpan::new("Italics are used to mark flags.").italic(),
-                    TextSpan::new("Bold italics are flags that are enabled.").italic().bold(),
+                    TextSpan::new("Bold italics are flags that are enabled.")
+                        .italic()
+                        .bold(),
                     TextSpan::new(""),
-                    TextSpan::new("Text inputs with completions support both arrows and Ctrl+n / Ctrl+p keys for selection."),
-                    TextSpan::new("Use Ctrl+q to go back from completion list or once again to leave input at all.")
+                    TextSpan::new(
+                        "Text inputs with completions support both arrows and Ctrl+n / Ctrl+p \
+                         keys for selection.",
+                    ),
+                    TextSpan::new(
+                        "Use Ctrl+q to go back from completion list or once again to leave input \
+                         at all.",
+                    ),
                 ]
                 .as_ref(),
             ),
@@ -74,6 +88,11 @@ impl MainScreenCommands {
                     description: "Wallet",
                     key_type: KeyType::Command,
                 },
+                CommandPalletKey {
+                    key: 'v',
+                    description: "Version upgrade",
+                    key_type: KeyType::Command,
+                },
             ]),
         }
     }
@@ -98,6 +117,10 @@ impl Component<Message, NoUserEvent> for MainScreenCommands {
                 code: Key::Char('w'),
                 modifiers: KeyModifiers::NONE,
             }) => Some(Message::NextScreen(Screen::Wallet)),
+            Event::Keyboard(KeyEvent {
+                code: Key::Char('v'),
+                modifiers: KeyModifiers::NONE,
+            }) => Some(Message::NextScreen(Screen::VersionUpgrade)),
             _ => None,
         }
     }

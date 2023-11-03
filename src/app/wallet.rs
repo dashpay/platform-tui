@@ -1,21 +1,16 @@
-use std::collections::HashMap;
-use crate::app::error::Error::InsightError;
-use crate::managers::insight::utxos_with_amount_for_addresses;
-use bincode::de::{BorrowDecoder, Decoder};
-use bincode::enc::Encoder;
-use bincode::error::{DecodeError, EncodeError};
-use bincode::{BorrowDecode, Decode, Encode};
-use dashcore::secp256k1::Secp256k1;
-use dashcore::{Address, Network, OutPoint, PrivateKey, ScriptBuf, Transaction, TxOut};
-use std::str::FromStr;
-use std::sync::RwLock;
-use dashcore::hashes::Hash;
-use dashcore::secp256k1::rand::prelude::StdRng;
-use dashcore::secp256k1::rand::{Rng, SeedableRng};
-use dashcore::sighash::{LegacySighash, SighashCache};
-use dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
-use dashcore::transaction::special_transaction::TransactionPayload;
-use crate::app::error::Error;
+use std::{str::FromStr, sync::RwLock};
+
+use bincode::{
+    de::{BorrowDecoder, Decoder},
+    enc::Encoder,
+    error::{DecodeError, EncodeError},
+    BorrowDecode, Decode, Encode,
+};
+use dashcore::{
+    secp256k1::Secp256k1, Address, Network, OutPoint, PrivateKey, ScriptBuf, Transaction, TxOut,
+};
+
+use crate::{app::error::Error::InsightError, managers::insight::utxos_with_amount_for_addresses};
 
 #[derive(Debug, Clone, Encode, Decode)]
 pub enum Wallet {
@@ -121,7 +116,9 @@ impl Wallet {
     pub async fn reload_utxos(&self) {
         match self {
             Wallet::SingleKeyWallet(wallet) => {
-                let Ok(utxos) = utxos_with_amount_for_addresses(&[wallet.address.as_str()], false).await else {
+                let Ok(utxos) =
+                    utxos_with_amount_for_addresses(&[wallet.address.as_str()], false).await
+                else {
                     return;
                 };
                 let mut write_guard = wallet.utxos.write().unwrap();
@@ -178,7 +175,7 @@ impl Decode for SingleKeyWallet {
 
         let secp = Secp256k1::new();
         let public_key = private_key.public_key(&secp);
-        //todo: make the network be part of state
+        // todo: make the network be part of state
         let address = Address::p2pkh(&public_key, Network::Testnet);
 
         let utxos = string_utxos
@@ -216,7 +213,7 @@ impl<'a> BorrowDecode<'a> for SingleKeyWallet {
 
         let secp = Secp256k1::new();
         let public_key = private_key.public_key(&secp);
-        //todo: make the network be part of state
+        // todo: make the network be part of state
         let address = Address::p2pkh(&public_key, Network::Testnet);
 
         let utxos = string_utxos

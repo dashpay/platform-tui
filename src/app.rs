@@ -6,28 +6,28 @@ mod identity;
 pub(crate) mod state;
 mod wallet;
 
-use dashcore::secp256k1::Secp256k1;
-use dashcore::{Address, Network, PrivateKey};
-use serde::Serialize;
-use tuirealm::Component;
+use std::{fmt::Display, time::Duration};
 
-use std::fmt::Display;
-use std::time::Duration;
-
-use crate::app::state::AppState;
-use crate::app::wallet::{SingleKeyWallet, Wallet};
+use dashcore::{secp256k1::Secp256k1, Address, Network, PrivateKey};
 use rs_dapi_client::DapiClient;
+use serde::Serialize;
 use tokio::runtime::Runtime;
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
     props::PropPayload,
     terminal::TerminalBridge,
     tui::prelude::{Constraint, Direction, Layout},
-    Application, ApplicationError, AttrValue, Attribute, EventListenerCfg, NoUserEvent, Sub,
-    SubClause, SubEventClause, Update,
+    Application, ApplicationError, AttrValue, Attribute, Component, EventListenerCfg, NoUserEvent,
+    Sub, SubClause, SubEventClause, Update,
 };
 
-use crate::components::*;
+use crate::{
+    app::{
+        state::AppState,
+        wallet::{SingleKeyWallet, Wallet},
+    },
+    components::*,
+};
 
 fn make_screen_subs() -> Vec<Sub<ComponentId, NoUserEvent>> {
     vec![
@@ -72,10 +72,11 @@ pub(super) enum Screen {
     GetContract,
     Wallet,
     AddWallet,
+    VersionUpgrade,
 }
 
-/// Component identifiers, required to triggers screen switch which involves mounting and
-/// unmounting.
+/// Component identifiers, required to triggers screen switch which involves
+/// mounting and unmounting.
 #[derive(Debug, Hash, Clone, Eq, PartialEq)]
 pub(super) enum ComponentId {
     CommandPallet,
@@ -112,6 +113,7 @@ pub(super) enum Message {
     AddSingleKeyWallet(String),
     UpdateLoadedWalletUTXOsAndBalance,
     RegisterIdentity,
+    FetchVersionUpgradeState,
 }
 
 pub(super) struct Model<'a> {
@@ -332,6 +334,16 @@ impl<'a> Model<'a> {
                     )
                     .expect("unable to remount screen");
             }
+            Screen::VersionUpgrade => {
+                self.show_fixed_at_info("Version upgrade commands");
+                self.app
+                    .remount(
+                        ComponentId::CommandPallet,
+                        Box::new(VersionUpgradeCommands::new()),
+                        Vec::new(),
+                    )
+                    .expect("unable to remount screen");
+            }
         }
         self.app
             .attr(
@@ -366,6 +378,13 @@ impl<'a> Model<'a> {
         };
         self.app
             .remount(ComponentId::Screen, info_component, make_screen_subs())
+            .expect("cannot remount info component");
+    }
+
+    fn show_fixed_at_info(&mut self, data: &str) {
+        let info_component = Box::new(Info::new_fixed(data));
+        self.app
+            .remount(ComponentId::Screen, info_component, vec![])
             .expect("cannot remount info component");
     }
 }
@@ -496,7 +515,7 @@ impl Update<Message> for Model<'_> {
 
                     let secp = Secp256k1::new();
                     let public_key = private_key.public_key(&secp);
-                    //todo: make the network be part of state
+                    // todo: make the network be part of state
                     let address = Address::p2pkh(&public_key, Network::Testnet);
                     let wallet = Wallet::SingleKeyWallet(SingleKeyWallet {
                         private_key: private_key.inner.secret_bytes(),
@@ -512,6 +531,12 @@ impl Update<Message> for Model<'_> {
                 Message::RegisterIdentity => {
                     // first we need to make the transaction
                     //                    self.state.register_identity()
+                    None
+                }
+                Message::FetchVersionUpgradeState => {
+                    // TODO
+                    let version_upgrade_data: Result<_, String> = Ok("kek");
+                    self.show_at_info(version_upgrade_data);
                     None
                 }
             }

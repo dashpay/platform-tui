@@ -19,7 +19,6 @@ pub(crate) struct HistoryCompletionEngine {
 
 impl CompletionEngine for HistoryCompletionEngine {
     type Completion = String;
-
     type Completions<'a> = slice::Iter<'a, String>;
 
     fn get_completions_list<'a>(&'a self, _input: &str) -> Self::Completions<'a> {
