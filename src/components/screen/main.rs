@@ -93,6 +93,11 @@ impl MainScreenCommands {
                     description: "Version upgrade",
                     key_type: KeyType::Command,
                 },
+                CommandPalletKey {
+                    key: 's',
+                    description: "Strategies",
+                    key_type: KeyType::Command,
+                },
             ]),
         }
     }
@@ -121,6 +126,10 @@ impl Component<Message, NoUserEvent> for MainScreenCommands {
                 code: Key::Char('v'),
                 modifiers: KeyModifiers::NONE,
             }) => Some(Message::NextScreen(Screen::VersionUpgrade)),
+            Event::Keyboard(KeyEvent {
+                code: Key::Char('s'),
+                modifiers: KeyModifiers::NONE,
+            }) => Some(Message::NextScreen(Screen::Strategies)),
             _ => None,
         }
     }
