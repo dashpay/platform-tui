@@ -1,4 +1,5 @@
 use std::{str::FromStr, sync::RwLock};
+use std::collections::{BTreeMap, HashMap};
 
 use bincode::{
     de::{BorrowDecoder, Decoder},
@@ -6,11 +7,18 @@ use bincode::{
     error::{DecodeError, EncodeError},
     BorrowDecode, Decode, Encode,
 };
-use dashcore::{
-    secp256k1::Secp256k1, Address, Network, OutPoint, PrivateKey, ScriptBuf, Transaction, TxOut,
-};
+use dashcore::{secp256k1::Secp256k1, Address, Network, OutPoint, PrivateKey, ScriptBuf, Transaction, TxOut, Script, TxIn, PublicKey};
+use dashcore::hashes::Hash;
+use dashcore::script::Builder;
+use dashcore::secp256k1::{Message};
+use dashcore::sighash::{LegacySighash, SighashCache};
+use dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
+use dashcore::transaction::special_transaction::TransactionPayload;
+use rand::prelude::StdRng;
+use rand::{Rng, SeedableRng};
 
 use crate::{app::error::Error::InsightError, managers::insight::utxos_with_amount_for_addresses};
+use crate::app::error::Error;
 
 #[derive(Debug, Clone, Encode, Decode)]
 pub enum Wallet {
@@ -18,6 +26,11 @@ pub enum Wallet {
 }
 
 impl Wallet {
+    pub fn private_key_for_address(&self, address: &Address) -> &PrivateKey {
+        match self { Wallet::SingleKeyWallet(single_wallet) => {
+            single_wallet.private_key_for_address(address)
+        } }
+    }
     pub fn registration_transaction(&self, seed: Option<u64>, amount: u64) -> Result<(Transaction, PrivateKey), Error> {
         let mut rng = match seed {
             None => StdRng::from_entropy(),
@@ -27,13 +40,13 @@ impl Wallet {
         let private_key = PrivateKey::from_slice(&random_private_key, Network::Testnet).expect("expected a private key");
 
         let secp = Secp256k1::new();
-        let public_key = private_key.public_key(&secp);
+        let asset_lock_public_key = private_key.public_key(&secp);
 
-        let one_time_key_hash = public_key.pubkey_hash();
+        let one_time_key_hash = asset_lock_public_key.pubkey_hash();
 
-        let (utxos, change) = self.take_unspent_utxos_for(amount).ok_or(Error::WalletError("Not enough balance in wallet".to_string()))?;
+        let (mut utxos, change) = self.take_unspent_utxos_for(amount).ok_or(Error::WalletError("Not enough balance in wallet".to_string()))?;
 
-        let address = self.change_address();
+        let change_address = self.change_address();
 
         let burn_output = TxOut {
             value: amount, // 1 Dash
@@ -45,22 +58,29 @@ impl Wallet {
         };
         let change_output = TxOut {
             value: change,
-            script_pubkey: ScriptBuf::new_p2pkh(&public_key_hash),
+            script_pubkey: change_address.script_pubkey(),
         };
         let payload = AssetLockPayload {
             version: 0,
             credit_outputs: vec![payload_output],
         };
 
+        // we need to get all inputs from utxos to add them to the transaction
+
+        let mut inputs = utxos.iter().map(|(utxo, _)| {
+            let mut tx_in = TxIn::default();
+            tx_in.previous_output = utxo.clone()
+        }).collect();
+
         let mut writer = LegacySighash::engine();
         let input_index = 0;
-        let script_pubkey = dashcore::ScriptBuf::new();
-        let sighash_u32 = 0u32;
+        let script_pubkey = ScriptBuf::new();
+        let sighash_u32 = 1u32;
 
-        let tx: Transaction = Transaction {
+        let mut tx: Transaction = Transaction {
             version: 3,
             lock_time: 0,
-            input: vec![input],
+            input: inputs,
             output: vec![burn_output, change_output],
             special_transaction_payload: Some(TransactionPayload::AssetLockPayloadType(payload)),
         };
@@ -69,9 +89,37 @@ impl Wallet {
                 .is_sighash_single_bug()
                 .expect("writer can't fail");
 
+        tx.input.iter_mut().enumerate().for_each(|(i, input)| {
+            // You need to provide the actual script_pubkey of the UTXO being spent
+            let (tx_out, public_key, input_address) = utxos.remove(&input.previous_output).expect("expected a txout");
+            let script_pubkey = tx_out.script_pubkey;
 
+            // Create a message to sign by hashing the transaction with the appropriate sighash
+            let sighash = cache.legacy_signature_hash(i, &script_pubkey, sighash_u32).expect("expected sighash");
+            let message = Message::from_slice(sighash.as_byte_array()).expect("Error creating message");
 
-        (, random_private_key)
+            let private_key = self.private_key_for_address(&input_address);
+
+            // Sign the message with the private key
+            let sig = secp.sign_ecdsa(&message, &private_key.inner);
+
+            // Create the script_sig with the signature and the public key
+            // This is a simple P2PKH script_sig format, adjust as necessary for other formats
+            input.script_sig = Script::new_p2pkh_sig(&sig.serialize_der(), &public_key);
+
+            // Serialize the DER-encoded signature and append the sighash type
+            let mut sig_script = sig.serialize_der().to_vec();
+
+            sig_script.push(sighash_u32 as u8); // Assuming sighash_u32 is something like SIGHASH_ALL (0x01)
+
+            // Create script_sig
+            input.script_sig = Builder::new()
+                .push_slice(sig_script.as_slice())
+                .push_slice(&public_key.to_bytes())
+                .into_script();
+        });
+
+        Ok((tx, private_key))
     }
 
     pub fn change_address(&self) -> Address {
@@ -87,8 +135,8 @@ impl Wallet {
             Wallet::SingleKeyWallet(wallet) => {
                 format!(
                     "Single Key Wallet \npublic key: {} \naddress: {} \nbalance: {}",
-                    hex::encode(wallet.public_key.as_slice()),
-                    wallet.address.as_str(),
+                    hex::encode(wallet.public_key.inner.as_slice()),
+                    wallet.address.to_string().as_str(),
                     wallet.balance_dash_formatted()
                 )
             }
@@ -107,7 +155,7 @@ impl Wallet {
         }
     }
 
-    pub fn take_unspent_utxos_for(&self, amount: u64) -> Option<(Vec<(OutPoint, TxOut)>, u64)> {
+    pub fn take_unspent_utxos_for(&self, amount: u64) -> Option<(BTreeMap<OutPoint, (TxOut, PublicKey, Address)>, u64)> {
         match self {
             Wallet::SingleKeyWallet(wallet) => wallet.take_unspent_utxos_for(amount),
         }
@@ -117,7 +165,7 @@ impl Wallet {
         match self {
             Wallet::SingleKeyWallet(wallet) => {
                 let Ok(utxos) =
-                    utxos_with_amount_for_addresses(&[wallet.address.as_str()], false).await
+                    utxos_with_amount_for_addresses(&[&wallet.address], false).await
                 else {
                     return;
                 };
@@ -130,8 +178,8 @@ impl Wallet {
 
 #[derive(Debug)]
 pub struct SingleKeyWallet {
-    pub private_key: [u8; 32],
-    pub public_key: Vec<u8>,
+    pub private_key: PrivateKey,
+    pub public_key: PublicKey,
     pub address: Address,
     pub utxos: RwLock<HashMap<OutPoint, TxOut>>,
 }
@@ -149,7 +197,7 @@ impl Clone for SingleKeyWallet {
 
 impl Encode for SingleKeyWallet {
     fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), EncodeError> {
-        self.private_key.as_slice().encode(encoder)?;
+        self.private_key.inner.as_ref().encode(encoder)?;
         let utxos = self.utxos.read().unwrap();
         let string_utxos = utxos
             .iter()
@@ -195,8 +243,8 @@ impl Decode for SingleKeyWallet {
             .collect::<HashMap<_, _>>();
 
         Ok(SingleKeyWallet {
-            private_key: private_key.inner.secret_bytes(),
-            public_key: public_key.to_bytes(),
+            private_key,
+            public_key,
             address,
             utxos: RwLock::new(utxos),
         })
@@ -233,8 +281,8 @@ impl<'a> BorrowDecode<'a> for SingleKeyWallet {
             .collect::<HashMap<_, _>>();
 
         Ok(SingleKeyWallet {
-            private_key: private_key.inner.secret_bytes(),
-            public_key: public_key.to_bytes(),
+            private_key,
+            public_key,
             address,
             utxos: RwLock::new(utxos),
         })
@@ -253,18 +301,18 @@ impl SingleKeyWallet {
         utxos.iter().map(|(_, out)| out.value).sum()
     }
 
-    pub fn take_unspent_utxos_for(&self, amount: u64) -> Option<(Vec<(OutPoint, TxOut)>, u64)> {
+    pub fn take_unspent_utxos_for(&self, amount: u64) -> Option<(BTreeMap<OutPoint, (TxOut, PublicKey, Address)>, u64)> {
         let mut utxos = self.utxos.write().unwrap();
 
         let mut required: i64 = amount as i64;
-        let mut taken_utxos = vec![];
+        let mut taken_utxos = BTreeMap::new();
 
         for (outpoint, utxo) in utxos.iter() {
             if required <= 0 {
                 break;
             }
             required -= utxo.value as i64;
-            taken_utxos.push((outpoint.clone(), utxo.clone()));
+            taken_utxos.insert(outpoint.clone(), (utxo.clone(), self.public_key, self.address.clone()));
         }
 
         // If we didn't gather enough UTXOs to cover the required amount
@@ -282,5 +330,12 @@ impl SingleKeyWallet {
 
     pub fn change_address(&self) -> Address {
         self.address.clone()
+    }
+
+    pub fn private_key_for_address(&self, address: &Address) -> &PrivateKey {
+        if &self.address != address {
+            panic!("address doesn't match");
+        }
+        &self.private_key
     }
 }

@@ -1,7 +1,6 @@
 use std::collections::HashMap;
-use crate::app::error::Error;
-use crate::app::error::Error::InsightError;
 use dashcore::{OutPoint, ScriptBuf, TxOut, Txid};
+use dashcore::network::Address;
 use reqwest;
 
 use crate::app::error::{Error, Error::InsightError};
@@ -12,7 +11,7 @@ const INSIGHT_FAILOVER_URL: &str = "https://insight.dash.show/api";
 const TESTNET_INSIGHT_URL: &str = "https://insight.testnet.networks.dash.org:3002/insight-api";
 
 pub(crate) async fn utxos_with_amount_for_addresses(
-    addresses: &[&str],
+    addresses: &[&Address],
     is_mainnet: bool,
 ) -> Result<HashMap<OutPoint, TxOut>, Error> {
     let insight_url = if is_mainnet {
@@ -33,7 +32,7 @@ pub(crate) async fn utxos_with_amount_for_addresses(
     }
 }
 
-async fn utxos(insight_url: &str, addresses: &[&str]) -> Result<HashMap<OutPoint, TxOut>, Error> {
+async fn utxos(insight_url: &str, addresses: &[&Address]) -> Result<HashMap<OutPoint, TxOut>, Error> {
     let url = format!("{}/{}", insight_url, ADDRESS_UTXO_PATH);
 
     let addr_str = addresses.join(",");

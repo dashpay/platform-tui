@@ -12,29 +12,15 @@ use dpp::{
     ProtocolError,
     ProtocolError::{PlatformDeserializationError, PlatformSerializationError},
 };
+use dpp::dashcore::{Network, PrivateKey};
 use strategy_tests::Strategy;
 
 use crate::app::wallet::Wallet;
-use dpp::util::deserializer::ProtocolVersion;
-use dpp::version::PlatformVersion;
-use dpp::ProtocolError;
-use dpp::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
-use std::collections::BTreeMap;
 use walkdir::{WalkDir, DirEntry};
-use std::fs;
-use std::ops::Deref;
-use std::path::Path;
-use std::sync::Arc;
-use bincode::{Decode, Encode};
-use dpp::prelude::Identity;
 use dpp::data_contract::created_data_contract::CreatedDataContract;
-use dpp::ProtocolError;
-use dpp::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
-use dpp::serialization::{PlatformDeserializableWithPotentialValidationFromVersionedStructure, PlatformSerializableWithPlatformVersion};
+use dpp::identity::KeyID;
+use dpp::prelude::Identifier;
 use dpp::tests::json_document::json_document_to_created_contract;
-use dpp::util::deserializer::ProtocolVersion;
-use dpp::version::PlatformVersion;
-use strategy_tests::Strategy;
 use strategy_tests::frequency::Frequency;
 use tokio::task;
 
@@ -43,7 +29,7 @@ const CURRENT_PROTOCOL_VERSION: ProtocolVersion = 1;
 #[derive(Debug, Clone)]
 pub struct AppState {
     pub loaded_identity: Option<Identity>,
-    pub identity_creation_private_key: Option<[u8; 32]>,
+    pub identity_private_keys: BTreeMap<(Identifier, KeyID), PrivateKey>,
     pub loaded_wallet: Option<Arc<Wallet>>,
     pub known_identities: BTreeMap<String, Identity>,
     pub known_contracts: BTreeMap<String, CreatedDataContract>,
@@ -132,7 +118,7 @@ impl Default for AppState {
 
         AppState {
             loaded_identity: None,
-            identity_creation_private_key: (),
+            identity_private_keys: Default::default(),
             loaded_wallet: None,
             known_identities: BTreeMap::new(),
             known_contracts,
@@ -146,7 +132,7 @@ impl Default for AppState {
 #[derive(Clone, Debug, Encode, Decode)]
 struct AppStateInSerializationFormat {
     pub loaded_identity: Option<Identity>,
-    pub identity_creation_private_key: Option<[u8; 32]>,
+    pub identity_private_keys: BTreeMap<(Identifier, KeyID), [u8;32]>,
     pub loaded_wallet: Option<Wallet>,
     pub known_identities: BTreeMap<String, Identity>,
     pub known_contracts: BTreeMap<String, Vec<u8>>,
@@ -172,7 +158,7 @@ impl PlatformSerializableWithPlatformVersion for AppState {
     ) -> Result<Vec<u8>, ProtocolError> {
         let AppState {
             loaded_identity,
-            identity_creation_private_key,
+            identity_private_keys,
             loaded_wallet,
             known_identities,
             known_contracts,
@@ -199,9 +185,13 @@ impl PlatformSerializableWithPlatformVersion for AppState {
             })
             .collect::<Result<BTreeMap<String, Vec<u8>>, ProtocolError>>()?;
 
+        let identity_private_keys = identity_private_keys.into_iter().map(|(key, value)| {
+            (key, value.inner)
+        }).collect();
+
         let app_state_in_serialization_format = AppStateInSerializationFormat {
             loaded_identity,
-            identity_creation_private_key,
+            identity_private_keys,
             loaded_wallet: loaded_wallet.map(|wallet| wallet.deref().clone()),
             known_identities,
             known_contracts: known_contracts_in_serialization_format,
@@ -241,11 +231,11 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
 
         let AppStateInSerializationFormat {
             loaded_identity,
+            identity_private_keys,
             loaded_wallet,
             known_identities,
             known_contracts,
             available_strategies,
-            identity_creation_private_key,
             current_strategy,
             selected_strategy,
         } = app_state;
@@ -274,9 +264,14 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
             })
             .collect::<Result<BTreeMap<String, Strategy>, ProtocolError>>()?;
 
+        let identity_private_keys = identity_private_keys.into_iter().map(|(key, value)| {
+            (key, PrivateKey::from_slice(&value, Network::Testnet).expect("expected private key"))
+        }).collect();
+
+
         Ok(AppState {
             loaded_identity,
-            identity_creation_private_key,
+            identity_private_keys,
             loaded_wallet: loaded_wallet.map(|loaded_wallet| Arc::new(loaded_wallet)),
             known_identities,
             known_contracts,
@@ -288,7 +283,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
 }
 
 impl AppState {    
-    pub fn load() -> AppState {
+    pub async fn load() -> AppState {
         let path = Path::new("explorer.state");
         
         let Ok(read_result) = fs::read(path) else {

@@ -1,5 +1,5 @@
 mod breadcrumbs;
-mod screen;
+pub(crate) mod screen;
 mod status;
 
 pub(crate) use breadcrumbs::Breadcrumbs;

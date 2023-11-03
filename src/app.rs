@@ -5,22 +5,17 @@ pub(crate) mod error;
 mod identity;
 pub(crate) mod state;
 mod wallet;
-pub(crate) mod error;
-mod contract;
 pub(crate) mod strategies;
 
 use std::cmp::min;
 use std::collections::BTreeMap;
-use std::time::Duration;
 use dashcore::secp256k1::rand::SeedableRng;
 use dashcore::secp256k1::rand::rngs::StdRng;
-use dashcore::{Address, Network, PrivateKey};
-use dashcore::secp256k1::Secp256k1;
 
 use dpp::data_contract::document_type::DocumentType;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::v0::random_document_type::{RandomDocumentTypeParameters, FieldTypeWeights, FieldMinMaxBounds};
-use dpp::prelude::DataContract;
+use dpp::prelude::{DataContract, Identifier};
 use dpp::version::PlatformVersion;
 use rand::Rng;
 use rs_dapi_client::DapiClient;
@@ -30,29 +25,27 @@ use strategy_tests::operations::{DocumentAction, DocumentOp, Operation, Operatio
 use strategy_tests::transitions::create_identities_state_transitions;
 
 use std::{fmt::Display, time::Duration};
+use dash_platform_sdk::platform::Fetch;
+use dash_platform_sdk::Sdk;
 
 use dashcore::{secp256k1::Secp256k1, Address, Network, PrivateKey};
-use rs_dapi_client::DapiClient;
+use dpp::identity::Identity;
+use dpp::platform_value::string_encoding::Encoding;
 use serde::Serialize;
 use tokio::runtime::Runtime;
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
-    props::PropPayload,
     terminal::TerminalBridge,
     tui::prelude::{Constraint, Direction, Layout},
     Application, ApplicationError, AttrValue, Attribute, Component, EventListenerCfg, NoUserEvent,
     Sub, SubClause, SubEventClause, Update,
 };
-use crate::app::state::AppState;
-use crate::app::wallet::{SingleKeyWallet, Wallet};
 
-use crate::{
-    app::{
-        state::AppState,
-        wallet::{SingleKeyWallet, Wallet},
-    },
-    components::*,
-};
+use crate::{app::{
+    state::AppState,
+    wallet::{SingleKeyWallet, Wallet},
+}, components::*};
+use crate::components::screen::shared::Info;
 
 use self::strategies::{Description, default_strategy};
 
@@ -198,14 +191,14 @@ pub(super) struct Model<'a> {
     pub breadcrumbs: Vec<Screen>,
     /// Used to draw to terminal
     pub terminal: TerminalBridge,
-    /// DAPI Client
-    pub dapi_client: &'a mut DapiClient,
+    /// Dash SDK
+    pub sdk: &'a mut Sdk,
     /// Tokio runtime
     pub runtime: Runtime,
 }
 
 impl<'a> Model<'a> {
-    pub(crate) fn new(dapi_client: &'a mut DapiClient) -> Self {
+    pub(crate) fn new(dapi_client: &'a mut Sdk) -> Self {
         let runtime = Runtime::new().expect("cannot start Tokio runtime");
         Self {
             app: Self::init_app().expect("Unable to init the application"),
@@ -215,7 +208,7 @@ impl<'a> Model<'a> {
             current_screen: Screen::Main,
             breadcrumbs: Vec::new(),
             terminal: TerminalBridge::new().expect("Cannot initialize terminal"),
-            dapi_client,
+            sdk,
             runtime,
         }
     }
@@ -734,9 +727,13 @@ impl Update<Message> for Model<'_> {
                     self.app
                         .active(&ComponentId::CommandPallet)
                         .expect("cannot set active");
+                    let Ok(identifier) = Identifier::from_string(s.as_str(), Encoding::Base58) else {
+                        self.show_at_info(Identifier::from_string(s.as_str(), Encoding::Base58));
+                        return None;
+                    };
                     let identity = self
                         .runtime
-                        .block_on(identity::fetch_identity_by_b58_id(self.dapi_client, s));
+                        .block_on(Identity::fetch(self.sdk, identifier));
 
                     self.show_at_info(identity);
                     None
@@ -785,9 +782,9 @@ impl Update<Message> for Model<'_> {
                     // todo: make the network be part of state
                     let address = Address::p2pkh(&public_key, Network::Testnet);
                     let wallet = Wallet::SingleKeyWallet(SingleKeyWallet {
-                        private_key: private_key.inner.secret_bytes(),
-                        public_key: public_key.to_bytes(),
-                        address: address.to_string(),
+                        private_key,
+                        public_key,
+                        address,
                         utxos: Default::default(),
                     });
 

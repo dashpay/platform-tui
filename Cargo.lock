@@ -934,11 +934,23 @@ dependencies = [
 name = "dapi-grpc"
 version = "0.25.0"
 dependencies = [
+ "dapi-grpc-macros",
+ "platform-version",
  "prost 0.11.9",
  "serde",
+ "serde_bytes",
  "tenderdash-proto",
  "tonic",
  "tonic-build",
+]
+
+[[package]]
+name = "dapi-grpc-macros"
+version = "0.1.0"
+dependencies = [
+ "heck",
+ "quote",
+ "syn 2.0.38",
 ]
 
 [[package]]
@@ -974,6 +986,33 @@ dependencies = [
  "darling_core",
  "quote",
  "syn 2.0.38",
+]
+
+[[package]]
+name = "dash-platform-sdk"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bincode 2.0.0-rc.3",
+ "ciborium",
+ "dapi-grpc",
+ "dashcore-rpc",
+ "derive_more",
+ "dotenvy",
+ "dpp",
+ "drive",
+ "drive-abci",
+ "drive-proof-verifier",
+ "envy",
+ "futures",
+ "hex",
+ "http",
+ "rs-dapi-client",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -1018,11 +1057,12 @@ source = "git+https://github.com/dashpay/rust-dashcore?branch=master#43ffb72915a
 [[package]]
 name = "dashcore-rpc"
 version = "0.15.1"
-source = "git+https://github.com/dashpay/rust-dashcore-rpc?tag=v0.15.1#fafdd807d24dec8147df4ea91654679d9f6ce2d3"
+source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=master#d6eb09d3cb4f11f57901bed5f3ab2f9657848e2e"
 dependencies = [
  "dashcore-private 0.1.0 (git+https://github.com/dashpay/rust-dashcore?branch=master)",
  "dashcore-rpc-json",
  "env_logger 0.10.0",
+ "hex",
  "jsonrpc",
  "log",
  "serde",
@@ -1032,7 +1072,7 @@ dependencies = [
 [[package]]
 name = "dashcore-rpc-json"
 version = "0.15.1"
-source = "git+https://github.com/dashpay/rust-dashcore-rpc?tag=v0.15.1#fafdd807d24dec8147df4ea91654679d9f6ce2d3"
+source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=master#d6eb09d3cb4f11f57901bed5f3ab2f9657848e2e"
 dependencies = [
  "bincode 2.0.0-rc.3",
  "dashcore 0.30.0 (git+https://github.com/dashpay/rust-dashcore?branch=master)",
@@ -1040,7 +1080,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_repr",
- "serde_with",
+ "serde_with 2.3.3",
 ]
 
 [[package]]
@@ -1187,7 +1227,7 @@ dependencies = [
  "futures",
  "getrandom",
  "hex",
- "integer-encoding",
+ "integer-encoding 4.0.0",
  "itertools 0.10.5",
  "json-patch",
  "jsonptr",
@@ -1235,7 +1275,7 @@ dependencies = [
  "grovedb-storage",
  "hex",
  "indexmap 1.9.3",
- "integer-encoding",
+ "integer-encoding 4.0.0",
  "intmap",
  "itertools 0.10.5",
  "lazy_static",
@@ -1250,6 +1290,72 @@ dependencies = [
  "serde_json",
  "sqlparser",
  "tempfile",
+ "thiserror",
+ "tracing",
+]
+
+[[package]]
+name = "drive-abci"
+version = "0.25.0"
+dependencies = [
+ "anyhow",
+ "atty",
+ "bincode 2.0.0-rc.3",
+ "bs58 0.4.0",
+ "bytes",
+ "chrono",
+ "ciborium",
+ "dapi-grpc",
+ "dashcore-rpc",
+ "delegate",
+ "derive_more",
+ "dpp",
+ "drive",
+ "envy",
+ "file-rotate",
+ "hex",
+ "indexmap 1.9.3",
+ "itertools 0.10.5",
+ "lazy_static",
+ "metrics",
+ "metrics-exporter-prometheus",
+ "paste",
+ "platform-serialization",
+ "platform-serialization-derive",
+ "prost 0.11.9",
+ "rand",
+ "regex",
+ "reopen",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "serde",
+ "serde_json",
+ "serde_with 3.4.0",
+ "sha2",
+ "simple-signer",
+ "tempfile",
+ "tenderdash-abci",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+ "ureq",
+ "url",
+]
+
+[[package]]
+name = "drive-proof-verifier"
+version = "0.25.0-dev"
+dependencies = [
+ "dapi-grpc",
+ "dpp",
+ "drive",
+ "hex",
+ "lazy_static",
+ "serde",
+ "serde_json",
+ "tenderdash-abci",
  "thiserror",
  "tracing",
 ]
@@ -1705,7 +1811,7 @@ checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
 [[package]]
 name = "grovedb"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?rev=852e85c19488c60fb6152aebf131642cab80498f#852e85c19488c60fb6152aebf131642cab80498f"
+source = "git+https://github.com/dashpay/grovedb?rev=67896ea00e697922dd8db29fccbdfddce97a4fe2#67896ea00e697922dd8db29fccbdfddce97a4fe2"
 dependencies = [
  "bincode 1.3.3",
  "grovedb-costs",
@@ -1715,7 +1821,7 @@ dependencies = [
  "grovedb-visualize",
  "hex",
  "indexmap 1.9.3",
- "integer-encoding",
+ "integer-encoding 3.0.4",
  "intmap",
  "itertools 0.10.5",
  "nohash-hasher",
@@ -1727,9 +1833,9 @@ dependencies = [
 [[package]]
 name = "grovedb-costs"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?rev=852e85c19488c60fb6152aebf131642cab80498f#852e85c19488c60fb6152aebf131642cab80498f"
+source = "git+https://github.com/dashpay/grovedb?rev=67896ea00e697922dd8db29fccbdfddce97a4fe2#67896ea00e697922dd8db29fccbdfddce97a4fe2"
 dependencies = [
- "integer-encoding",
+ "integer-encoding 3.0.4",
  "intmap",
  "thiserror",
 ]
@@ -1737,7 +1843,7 @@ dependencies = [
 [[package]]
 name = "grovedb-merk"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?rev=852e85c19488c60fb6152aebf131642cab80498f#852e85c19488c60fb6152aebf131642cab80498f"
+source = "git+https://github.com/dashpay/grovedb?rev=67896ea00e697922dd8db29fccbdfddce97a4fe2#67896ea00e697922dd8db29fccbdfddce97a4fe2"
 dependencies = [
  "blake3",
  "byteorder",
@@ -1750,7 +1856,7 @@ dependencies = [
  "grovedb-visualize",
  "hex",
  "indexmap 1.9.3",
- "integer-encoding",
+ "integer-encoding 3.0.4",
  "jemallocator",
  "num_cpus",
  "rand",
@@ -1761,19 +1867,19 @@ dependencies = [
 [[package]]
 name = "grovedb-path"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?rev=852e85c19488c60fb6152aebf131642cab80498f#852e85c19488c60fb6152aebf131642cab80498f"
+source = "git+https://github.com/dashpay/grovedb?rev=67896ea00e697922dd8db29fccbdfddce97a4fe2#67896ea00e697922dd8db29fccbdfddce97a4fe2"
 
 [[package]]
 name = "grovedb-storage"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?rev=852e85c19488c60fb6152aebf131642cab80498f#852e85c19488c60fb6152aebf131642cab80498f"
+source = "git+https://github.com/dashpay/grovedb?rev=67896ea00e697922dd8db29fccbdfddce97a4fe2#67896ea00e697922dd8db29fccbdfddce97a4fe2"
 dependencies = [
  "blake3",
  "grovedb-costs",
  "grovedb-path",
  "grovedb-visualize",
  "hex",
- "integer-encoding",
+ "integer-encoding 3.0.4",
  "lazy_static",
  "num_cpus",
  "rocksdb",
@@ -1785,7 +1891,7 @@ dependencies = [
 [[package]]
 name = "grovedb-visualize"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?rev=852e85c19488c60fb6152aebf131642cab80498f#852e85c19488c60fb6152aebf131642cab80498f"
+source = "git+https://github.com/dashpay/grovedb?rev=67896ea00e697922dd8db29fccbdfddce97a4fe2#67896ea00e697922dd8db29fccbdfddce97a4fe2"
 dependencies = [
  "hex",
  "itertools 0.10.5",
@@ -2054,6 +2160,12 @@ name = "integer-encoding"
 version = "3.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8bb03732005da905c88227371639bf1ad885cc712789c011c31c5fb3ab3ccf02"
+
+[[package]]
+name = "integer-encoding"
+version = "4.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "924df4f0e24e2e7f9cdd90babb0b96f93b20f3ecfa949ea9e6613756b8c8e1bf"
 
 [[package]]
 name = "intmap"
@@ -3473,13 +3585,15 @@ name = "rs-dapi-client"
 version = "0.1.0"
 dependencies = [
  "backon",
- "bincode 2.0.0-rc.3",
+ "chrono",
  "dapi-grpc",
  "futures",
+ "hex",
  "http",
  "rand",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror",
  "tokio",
  "tonic",
@@ -3494,6 +3608,7 @@ dependencies = [
  "bip37-bloom-filter",
  "bs58 0.5.0",
  "dapi-grpc",
+ "dash-platform-sdk",
  "dashcore 0.30.0",
  "dpp",
  "hex",
@@ -3859,7 +3974,22 @@ dependencies = [
  "indexmap 1.9.3",
  "serde",
  "serde_json",
- "serde_with_macros",
+ "serde_with_macros 2.3.3",
+ "time",
+]
+
+[[package]]
+name = "serde_with"
+version = "3.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "64cd236ccc1b7a29e7e2739f27c0b2dd199804abc4290e32f59f3b68d6405c23"
+dependencies = [
+ "base64 0.21.5",
+ "chrono",
+ "hex",
+ "serde",
+ "serde_json",
+ "serde_with_macros 3.4.0",
  "time",
 ]
 
@@ -3868,6 +3998,18 @@ name = "serde_with_macros"
 version = "2.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "881b6f881b17d13214e5d494c939ebab463d01264ce1811e9d4ac3a882e7695f"
+dependencies = [
+ "darling",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.38",
+]
+
+[[package]]
+name = "serde_with_macros"
+version = "3.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "93634eb5f75a2323b16de4748022ac4297f9e76b6dced2be287a099f41b5e788"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -4079,7 +4221,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "serde_with",
+ "serde_with 2.3.3",
  "sha2",
  "simple-signer",
  "tempfile",

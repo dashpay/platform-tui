@@ -1,16 +1,9 @@
 //! Contract backend logic.
-
-use dapi_grpc::platform::v0::{
-    self as platform_proto, get_data_contract_response::Result as ProtoResult,
-    GetDataContractResponse,
-};
 use dpp::{
-    platform_value::string_encoding::Encoding,
     prelude::{DataContract, Identifier},
     serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure,
     version::PlatformVersion,
 };
-use rs_dapi_client::{DapiClient, DapiRequest, RequestSettings};
 use tuirealm::props::{PropValue, TextSpan};
 
 use crate::app::error::Error;
@@ -23,25 +16,4 @@ pub(super) fn data_contract_bytes_to_spans(bytes: &[u8]) -> Result<Vec<PropValue
         .lines()
         .map(|line| PropValue::TextSpan(TextSpan::new(line)))
         .collect())
-}
-
-pub(super) async fn fetch_data_contract_bytes_by_b58_id(
-    client: &mut DapiClient,
-    b58_id: String,
-) -> Result<Vec<u8>, Error> {
-    let identifier = Identifier::from_string(b58_id.as_str(), Encoding::Base58)?;
-    let request = platform_proto::GetDataContractRequest {
-        id: identifier.to_vec(),
-        prove: false,
-    };
-    let response = request.execute(client, RequestSettings::default()).await;
-    if let Ok(GetDataContractResponse {
-        result: Some(ProtoResult::DataContract(bytes)),
-        ..
-    }) = response
-    {
-        Ok(bytes)
-    } else {
-        Err(Error::DapiError)
-    }
 }
