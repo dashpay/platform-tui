@@ -26,7 +26,7 @@ pub(crate) struct GetIdentityScreen {
 impl GetIdentityScreen {
     pub(crate) fn new() -> Self {
         GetIdentityScreen {
-            component: Textarea::default().highlighted_str(">"),
+            component: Textarea::default().highlighted_str("> "),
         }
     }
 }

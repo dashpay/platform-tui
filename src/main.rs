@@ -8,7 +8,8 @@ use tuirealm::{application::PollStrategy, AttrValue, Attribute, Update};
 
 use app::{ComponentId, Model};
 
-fn main() {
+#[tokio::main]
+async fn main() {
     // Setup DAPI client
     let mut address_list = AddressList::new();
     address_list.add_uri(rs_dapi_client::Uri::from_static(

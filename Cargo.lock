@@ -3548,6 +3548,7 @@ dependencies = [
  "dashcore 0.30.0",
  "dpp",
  "hex",
+ "rand",
  "reqwest",
  "rs-dapi-client",
  "rs-sdk",
@@ -3561,6 +3562,7 @@ dependencies = [
  "toml 0.8.2",
  "tui-realm-stdlib",
  "tuirealm",
+ "walkdir",
 ]
 
 [[package]]
