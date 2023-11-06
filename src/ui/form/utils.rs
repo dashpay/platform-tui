@@ -26,8 +26,9 @@ impl<I: Input> Field<I> {
 
 /// A type of input that combines several other inputs.
 ///
-/// It displays one input at a time switching to the next one on [InputStatus::Done]
-/// event from the current input. When finished a tuple of all field results returned.
+/// It displays one input at a time switching to the next one on
+/// [InputStatus::Done] event from the current input. When finished a tuple of
+/// all field results returned.
 pub(crate) struct ComposedInput<F> {
     fields: F,
     index: u8,
@@ -43,27 +44,38 @@ impl<F> ComposedInput<F> {
     }
 }
 
-/// Macro for internal use to implement [ComposedInput] for field combinations up to 16 inputs.
-/// Because of the craving for type safety and a lack of tools it's a common pattern in Rust to
-/// make use of tuples and declarative macros.
+/// Macro for internal use to implement [ComposedInput] for field combinations
+/// up to 16 inputs. Because of the craving for type safety and a lack of tools
+/// it's a common pattern in Rust to make use of tuples and declarative macros.
 macro_rules! impl_sequential_input {
     // Macro entry point
     ($($input:ident),*) => {
         impl<$($input: Input),*> Input for ComposedInput<($(Field<$input>),*)> {
             #[allow(dead_code)]
 
-            // ComposedInput's output is a tuple of all outputs, so (Field<TextInput>, Field<TextInput>) will give us (String, String).
+            // ComposedInput's output is a tuple of all outputs, so
+            // (Field<TextInput>, Field<TextInput>) will give us (String, String).
             type Output = ($($input::Output),*);
 
             fn on_event(&mut self, event: KeyEvent) -> InputStatus<Self::Output> {
                 impl_sequential_input!{
-                    @on_event_branch self, event, (), ($($input),*), (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16)
+                    @on_event_branch
+                    self,
+                    event,
+                    (),
+                    ($($input),*),
+                    (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16)
                 }
             }
 
             fn view(&mut self, frame: &mut Frame, area: Rect) {
                 impl_sequential_input!{
-                    @view_branch self, frame, area, ($($input),*), (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16)
+                    @view_branch
+                    self,
+                    frame,
+                    area,
+                    ($($input),*),
+                    (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16)
                 }
             }
         }
@@ -73,7 +85,10 @@ macro_rules! impl_sequential_input {
 
             pub(crate) fn step_name(&self) -> &'static str {
                 impl_sequential_input!{
-                    @step_name_branch self, ($($input),*), (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16)
+                    @step_name_branch
+                    self,
+                    ($($input),*),
+                    (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16)
                 }
             }
 
@@ -84,23 +99,43 @@ macro_rules! impl_sequential_input {
     };
 
     // @count_branch simply counts the arity of the tuple (number of fields)
-    (@count $acc:expr, ($input:ident, $($rest:ident),*)) => { impl_sequential_input!(@count $acc + 1, ($($rest),*)) };
+    (@count
+        $acc:expr,
+        ($input:ident,
+            $($rest:ident),*)
+    ) => { impl_sequential_input!(@count $acc + 1, ($($rest),*)) };
     (@count $acc:expr, ($input:ident)) => { $acc + 1 };
 
-    // @view_branch delegates `view` method call to the current input depending on step index
-    (@view_branch $self:ident, $frame:ident, $area:ident, ($input:ident, $($rest:ident),*), ($idx:tt, $($idx_rest:tt),*)) => {
+    // delegates `view` method call to the current input depending on step index
+    (@view_branch
+        $self:ident,
+        $frame:ident,
+        $area:ident,
+        ($input:ident,$($rest:ident),*),
+        ($idx:tt, $($idx_rest:tt),*)
+    ) => {
         if $self.index == $idx {
             return $self.fields.$idx.input.view($frame, $area);
         }
 
         impl_sequential_input!(@view_branch $self, $frame, $area, ($($rest),*), ($($idx_rest),*))
     };
-    (@view_branch $self:ident, $frame:ident, $area:ident, ($input:ident), ($idx:tt, $($idx_rest:tt),*)) => {
+    (@view_branch
+        $self:ident,
+        $frame:ident,
+        $area:ident,
+        ($input:ident),
+        ($idx:tt, $($idx_rest:tt),*)
+    ) => {
         $self.fields.$idx.input.view($frame, $area)
     };
 
-    // @step_name_branch delegates `step_name` method call to the current input depending on step index
-    (@step_name_branch $self:ident, ($input:ident, $($rest:ident),*), ($idx:tt, $($idx_rest:tt),*)) => {
+    // delegates `step_name` method call to the current input depending on step index
+    (@step_name_branch
+        $self:ident,
+        ($input:ident, $($rest:ident),*),
+        ($idx:tt, $($idx_rest:tt),*)
+    ) => {
         if $self.index == $idx {
             return $self.fields.$idx.name;
         }
@@ -111,8 +146,14 @@ macro_rules! impl_sequential_input {
         $self.fields.$idx.name
     };
 
-    // @on_event_branch delegates `on_event` method call to the current input depending on step index
-    (@on_event_branch $self:ident, $event:ident, ($($acc:expr),* $(,)?), ($input:ident, $($rest:ident),*), ($idx:tt, $($idx_rest:tt),*)) => {
+    // delegates `on_event` method call to the current input depending on step index
+    (@on_event_branch
+        $self:ident,
+        $event:ident,
+        ($($acc:expr),* $(,)?),
+        ($input:ident, $($rest:ident),*),
+        ($idx:tt, $($idx_rest:tt),*)
+    ) => {
         if $self.index == $idx {
             return match $self.fields.$idx.input.on_event($event) {
                 InputStatus::Done(value) => {
@@ -125,9 +166,22 @@ macro_rules! impl_sequential_input {
             }
         }
 
-        impl_sequential_input! { @on_event_branch $self, $event, ($($acc,)* $self.fields.$idx.value.take().unwrap()), ($($rest),*), ($($idx_rest),*) }
+        impl_sequential_input! {
+            @on_event_branch
+            $self,
+            $event,
+            ($($acc,)* $self.fields.$idx.value.take().unwrap()),
+            ($($rest),*),
+            ($($idx_rest),*)
+        }
     };
-    (@on_event_branch $self:ident, $event:ident, ($($acc:expr),* $(,)?), ($input:ident), ($idx:tt, $($idx_rest:tt),*)) => {
+    (@on_event_branch
+        $self:ident,
+        $event:ident,
+        ($($acc:expr),* $(,)?),
+        ($input:ident),
+        ($idx:tt, $($idx_rest:tt),*)
+    ) => {
         return match $self.fields.$idx.input.on_event($event) {
             InputStatus::Done(value) => {
                 $self.fields.$idx.value = Some(value);
@@ -140,9 +194,9 @@ macro_rules! impl_sequential_input {
     };
 }
 
-// Following macro calls implement [ComposedInput] for tuples of [Field]'s from 2 to 16.
-// If a form made of only one field none if this machinery is really needed and form and
-// its controller are pretty straightforward.
+// Following macro calls implement [ComposedInput] for tuples of [Field]'s from
+// 2 to 16. If a form made of only one field none if this machinery is really
+// needed and form and its controller are pretty straightforward.
 impl_sequential_input!(I1, I2);
 impl_sequential_input!(I1, I2, I3);
 impl_sequential_input!(I1, I2, I3, I4);

@@ -46,7 +46,9 @@ async fn main() {
                 _ => None
             },
             backend_task_finished = backend_task => match backend_task_finished {
-                Some((task, result)) => Some(Event::Backend(BackendEvent::TaskCompleted(task, result))),
+                Some((task, result)) => Some(
+                    Event::Backend(BackendEvent::TaskCompleted(task, result))
+                ),
                 None => None
             },
         };

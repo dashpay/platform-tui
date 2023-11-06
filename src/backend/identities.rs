@@ -30,6 +30,8 @@ pub(crate) async fn fetch_identity_by_b58_id(
     client: &mut DapiClient,
     b58_id: String,
 ) -> Result<Identity, IdentityFetchError> {
+    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+
     let identifier = Identifier::from_string(b58_id.as_str(), Encoding::Base58)
         .map_err(|_| IdentityFetchError::IdentifierSerialization)?;
     let request = platform_proto::GetIdentityRequest {

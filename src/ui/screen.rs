@@ -9,10 +9,10 @@ use info::Info;
 use tuirealm::{
     event::KeyEvent,
     tui::prelude::{Constraint, Direction, Layout, Rect},
-    Frame, MockComponent,
+    Frame,
 };
 
-use super::{form::FormController, BackendEvent, Event, ScreenFeedback};
+use super::{form::FormController, BackendEvent, Event};
 
 /// Screen is the unit of navigation and representation in the TUI.
 /// It consists of two blocks:
@@ -53,20 +53,14 @@ impl<C: ScreenController> Screen<C> {
                 let redraw_info = self.info.on_event(key_event);
 
                 match controller_ui_update {
-                    UiUpdate::TogglesUpdated => ScreenFeedback::Redraw,
-                    UiUpdate::PreviousScreen(controller) => {
-                        ScreenFeedback::MountPreviousScreen(controller)
-                    }
-                    UiUpdate::NextScreen(controller) => ScreenFeedback::MountNextScreen(controller),
-                    UiUpdate::Form(controller) => ScreenFeedback::MountForm(controller),
-                    UiUpdate::Quit => ScreenFeedback::Quit,
-                    UiUpdate::None => {
+                    ScreenFeedback::None => {
                         if redraw_info {
                             ScreenFeedback::Redraw
                         } else {
                             ScreenFeedback::None
                         }
                     }
+                    screen_feedback => screen_feedback,
                 }
             }
             Event::Backend(BackendEvent::TaskCompleted(_, data)) => {
@@ -83,8 +77,7 @@ impl<C: ScreenController> Screen<C> {
 
 /// A screen controller is responsible for providing keystrokes information as
 /// well as for dispatching keypress events. This is used as generic parameter
-/// for [Screen] and it makes a difference between one screen or another
-/// serving as an intermediate between UI and the application's backend.
+/// for [Screen] and it makes a difference between one screen or another.
 pub(crate) trait ScreenController {
     fn name(&self) -> &'static str;
 
@@ -96,7 +89,7 @@ pub(crate) trait ScreenController {
 
     /// Process key event, returning details on what's needed to be updated on
     /// UI.
-    fn on_event(&mut self, key_event: KeyEvent) -> UiUpdate;
+    fn on_event(&mut self, key_event: KeyEvent) -> ScreenFeedback;
 }
 
 impl ScreenController for Box<dyn ScreenController> {
@@ -116,7 +109,7 @@ impl ScreenController for Box<dyn ScreenController> {
         self.deref().toggle_keys()
     }
 
-    fn on_event(&mut self, key_event: KeyEvent) -> UiUpdate {
+    fn on_event(&mut self, key_event: KeyEvent) -> ScreenFeedback {
         self.deref_mut().on_event(key_event)
     }
 }
@@ -155,11 +148,11 @@ impl ScreenToggleKey {
     }
 }
 
-pub(crate) enum UiUpdate {
-    TogglesUpdated,
-    PreviousScreen(Box<dyn ScreenController>),
+pub(crate) enum ScreenFeedback {
     NextScreen(Box<dyn ScreenController>),
+    PreviousScreen(Box<dyn ScreenController>),
     Form(Box<dyn FormController>),
+    Redraw,
     Quit,
     None,
 }

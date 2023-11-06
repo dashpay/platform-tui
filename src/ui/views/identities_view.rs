@@ -9,8 +9,8 @@ use super::main_view::MainScreenController;
 use crate::{
     backend::Task,
     ui::{
-        form::{Field, FormController, FormStatus, Input, InputStatus, ComposedInput, TextInput},
-        screen::{ScreenCommandKey, ScreenController, ScreenToggleKey, UiUpdate},
+        form::{ComposedInput, Field, FormController, FormStatus, Input, InputStatus, TextInput},
+        screen::{ScreenCommandKey, ScreenController, ScreenFeedback, ScreenToggleKey},
     },
 };
 
@@ -48,24 +48,24 @@ impl ScreenController for IdentitiesScreenController {
         self.toggle_keys.as_ref()
     }
 
-    fn on_event(&mut self, key_event: KeyEvent) -> UiUpdate {
+    fn on_event(&mut self, key_event: KeyEvent) -> ScreenFeedback {
         match key_event {
             KeyEvent {
                 code: Key::Char('q'),
                 modifiers: KeyModifiers::NONE,
-            } => UiUpdate::PreviousScreen(Box::new(MainScreenController)),
+            } => ScreenFeedback::PreviousScreen(Box::new(MainScreenController)),
             KeyEvent {
                 code: Key::Char('i'),
                 modifiers: KeyModifiers::NONE,
-            } => UiUpdate::Form(Box::new(GetIdentityByIdFormController::new())),
+            } => ScreenFeedback::Form(Box::new(GetIdentityByIdFormController::new())),
             KeyEvent {
                 code: Key::Char('p'),
                 modifiers: KeyModifiers::NONE,
             } => {
                 self.toggle_keys[0].toggle = !self.toggle_keys[0].toggle;
-                UiUpdate::TogglesUpdated
+                ScreenFeedback::Redraw
             }
-            _ => UiUpdate::None,
+            _ => ScreenFeedback::None,
         }
     }
 }

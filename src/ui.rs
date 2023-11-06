@@ -17,8 +17,8 @@ use tuirealm::{
 };
 
 use self::{
-    form::{Form, FormController, FormStatus, InputStatus, TextInput},
-    screen::{Screen, ScreenController},
+    form::{Form, FormController, FormStatus},
+    screen::{Screen, ScreenController, ScreenFeedback},
     status_bar::StatusBarState,
     views::main_view::MainScreenController,
 };
@@ -33,6 +33,7 @@ pub(crate) struct Ui {
     form: Option<Form<Box<dyn FormController>>>,
 }
 
+/// UI updates delivered to the main application loop.
 pub(crate) enum UiFeedback {
     Redraw,
     Quit,
@@ -41,35 +42,21 @@ pub(crate) enum UiFeedback {
 }
 
 impl Ui {
-    fn view<C: ScreenController, F: FormController>(
-        frame: &mut Frame,
-        screen: &mut Screen<C>,
-        form: Option<&mut Form<F>>,
-        status_bar_state: &StatusBarState,
-    ) {
-        let layout = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Min(10), Constraint::Max(3)].as_ref())
-            .split(frame.size());
-
-        if let Some(form) = form {
-            form.view(frame, layout[0]);
-        } else {
-            screen.view(frame, layout[0])
-        };
-        status_bar::view(frame, layout[1], status_bar_state);
-    }
-
     pub(crate) fn redraw(&mut self) {
         self.terminal
             .raw_mut()
             .draw(|frame| {
-                Self::view(
-                    frame,
-                    &mut self.screen,
-                    self.form.as_mut(),
-                    &self.status_bar_state,
-                )
+                let layout = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([Constraint::Min(10), Constraint::Max(3)].as_ref())
+                    .split(frame.size());
+
+                if let Some(form) = &mut self.form {
+                    form.view(frame, layout[0]);
+                } else {
+                    self.screen.view(frame, layout[0])
+                };
+                status_bar::view(frame, layout[1], &self.status_bar_state);
             })
             .expect("unable to draw to terminal");
     }
@@ -88,26 +75,17 @@ impl Ui {
 
         status_bar_state.add_child(main_screen_controller.name());
 
-        let mut screen = Screen::new(Box::new(main_screen_controller) as Box<dyn ScreenController>);
+        let screen = Screen::new(Box::new(main_screen_controller) as Box<dyn ScreenController>);
 
-        terminal
-            .raw_mut()
-            .draw(|frame| {
-                Self::view::<_, Box<dyn FormController>>(
-                    frame,
-                    &mut screen,
-                    None,
-                    &status_bar_state,
-                )
-            })
-            .expect("unable to draw to terminal");
-
-        Ui {
+        let mut ui = Ui {
             terminal,
             status_bar_state,
             screen,
             form: None,
-        }
+        };
+
+        ui.redraw();
+        ui
     }
 
     pub(crate) fn on_event(&mut self, event: Event) -> UiFeedback {
@@ -122,24 +100,23 @@ impl Ui {
             }
         } else {
             match self.screen.on_event(event) {
-                ScreenFeedback::MountNextScreen(controller) => {
+                ScreenFeedback::NextScreen(controller) => {
                     self.status_bar_state.add_child(controller.name());
                     self.screen = Screen::new(controller);
                     UiFeedback::Redraw
                 }
-                ScreenFeedback::MountPreviousScreen(controller) => {
+                ScreenFeedback::PreviousScreen(controller) => {
                     self.status_bar_state.to_parent();
                     self.screen = Screen::new(controller);
                     UiFeedback::Redraw
                 }
-                ScreenFeedback::MountForm(controller) => {
+                ScreenFeedback::Form(controller) => {
                     self.form = Some(Form::new(controller));
                     UiFeedback::Redraw
                 }
                 ScreenFeedback::Redraw => UiFeedback::Redraw,
                 ScreenFeedback::Quit => UiFeedback::Quit,
                 ScreenFeedback::None => UiFeedback::None,
-                ScreenFeedback::ExecuteTask(t) => UiFeedback::ExecuteTask(t),
             }
         }
     }
@@ -151,16 +128,6 @@ impl Drop for Ui {
         let _ = self.terminal.disable_raw_mode();
         let _ = self.terminal.clear_screen();
     }
-}
-
-enum ScreenFeedback {
-    MountNextScreen(Box<dyn ScreenController>),
-    MountPreviousScreen(Box<dyn ScreenController>),
-    MountForm(Box<dyn FormController>),
-    Redraw,
-    Quit,
-    None,
-    ExecuteTask(Task),
 }
 
 pub(crate) enum Event {

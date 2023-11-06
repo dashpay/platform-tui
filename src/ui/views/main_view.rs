@@ -6,8 +6,8 @@ use super::identities_view::IdentitiesScreenController;
 use crate::{
     backend::Task,
     ui::{
-        form::{Field, FormController, FormStatus, Input, ComposedInput, TextInput},
-        screen::{ScreenCommandKey, ScreenController, ScreenToggleKey, UiUpdate},
+        form::{ComposedInput, Field, FormController, FormStatus, Input, TextInput},
+        screen::{ScreenCommandKey, ScreenController, ScreenFeedback, ScreenToggleKey},
     },
 };
 
@@ -49,33 +49,33 @@ Use Ctrl+q to go back from completion list or once again to leave input at all.
         [].as_ref()
     }
 
-    fn on_event(&mut self, key_event: KeyEvent) -> UiUpdate {
+    fn on_event(&mut self, key_event: KeyEvent) -> ScreenFeedback {
         match key_event {
             KeyEvent {
                 code: Key::Char('q'),
                 modifiers: KeyModifiers::NONE,
-            } => UiUpdate::Quit,
+            } => ScreenFeedback::Quit,
             KeyEvent {
                 code: Key::Char('i'),
                 modifiers: KeyModifiers::NONE,
-            } => UiUpdate::NextScreen(Box::new(IdentitiesScreenController::new())),
+            } => ScreenFeedback::NextScreen(Box::new(IdentitiesScreenController::new())),
             KeyEvent {
                 code: Key::Char('c'),
                 modifiers: KeyModifiers::NONE,
-            } => UiUpdate::None,
+            } => ScreenFeedback::None,
             KeyEvent {
                 code: Key::Char('w'),
                 modifiers: KeyModifiers::NONE,
-            } => UiUpdate::None,
+            } => ScreenFeedback::None,
             KeyEvent {
                 code: Key::Char('v'),
                 modifiers: KeyModifiers::NONE,
-            } => UiUpdate::None,
+            } => ScreenFeedback::None,
             KeyEvent {
                 code: Key::Char('t'),
                 modifiers: KeyModifiers::NONE,
-            } => UiUpdate::Form(Box::new(TestFormController::new())),
-            _ => UiUpdate::None,
+            } => ScreenFeedback::Form(Box::new(TestFormController::new())),
+            _ => ScreenFeedback::None,
         }
     }
 }

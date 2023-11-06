@@ -12,11 +12,10 @@ use tuirealm::{
     tui::prelude::{Constraint, Direction, Layout, Rect},
     Frame, MockComponent,
 };
-
-use crate::backend::Task;
+pub(crate) use utils::{ComposedInput, Field};
 
 pub(crate) use self::text_input::TextInput;
-pub(crate) use utils::{Field, ComposedInput};
+use crate::backend::Task;
 
 /// Trait of every component suitable for processing user input.
 /// Serves as a building block of a form as one may require several of them
@@ -73,18 +72,19 @@ impl<C: FormController> Form<C> {
     }
 }
 
-/// Type similar to [InputStatus], but represents the status of the whole form.  Unlike a
-/// single input, a form made of many inputs and uses a [FormController] to process all of
-/// the results to produce a [Task] to return, since a user's input precedes some action.
+/// Type similar to [InputStatus], but represents the status of the whole form.
+/// Unlike a single input, a form made of many inputs and uses a
+/// [FormController] to process all of the results to produce a [Task] to
+/// return, since a user's input precedes some action.
 pub(crate) enum FormStatus {
     Done(Task),
     Redraw,
     None,
 }
 
-/// Similar to [crate::ui::ScreenController], a generic form knows how to draw itself, but
-/// all specifics including how to process the input data are yet to be defined, thus a
-/// controller used to finalize a form type.
+/// Similar to [crate::ui::ScreenController], a generic form knows how to draw
+/// itself, but all specifics including how to process the input data are yet to
+/// be defined, thus a controller used to finalize a form type.
 pub(crate) trait FormController {
     /// Process a key event
     fn on_event(&mut self, event: KeyEvent) -> FormStatus;
