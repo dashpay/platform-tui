@@ -9,7 +9,7 @@ use super::main_view::MainScreenController;
 use crate::{
     backend::Task,
     ui::{
-        form::{Field, FormController, FormStatus, Input, InputStatus, SequentialInput, TextInput},
+        form::{Field, FormController, FormStatus, Input, InputStatus, ComposedInput, TextInput},
         screen::{ScreenCommandKey, ScreenController, ScreenToggleKey, UiUpdate},
     },
 };
@@ -91,7 +91,7 @@ impl FormController for GetIdentityByIdFormController {
         }
     }
 
-    fn view(&mut self, frame: &mut Frame, area: tuirealm::tui::prelude::Rect) {
+    fn step_view(&mut self, frame: &mut Frame, area: tuirealm::tui::prelude::Rect) {
         self.input.view(frame, area);
     }
 

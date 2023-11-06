@@ -6,7 +6,7 @@ use super::identities_view::IdentitiesScreenController;
 use crate::{
     backend::Task,
     ui::{
-        form::{Field, FormController, FormStatus, Input, SequentialInput, TextInput},
+        form::{Field, FormController, FormStatus, Input, ComposedInput, TextInput},
         screen::{ScreenCommandKey, ScreenController, ScreenToggleKey, UiUpdate},
     },
 };
@@ -81,7 +81,7 @@ Use Ctrl+q to go back from completion list or once again to leave input at all.
 }
 
 struct TestFormController {
-    input: SequentialInput<(
+    input: ComposedInput<(
         Field<TextInput>,
         Field<TextInput>,
         Field<TextInput>,
@@ -92,7 +92,7 @@ struct TestFormController {
 impl TestFormController {
     fn new() -> Self {
         Self {
-            input: SequentialInput::new((
+            input: ComposedInput::new((
                 Field::new("lol", TextInput::new("lol placeholder")),
                 Field::new("kek", TextInput::new("kek placeholder")),
                 Field::new("cheburek", TextInput::new("cheburek placeholder")),
@@ -113,7 +113,7 @@ impl FormController for TestFormController {
         }
     }
 
-    fn view(&mut self, frame: &mut tuirealm::Frame, area: tuirealm::tui::prelude::Rect) {
+    fn step_view(&mut self, frame: &mut tuirealm::Frame, area: tuirealm::tui::prelude::Rect) {
         self.input.view(frame, area)
     }
 
