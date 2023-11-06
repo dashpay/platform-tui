@@ -940,7 +940,7 @@ dependencies = [
  "serde",
  "serde_bytes",
  "tenderdash-proto",
- "tonic",
+ "tonic 0.9.2",
  "tonic-build",
 ]
 
@@ -1018,36 +1018,18 @@ dependencies = [
 [[package]]
 name = "dashcore"
 version = "0.30.0"
-dependencies = [
- "anyhow",
- "bech32",
- "dashcore-private 0.1.0",
- "dashcore_hashes 0.12.0",
- "hex",
- "hex_lit",
- "rustversion",
- "secp256k1",
-]
-
-[[package]]
-name = "dashcore"
-version = "0.30.0"
 source = "git+https://github.com/dashpay/rust-dashcore?branch=master#43ffb72915ae55574ac44fcdbd47589e0c815b59"
 dependencies = [
  "anyhow",
  "bech32",
- "dashcore-private 0.1.0 (git+https://github.com/dashpay/rust-dashcore?branch=master)",
- "dashcore_hashes 0.12.0 (git+https://github.com/dashpay/rust-dashcore?branch=master)",
+ "dashcore-private",
+ "dashcore_hashes",
  "hex",
  "hex_lit",
  "rustversion",
  "secp256k1",
  "serde",
 ]
-
-[[package]]
-name = "dashcore-private"
-version = "0.1.0"
 
 [[package]]
 name = "dashcore-private"
@@ -1059,7 +1041,7 @@ name = "dashcore-rpc"
 version = "0.15.1"
 source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=master#d6eb09d3cb4f11f57901bed5f3ab2f9657848e2e"
 dependencies = [
- "dashcore-private 0.1.0 (git+https://github.com/dashpay/rust-dashcore?branch=master)",
+ "dashcore-private",
  "dashcore-rpc-json",
  "env_logger 0.10.0",
  "hex",
@@ -1075,7 +1057,7 @@ version = "0.15.1"
 source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=master#d6eb09d3cb4f11f57901bed5f3ab2f9657848e2e"
 dependencies = [
  "bincode 2.0.0-rc.3",
- "dashcore 0.30.0 (git+https://github.com/dashpay/rust-dashcore?branch=master)",
+ "dashcore",
  "hex",
  "serde",
  "serde_json",
@@ -1086,18 +1068,9 @@ dependencies = [
 [[package]]
 name = "dashcore_hashes"
 version = "0.12.0"
-dependencies = [
- "dashcore-private 0.1.0",
- "rs-x11-hash",
- "secp256k1",
-]
-
-[[package]]
-name = "dashcore_hashes"
-version = "0.12.0"
 source = "git+https://github.com/dashpay/rust-dashcore?branch=master#ca0afce927042e9efbc20b22f7cc422b1aae942e"
 dependencies = [
- "dashcore-private 0.1.0 (git+https://github.com/dashpay/rust-dashcore?branch=master)",
+ "dashcore-private",
  "rs-x11-hash",
  "secp256k1",
  "serde",
@@ -1218,7 +1191,7 @@ dependencies = [
  "byteorder",
  "chrono",
  "ciborium",
- "dashcore 0.30.0 (git+https://github.com/dashpay/rust-dashcore?branch=master)",
+ "dashcore",
  "data-contracts",
  "derive_more",
  "ed25519-dalek",
@@ -3596,7 +3569,7 @@ dependencies = [
  "sha2",
  "thiserror",
  "tokio",
- "tonic",
+ "tonic 0.10.2",
  "tracing",
 ]
 
@@ -3609,7 +3582,6 @@ dependencies = [
  "bs58 0.5.0",
  "dapi-grpc",
  "dash-platform-sdk",
- "dashcore 0.30.0",
  "dpp",
  "hex",
  "rand",
@@ -4703,6 +4675,33 @@ dependencies = [
  "rustls-pemfile",
  "tokio",
  "tokio-rustls",
+ "tokio-stream",
+ "tower",
+ "tower-layer",
+ "tower-service",
+ "tracing",
+]
+
+[[package]]
+name = "tonic"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d560933a0de61cf715926b9cac824d4c883c2c43142f787595e48280c40a1d0e"
+dependencies = [
+ "async-stream",
+ "async-trait",
+ "axum",
+ "base64 0.21.5",
+ "bytes",
+ "h2",
+ "http",
+ "http-body",
+ "hyper",
+ "hyper-timeout",
+ "percent-encoding",
+ "pin-project",
+ "prost 0.12.1",
+ "tokio",
  "tokio-stream",
  "tower",
  "tower-layer",

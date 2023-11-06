@@ -1,22 +1,29 @@
 //! Identities backend logic.
 
+use std::collections::BTreeMap;
 use bip37_bloom_filter::{BloomFilter, BloomFilterData};
-use dapi_grpc::core::v0::{BroadcastTransactionRequest, GetStatusRequest, InstantSendLockMessages, transactions_with_proofs_response, TransactionsWithProofsRequest, TransactionsWithProofsResponse};
-use dapi_grpc::core::v0::transactions_with_proofs_request::FromBlock;
-use dapi_grpc::platform::v0::WaitForStateTransitionResultRequest;
-use dashcore::psbt::serialize::Serialize;
-use rs_dapi_client::{DapiClient, DapiRequest, RequestSettings};
+use dapi_grpc::core::v0::{BroadcastTransactionRequest};
 
-use crate::app::{error::Error, state::AppState};
+use dash_platform_sdk::Sdk;
+use dpp::dashcore::InstantLock;
+use dpp::dashcore::psbt::serialize::Serialize;
+use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
+use dpp::prelude::{AssetLockProof, Identity, IdentityPublicKey};
+use rand::rngs::StdRng;
+use rand::SeedableRng;
+use rs_dapi_client::{Dapi, RequestSettings};
+use simple_signer::signer::SimpleSigner;
+
+use crate::app::{state::AppState};
 
 
 #[derive(Debug)]
 pub struct RegisterIdentityError(String);
 
 impl AppState {
-    pub async fn register_identity(
+    pub async fn register_new_identity(
         &mut self,
-        dapi_client: &mut DapiClient,
+        sdk: &mut Sdk,
         amount: u64,
     ) -> Result<(), RegisterIdentityError> {
         let Some(wallet) = self.loaded_wallet.as_ref() else {
@@ -27,9 +34,9 @@ impl AppState {
 
         // first we create the wallet registration transaction, this locks funds that we
         // can transfer from core to platform
-        let (transaction, private_key) = wallet.registration_transaction(None, amount)?;
+        let (transaction, asset_lock_proof_private_key) = wallet.registration_transaction(None, amount)?;
 
-        self.identity_creation_private_key = Some(private_key.inner.secret_bytes());
+        self.identity_creation_private_key = Some(asset_lock_proof_private_key.inner.secret_bytes());
 
         // create the bloom filter
 
@@ -53,94 +60,66 @@ impl AppState {
             }
         };
 
-        let block_hash: Vec<u8> = (GetStatusRequest {})
-            .execute(dapi_client, RequestSettings::default())
-            .await
-            .map_err(|e| RegisterIdentityError(e.to_string()))?
-            .chain
-            .map(|chain| chain.best_block_hash)
-            .ok_or_else(|| RegisterIdentityError("missing `chain` field".to_owned()))?;
+        // let block_hash: Vec<u8> = (GetStatusRequest {})
+        //     .execute(dapi_client, RequestSettings::default())
+        //     .await
+        //     .map_err(|e| RegisterIdentityError(e.to_string()))?
+        //     .chain
+        //     .map(|chain| chain.best_block_hash)
+        //     .ok_or_else(|| RegisterIdentityError("missing `chain` field".to_owned()))?;
 
-        let core_transactions_stream = TransactionsWithProofsRequest {
-            bloom_filter: Some(bloom_filter_proto),
-            count: 0,
-            send_transaction_hashes: false,
-            from_block: Some(FromBlock::FromBlockHash(block_hash)),
-        }
-            .execute(dapi_client, RequestSettings::default())
-            .await
-            .map_err(|e| RegisterIdentityError(e.to_string()))?;
+        // let core_transactions_stream = TransactionsWithProofsRequest {
+        //     bloom_filter: Some(bloom_filter_proto),
+        //     count: 5,
+        //     send_transaction_hashes: false,
+        //     from_block: Some(FromBlock::FromBlockHash(block_hash)),
+        // }
+        //     .execute(dapi_client, RequestSettings::default())
+        //     .await
+        //     .map_err(|e| RegisterIdentityError(e.to_string()))?;
 
-        // we need to broadcast the transaction to core todo() -> Evgeny
-        BroadcastTransactionRequest {
+        let asset_lock_stream = sdk.start_instant_send_lock_stream().await?;
+
+        // we need to broadcast the transaction to core
+        let request = BroadcastTransactionRequest {
             transaction: transaction.serialize(), // transaction but how to encode it as bytes?,
             allow_high_fees: false,
             bypass_limits: false,
-        }
-            .execute(&mut dapi_client, RequestSettings::default())
+        };
+
+        sdk.execute(request, RequestSettings::default())
             .await
             .map_err(|e| RegisterIdentityError(e.to_string()))?;
 
-        // Get the instant send lock back todo() -> Evgeny
+        // Get the instant send lock back
         // Here we intentionally block our UI for now
         let mut instant_send_lock_messages =
-            wait_for_instant_send_lock_messages(core_transactions_stream).await?;
+            wait_for_instant_send_lock_messages(asset_lock_stream).await?;
+
+        // It is possible we didn't get any instant send lock back. In that case we should wait for
+        // a chain locked block todo()
+
+        let instant_lock : InstantLock = instant_send_lock_messages.first(); //todo()
 
         //// Platform steps
 
-        // Create the identity create state transition todo() -> Sam
+        // We need to create the asset lock proof
 
-        // Subscribe to state transition result todo() -> Evgeny
-        let state_transition_proof = WaitForStateTransitionResultRequest {
-            state_transition_hash: todo!(),
-            prove: true,
-        }
-            .execute(dapi_client, RequestSettings::default())
-            .await
-            .map_err(|e| RegisterIdentityError(e.to_string()))?;
+        let asset_lock_proof = AssetLockProof::Instant(InstantAssetLockProof::new(instant_lock, transaction, 0));
 
-        // Through sdk send this transaction and get back proof that the identity was
-        // created todo() -> Evgeny
-        platform_proto::BroadcastStateTransitionRequest {
-            state_transition: todo!(),
-        }
-            .execute(dapi_client, RequestSettings::default())
-            .await
-            .map_err(|e| RegisterIdentityError(e.to_string()))?;
+        let mut std_rng = StdRng::from_entropy();
 
-        // Verify proof and get identity todo() -> Sam
+        let (identity, keys) : (Identity, BTreeMap<IdentityPublicKey, Vec<u8>>) = Identity::random_identity_with_main_keys_with_private_key(2, &mut std_rng, sdk.version())?;
 
-        // Add Identity as the current identity in the state todo() -> Sam
+        let mut signer = SimpleSigner::default();
+
+        signer.add_keys(keys);
+
+        let state_transition_stream = sdk.start_state_transition_stream().await?;
+
+        identity.put_to_platform(sdk, asset_lock_proof, &asset_lock_proof_private_key, &signer).await?;
 
         Ok(())
     }
 }
 
-async fn wait_for_instant_send_lock_messages(
-    mut stream: rs_dapi_client::tonic::Streaming<TransactionsWithProofsResponse>,
-) -> Result<InstantSendLockMessages, RegisterIdentityError> {
-    let instant_send_lock_messages;
-    loop {
-        if let Some(TransactionsWithProofsResponse { responses }) = stream
-            .message()
-            .await
-            .map_err(|e| RegisterIdentityError(e.to_string()))?
-        {
-            match responses {
-                Some(transactions_with_proofs_response::Responses::InstantSendLockMessages(
-                    messages,
-                )) => {
-                    instant_send_lock_messages = messages;
-                    break;
-                }
-                _ => continue,
-            }
-        } else {
-            return Err(RegisterIdentityError(
-                "steam closed unexpectedly".to_owned(),
-            ));
-        }
-    }
-
-    Ok(instant_send_lock_messages)
-}

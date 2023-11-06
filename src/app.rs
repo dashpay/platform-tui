@@ -9,8 +9,8 @@ pub(crate) mod strategies;
 
 use std::cmp::min;
 use std::collections::BTreeMap;
-use dashcore::secp256k1::rand::SeedableRng;
-use dashcore::secp256k1::rand::rngs::StdRng;
+use dpp::dashcore::secp256k1::rand::SeedableRng;
+use dpp::dashcore::secp256k1::rand::rngs::StdRng;
 
 use dpp::data_contract::document_type::DocumentType;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -28,7 +28,7 @@ use std::{fmt::Display, time::Duration};
 use dash_platform_sdk::platform::Fetch;
 use dash_platform_sdk::Sdk;
 
-use dashcore::{secp256k1::Secp256k1, Address, Network, PrivateKey};
+use dpp::dashcore::{secp256k1::Secp256k1, Address, Network, PrivateKey};
 use dpp::identity::Identity;
 use dpp::platform_value::string_encoding::Encoding;
 use serde::Serialize;

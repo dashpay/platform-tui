@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use dashcore::{OutPoint, ScriptBuf, TxOut, Txid};
-use dashcore::network::Address;
+use dpp::dashcore::{OutPoint, ScriptBuf, TxOut, Txid};
+use dpp::dashcore::network::Address;
 use reqwest;
 
 use crate::app::error::{Error, Error::InsightError};

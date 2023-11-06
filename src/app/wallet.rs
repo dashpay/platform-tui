@@ -7,13 +7,13 @@ use bincode::{
     error::{DecodeError, EncodeError},
     BorrowDecode, Decode, Encode,
 };
-use dashcore::{secp256k1::Secp256k1, Address, Network, OutPoint, PrivateKey, ScriptBuf, Transaction, TxOut, Script, TxIn, PublicKey};
-use dashcore::hashes::Hash;
-use dashcore::script::Builder;
-use dashcore::secp256k1::{Message};
-use dashcore::sighash::{LegacySighash, SighashCache};
-use dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
-use dashcore::transaction::special_transaction::TransactionPayload;
+use dpp::dashcore::{secp256k1::Secp256k1, Address, Network, OutPoint, PrivateKey, ScriptBuf, Transaction, TxOut, Script, TxIn, PublicKey};
+use dpp::dashcore::hashes::Hash;
+use dpp::dashcore::script::Builder;
+use dpp::dashcore::secp256k1::{Message};
+use dpp::dashcore::sighash::{LegacySighash, SighashCache};
+use dpp::dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
+use dpp::dashcore::transaction::special_transaction::TransactionPayload;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
 
