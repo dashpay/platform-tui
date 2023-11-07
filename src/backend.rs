@@ -2,14 +2,13 @@
 //! This includes all logic unrelated to UI.
 
 mod identities;
+mod insight;
+mod state;
+mod wallet;
 
 use std::fmt::Display;
 
-use dpp::{
-    platform_value::string_encoding::Encoding,
-    prelude::{Identifier, Identity},
-};
-use rs_sdk::{platform::Fetch, Sdk};
+use rs_sdk::Sdk;
 use serde::Serialize;
 use tokio::sync::Mutex;
 

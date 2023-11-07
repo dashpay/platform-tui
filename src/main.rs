@@ -6,14 +6,8 @@ mod backend;
 mod ui;
 
 use crossterm::event::{Event as TuiEvent, EventStream};
-use futures::{
-    future::{BoxFuture, OptionFuture},
-    select,
-    stream::FuturesUnordered,
-    FutureExt, StreamExt,
-};
-use rs_dapi_client::{AddressList, DapiClient, RequestSettings};
-use rs_sdk::{Sdk, SdkBuilder};
+use futures::{future::OptionFuture, select, FutureExt, StreamExt};
+use rs_sdk::SdkBuilder;
 
 use self::{
     backend::{Backend, BackendEvent, Task},
@@ -23,7 +17,9 @@ use self::{
 #[tokio::main]
 async fn main() {
     // Setup Platform SDK
-    let sdk = SdkBuilder::new_testnet().build().expect("cannot setup Platform SDK");
+    let sdk = SdkBuilder::new_mock()
+        .build()
+        .expect("cannot setup Platform SDK");
 
     let mut ui = Ui::new();
     let backend = Backend::new(sdk);

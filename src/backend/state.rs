@@ -1,33 +1,34 @@
+//! Application state module.
+//! This kind of state does not include UI details and basically all about
+//! persistence required by backend.
+
 use std::{collections::BTreeMap, fs, ops::Deref, path::Path, sync::Arc};
 
 use bincode::{Decode, Encode};
 use dpp::{
-    prelude::{DataContract, Identity},
+    dashcore::{Network, PrivateKey, Transaction},
+    data_contract::created_data_contract::CreatedDataContract,
+    identity::KeyID,
+    prelude::{AssetLockProof, DataContract, Identifier, Identity},
     serialization::{
         PlatformDeserializableWithPotentialValidationFromVersionedStructure,
         PlatformSerializableWithPlatformVersion,
     },
+    tests::json_document::json_document_to_created_contract,
     util::deserializer::ProtocolVersion,
     version::PlatformVersion,
     ProtocolError,
     ProtocolError::{PlatformDeserializationError, PlatformSerializationError},
 };
-use dpp::dashcore::{Network, PrivateKey, Transaction};
-use strategy_tests::Strategy;
+use strategy_tests::{frequency::Frequency, Strategy};
+use walkdir::{DirEntry, WalkDir};
 
-use crate::app::wallet::Wallet;
-use walkdir::{WalkDir, DirEntry};
-use dpp::data_contract::created_data_contract::CreatedDataContract;
-use dpp::identity::KeyID;
-use dpp::prelude::{AssetLockProof, Identifier};
-use dpp::tests::json_document::json_document_to_created_contract;
-use strategy_tests::frequency::Frequency;
-use tokio::task;
+use super::wallet::Wallet;
 
 const CURRENT_PROTOCOL_VERSION: ProtocolVersion = 1;
 
 #[derive(Debug, Clone)]
-pub struct AppState {
+pub(crate) struct AppState {
     pub loaded_identity: Option<Identity>,
     pub identity_private_keys: BTreeMap<(Identifier, KeyID), PrivateKey>,
     pub loaded_wallet: Option<Arc<Wallet>>,
@@ -36,7 +37,8 @@ pub struct AppState {
     pub available_strategies: BTreeMap<String, Strategy>,
     pub current_strategy: Option<String>,
     pub selected_strategy: Option<String>,
-    pub identity_asset_lock_private_key_in_creation : Option<(Transaction, PrivateKey, Option<AssetLockProof>)>
+    pub identity_asset_lock_private_key_in_creation:
+        Option<(Transaction, PrivateKey, Option<AssetLockProof>)>,
 }
 
 pub fn default_strategy_description(mut map: BTreeMap<String, String>) -> BTreeMap<String, String> {
@@ -51,7 +53,7 @@ impl Default for AppState {
     fn default() -> Self {
         let mut known_contracts = BTreeMap::new();
         let mut available_strategies = BTreeMap::new();
-        
+
         let platform_version = PlatformVersion::get(CURRENT_PROTOCOL_VERSION).unwrap();
 
         fn is_json(entry: &DirEntry) -> bool {
@@ -61,16 +63,13 @@ impl Default for AppState {
         for entry in WalkDir::new("supporting_files/contract")
             .into_iter()
             .filter_map(|e| e.ok())
-            .filter(is_json) 
+            .filter(is_json)
         {
             let path = entry.path();
             let contract_name = path.file_stem().unwrap().to_str().unwrap().to_string();
-            
-            let contract = json_document_to_created_contract(
-                &path, 
-                true,
-                platform_version,
-            ).expect("expected to get contract from a json document");
+
+            let contract = json_document_to_created_contract(&path, true, platform_version)
+                .expect("expected to get contract from a json document");
 
             known_contracts.insert(contract_name, contract);
         }
@@ -83,7 +82,13 @@ impl Default for AppState {
         description3.insert("contracts_with_updates".to_string(), "dashpay3".to_string());
 
         let default_strategy_1 = Strategy {
-            contracts_with_updates: vec![(known_contracts.get(&String::from("dashpay-contract-all-mutable")).unwrap().clone(), None)],
+            contracts_with_updates: vec![(
+                known_contracts
+                    .get(&String::from("dashpay-contract-all-mutable"))
+                    .unwrap()
+                    .clone(),
+                None,
+            )],
             operations: vec![],
             start_identities: vec![],
             identities_inserts: Frequency {
@@ -93,7 +98,13 @@ impl Default for AppState {
             signer: None,
         };
         let default_strategy_2 = Strategy {
-            contracts_with_updates: vec![(known_contracts.get(&String::from("dashpay-contract-all-mutable-update-1")).unwrap().clone(), None)],
+            contracts_with_updates: vec![(
+                known_contracts
+                    .get(&String::from("dashpay-contract-all-mutable-update-1"))
+                    .unwrap()
+                    .clone(),
+                None,
+            )],
             operations: vec![],
             start_identities: vec![],
             identities_inserts: Frequency {
@@ -103,7 +114,13 @@ impl Default for AppState {
             signer: None,
         };
         let default_strategy_3 = Strategy {
-            contracts_with_updates: vec![(known_contracts.get(&String::from("dashpay-contract-all-mutable-update-2")).unwrap().clone(), None)],
+            contracts_with_updates: vec![(
+                known_contracts
+                    .get(&String::from("dashpay-contract-all-mutable-update-2"))
+                    .unwrap()
+                    .clone(),
+                None,
+            )],
             operations: vec![],
             start_identities: vec![],
             identities_inserts: Frequency {
@@ -112,7 +129,7 @@ impl Default for AppState {
             },
             signer: None,
         };
-        
+
         available_strategies.insert(String::from("default_strategy_1"), default_strategy_1);
         available_strategies.insert(String::from("default_strategy_2"), default_strategy_2);
         available_strategies.insert(String::from("default_strategy_3"), default_strategy_3);
@@ -126,6 +143,7 @@ impl Default for AppState {
             available_strategies,
             current_strategy: None,
             selected_strategy: None,
+            identity_asset_lock_private_key_in_creation: None,
         }
     }
 }
@@ -133,7 +151,7 @@ impl Default for AppState {
 #[derive(Clone, Debug, Encode, Decode)]
 struct AppStateInSerializationFormat {
     pub loaded_identity: Option<Identity>,
-    pub identity_private_keys: BTreeMap<(Identifier, KeyID), [u8;32]>,
+    pub identity_private_keys: BTreeMap<(Identifier, KeyID), [u8; 32]>,
     pub loaded_wallet: Option<Wallet>,
     pub known_identities: BTreeMap<String, Identity>,
     pub known_contracts: BTreeMap<String, Vec<u8>>,
@@ -166,6 +184,7 @@ impl PlatformSerializableWithPlatformVersion for AppState {
             available_strategies,
             current_strategy,
             selected_strategy,
+            identity_asset_lock_private_key_in_creation,
         } = self;
 
         let known_contracts_in_serialization_format = known_contracts
@@ -186,9 +205,13 @@ impl PlatformSerializableWithPlatformVersion for AppState {
             })
             .collect::<Result<BTreeMap<String, Vec<u8>>, ProtocolError>>()?;
 
-        let identity_private_keys = identity_private_keys.into_iter().map(|(key, value)| {
-            (key, value.inner)
-        }).collect();
+        let identity_private_keys = identity_private_keys
+            .into_iter()
+            .map(|(key, value)| {
+                // (key, value.inner)
+                todo!()
+            })
+            .collect();
 
         let app_state_in_serialization_format = AppStateInSerializationFormat {
             loaded_identity,
@@ -244,11 +267,15 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
         let known_contracts = known_contracts
             .into_iter()
             .map(|(key, contract)| {
-                let contract = CreatedDataContract::versioned_deserialize(contract.as_slice(), validate, platform_version)
-                    .map_err(|e| {
-                        let msg = format!("Error deserializing known_contract for key {}: {}", key, e);
-                        PlatformDeserializationError(msg)
-                    })?;
+                let contract = CreatedDataContract::versioned_deserialize(
+                    contract.as_slice(),
+                    validate,
+                    platform_version,
+                )
+                .map_err(|e| {
+                    let msg = format!("Error deserializing known_contract for key {}: {}", key, e);
+                    PlatformDeserializationError(msg)
+                })?;
                 Ok((key, contract))
             })
             .collect::<Result<BTreeMap<String, CreatedDataContract>, ProtocolError>>()?;
@@ -256,19 +283,31 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
         let available_strategies = available_strategies
             .into_iter()
             .map(|(key, strategy)| {
-                let strategy = Strategy::versioned_deserialize(strategy.as_slice(), validate, platform_version)
-                    .map_err(|e| {
-                        let msg = format!("Error deserializing available_strategies for key {}: {}", key, e);
-                        PlatformDeserializationError(msg)
-                    })?;
+                let strategy = Strategy::versioned_deserialize(
+                    strategy.as_slice(),
+                    validate,
+                    platform_version,
+                )
+                .map_err(|e| {
+                    let msg = format!(
+                        "Error deserializing available_strategies for key {}: {}",
+                        key, e
+                    );
+                    PlatformDeserializationError(msg)
+                })?;
                 Ok((key, strategy))
             })
             .collect::<Result<BTreeMap<String, Strategy>, ProtocolError>>()?;
 
-        let identity_private_keys = identity_private_keys.into_iter().map(|(key, value)| {
-            (key, PrivateKey::from_slice(&value, Network::Testnet).expect("expected private key"))
-        }).collect();
-
+        let identity_private_keys = identity_private_keys
+            .into_iter()
+            .map(|(key, value)| {
+                (
+                    key,
+                    PrivateKey::from_slice(&value, Network::Testnet).expect("expected private key"),
+                )
+            })
+            .collect();
 
         Ok(AppState {
             loaded_identity,
@@ -279,14 +318,15 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
             available_strategies,
             current_strategy,
             selected_strategy,
+            identity_asset_lock_private_key_in_creation: None,
         })
     }
 }
 
-impl AppState {    
+impl AppState {
     pub async fn load() -> AppState {
         let path = Path::new("explorer.state");
-        
+
         let Ok(read_result) = fs::read(path) else {
             return AppState::default();
         };
@@ -298,7 +338,7 @@ impl AppState {
         ) else {
             return AppState::default();
         };
-        
+
         if let Some(wallet) = app_state.loaded_wallet.as_ref() {
             let wallet = wallet.clone();
             wallet.reload_utxos().await;

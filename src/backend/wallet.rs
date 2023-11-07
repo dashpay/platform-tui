@@ -1,5 +1,8 @@
-use std::{str::FromStr, sync::RwLock};
-use std::collections::{BTreeMap, HashMap};
+use std::{
+    collections::{BTreeMap, HashMap},
+    str::FromStr,
+    sync::RwLock,
+};
 
 use bincode::{
     de::{BorrowDecoder, Decoder},
@@ -7,44 +10,56 @@ use bincode::{
     error::{DecodeError, EncodeError},
     BorrowDecode, Decode, Encode,
 };
-use dpp::dashcore::{secp256k1::Secp256k1, Address, Network, OutPoint, PrivateKey, ScriptBuf, Transaction, TxOut, Script, TxIn, PublicKey};
-use dpp::dashcore::hashes::Hash;
-use dpp::dashcore::script::Builder;
-use dpp::dashcore::secp256k1::{Message};
-use dpp::dashcore::sighash::{LegacySighash, SighashCache};
-use dpp::dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
-use dpp::dashcore::transaction::special_transaction::TransactionPayload;
-use rand::prelude::StdRng;
-use rand::{Rng, SeedableRng};
+use dpp::dashcore::{
+    hashes::Hash,
+    secp256k1::{Message, Secp256k1},
+    sighash::{LegacySighash, SighashCache},
+    transaction::special_transaction::{asset_lock::AssetLockPayload, TransactionPayload},
+    Address, Network, OutPoint, PrivateKey, PublicKey, Script, ScriptBuf, Transaction, TxIn, TxOut,
+};
+use rand::{prelude::StdRng, Rng, SeedableRng};
 
-use crate::{app::error::Error::InsightError, managers::insight::utxos_with_amount_for_addresses};
-use crate::app::error::Error;
+use super::insight::{utxos_with_amount_for_addresses, InsightError};
+
+#[derive(Debug, thiserror::Error)]
+#[error("wallet error: {0}")]
+pub(crate) struct WalletError(String);
 
 #[derive(Debug, Clone, Encode, Decode)]
-pub enum Wallet {
+pub(crate) enum Wallet {
     SingleKeyWallet(SingleKeyWallet),
 }
 
 impl Wallet {
-    pub fn private_key_for_address(&self, address: &Address) -> &PrivateKey {
-        match self { Wallet::SingleKeyWallet(single_wallet) => {
-            single_wallet.private_key_for_address(address)
-        } }
+    pub(crate) fn private_key_for_address(&self, address: &Address) -> &PrivateKey {
+        match self {
+            Wallet::SingleKeyWallet(single_wallet) => {
+                single_wallet.private_key_for_address(address)
+            }
+        }
     }
-    pub fn registration_transaction(&self, seed: Option<u64>, amount: u64) -> Result<(Transaction, PrivateKey), Error> {
+
+    pub(crate) fn registration_transaction(
+        &self,
+        seed: Option<u64>,
+        amount: u64,
+    ) -> Result<(Transaction, PrivateKey), WalletError> {
         let mut rng = match seed {
             None => StdRng::from_entropy(),
             Some(seed_value) => StdRng::seed_from_u64(seed_value),
         };
-        let random_private_key : [u8;32] = rng.gen();
-        let private_key = PrivateKey::from_slice(&random_private_key, Network::Testnet).expect("expected a private key");
+        let random_private_key: [u8; 32] = rng.gen();
+        let private_key = PrivateKey::from_slice(&random_private_key, Network::Testnet)
+            .expect("expected a private key");
 
         let secp = Secp256k1::new();
         let asset_lock_public_key = private_key.public_key(&secp);
 
         let one_time_key_hash = asset_lock_public_key.pubkey_hash();
 
-        let (mut utxos, change) = self.take_unspent_utxos_for(amount).ok_or(Error::WalletError("Not enough balance in wallet".to_string()))?;
+        let (mut utxos, change) = self
+            .take_unspent_utxos_for(amount)
+            .ok_or(WalletError("Not enough balance in wallet".to_string()))?;
 
         let change_address = self.change_address();
 
@@ -67,10 +82,14 @@ impl Wallet {
 
         // we need to get all inputs from utxos to add them to the transaction
 
-        let mut inputs = utxos.iter().map(|(utxo, _)| {
-            let mut tx_in = TxIn::default();
-            tx_in.previous_output = utxo.clone()
-        }).collect();
+        let mut inputs = utxos
+            .iter()
+            .map(|(utxo, _)| {
+                // let mut tx_in = TxIn::default();
+                // tx_in.previous_output = utxo.clone()
+                todo!()
+            })
+            .collect();
 
         let mut writer = LegacySighash::engine();
         let input_index = 0;
@@ -85,48 +104,57 @@ impl Wallet {
             special_transaction_payload: Some(TransactionPayload::AssetLockPayloadType(payload)),
         };
         let cache = SighashCache::new(&tx);
-        let result = cache.legacy_encode_signing_data_to(&mut writer, input_index, &script_pubkey, sighash_u32)
-                .is_sighash_single_bug()
-                .expect("writer can't fail");
+        let result = cache
+            .legacy_encode_signing_data_to(&mut writer, input_index, &script_pubkey, sighash_u32)
+            .is_sighash_single_bug()
+            .expect("writer can't fail");
 
-        tx.input.iter_mut().enumerate().for_each(|(i, input)| {
-            // You need to provide the actual script_pubkey of the UTXO being spent
-            let (tx_out, public_key, input_address) = utxos.remove(&input.previous_output).expect("expected a txout");
-            let script_pubkey = tx_out.script_pubkey;
+        // tx.input.iter_mut().enumerate().for_each(|(i, input)| {
+        //     // You need to provide the actual script_pubkey of the UTXO being spent
+        //     let (tx_out, public_key, input_address) = utxos
+        //         .remove(&input.previous_output)
+        //         .expect("expected a txout");
+        //     let script_pubkey = tx_out.script_pubkey;
 
-            // Create a message to sign by hashing the transaction with the appropriate sighash
-            let sighash = cache.legacy_signature_hash(i, &script_pubkey, sighash_u32).expect("expected sighash");
-            let message = Message::from_slice(sighash.as_byte_array()).expect("Error creating message");
+        //     // Create a message to sign by hashing the transaction with the
+        // appropriate sighash     let sighash = cache
+        //         .legacy_signature_hash(i, &script_pubkey, sighash_u32)
+        //         .expect("expected sighash");
+        //     let message =
+        //         Message::from_slice(sighash.as_byte_array()).expect("Error creating
+        // message");
 
-            let private_key = self.private_key_for_address(&input_address);
+        //     let private_key = self.private_key_for_address(&input_address);
 
-            // Sign the message with the private key
-            let sig = secp.sign_ecdsa(&message, &private_key.inner);
+        //     // Sign the message with the private key
+        //     let sig = secp.sign_ecdsa(&message, &private_key.inner);
 
-            // Create the script_sig with the signature and the public key
-            // This is a simple P2PKH script_sig format, adjust as necessary for other formats
-            input.script_sig = Script::new_p2pkh_sig(&sig.serialize_der(), &public_key);
+        //     // Create the script_sig with the signature and the public key
+        //     // This is a simple P2PKH script_sig format, adjust as necessary for
+        // other formats     // input.script_sig =
+        // Script::new_p2pkh_sig(&sig.serialize_der(), &public_key);
+        //     todo!();
 
-            // Serialize the DER-encoded signature and append the sighash type
-            let mut sig_script = sig.serialize_der().to_vec();
+        //     // Serialize the DER-encoded signature and append the sighash type
+        //     let mut sig_script = sig.serialize_der().to_vec();
 
-            sig_script.push(sighash_u32 as u8); // Assuming sighash_u32 is something like SIGHASH_ALL (0x01)
+        //     sig_script.push(sighash_u32 as u8); // Assuming sighash_u32 is something
+        // like SIGHASH_ALL (0x01)
 
-            // Create script_sig
-            input.script_sig = Builder::new()
-                .push_slice(sig_script.as_slice())
-                .push_slice(&public_key.to_bytes())
-                .into_script();
-        });
+        //     // Create script_sig
+        //     // input.script_sig = Builder::new()
+        //     //     .push_slice(sig_script.as_slice())
+        //     //     .push_slice(&public_key.to_bytes())
+        //     //     .into_script();
+        //     todo!()
+        // });
 
         Ok((tx, private_key))
     }
 
     pub fn change_address(&self) -> Address {
         match self {
-            Wallet::SingleKeyWallet(wallet) => {
-                wallet.change_address()
-            }
+            Wallet::SingleKeyWallet(wallet) => wallet.change_address(),
         }
     }
 
@@ -135,7 +163,7 @@ impl Wallet {
             Wallet::SingleKeyWallet(wallet) => {
                 format!(
                     "Single Key Wallet \npublic key: {} \naddress: {} \nbalance: {}",
-                    hex::encode(wallet.public_key.inner.as_slice()),
+                    hex::encode(wallet.public_key.to_bytes()),
                     wallet.address.to_string().as_str(),
                     wallet.balance_dash_formatted()
                 )
@@ -155,7 +183,10 @@ impl Wallet {
         }
     }
 
-    pub fn take_unspent_utxos_for(&self, amount: u64) -> Option<(BTreeMap<OutPoint, (TxOut, PublicKey, Address)>, u64)> {
+    pub fn take_unspent_utxos_for(
+        &self,
+        amount: u64,
+    ) -> Option<(BTreeMap<OutPoint, (TxOut, PublicKey, Address)>, u64)> {
         match self {
             Wallet::SingleKeyWallet(wallet) => wallet.take_unspent_utxos_for(amount),
         }
@@ -165,7 +196,7 @@ impl Wallet {
         match self {
             Wallet::SingleKeyWallet(wallet) => {
                 let Ok(utxos) =
-                    utxos_with_amount_for_addresses(&[&wallet.address], false).await
+                    utxos_with_amount_for_addresses(&[todo!() /* &wallet.address */], false).await
                 else {
                     return;
                 };
@@ -301,7 +332,10 @@ impl SingleKeyWallet {
         utxos.iter().map(|(_, out)| out.value).sum()
     }
 
-    pub fn take_unspent_utxos_for(&self, amount: u64) -> Option<(BTreeMap<OutPoint, (TxOut, PublicKey, Address)>, u64)> {
+    pub fn take_unspent_utxos_for(
+        &self,
+        amount: u64,
+    ) -> Option<(BTreeMap<OutPoint, (TxOut, PublicKey, Address)>, u64)> {
         let mut utxos = self.utxos.write().unwrap();
 
         let mut required: i64 = amount as i64;
@@ -312,7 +346,10 @@ impl SingleKeyWallet {
                 break;
             }
             required -= utxo.value as i64;
-            taken_utxos.insert(outpoint.clone(), (utxo.clone(), self.public_key, self.address.clone()));
+            taken_utxos.insert(
+                outpoint.clone(),
+                (utxo.clone(), self.public_key, self.address.clone()),
+            );
         }
 
         // If we didn't gather enough UTXOs to cover the required amount
