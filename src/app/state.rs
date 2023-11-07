@@ -12,14 +12,14 @@ use dpp::{
     ProtocolError,
     ProtocolError::{PlatformDeserializationError, PlatformSerializationError},
 };
-use dpp::dashcore::{Network, PrivateKey};
+use dpp::dashcore::{Network, PrivateKey, Transaction};
 use strategy_tests::Strategy;
 
 use crate::app::wallet::Wallet;
 use walkdir::{WalkDir, DirEntry};
 use dpp::data_contract::created_data_contract::CreatedDataContract;
 use dpp::identity::KeyID;
-use dpp::prelude::Identifier;
+use dpp::prelude::{AssetLockProof, Identifier};
 use dpp::tests::json_document::json_document_to_created_contract;
 use strategy_tests::frequency::Frequency;
 use tokio::task;
@@ -36,6 +36,7 @@ pub struct AppState {
     pub available_strategies: BTreeMap<String, Strategy>,
     pub current_strategy: Option<String>,
     pub selected_strategy: Option<String>,
+    pub identity_asset_lock_private_key_in_creation : Option<(Transaction, PrivateKey, Option<AssetLockProof>)>
 }
 
 pub fn default_strategy_description(mut map: BTreeMap<String, String>) -> BTreeMap<String, String> {

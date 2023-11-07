@@ -198,7 +198,7 @@ pub(super) struct Model<'a> {
 }
 
 impl<'a> Model<'a> {
-    pub(crate) fn new(dapi_client: &'a mut Sdk) -> Self {
+    pub(crate) fn new(sdk: &'a mut Sdk) -> Self {
         let runtime = Runtime::new().expect("cannot start Tokio runtime");
         Self {
             app: Self::init_app().expect("Unable to init the application"),

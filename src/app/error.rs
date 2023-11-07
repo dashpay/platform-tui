@@ -14,6 +14,8 @@ pub(crate) enum Error {
     InsightError(String),
     #[error("Wallet error {0}")]
     WalletError(String),
+    #[error("Identity registration error {0}")]
+    IdentityRegistrationError(String),
 }
 
 impl From<dpp::platform_value::Error> for Error {
