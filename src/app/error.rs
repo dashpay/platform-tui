@@ -12,6 +12,10 @@ pub(crate) enum Error {
     Base58IdEncoding(#[from] bs58::decode::Error),
     #[error("Insight error {0}")]
     InsightError(String),
+    #[error("Wallet error {0}")]
+    WalletError(String),
+    #[error("Identity registration error {0}")]
+    IdentityRegistrationError(String),
 }
 
 impl From<dpp::platform_value::Error> for Error {

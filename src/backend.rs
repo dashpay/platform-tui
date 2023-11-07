@@ -5,7 +5,11 @@ mod identities;
 
 use std::fmt::Display;
 
-use rs_dapi_client::DapiClient;
+use dpp::{
+    platform_value::string_encoding::Encoding,
+    prelude::{Identifier, Identity},
+};
+use rs_sdk::{platform::Fetch, Sdk};
 use serde::Serialize;
 use tokio::sync::Mutex;
 
@@ -23,21 +27,21 @@ pub(crate) enum BackendEvent {
 }
 
 pub(crate) struct Backend {
-    dapi_client: Mutex<DapiClient>,
+    sdk: Mutex<Sdk>,
 }
 
 impl Backend {
-    pub(crate) fn new(dapi_client: DapiClient) -> Self {
+    pub(crate) fn new(sdk: Sdk) -> Self {
         Backend {
-            dapi_client: Mutex::new(dapi_client),
+            sdk: Mutex::new(sdk),
         }
     }
 
     pub(crate) async fn run_task(&self, task: Task) -> Result<String, String> {
         match task {
             Task::FetchIdentityById(base58_id) => {
-                let mut dapi_client = self.dapi_client.lock().await;
-                stringify_result(fetch_identity_by_b58_id(&mut dapi_client, base58_id).await)
+                let mut sdk = self.sdk.lock().await;
+                fetch_identity_by_b58_id(&mut sdk, &base58_id).await
             }
         }
     }

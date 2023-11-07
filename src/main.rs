@@ -13,6 +13,7 @@ use futures::{
     FutureExt, StreamExt,
 };
 use rs_dapi_client::{AddressList, DapiClient, RequestSettings};
+use rs_sdk::{Sdk, SdkBuilder};
 
 use self::{
     backend::{Backend, BackendEvent, Task},
@@ -21,15 +22,11 @@ use self::{
 
 #[tokio::main]
 async fn main() {
-    // Setup DAPI client
-    let mut address_list = AddressList::new();
-    address_list.add_uri(rs_dapi_client::Uri::from_static(
-        "https://54.213.204.85:1443",
-    ));
-    let dapi_client = DapiClient::new(address_list, RequestSettings::default());
+    // Setup Platform SDK
+    let sdk = SdkBuilder::new_testnet().build().expect("cannot setup Platform SDK");
 
     let mut ui = Ui::new();
-    let backend = Backend::new(dapi_client);
+    let backend = Backend::new(sdk);
 
     let mut active = true;
 
