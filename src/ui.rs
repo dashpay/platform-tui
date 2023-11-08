@@ -10,10 +10,8 @@ mod status_bar;
 mod views;
 
 use tuirealm::{
-    event::KeyEvent,
     terminal::TerminalBridge,
     tui::prelude::{Constraint, Direction, Layout},
-    Frame,
 };
 
 use self::{
@@ -22,7 +20,7 @@ use self::{
     status_bar::StatusBarState,
     views::main_view::MainScreenController,
 };
-use crate::{BackendEvent, Task};
+use crate::{BackendEvent, Event, Task};
 
 /// TUI entry point that handles terminal events as well as terminal output,
 /// linking UI parts together.
@@ -31,6 +29,7 @@ pub(crate) struct Ui {
     status_bar_state: StatusBarState,
     screen: Screen<Box<dyn ScreenController>>,
     form: Option<Form<Box<dyn FormController>>>,
+    blocked: bool,
 }
 
 /// UI updates delivered to the main application loop.
@@ -82,6 +81,7 @@ impl Ui {
             status_bar_state,
             screen,
             form: None,
+            blocked: false,
         };
 
         ui.redraw();
@@ -89,10 +89,21 @@ impl Ui {
     }
 
     pub(crate) fn on_event(&mut self, event: Event) -> UiFeedback {
+        if let Event::Backend(BackendEvent::TaskCompleted(..)) = &event {
+            self.status_bar_state.blocked = false;
+            self.blocked = false;
+        }
+
+        if self.blocked {
+            return UiFeedback::None;
+        }
+
         if let (Some(form), Event::Key(event)) = (&mut self.form, &event) {
             match form.on_event(*event) {
                 FormStatus::Done(task) => {
                     self.form = None;
+                    self.status_bar_state.blocked = true;
+                    self.blocked = true;
                     UiFeedback::ExecuteTask(task)
                 }
                 FormStatus::Redraw => UiFeedback::Redraw,
@@ -128,9 +139,4 @@ impl Drop for Ui {
         let _ = self.terminal.disable_raw_mode();
         let _ = self.terminal.clear_screen();
     }
-}
-
-pub(crate) enum Event {
-    Key(KeyEvent),
-    Backend(BackendEvent),
 }

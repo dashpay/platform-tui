@@ -4,7 +4,7 @@ use tui_realm_stdlib::Label;
 use tuirealm::{
     props::BorderSides,
     tui::{
-        prelude::{Constraint, Direction, Layout, Rect},
+        prelude::{Constraint, Direction, Layout, Modifier, Rect},
         widgets::Block,
     },
     Frame, MockComponent,
@@ -13,6 +13,7 @@ use tuirealm::{
 #[derive(Default)]
 pub(crate) struct StatusBarState {
     pub breadcrumbs: Vec<&'static str>,
+    pub blocked: bool,
     pub identity_private_keys_loaded: bool,
 }
 
@@ -42,9 +43,15 @@ pub(crate) fn view(frame: &mut Frame, area: Rect, state: &StatusBarState) {
         "NO Identity"
     };
 
-    Label::default()
-        .text(breadcrumbs_str)
-        .view(frame, layout[0]);
+    if state.blocked {
+        Label::default()
+            .text("Executing a task, please wait")
+            .modifiers(Modifier::RAPID_BLINK) // TODO: doesn't work lol
+    } else {
+        Label::default().text(&breadcrumbs_str)
+    }
+    .view(frame, layout[0]);
+
     Label::default()
         .text(identity_private_keys_loaded_str)
         .view(frame, layout[1]);

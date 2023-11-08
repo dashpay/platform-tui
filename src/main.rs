@@ -8,11 +8,17 @@ mod ui;
 use crossterm::event::{Event as TuiEvent, EventStream};
 use futures::{future::OptionFuture, select, FutureExt, StreamExt};
 use rs_sdk::SdkBuilder;
+use tuirealm::event::KeyEvent;
 
 use self::{
     backend::{Backend, BackendEvent, Task},
-    ui::{Event, Ui, UiFeedback},
+    ui::{Ui, UiFeedback},
 };
+
+pub(crate) enum Event {
+    Key(KeyEvent),
+    Backend(BackendEvent),
+}
 
 #[tokio::main]
 async fn main() {
@@ -58,7 +64,8 @@ async fn main() {
                         .boxed()
                         .fuse(),
                 )
-                .into()
+                .into();
+                ui.redraw();
             }
             UiFeedback::Redraw => ui.redraw(), // TODO Debounce redraw?
             UiFeedback::None => (),
