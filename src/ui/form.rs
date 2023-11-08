@@ -1,20 +1,24 @@
 //! Form component defintion.
 
 mod completing_input;
+mod select;
 mod text_input;
 mod utils;
 
 use std::ops::{Deref, DerefMut};
 
-use tui_realm_stdlib::Label;
 use tuirealm::{
     event::KeyEvent,
-    tui::prelude::{Constraint, Direction, Layout, Rect},
-    Frame, MockComponent,
+    props::{Alignment, BorderSides},
+    tui::{prelude::Rect, widgets::Block},
+    Frame,
 };
-pub(crate) use utils::{ComposedInput, Field};
 
-pub(crate) use self::text_input::TextInput;
+pub(crate) use self::{
+    select::SelectInput,
+    text_input::TextInput,
+    utils::{ComposedInput, Field},
+};
 use crate::backend::Task;
 
 /// Trait of every component suitable for processing user input.
@@ -54,21 +58,18 @@ impl<C: FormController> Form<C> {
     }
 
     pub(crate) fn view(&mut self, frame: &mut Frame, area: Rect) {
-        let layout = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Max(2), Constraint::Min(10)].as_ref())
-            .split(area);
-
-        Label::default()
-            .text(format!(
+        let block = Block::new()
+            .borders(BorderSides::ALL)
+            .title(format!(
                 "{}: {} [{} / {}]",
                 self.controller.form_name(),
                 self.controller.step_name(),
                 self.controller.step_index() + 1,
                 self.controller.steps_number()
             ))
-            .view(frame, layout[0]);
-        self.controller.step_view(frame, layout[1]);
+            .title_alignment(Alignment::Left);
+        self.controller.step_view(frame, block.inner(area));
+        frame.render_widget(block, area);
     }
 }
 

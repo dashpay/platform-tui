@@ -17,6 +17,7 @@ use self::identities::fetch_identity_by_b58_id;
 #[derive(Clone, PartialEq)]
 pub(crate) enum Task {
     FetchIdentityById(String),
+    RenderData(String),
 }
 
 pub(crate) enum BackendEvent {
@@ -42,6 +43,7 @@ impl Backend {
                 let mut sdk = self.sdk.lock().await;
                 fetch_identity_by_b58_id(&mut sdk, &base58_id).await
             }
+            Task::RenderData(s) => Ok(s),
         }
     }
 }

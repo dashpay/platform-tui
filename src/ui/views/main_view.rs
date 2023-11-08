@@ -6,7 +6,7 @@ use super::identities_view::IdentitiesScreenController;
 use crate::{
     backend::Task,
     ui::{
-        form::{ComposedInput, Field, FormController, FormStatus, Input, TextInput},
+        form::{ComposedInput, Field, FormController, FormStatus, Input, SelectInput, TextInput},
         screen::{ScreenCommandKey, ScreenController, ScreenFeedback, ScreenToggleKey},
     },
 };
@@ -80,11 +80,18 @@ Use Ctrl+q to go back from completion list or once again to leave input at all.
     }
 }
 
+#[derive(Clone, strum::Display, Debug)]
+enum TestVariants {
+    Yeet,
+    Swag,
+    Kek,
+    Lol,
+}
+
 struct TestFormController {
     input: ComposedInput<(
         Field<TextInput>,
-        Field<TextInput>,
-        Field<TextInput>,
+        Field<SelectInput<TestVariants>>,
         Field<TextInput>,
     )>,
 }
@@ -94,9 +101,11 @@ impl TestFormController {
         Self {
             input: ComposedInput::new((
                 Field::new("lol", TextInput::new("lol placeholder")),
-                Field::new("kek", TextInput::new("kek placeholder")),
+                Field::new(
+                    "kek",
+                    SelectInput::new(vec![TestVariants::Yeet, TestVariants::Lol]),
+                ),
                 Field::new("cheburek", TextInput::new("cheburek placeholder")),
-                Field::new("whatever", TextInput::new("whatever placeholder")),
             )),
         }
     }
@@ -106,7 +115,7 @@ impl FormController for TestFormController {
     fn on_event(&mut self, event: KeyEvent) -> crate::ui::form::FormStatus {
         match self.input.on_event(event) {
             crate::ui::form::InputStatus::Done(result) => {
-                FormStatus::Done(Task::FetchIdentityById(result.0))
+                FormStatus::Done(Task::RenderData(format!("{:?}", result)))
             }
             crate::ui::form::InputStatus::Redraw => FormStatus::Redraw,
             crate::ui::form::InputStatus::None => FormStatus::None,

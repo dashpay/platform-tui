@@ -3,7 +3,7 @@
 use tuirealm::{
     command::{Cmd, Direction},
     event::{Key, KeyEvent},
-    props::{Color, Style},
+    props::{BorderSides, Borders, Color, Style},
     tui::prelude::Rect,
     AttrValue, Attribute, Frame, MockComponent,
 };
@@ -16,7 +16,9 @@ pub(crate) struct TextInput {
 
 impl TextInput {
     pub(crate) fn new(placeholder: &'static str) -> Self {
+        // TODO tui-realm bug, wrong cursor position if no borders
         let mut input = tui_realm_stdlib::Input::default()
+            .borders(Borders::default().sides(BorderSides::NONE))
             .placeholder(placeholder, Style::default().fg(Color::Gray));
         input.attr(Attribute::Focus, AttrValue::Flag(true));
 
@@ -28,7 +30,7 @@ impl Input for TextInput {
     type Output = String;
 
     fn on_event(&mut self, event: KeyEvent) -> InputStatus<Self::Output> {
-        let KeyEvent { code, modifiers } = event;
+        let KeyEvent { code, .. } = event;
 
         match code {
             Key::Enter => InputStatus::Done(self.input.state().unwrap_one().unwrap_string()),
