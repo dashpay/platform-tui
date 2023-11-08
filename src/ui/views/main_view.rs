@@ -105,7 +105,10 @@ impl TestFormController {
                     "kek",
                     SelectInput::new(vec![TestVariants::Yeet, TestVariants::Lol]),
                 ),
-                Field::new("cheburek", TextInput::new("cheburek placeholder")),
+                Field::new(
+                    "cheburek",
+                    TextInput::new_init_value("cheburek placeholder", "lao gan ma"),
+                ),
             )),
         }
     }

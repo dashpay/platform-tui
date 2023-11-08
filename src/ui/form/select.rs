@@ -20,6 +20,10 @@ pub(crate) struct SelectInput<V: Display + Clone> {
 
 impl<V: Display + Clone> SelectInput<V> {
     pub(crate) fn new(variants: Vec<V>) -> Self {
+        Self::new_init_line(variants, 0)
+    }
+
+    pub(crate) fn new_init_line(variants: Vec<V>, line: usize) -> Self {
         let mut input = tui_realm_stdlib::List::default()
             .rows(
                 variants
@@ -28,6 +32,7 @@ impl<V: Display + Clone> SelectInput<V> {
                     .collect(),
             )
             .borders(Borders::default().sides(BorderSides::NONE))
+            .selected_line(line)
             .highlighted_color(Color::Black);
         input.attr(Attribute::Scroll, AttrValue::Flag(true));
         input.attr(Attribute::Focus, AttrValue::Flag(true));

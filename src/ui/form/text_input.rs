@@ -16,10 +16,15 @@ pub(crate) struct TextInput {
 
 impl TextInput {
     pub(crate) fn new(placeholder: &'static str) -> Self {
+        Self::new_init_value(placeholder, "")
+    }
+
+    pub(crate) fn new_init_value(placeholder: &'static str, value: &str) -> Self {
         // TODO tui-realm bug, wrong cursor position if no borders
         let mut input = tui_realm_stdlib::Input::default()
             .borders(Borders::default().sides(BorderSides::NONE))
-            .placeholder(placeholder, Style::default().fg(Color::Gray));
+            .placeholder(placeholder, Style::default().fg(Color::Gray))
+            .value(value);
         input.attr(Attribute::Focus, AttrValue::Flag(true));
 
         TextInput { input }
@@ -28,6 +33,8 @@ impl TextInput {
 
 impl Input for TextInput {
     type Output = String;
+
+    // TODO make widget generic over parser to return b58 or hex
 
     fn on_event(&mut self, event: KeyEvent) -> InputStatus<Self::Output> {
         let KeyEvent { code, .. } = event;
