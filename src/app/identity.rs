@@ -1,29 +1,24 @@
 //! Identities backend logic.
 
-use std::collections::BTreeMap;
 use bip37_bloom_filter::{BloomFilter, BloomFilterData};
-use dapi_grpc::core::v0::{BroadcastTransactionRequest};
+use dapi_grpc::core::v0::BroadcastTransactionRequest;
+use std::collections::BTreeMap;
 
+use dash_platform_sdk::platform::transition::put_identity::PutIdentity;
 use dash_platform_sdk::Sdk;
-use dpp::dashcore::{InstantLock, Transaction};
 use dpp::dashcore::psbt::serialize::Serialize;
-use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
+use dpp::dashcore::{InstantLock, Transaction};
 use dpp::prelude::{AssetLockProof, Identity, IdentityPublicKey};
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 use rs_dapi_client::{Dapi, RequestSettings};
 use simple_signer::signer::SimpleSigner;
 
-use crate::app::{state::AppState};
 use crate::app::error::Error;
-
+use crate::app::state::AppState;
 
 impl AppState {
-    pub async fn register_new_identity(
-        &mut self,
-        sdk: &mut Sdk,
-        amount: u64,
-    ) -> Result<(), Error> {
+    pub async fn register_new_identity(&mut self, sdk: &Sdk, amount: u64) -> Result<(), Error> {
         let Some(wallet) = self.loaded_wallet.as_ref() else {
             return Ok(());
         };
@@ -32,7 +27,13 @@ impl AppState {
 
         // first we create the wallet registration transaction, this locks funds that we
         // can transfer from core to platform
-        let (asset_lock_transaction, asset_lock_proof_private_key, asset_lock_proof) = self.identity_asset_lock_private_key_in_creation.get_or_insert(wallet.registration_transaction(None, amount).map(|(t, k)| (t, k, None))?);
+        let (asset_lock_transaction, asset_lock_proof_private_key, asset_lock_proof) = self
+            .identity_asset_lock_private_key_in_creation
+            .get_or_insert(
+                wallet
+                    .registration_transaction(None, amount)
+                    .map(|(t, k)| (t, k, None))?,
+            );
 
         // create the bloom filter
 
@@ -77,22 +78,32 @@ impl AppState {
         let asset_lock_proof = if let Some(asset_lock_proof) = asset_lock_proof {
             asset_lock_proof.clone()
         } else {
-            self.broadcast_and_retrieve_asset_lock(sdk, asset_lock_transaction).await?
+            Self::broadcast_and_retrieve_asset_lock(sdk, asset_lock_transaction).await?
         };
 
         //// Platform steps
 
         let mut std_rng = StdRng::from_entropy();
 
-        let (identity, keys) : (Identity, BTreeMap<IdentityPublicKey, Vec<u8>>) = Identity::random_identity_with_main_keys_with_private_key(2, &mut std_rng, sdk.version())?;
+        let (identity, keys): (Identity, BTreeMap<IdentityPublicKey, Vec<u8>>) =
+            Identity::random_identity_with_main_keys_with_private_key(
+                2,
+                &mut std_rng,
+                sdk.version(),
+            )?;
 
         let mut signer = SimpleSigner::default();
 
         signer.add_keys(keys);
 
-        let state_transition_stream = sdk.start_state_transition_stream().await?;
-
-        identity.put_to_platform(sdk, asset_lock_proof.clone(), &asset_lock_proof_private_key, &signer).await?;
+        identity
+            .put_to_platform(
+                sdk,
+                asset_lock_proof.clone(),
+                &asset_lock_proof_private_key,
+                &signer,
+            )
+            .await?;
 
         // Wait for the proof that the state transition was properly executed
 
@@ -100,8 +111,7 @@ impl AppState {
     }
 
     pub async fn broadcast_and_retrieve_asset_lock(
-        &mut self,
-        sdk: &mut Sdk,
+        sdk: &Sdk,
         asset_lock_transaction: &Transaction,
     ) -> Result<AssetLockProof, Error> {
         let asset_lock_stream = sdk.start_instant_send_lock_stream().await?;
@@ -113,10 +123,15 @@ impl AppState {
             bypass_limits: false,
         };
 
-        sdk.execute(request, RequestSettings::default())
-            .await?;
+        sdk.execute(request, RequestSettings::default()).await?;
 
-        Sdk::wait_for_asset_lock_proof_for_transaction(asset_lock_stream, asset_lock_transaction, Some(5*60000))
+        let asset_lock = Sdk::wait_for_asset_lock_proof_for_transaction(
+            asset_lock_stream,
+            asset_lock_transaction,
+            Some(5 * 60000),
+        )
+        .await?;
+
+        Ok(asset_lock)
     }
 }
-

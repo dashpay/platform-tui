@@ -1,11 +1,22 @@
 //! Strategy Start Identities screen
 
+use tui_realm_stdlib::{List, Paragraph};
+use tuirealm::{
+    command::{Cmd, Direction},
+    event::{Key, KeyEvent, KeyModifiers},
+    props::{Alignment, TableBuilder, TextSpan},
+    Component, Event, MockComponent, NoUserEvent,
+};
 
-use tui_realm_stdlib::{Paragraph, List};
-use tuirealm::{MockComponent, Component, NoUserEvent, Event, event::{KeyEvent, Key, KeyModifiers}, props::{TextSpan, TableBuilder, Alignment}, command::{Cmd, Direction}};
-
-use crate::{app::{Message, state::AppState, strategies::{default_strategy, Description}}, mock_components::{CommandPallet, CommandPalletKey, KeyType}};
 use crate::app::InputType::StartIdentities;
+use crate::{
+    app::{
+        state::AppState,
+        strategies::{default_strategy, Description},
+        Message,
+    },
+    mock_components::{CommandPallet, CommandPalletKey, KeyType},
+};
 
 #[derive(MockComponent)]
 pub(crate) struct StrategyStartIdentitiesScreen {
@@ -14,20 +25,21 @@ pub(crate) struct StrategyStartIdentitiesScreen {
 
 impl StrategyStartIdentitiesScreen {
     pub(crate) fn new(app_state: &AppState) -> Self {
-
         let mut combined_spans = Vec::new();
         if let Some(strategy_key) = &app_state.current_strategy {
             // Append the current strategy name in bold to combined_spans
             combined_spans.push(TextSpan::new(&format!("{}:", strategy_key)).bold());
-        
+
             if let Some(strategy) = app_state.available_strategies.get(strategy_key) {
                 for (key, value) in &strategy.strategy_description() {
                     combined_spans.push(TextSpan::new(&format!("  {}:", key)).bold());
-                    combined_spans.push(TextSpan::new(&format!("    {}",value)));
+                    combined_spans.push(TextSpan::new(&format!("    {}", value)));
                 }
             } else {
                 // Handle the case where the strategy_key doesn't exist in available_strategies
-                combined_spans.push(TextSpan::new("Error: current strategy not found in available strategies."));
+                combined_spans.push(TextSpan::new(
+                    "Error: current strategy not found in available strategies.",
+                ));
             }
         } else {
             // Handle the case where app_state.current_strategy is None
@@ -35,7 +47,7 @@ impl StrategyStartIdentitiesScreen {
         }
 
         Self {
-            component: Paragraph::default().text(combined_spans.as_ref())
+            component: Paragraph::default().text(combined_spans.as_ref()),
         }
     }
 }
@@ -110,7 +122,7 @@ pub(crate) struct StartIdentitiesStruct {
 impl StartIdentitiesStruct {
     fn update_component_for_key_count(&mut self) {
         self.selected_index = 0;
-        let options = vec!["2","3","4","5","10","20","32"];
+        let options = vec!["2", "3", "4", "5", "10", "20", "32"];
         let mut rows = TableBuilder::default();
         for option in options {
             rows.add_col(TextSpan::from(option));
@@ -129,11 +141,12 @@ impl StartIdentitiesStruct {
     pub(crate) fn new(app_state: &mut AppState) -> Self {
         if app_state.current_strategy.is_none() {
             app_state.current_strategy = Some("new_strategy".to_string());
-            app_state.available_strategies.insert("new_strategy".to_string(), default_strategy(),
-            );
+            app_state
+                .available_strategies
+                .insert("new_strategy".to_string(), default_strategy());
         }
-                
-        let options = vec!["1","10","100","1000","10000","65535"];
+
+        let options = vec!["1", "10", "100", "1000", "10000", "65535"];
         let mut rows = TableBuilder::default();
         for option in options {
             rows.add_col(TextSpan::from(option));
@@ -142,13 +155,13 @@ impl StartIdentitiesStruct {
 
         Self {
             component: List::default()
-                    .title("Select the number of Identities.", Alignment::Center)
-                    .scroll(true)
-                    .highlighted_str("> ")
-                    .rewind(true)
-                    .step(1)
-                    .rows(rows.build())
-                    .selected_line(0),
+                .title("Select the number of Identities.", Alignment::Center)
+                .scroll(true)
+                .highlighted_str("> ")
+                .rewind(true)
+                .step(1)
+                .rows(rows.build())
+                .selected_line(0),
             selected_index: 0,
             selection_state: StartIdentitiesSelectionState::SelectCount,
         }
@@ -161,28 +174,25 @@ impl Component<Message, NoUserEvent> for StartIdentitiesStruct {
             Event::Keyboard(KeyEvent {
                 code: Key::Down, ..
             }) => {
-                let max_index = self.component.states.list_len-2;
+                let max_index = self.component.states.list_len - 2;
                 if self.selected_index < max_index {
                     self.selected_index = self.selected_index + 1;
                     self.perform(Cmd::Move(Direction::Down));
                 }
                 Some(Message::Redraw)
-            },
-            Event::Keyboard(KeyEvent {
-                code: Key::Up, .. 
-            }) => {
+            }
+            Event::Keyboard(KeyEvent { code: Key::Up, .. }) => {
                 if self.selected_index > 0 {
                     self.selected_index -= 1;
                     self.perform(Cmd::Move(Direction::Up));
-                }            
+                }
                 Some(Message::Redraw)
-            },
+            }
             Event::Keyboard(KeyEvent {
                 code: Key::Enter, ..
             }) => {
                 match &mut self.selection_state {
                     StartIdentitiesSelectionState::SelectCount => {
-
                         let count: u16 = match self.selected_index {
                             0 => 1,
                             1 => 10,
@@ -193,11 +203,12 @@ impl Component<Message, NoUserEvent> for StartIdentitiesStruct {
                             _ => panic!("index out of bounds for StartIdentitiesSelectionState::SelectCount")
                         };
 
-                        self.selection_state = StartIdentitiesSelectionState::SelectKeyCount { count };
+                        self.selection_state =
+                            StartIdentitiesSelectionState::SelectKeyCount { count };
                         self.update_component_for_key_count();
-                        
-                        Some(Message::Redraw)                        
-                    },
+
+                        Some(Message::Redraw)
+                    }
                     StartIdentitiesSelectionState::SelectKeyCount { count } => {
                         let key_count: u32 = match self.selected_index {
                             0 => 2,
@@ -211,14 +222,13 @@ impl Component<Message, NoUserEvent> for StartIdentitiesStruct {
                         };
 
                         Some(Message::StartIdentities(count.clone(), key_count))
-                    },
+                    }
                 }
             }
             Event::Keyboard(KeyEvent {
-                code: Key::Char('q'), ..
-            }) => {
-                Some(Message::ReloadScreen)
-            }
+                code: Key::Char('q'),
+                ..
+            }) => Some(Message::ReloadScreen),
             _ => None,
         }
     }

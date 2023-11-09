@@ -1,6 +1,8 @@
+use dapi_grpc::tonic::Status;
 use dpp::ProtocolError;
+use rs_dapi_client::DapiClientError;
 
-use crate::app::error::Error::ParsingError;
+use crate::app::error::Error::{ParsingError, SdkError};
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum Error {
@@ -14,6 +16,8 @@ pub(crate) enum Error {
     InsightError(String),
     #[error("Wallet error {0}")]
     WalletError(String),
+    #[error("SDK error {0}")]
+    SdkError(#[from] dash_platform_sdk::Error),
     #[error("Identity registration error {0}")]
     IdentityRegistrationError(String),
 }
@@ -21,5 +25,11 @@ pub(crate) enum Error {
 impl From<dpp::platform_value::Error> for Error {
     fn from(value: dpp::platform_value::Error) -> Self {
         ParsingError(ProtocolError::ValueError(value))
+    }
+}
+
+impl From<DapiClientError<Status>> for Error {
+    fn from(value: DapiClientError<Status>) -> Self {
+        SdkError(value.into())
     }
 }

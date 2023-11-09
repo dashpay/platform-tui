@@ -4,15 +4,18 @@ mod status;
 
 pub(crate) use breadcrumbs::Breadcrumbs;
 pub(crate) use screen::{
-    ContractScreen, ContractScreenCommands, GetContractScreen, GetContractScreenCommands, ContractIdInput,
+    AddContractStruct, AddWalletScreen, AddWalletScreenCommands, ConfirmStrategyScreen,
+    ConfirmStrategyScreenCommands, ContractIdInput, ContractScreen, ContractScreenCommands,
+    ContractUpdateStruct, CreateStrategyScreen, CreateStrategyScreenCommands, DeleteStrategyStruct,
+    DocumentStruct, FrequencyStruct, GetContractScreen, GetContractScreenCommands,
     GetIdentityScreen, GetIdentityScreenCommands, IdentityIdInput, IdentityScreen,
-    IdentityScreenCommands, MainScreen, MainScreenCommands, WalletScreen, WalletScreenCommands,
-    AddWalletScreen, AddWalletScreenCommands, PrivateKeyInput, StrategiesScreen, StrategiesScreenCommands,
-    CreateStrategyScreen, CreateStrategyScreenCommands, ConfirmStrategyScreen, ConfirmStrategyScreenCommands, StrategySelect,
-    AddContractStruct, RenameStrategyStruct, LoadStrategyStruct, SelectOperationTypeStruct, DocumentStruct, DeleteStrategyStruct,
-    StrategyContractsScreen, StrategyContractsScreenCommands, StrategyOperationsScreen, StrategyOperationsScreenCommands,
-    LoadStrategyScreen, LoadStrategyScreenCommands, FrequencyStruct, IdentityUpdateStruct, StrategyStartIdentitiesScreen,
-    StrategyStartIdentitiesScreenCommands, StartIdentitiesStruct, StrategyIdentityInsertsScreen,
-    StrategyIdentityInsertsScreenCommands, ContractUpdateStruct, VersionUpgradeCommands,
+    IdentityScreenCommands, IdentityUpdateStruct, LoadStrategyScreen, LoadStrategyScreenCommands,
+    LoadStrategyStruct, MainScreen, MainScreenCommands, PrivateKeyInput, RenameStrategyStruct,
+    SelectOperationTypeStruct, StartIdentitiesStruct, StrategiesScreen, StrategiesScreenCommands,
+    StrategyContractsScreen, StrategyContractsScreenCommands, StrategyIdentityInsertsScreen,
+    StrategyIdentityInsertsScreenCommands, StrategyOperationsScreen,
+    StrategyOperationsScreenCommands, StrategySelect, StrategyStartIdentitiesScreen,
+    StrategyStartIdentitiesScreenCommands, VersionUpgradeCommands, WalletScreen,
+    WalletScreenCommands,
 };
 pub(crate) use status::Status;

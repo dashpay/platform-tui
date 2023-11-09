@@ -1,7 +1,7 @@
-use std::collections::HashMap;
+use dpp::dashcore::Address;
 use dpp::dashcore::{OutPoint, ScriptBuf, TxOut, Txid};
-use dpp::dashcore::network::Address;
 use reqwest;
+use std::collections::HashMap;
 
 use crate::app::error::{Error, Error::InsightError};
 
@@ -32,10 +32,17 @@ pub(crate) async fn utxos_with_amount_for_addresses(
     }
 }
 
-async fn utxos(insight_url: &str, addresses: &[&Address]) -> Result<HashMap<OutPoint, TxOut>, Error> {
+async fn utxos(
+    insight_url: &str,
+    addresses: &[&Address],
+) -> Result<HashMap<OutPoint, TxOut>, Error> {
     let url = format!("{}/{}", insight_url, ADDRESS_UTXO_PATH);
 
-    let addr_str = addresses.join(",");
+    let addr_str = addresses
+        .iter()
+        .map(|address| address.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
     let resp = reqwest::Client::new()
         .post(&url)
         .header("Content-Type", "application/x-www-form-urlencoded")

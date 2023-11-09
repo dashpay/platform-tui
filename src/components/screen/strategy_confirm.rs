@@ -1,9 +1,16 @@
 //! Confirm selected strategy
 
 use tui_realm_stdlib::Paragraph;
-use tuirealm::{MockComponent, Component, NoUserEvent, Event, event::{KeyEvent, Key, KeyModifiers}, props::TextSpan};
+use tuirealm::{
+    event::{Key, KeyEvent, KeyModifiers},
+    props::TextSpan,
+    Component, Event, MockComponent, NoUserEvent,
+};
 
-use crate::{app::{Message, state::AppState, strategies::Description}, mock_components::{CommandPallet, CommandPalletKey, KeyType}};
+use crate::{
+    app::{state::AppState, strategies::Description, Message},
+    mock_components::{CommandPallet, CommandPalletKey, KeyType},
+};
 
 #[derive(MockComponent)]
 pub(crate) struct ConfirmStrategyScreen {
@@ -20,15 +27,17 @@ impl ConfirmStrategyScreen {
         if let Some(strategy_key) = &app_state.selected_strategy {
             // Append the current strategy name in bold to combined_spans
             combined_spans.push(TextSpan::new(&format!("{}:", strategy_key)).bold());
-        
+
             if let Some(strategy) = app_state.available_strategies.get(strategy_key) {
                 for (key, value) in &strategy.strategy_description() {
                     combined_spans.push(TextSpan::new(&format!("  {}:", key)).bold());
-                    combined_spans.push(TextSpan::new(&format!("    {}",value)));
+                    combined_spans.push(TextSpan::new(&format!("    {}", value)));
                 }
             } else {
                 // Handle the case where the strategy_key doesn't exist in available_strategies
-                combined_spans.push(TextSpan::new("Error: current strategy not found in available strategies."));
+                combined_spans.push(TextSpan::new(
+                    "Error: current strategy not found in available strategies.",
+                ));
             }
         } else {
             // Handle the case where app_state.current_strategy is None
@@ -36,7 +45,7 @@ impl ConfirmStrategyScreen {
         }
 
         ConfirmStrategyScreen {
-            component: Paragraph::default().text(combined_spans.as_ref())
+            component: Paragraph::default().text(combined_spans.as_ref()),
         }
     }
 }
@@ -84,7 +93,7 @@ impl Component<Message, NoUserEvent> for ConfirmStrategyScreenCommands {
             }) => {
                 // TO DO: Run the strategy now
                 None
-            },
+            }
             _ => None,
         }
     }
