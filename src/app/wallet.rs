@@ -30,14 +30,14 @@ pub enum Wallet {
 }
 
 impl Wallet {
-    pub fn private_key_for_address(&self, address: &Address) -> &PrivateKey {
+    pub(crate) fn private_key_for_address(&self, address: &Address) -> &PrivateKey {
         match self {
             Wallet::SingleKeyWallet(single_wallet) => {
                 single_wallet.private_key_for_address(address)
             }
         }
     }
-    pub fn registration_transaction(
+    pub(crate) fn registration_transaction(
         &self,
         seed: Option<u64>,
         amount: u64,
@@ -91,9 +91,6 @@ impl Wallet {
             })
             .collect();
 
-        let mut writer = LegacySighash::engine();
-        let input_index = 0;
-        let script_pubkey = ScriptBuf::new();
         let sighash_u32 = 1u32;
 
         let mut tx: Transaction = Transaction {
@@ -103,40 +100,55 @@ impl Wallet {
             output: vec![burn_output, change_output],
             special_transaction_payload: Some(TransactionPayload::AssetLockPayloadType(payload)),
         };
+
         let cache = SighashCache::new(&tx);
-        let result = cache
-            .legacy_encode_signing_data_to(&mut writer, input_index, &script_pubkey, sighash_u32)
-            .is_sighash_single_bug()
-            .expect("writer can't fail");
 
-        tx.input.iter_mut().enumerate().for_each(|(i, input)| {
-            // You need to provide the actual script_pubkey of the UTXO being spent
-            let (tx_out, public_key, input_address) = utxos
-                .remove(&input.previous_output)
-                .expect("expected a txout");
-            let script_pubkey = tx_out.script_pubkey;
+        // Next, collect the sighashes for each input since that's what we need from the cache
+        let sighashes: Vec<_> = tx
+            .input
+            .iter()
+            .enumerate()
+            .map(|(i, input)| {
+                let script_pubkey = utxos
+                    .get(&input.previous_output)
+                    .expect("expected a txout")
+                    .0
+                    .script_pubkey
+                    .clone();
+                cache
+                    .legacy_signature_hash(i, &script_pubkey, sighash_u32)
+                    .expect("expected sighash")
+            })
+            .collect();
 
-            // Create a message to sign by hashing the transaction with the appropriate sighash
-            let sighash = cache
-                .legacy_signature_hash(i, &script_pubkey, sighash_u32)
-                .expect("expected sighash");
-            let message =
-                Message::from_slice(sighash.as_byte_array()).expect("Error creating message");
+        // Now we can drop the cache to end the immutable borrow
+        drop(cache);
 
-            let private_key = self.private_key_for_address(&input_address);
+        tx.input
+            .iter_mut()
+            .zip(sighashes.into_iter())
+            .for_each(|(input, sighash)| {
+                // You need to provide the actual script_pubkey of the UTXO being spent
+                let (_, public_key, input_address) = utxos
+                    .remove(&input.previous_output)
+                    .expect("expected a txout");
+                let message =
+                    Message::from_slice(sighash.as_byte_array()).expect("Error creating message");
 
-            // Sign the message with the private key
-            let sig = secp.sign_ecdsa(&message, &private_key.inner);
+                let private_key = self.private_key_for_address(&input_address);
 
-            // Serialize the DER-encoded signature and append the sighash type
-            let mut sig_script = sig.serialize_der().to_vec();
+                // Sign the message with the private key
+                let sig = secp.sign_ecdsa(&message, &private_key.inner);
 
-            sig_script.push(sighash_u32 as u8); // Assuming sighash_u32 is something like SIGHASH_ALL (0x01)
+                // Serialize the DER-encoded signature and append the sighash type
+                let mut sig_script = sig.serialize_der().to_vec();
 
-            sig_script.append(&mut public_key.serialize());
-            // Create script_sig
-            input.script_sig = ScriptBuf::from_bytes(sig_script);
-        });
+                sig_script.push(sighash_u32 as u8); // Assuming sighash_u32 is something like SIGHASH_ALL (0x01)
+
+                sig_script.append(&mut public_key.serialize());
+                // Create script_sig
+                input.script_sig = ScriptBuf::from_bytes(sig_script);
+            });
 
         Ok((tx, private_key))
     }

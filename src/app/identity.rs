@@ -18,7 +18,11 @@ use crate::app::error::Error;
 use crate::app::state::AppState;
 
 impl AppState {
-    pub async fn register_new_identity(&mut self, sdk: &Sdk, amount: u64) -> Result<(), Error> {
+    pub(crate) async fn register_new_identity(
+        &mut self,
+        sdk: &Sdk,
+        amount: u64,
+    ) -> Result<(), Error> {
         let Some(wallet) = self.loaded_wallet.as_ref() else {
             return Ok(());
         };
@@ -110,7 +114,7 @@ impl AppState {
         Ok(())
     }
 
-    pub async fn broadcast_and_retrieve_asset_lock(
+    pub(crate) async fn broadcast_and_retrieve_asset_lock(
         sdk: &Sdk,
         asset_lock_transaction: &Transaction,
     ) -> Result<AssetLockProof, Error> {

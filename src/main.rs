@@ -4,6 +4,8 @@ mod managers;
 mod mock_components;
 
 use app::{ComponentId, Model};
+use dash_platform_sdk::{Sdk, SdkBuilder};
+use dpp::version::PlatformVersion;
 use rs_dapi_client::{AddressList, DapiClient, RequestSettings};
 use tuirealm::{application::PollStrategy, AttrValue, Attribute, Update};
 
@@ -14,10 +16,13 @@ async fn main() {
     address_list.add_uri(rs_dapi_client::Uri::from_static(
         "https://54.213.204.85:1443",
     ));
-    let mut dapi_client = DapiClient::new(address_list, RequestSettings::default());
+    let mut sdk = SdkBuilder::new(address_list)
+        .with_version(PlatformVersion::get(1).unwrap())
+        .build()
+        .expect("expected to build sdk");
 
     // Setup model
-    let mut model = Model::new(&mut dapi_client);
+    let mut model = Model::new(&mut sdk);
 
     // Enter alternate screen
     let _ = model.terminal.enter_alternate_screen();
