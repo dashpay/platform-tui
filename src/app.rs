@@ -31,6 +31,7 @@ use strategy_tests::transitions::create_identities_state_transitions;
 use dash_platform_sdk::platform::Fetch;
 use dash_platform_sdk::Sdk;
 use std::{fmt::Display, time::Duration};
+use cli_clipboard::{ClipboardContext, ClipboardProvider};
 
 use dpp::dashcore::{secp256k1::Secp256k1, Address, Network, PrivateKey};
 use dpp::identity::Identity;
@@ -151,6 +152,7 @@ pub(super) enum Message {
     AppClose,
     NextScreen(Screen),
     PrevScreen,
+    CopyWalletAddress,
     ReloadScreen,
     ExpectingInput(InputType),
     Redraw,
@@ -373,14 +375,14 @@ impl<'a> Model<'a> {
                 self.app
                     .remount(
                         ComponentId::Screen,
-                        Box::new(WalletScreen::new(&self.state)),
+                        Box::new(WalletScreen::new(&self.state, "")),
                         make_screen_subs(),
                     )
                     .expect("unable to remount screen");
                 self.app
                     .remount(
                         ComponentId::CommandPallet,
-                        Box::new(WalletScreenCommands::new()),
+                        Box::new(WalletScreenCommands::new(self.state.loaded_wallet.is_some(), self.state.loaded_identity.is_some())),
                         Vec::new(),
                     )
                     .expect("unable to remount screen");
@@ -793,13 +795,29 @@ impl Update<Message> for Model<'_> {
                     None
                 }
                 Message::UpdateLoadedWalletUTXOsAndBalance => {
-                    // self.app
-                    //     .attr(
-                    //         &ComponentId::Screen,
-                    //         Attribute::Text,
-                    //         AttrValue::Payload(PropPayload::Vec(identity_spans)),
-                    //     )
-                    //     .unwrap();
+                    if let Some(wallet) = self.state.loaded_wallet.as_ref() {
+                        self.app
+                            .remount(
+                                ComponentId::Screen,
+                                Box::new(WalletScreen::new(&self.state, "Updating balance")),
+                                make_screen_subs(),
+                            )
+                            .expect("unable to remount screen");
+
+                        let wallet = wallet.clone();
+
+                        self.view();
+
+                        self.runtime.block_on(wallet.reload_utxos());
+
+                        self.app
+                            .remount(
+                                ComponentId::Screen,
+                                Box::new(WalletScreen::new(&self.state, "Updated balance")),
+                                make_screen_subs(),
+                            )
+                            .expect("unable to remount screen");
+                    }
                     None
                 }
                 Message::FetchContractById(s) => {
@@ -847,8 +865,7 @@ impl Update<Message> for Model<'_> {
                     None
                 }
                 Message::RegisterIdentity => {
-                    // first we need to make the transaction
-                    //                    self.state.register_identity()
+                    let _ = self.state.register_new_identity(self.sdk, 10000000);
                     None
                 }
                 Message::FetchVersionUpgradeState => {
@@ -1601,6 +1618,22 @@ impl Update<Message> for Model<'_> {
                     Some(Message::ExpectingInput(InputType::Frequency(
                         "operations".to_string(),
                     )))
+                }
+                Message::CopyWalletAddress => {
+                    if let Some(wallet) = &self.state.loaded_wallet {
+                        let address = wallet.receive_address();
+                        cli_clipboard::set_contents(address.to_string()).unwrap();
+                    }
+
+                    self.app
+                        .remount(
+                            ComponentId::Screen,
+                            Box::new(WalletScreen::new(&self.state, "Copied Address to clipboard")),
+                            make_screen_subs(),
+                        )
+                        .expect("unable to remount screen");
+
+                    Some(Message::Redraw)
                 }
             }
         } else {

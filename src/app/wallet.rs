@@ -152,6 +152,12 @@ impl Wallet {
         Ok((tx, private_key))
     }
 
+    pub fn receive_address(&self) -> Address {
+        match self {
+            Wallet::SingleKeyWallet(wallet) => wallet.receive_address(),
+        }
+    }
+
     pub fn change_address(&self) -> Address {
         match self {
             Wallet::SingleKeyWallet(wallet) => wallet.change_address(),
@@ -245,7 +251,7 @@ impl Encode for SingleKeyWallet {
 
 impl Decode for SingleKeyWallet {
     fn decode<D: Decoder>(decoder: &mut D) -> Result<Self, DecodeError> {
-        let bytes: [u8; 32] = Vec::<u8>::decode(decoder)?.try_into().unwrap();
+        let bytes = <[u8;32]>::decode(decoder)?;
         let string_utxos = Vec::<(String, u64, String)>::decode(decoder)?;
 
         let private_key = PrivateKey::from_slice(bytes.as_slice(), Network::Testnet)
@@ -283,7 +289,7 @@ impl Decode for SingleKeyWallet {
 
 impl<'a> BorrowDecode<'a> for SingleKeyWallet {
     fn borrow_decode<D: BorrowDecoder<'a>>(decoder: &mut D) -> Result<Self, DecodeError> {
-        let bytes: [u8; 32] = Vec::<u8>::decode(decoder)?.try_into().unwrap();
+        let bytes = <[u8;32]>::decode(decoder)?;
         let string_utxos = Vec::<(String, u64, String)>::decode(decoder)?;
 
         let private_key = PrivateKey::from_slice(bytes.as_slice(), Network::Testnet)
@@ -365,6 +371,10 @@ impl SingleKeyWallet {
     }
 
     pub fn change_address(&self) -> Address {
+        self.address.clone()
+    }
+
+    pub fn receive_address(&self) -> Address {
         self.address.clone()
     }
 
