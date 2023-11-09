@@ -9,8 +9,7 @@ use dpp::version::PlatformVersion;
 use rs_dapi_client::{AddressList, DapiClient, RequestSettings};
 use tuirealm::{application::PollStrategy, AttrValue, Attribute, Update};
 
-#[tokio::main]
-async fn main() {
+fn main() {
     // Setup DAPI client
     let mut address_list = AddressList::new();
     address_list.add_uri(rs_dapi_client::Uri::from_static(
@@ -18,8 +17,11 @@ async fn main() {
     ));
     let mut sdk = SdkBuilder::new(address_list)
         .with_version(PlatformVersion::get(1).unwrap())
+        .with_core("127.0.0.1", 19998, "a", "b")
         .build()
         .expect("expected to build sdk");
+
+    sdk.data_contracts
 
     // Setup model
     let mut model = Model::new(&mut sdk);

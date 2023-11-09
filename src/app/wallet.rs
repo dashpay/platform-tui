@@ -9,9 +9,8 @@ use bincode::{
 };
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::psbt::serialize::Serialize;
-use dpp::dashcore::script::Builder;
 use dpp::dashcore::secp256k1::Message;
-use dpp::dashcore::sighash::{LegacySighash, SighashCache};
+use dpp::dashcore::sighash::SighashCache;
 use dpp::dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
 use dpp::dashcore::transaction::special_transaction::TransactionPayload;
 use dpp::dashcore::{
