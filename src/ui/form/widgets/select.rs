@@ -10,7 +10,7 @@ use tuirealm::{
     AttrValue, Attribute, Frame, MockComponent,
 };
 
-use super::{Input, InputStatus};
+use crate::ui::form::{Input, InputStatus};
 
 pub(crate) struct SelectInput<V: Display + Clone> {
     input: tui_realm_stdlib::List,
@@ -33,7 +33,7 @@ impl<V: Display + Clone> SelectInput<V> {
             )
             .borders(Borders::default().sides(BorderSides::NONE))
             .selected_line(line)
-            .highlighted_color(Color::Black);
+            .highlighted_color(Color::Magenta);
         input.attr(Attribute::Scroll, AttrValue::Flag(true));
         input.attr(Attribute::Focus, AttrValue::Flag(true));
 

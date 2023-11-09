@@ -10,6 +10,7 @@ use std::fmt::Display;
 
 use rs_sdk::Sdk;
 use serde::Serialize;
+pub(crate) use state::AppState;
 use tokio::sync::Mutex;
 
 use self::identities::fetch_identity_by_b58_id;
@@ -22,21 +23,28 @@ pub(crate) enum Task {
     RenderData(String),
 }
 
-pub(crate) enum BackendEvent {
+pub(crate) enum BackendEvent<'s> {
     IdentityLoaded,
     IdentityUnloaded,
     TaskCompleted(Task, Result<String, String>),
+    AppStateUpdated(&'s AppState),
 }
 
 pub(crate) struct Backend {
     sdk: Mutex<Sdk>,
+    app_state: AppState,
 }
 
 impl Backend {
-    pub(crate) fn new(sdk: Sdk) -> Self {
+    pub(crate) async fn new(sdk: Sdk) -> Self {
         Backend {
             sdk: Mutex::new(sdk),
+            app_state: AppState::load().await,
         }
+    }
+
+    pub(crate) fn state(&self) -> &AppState {
+        &self.app_state
     }
 
     pub(crate) async fn run_task(&self, task: Task) -> Result<String, String> {

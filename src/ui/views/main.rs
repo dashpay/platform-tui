@@ -1,14 +1,22 @@
 //! The view a user sees on application start.
 
-use tuirealm::event::{Key, KeyEvent, KeyModifiers};
+use tuirealm::{
+    event::{Key, KeyEvent, KeyModifiers},
+    tui::prelude::Rect,
+    Frame,
+};
 
 use crate::{
     backend::Task,
     ui::{
         form::{ComposedInput, Field, FormController, FormStatus, Input, SelectInput, TextInput},
-        screen::{ScreenCommandKey, ScreenController, ScreenFeedback, ScreenToggleKey},
+        screen::{
+            widgets::info::Info, ScreenCommandKey, ScreenController, ScreenFeedback,
+            ScreenToggleKey,
+        },
         views::{identities::IdentitiesScreenController, strategies::StrategiesScreenController},
     },
+    Event,
 };
 
 const COMMAND_KEYS: [ScreenCommandKey; 7] = [
@@ -21,15 +29,15 @@ const COMMAND_KEYS: [ScreenCommandKey; 7] = [
     ScreenCommandKey::new("t", "Test form"),
 ];
 
-pub(crate) struct MainScreenController;
+pub(crate) struct MainScreenController {
+    info: Info,
+}
 
-impl ScreenController for MainScreenController {
-    fn name(&self) -> &'static str {
-        "Main menu"
-    }
-
-    fn init_text(&self) -> &'static str {
-        r#"Welcome to Platform TUI!
+impl MainScreenController {
+    pub(crate) fn new() -> Self {
+        MainScreenController {
+            info: Info::new_fixed(
+                r#"Welcome to Platform TUI!
 
 Use keys listed in the section below to switch screens and execute commands.
 Some of them require signature and are disabled until an identity key is loaded.
@@ -39,7 +47,15 @@ Bold italics are flags that are enabled.
 
 Text inputs with completions support both arrows and Ctrl+n / Ctrl+p keys for selection.
 Use Ctrl+q to go back from completion list or once again to leave input at all.
-"#
+"#,
+            ),
+        }
+    }
+}
+
+impl ScreenController for MainScreenController {
+    fn name(&self) -> &'static str {
+        "Main menu"
     }
 
     fn command_keys(&self) -> &[ScreenCommandKey] {
@@ -50,38 +66,42 @@ Use Ctrl+q to go back from completion list or once again to leave input at all.
         [].as_ref()
     }
 
-    fn on_event(&mut self, key_event: KeyEvent) -> ScreenFeedback {
-        match key_event {
-            KeyEvent {
+    fn on_event(&mut self, event: Event) -> ScreenFeedback {
+        match event {
+            Event::Key(KeyEvent {
                 code: Key::Char('q'),
                 modifiers: KeyModifiers::NONE,
-            } => ScreenFeedback::Quit,
-            KeyEvent {
+            }) => ScreenFeedback::Quit,
+            Event::Key(KeyEvent {
                 code: Key::Char('i'),
                 modifiers: KeyModifiers::NONE,
-            } => ScreenFeedback::NextScreen(Box::new(IdentitiesScreenController::new())),
-            KeyEvent {
+            }) => ScreenFeedback::NextScreen(Box::new(IdentitiesScreenController::new())),
+            Event::Key(KeyEvent {
                 code: Key::Char('c'),
                 modifiers: KeyModifiers::NONE,
-            } => ScreenFeedback::None,
-            KeyEvent {
+            }) => ScreenFeedback::None,
+            Event::Key(KeyEvent {
                 code: Key::Char('s'),
                 modifiers: KeyModifiers::NONE,
-            } => ScreenFeedback::NextScreen(Box::new(StrategiesScreenController)),
-            KeyEvent {
+            }) => ScreenFeedback::NextScreen(Box::new(StrategiesScreenController::new())),
+            Event::Key(KeyEvent {
                 code: Key::Char('w'),
                 modifiers: KeyModifiers::NONE,
-            } => ScreenFeedback::None,
-            KeyEvent {
+            }) => ScreenFeedback::None,
+            Event::Key(KeyEvent {
                 code: Key::Char('v'),
                 modifiers: KeyModifiers::NONE,
-            } => ScreenFeedback::None,
-            KeyEvent {
+            }) => ScreenFeedback::None,
+            Event::Key(KeyEvent {
                 code: Key::Char('t'),
                 modifiers: KeyModifiers::NONE,
-            } => ScreenFeedback::Form(Box::new(TestFormController::new())),
+            }) => ScreenFeedback::Form(Box::new(TestFormController::new())),
             _ => ScreenFeedback::None,
         }
+    }
+
+    fn view(&mut self, frame: &mut Frame, area: Rect) {
+        self.info.view(frame, area)
     }
 }
 

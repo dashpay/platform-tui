@@ -2,16 +2,21 @@
 
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
+    tui::prelude::Rect,
     Frame,
 };
 
 use crate::{
-    backend::Task,
+    backend::{BackendEvent, Task},
     ui::{
         form::{FormController, FormStatus, Input, InputStatus, TextInput},
-        screen::{ScreenCommandKey, ScreenController, ScreenFeedback, ScreenToggleKey},
+        screen::{
+            widgets::info::Info, ScreenCommandKey, ScreenController, ScreenFeedback,
+            ScreenToggleKey,
+        },
         views::main::MainScreenController,
     },
+    Event,
 };
 
 const COMMAND_KEYS: [ScreenCommandKey; 2] = [
@@ -21,12 +26,14 @@ const COMMAND_KEYS: [ScreenCommandKey; 2] = [
 
 pub(crate) struct IdentitiesScreenController {
     toggle_keys: [ScreenToggleKey; 1],
+    info: Info,
 }
 
 impl IdentitiesScreenController {
     pub(crate) fn new() -> Self {
         IdentitiesScreenController {
             toggle_keys: [ScreenToggleKey::new("p", "with proof")],
+            info: Info::new_fixed("Identity management commands"),
         }
     }
 }
@@ -34,10 +41,6 @@ impl IdentitiesScreenController {
 impl ScreenController for IdentitiesScreenController {
     fn name(&self) -> &'static str {
         "Identities"
-    }
-
-    fn init_text(&self) -> &'static str {
-        "Identity management commands"
     }
 
     fn command_keys(&self) -> &[ScreenCommandKey] {
@@ -48,25 +51,42 @@ impl ScreenController for IdentitiesScreenController {
         self.toggle_keys.as_ref()
     }
 
-    fn on_event(&mut self, key_event: KeyEvent) -> ScreenFeedback {
-        match key_event {
-            KeyEvent {
+    fn on_event(&mut self, event: Event) -> ScreenFeedback {
+        match event {
+            Event::Key(KeyEvent {
                 code: Key::Char('q'),
                 modifiers: KeyModifiers::NONE,
-            } => ScreenFeedback::PreviousScreen(Box::new(MainScreenController)),
-            KeyEvent {
+            }) => ScreenFeedback::PreviousScreen(Box::new(MainScreenController::new())),
+            Event::Key(KeyEvent {
                 code: Key::Char('i'),
                 modifiers: KeyModifiers::NONE,
-            } => ScreenFeedback::Form(Box::new(GetIdentityByIdFormController::new())),
-            KeyEvent {
+            }) => ScreenFeedback::Form(Box::new(GetIdentityByIdFormController::new())),
+            Event::Key(KeyEvent {
                 code: Key::Char('p'),
                 modifiers: KeyModifiers::NONE,
-            } => {
+            }) => {
                 self.toggle_keys[0].toggle = !self.toggle_keys[0].toggle;
+                ScreenFeedback::Redraw
+            }
+            Event::Key(k) => {
+                let redraw_info = self.info.on_event(k);
+                if redraw_info {
+                    ScreenFeedback::Redraw
+                } else {
+                    ScreenFeedback::None
+                }
+            }
+
+            Event::Backend(BackendEvent::TaskCompleted(Task::FetchIdentityById(_), result)) => {
+                self.info = Info::new_from_result(result);
                 ScreenFeedback::Redraw
             }
             _ => ScreenFeedback::None,
         }
+    }
+
+    fn view(&mut self, frame: &mut Frame, area: Rect) {
+        self.info.view(frame, area)
     }
 }
 

@@ -7,12 +7,16 @@ use tuirealm::{
 };
 
 use crate::{
-    backend::Task,
+    backend::{AppState, BackendEvent, Task},
     ui::{
         form::{FormController, FormStatus, Input, InputStatus, SelectInput},
-        screen::{ScreenCommandKey, ScreenController, ScreenFeedback, ScreenToggleKey},
+        screen::{
+            widgets::info::Info, ScreenCommandKey, ScreenController, ScreenFeedback,
+            ScreenToggleKey,
+        },
         views::main::MainScreenController,
     },
+    Event,
 };
 
 const COMMAND_KEYS: [ScreenCommandKey; 2] = [
@@ -20,15 +24,23 @@ const COMMAND_KEYS: [ScreenCommandKey; 2] = [
     ScreenCommandKey::new("s", "Select a strategy"),
 ];
 
-pub(crate) struct StrategiesScreenController;
+pub(crate) struct StrategiesScreenController {
+    info: Info,
+    available_strategies: Vec<String>,
+}
+
+impl StrategiesScreenController {
+    pub(crate) fn new() -> Self {
+        StrategiesScreenController {
+            info: Info::new_fixed("Strategies management commands"),
+            available_strategies: Vec::new(),
+        }
+    }
+}
 
 impl ScreenController for StrategiesScreenController {
     fn name(&self) -> &'static str {
         "Strategies"
-    }
-
-    fn init_text(&self) -> &'static str {
-        "Strategies management commands"
     }
 
     fn command_keys(&self) -> &[ScreenCommandKey] {
@@ -39,18 +51,30 @@ impl ScreenController for StrategiesScreenController {
         &[]
     }
 
-    fn on_event(&mut self, key_event: KeyEvent) -> ScreenFeedback {
-        match key_event {
-            KeyEvent {
+    fn on_event(&mut self, event: Event) -> ScreenFeedback {
+        match event {
+            Event::Key(KeyEvent {
                 code: Key::Char('q'),
                 modifiers: KeyModifiers::NONE,
-            } => ScreenFeedback::PreviousScreen(Box::new(MainScreenController)),
-            KeyEvent {
+            }) => ScreenFeedback::PreviousScreen(Box::new(MainScreenController::new())),
+            Event::Key(KeyEvent {
                 code: Key::Char('s'),
                 modifiers: KeyModifiers::NONE,
-            } => ScreenFeedback::Form(Box::new(SelectStrategyFormController::new(todo!()))),
+            }) => ScreenFeedback::Form(Box::new(SelectStrategyFormController::new(
+                self.available_strategies.clone(),
+            ))),
+
+            Event::Backend(BackendEvent::AppStateUpdated(app_state)) => {
+                self.available_strategies =
+                    app_state.available_strategies.keys().cloned().collect();
+                ScreenFeedback::None
+            }
             _ => ScreenFeedback::None,
         }
+    }
+
+    fn view(&mut self, frame: &mut Frame, area: Rect) {
+        self.info.view(frame, area)
     }
 }
 
@@ -88,7 +112,7 @@ impl FormController for SelectStrategyFormController {
     }
 
     fn step_index(&self) -> u8 {
-        1
+        0
     }
 
     fn steps_number(&self) -> u8 {

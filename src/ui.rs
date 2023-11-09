@@ -38,6 +38,7 @@ pub(crate) enum UiFeedback {
     Quit,
     ExecuteTask(Task),
     None,
+    RequestState,
 }
 
 impl Ui {
@@ -70,7 +71,7 @@ impl Ui {
             .expect("cannot enable terminal raw mode");
 
         let mut status_bar_state = StatusBarState::default();
-        let main_screen_controller = MainScreenController;
+        let main_screen_controller = MainScreenController::new();
 
         status_bar_state.add_child(main_screen_controller.name());
 
@@ -89,16 +90,19 @@ impl Ui {
     }
 
     pub(crate) fn on_event(&mut self, event: Event) -> UiFeedback {
+        let mut redraw = false;
+
         if let Event::Backend(BackendEvent::TaskCompleted(..)) = &event {
             self.status_bar_state.blocked = false;
             self.blocked = false;
+            redraw = true;
         }
 
         if self.blocked {
             return UiFeedback::None;
         }
 
-        if let (Some(form), Event::Key(event)) = (&mut self.form, &event) {
+        let ui_feedback = if let (Some(form), Event::Key(event)) = (&mut self.form, &event) {
             match form.on_event(*event) {
                 FormStatus::Done(task) => {
                     self.form = None;
@@ -114,12 +118,12 @@ impl Ui {
                 ScreenFeedback::NextScreen(controller) => {
                     self.status_bar_state.add_child(controller.name());
                     self.screen = Screen::new(controller);
-                    UiFeedback::Redraw
+                    UiFeedback::RequestState
                 }
                 ScreenFeedback::PreviousScreen(controller) => {
                     self.status_bar_state.to_parent();
                     self.screen = Screen::new(controller);
-                    UiFeedback::Redraw
+                    UiFeedback::RequestState
                 }
                 ScreenFeedback::Form(controller) => {
                     self.form = Some(Form::new(controller));
@@ -129,6 +133,12 @@ impl Ui {
                 ScreenFeedback::Quit => UiFeedback::Quit,
                 ScreenFeedback::None => UiFeedback::None,
             }
+        };
+
+        if matches!(ui_feedback, UiFeedback::None) && redraw {
+            UiFeedback::Redraw
+        } else {
+            ui_feedback
         }
     }
 }

@@ -1,17 +1,16 @@
 //! Screen module.
 
-mod command_pallet;
-mod info;
+pub(crate) mod widgets;
 
 use std::ops::{Deref, DerefMut};
 
-use info::Info;
 use tuirealm::{
     event::KeyEvent,
     tui::prelude::{Constraint, Direction, Layout, Rect},
     Frame,
 };
 
+use self::widgets::command_pallet;
 use super::{form::FormController, BackendEvent, Event};
 
 /// Screen is the unit of navigation and representation in the TUI.
@@ -24,16 +23,12 @@ use super::{form::FormController, BackendEvent, Event};
 /// however, they're different about what keys to show and how to process them,
 /// so we use a generic [ScreenController] here.
 pub(crate) struct Screen<C: ScreenController> {
-    info: Info,
     controller: C,
 }
 
 impl<C: ScreenController> Screen<C> {
     pub(super) fn new(controller: C) -> Self {
-        Screen {
-            info: Info::new_fixed(controller.init_text()),
-            controller,
-        }
+        Screen { controller }
     }
 
     pub(super) fn view(&mut self, frame: &mut Frame, area: Rect) {
@@ -42,36 +37,12 @@ impl<C: ScreenController> Screen<C> {
             .constraints([Constraint::Min(10), Constraint::Max(10)].as_ref())
             .split(area);
 
-        self.info.view(frame, layout[0]);
+        self.controller.view(frame, layout[0]);
         command_pallet::view(frame, layout[1], &self.controller);
     }
 
     pub(super) fn on_event(&mut self, event: Event) -> ScreenFeedback {
-        match event {
-            Event::Key(key_event) => {
-                let controller_ui_update = self.controller.on_event(key_event);
-                let redraw_info = self.info.on_event(key_event);
-
-                match controller_ui_update {
-                    ScreenFeedback::None => {
-                        if redraw_info {
-                            ScreenFeedback::Redraw
-                        } else {
-                            ScreenFeedback::None
-                        }
-                    }
-                    screen_feedback => screen_feedback,
-                }
-            }
-            Event::Backend(BackendEvent::TaskCompleted(_, data)) => {
-                self.info = match data {
-                    Ok(x) => Info::new_scrollable(&x),
-                    Err(e) => Info::new_error(&e),
-                };
-                ScreenFeedback::Redraw
-            }
-            _ => ScreenFeedback::None,
-        }
+        self.controller.on_event(event)
     }
 }
 
@@ -79,9 +50,9 @@ impl<C: ScreenController> Screen<C> {
 /// well as for dispatching keypress events. This is used as generic parameter
 /// for [Screen] and it makes a difference between one screen or another.
 pub(crate) trait ScreenController {
-    fn name(&self) -> &'static str;
+    fn view(&mut self, frame: &mut Frame, area: Rect);
 
-    fn init_text(&self) -> &'static str;
+    fn name(&self) -> &'static str;
 
     fn command_keys(&self) -> &[ScreenCommandKey];
 
@@ -89,16 +60,16 @@ pub(crate) trait ScreenController {
 
     /// Process key event, returning details on what's needed to be updated on
     /// UI.
-    fn on_event(&mut self, key_event: KeyEvent) -> ScreenFeedback;
+    fn on_event(&mut self, event: Event) -> ScreenFeedback;
 }
 
 impl ScreenController for Box<dyn ScreenController> {
-    fn name(&self) -> &'static str {
-        self.deref().name()
+    fn view(&mut self, frame: &mut Frame, area: Rect) {
+        self.deref_mut().view(frame, area)
     }
 
-    fn init_text(&self) -> &'static str {
-        self.deref().init_text()
+    fn name(&self) -> &'static str {
+        self.deref().name()
     }
 
     fn command_keys(&self) -> &[ScreenCommandKey] {
@@ -109,8 +80,8 @@ impl ScreenController for Box<dyn ScreenController> {
         self.deref().toggle_keys()
     }
 
-    fn on_event(&mut self, key_event: KeyEvent) -> ScreenFeedback {
-        self.deref_mut().on_event(key_event)
+    fn on_event(&mut self, event: Event) -> ScreenFeedback {
+        self.deref_mut().on_event(event)
     }
 }
 

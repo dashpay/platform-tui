@@ -8,7 +8,7 @@ use tuirealm::{
     AttrValue, Attribute, Frame, MockComponent,
 };
 
-use super::{Input, InputStatus};
+use crate::ui::form::{Input, InputStatus};
 
 pub(crate) struct TextInput {
     input: tui_realm_stdlib::Input,
@@ -32,9 +32,8 @@ impl TextInput {
 }
 
 impl Input for TextInput {
-    type Output = String;
-
     // TODO make widget generic over parser to return b58 or hex
+    type Output = String;
 
     fn on_event(&mut self, event: KeyEvent) -> InputStatus<Self::Output> {
         let KeyEvent { code, .. } = event;

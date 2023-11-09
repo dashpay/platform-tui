@@ -4,7 +4,7 @@ use itertools::Itertools;
 use tui_realm_stdlib::Table;
 use tuirealm::{props::TextSpan, tui::prelude::Rect, Frame, MockComponent};
 
-use super::ScreenController;
+use crate::ui::screen::ScreenController;
 
 const KEYS_PER_ROW: usize = 3;
 

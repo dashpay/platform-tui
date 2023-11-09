@@ -1,9 +1,7 @@
 //! Form component defintion.
 
-mod completing_input;
-mod select;
-mod text_input;
 mod utils;
+mod widgets;
 
 use std::ops::{Deref, DerefMut};
 
@@ -15,9 +13,8 @@ use tuirealm::{
 };
 
 pub(crate) use self::{
-    select::SelectInput,
-    text_input::TextInput,
     utils::{ComposedInput, Field},
+    widgets::{select::SelectInput, text::TextInput},
 };
 use crate::backend::Task;
 
