@@ -5,12 +5,12 @@ use tuirealm::{
     Frame,
 };
 
-use super::main_view::MainScreenController;
 use crate::{
     backend::Task,
     ui::{
         form::{FormController, FormStatus, Input, InputStatus, TextInput},
         screen::{ScreenCommandKey, ScreenController, ScreenFeedback, ScreenToggleKey},
+        views::main::MainScreenController,
     },
 };
 

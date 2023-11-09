@@ -17,6 +17,8 @@ use self::identities::fetch_identity_by_b58_id;
 #[derive(Clone, PartialEq)]
 pub(crate) enum Task {
     FetchIdentityById(String),
+
+    /// Variant for testing purposes
     RenderData(String),
 }
 

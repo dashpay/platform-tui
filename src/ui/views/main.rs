@@ -2,19 +2,20 @@
 
 use tuirealm::event::{Key, KeyEvent, KeyModifiers};
 
-use super::identities_view::IdentitiesScreenController;
 use crate::{
     backend::Task,
     ui::{
         form::{ComposedInput, Field, FormController, FormStatus, Input, SelectInput, TextInput},
         screen::{ScreenCommandKey, ScreenController, ScreenFeedback, ScreenToggleKey},
+        views::{identities::IdentitiesScreenController, strategies::StrategiesScreenController},
     },
 };
 
-const COMMAND_KEYS: [ScreenCommandKey; 6] = [
+const COMMAND_KEYS: [ScreenCommandKey; 7] = [
     ScreenCommandKey::new("q", "Quit"),
     ScreenCommandKey::new("i", "Identities"),
     ScreenCommandKey::new("c", "Contracts"),
+    ScreenCommandKey::new("s", "Strategies"),
     ScreenCommandKey::new("w", "Wallet"),
     ScreenCommandKey::new("v", "Version Upgrade"),
     ScreenCommandKey::new("t", "Test form"),
@@ -63,6 +64,10 @@ Use Ctrl+q to go back from completion list or once again to leave input at all.
                 code: Key::Char('c'),
                 modifiers: KeyModifiers::NONE,
             } => ScreenFeedback::None,
+            KeyEvent {
+                code: Key::Char('s'),
+                modifiers: KeyModifiers::NONE,
+            } => ScreenFeedback::NextScreen(Box::new(StrategiesScreenController)),
             KeyEvent {
                 code: Key::Char('w'),
                 modifiers: KeyModifiers::NONE,

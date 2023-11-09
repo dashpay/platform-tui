@@ -18,7 +18,7 @@ use self::{
     form::{Form, FormController, FormStatus},
     screen::{Screen, ScreenController, ScreenFeedback},
     status_bar::StatusBarState,
-    views::main_view::MainScreenController,
+    views::main::MainScreenController,
 };
 use crate::{BackendEvent, Event, Task};
 
