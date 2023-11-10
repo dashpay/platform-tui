@@ -1,5 +1,6 @@
 //! Wallet screen module.
 
+use dpp::identity::accessors::IdentityGettersV0;
 use tui_realm_stdlib::Paragraph;
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
@@ -27,12 +28,37 @@ impl WalletScreen {
             TextSpan::new(format!("No Wallet Loaded"))
         };
         let identity_loaded_text = if let Some(identity) = app_state.loaded_identity.as_ref() {
-            TextSpan::new(format!("Identity Loaded: {:?}", identity))
+            TextSpan::new(format!(
+                "Identity Loaded: Balance : {:.2} mDash, Keys: {:?}",
+                identity.balance() as f64 / 100000000.0,
+                identity.public_keys()
+            ))
+        } else if let Some((_, _, asset_lock)) = app_state
+            .identity_asset_lock_private_key_in_creation
+            .as_ref()
+        {
+            if asset_lock.is_some() {
+                TextSpan::new(format!(
+                    "No Identity Loaded, but transaction registered and asset lock known"
+                ))
+            } else {
+                TextSpan::new(format!(
+                    "No Identity Loaded, but transaction registered with no asset lock yet known"
+                ))
+            }
         } else {
             TextSpan::new(format!("No Identity Loaded"))
         };
         let message_span = TextSpan::new(message);
-        paragraph = paragraph.text([title, wallet_loaded_text, identity_loaded_text, message_span].as_ref());
+        paragraph = paragraph.text(
+            [
+                title,
+                wallet_loaded_text,
+                identity_loaded_text,
+                message_span,
+            ]
+            .as_ref(),
+        );
         WalletScreen {
             component: paragraph,
         }
@@ -99,7 +125,6 @@ impl WalletScreenCommands {
                     ]),
                 }
             }
-
         } else {
             WalletScreenCommands {
                 component: CommandPallet::new(vec![
@@ -116,7 +141,6 @@ impl WalletScreenCommands {
                 ]),
             }
         }
-
     }
 }
 

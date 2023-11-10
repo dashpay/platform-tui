@@ -45,6 +45,7 @@ impl Wallet {
             None => StdRng::from_entropy(),
             Some(seed_value) => StdRng::seed_from_u64(seed_value),
         };
+        let fee = 2000;
         let random_private_key: [u8; 32] = rng.gen();
         let private_key = PrivateKey::from_slice(&random_private_key, Network::Testnet)
             .expect("expected a private key");
@@ -62,20 +63,25 @@ impl Wallet {
 
         let change_address = self.change_address();
 
-        let burn_output = TxOut {
+        let payload_output = TxOut {
             value: amount, // 1 Dash
             script_pubkey: ScriptBuf::new_p2pkh(&one_time_key_hash),
         };
-        let payload_output = TxOut {
-            value: 100000000, // 1 Dash
+        let burn_output = TxOut {
+            value: amount, // 1 Dash
             script_pubkey: ScriptBuf::new_op_return(&[]),
         };
+        if change < fee {
+            return Err(Error::WalletError(
+                "Not enough balance in wallet for fee".to_string(),
+            ));
+        }
         let change_output = TxOut {
-            value: change,
+            value: change - fee,
             script_pubkey: change_address.script_pubkey(),
         };
         let payload = AssetLockPayload {
-            version: 0,
+            version: 1,
             credit_outputs: vec![payload_output],
         };
 
@@ -140,11 +146,18 @@ impl Wallet {
                 let sig = secp.sign_ecdsa(&message, &private_key.inner);
 
                 // Serialize the DER-encoded signature and append the sighash type
-                let mut sig_script = sig.serialize_der().to_vec();
+                let mut serialized_sig = sig.serialize_der().to_vec();
 
-                sig_script.push(sighash_u32 as u8); // Assuming sighash_u32 is something like SIGHASH_ALL (0x01)
+                let mut sig_script = vec![serialized_sig.len() as u8 + 1];
 
-                sig_script.append(&mut public_key.serialize());
+                sig_script.append(&mut serialized_sig);
+
+                sig_script.push(1);
+
+                let mut serialized_pub_key = public_key.serialize();
+
+                sig_script.push(serialized_pub_key.len() as u8);
+                sig_script.append(&mut serialized_pub_key);
                 // Create script_sig
                 input.script_sig = ScriptBuf::from_bytes(sig_script);
             });
@@ -241,7 +254,7 @@ impl Encode for SingleKeyWallet {
                 (
                     outpoint.to_string(),
                     txout.value,
-                    txout.script_pubkey.to_string(),
+                    hex::encode(txout.script_pubkey.as_bytes()),
                 )
             })
             .collect::<Vec<_>>();
@@ -251,7 +264,7 @@ impl Encode for SingleKeyWallet {
 
 impl Decode for SingleKeyWallet {
     fn decode<D: Decoder>(decoder: &mut D) -> Result<Self, DecodeError> {
-        let bytes = <[u8;32]>::decode(decoder)?;
+        let bytes = <[u8; 32]>::decode(decoder)?;
         let string_utxos = Vec::<(String, u64, String)>::decode(decoder)?;
 
         let private_key = PrivateKey::from_slice(bytes.as_slice(), Network::Testnet)
@@ -266,7 +279,12 @@ impl Decode for SingleKeyWallet {
             .iter()
             .map(|(outpoint, value, script)| {
                 let script = ScriptBuf::from_hex(script)
-                    .map_err(|_| InsightError("Invalid scriptPubKey format from load".into()))
+                    .map_err(|_| {
+                        InsightError(format!(
+                            "Invalid scriptPubKey format from load of {}",
+                            script
+                        ))
+                    })
                     .unwrap();
                 (
                     OutPoint::from_str(outpoint).expect("expected valid outpoint"),
@@ -289,7 +307,7 @@ impl Decode for SingleKeyWallet {
 
 impl<'a> BorrowDecode<'a> for SingleKeyWallet {
     fn borrow_decode<D: BorrowDecoder<'a>>(decoder: &mut D) -> Result<Self, DecodeError> {
-        let bytes = <[u8;32]>::decode(decoder)?;
+        let bytes = <[u8; 32]>::decode(decoder)?;
         let string_utxos = Vec::<(String, u64, String)>::decode(decoder)?;
 
         let private_key = PrivateKey::from_slice(bytes.as_slice(), Network::Testnet)
@@ -304,7 +322,12 @@ impl<'a> BorrowDecode<'a> for SingleKeyWallet {
             .iter()
             .map(|(outpoint, value, script)| {
                 let script = ScriptBuf::from_hex(script)
-                    .map_err(|_| InsightError("Invalid scriptPubKey format from load".into()))
+                    .map_err(|_| {
+                        InsightError(format!(
+                            "Invalid scriptPubKey format from load of {}",
+                            script
+                        ))
+                    })
                     .unwrap();
                 (
                     OutPoint::from_str(outpoint).expect("expected valid outpoint"),

@@ -6,8 +6,6 @@ use crate::app::error::Error::{ParsingError, SdkError};
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum Error {
-    #[error("DAPI transport error")]
-    DapiError,
     #[error("error while parsing an identity")]
     ParsingError(#[from] ProtocolError),
     #[error("ID encoding error")]
@@ -16,6 +14,8 @@ pub(crate) enum Error {
     InsightError(String),
     #[error("Wallet error {0}")]
     WalletError(String),
+    #[error("SDK error {0} {1}")]
+    SdkExplainedError(String, dash_platform_sdk::Error),
     #[error("SDK error {0}")]
     SdkError(#[from] dash_platform_sdk::Error),
     #[error("Identity registration error {0}")]

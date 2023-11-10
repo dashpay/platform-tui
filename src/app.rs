@@ -28,14 +28,16 @@ use strategy_tests::operations::{
 };
 use strategy_tests::transitions::create_identities_state_transitions;
 
+use cli_clipboard::{ClipboardContext, ClipboardProvider};
 use dash_platform_sdk::platform::Fetch;
 use dash_platform_sdk::Sdk;
 use std::{fmt::Display, time::Duration};
-use cli_clipboard::{ClipboardContext, ClipboardProvider};
 
+use dpp::dashcore::psbt::serialize::Serialize as dashcoreSerialize;
 use dpp::dashcore::{secp256k1::Secp256k1, Address, Network, PrivateKey};
 use dpp::identity::Identity;
 use dpp::platform_value::string_encoding::Encoding;
+use hex::ToHex;
 use serde::Serialize;
 use tokio::runtime::{Handle, Runtime};
 use tuirealm::{
@@ -209,9 +211,10 @@ pub(super) struct Model<'a> {
 impl<'a> Model<'a> {
     pub(crate) fn new(sdk: &'a mut Sdk) -> Self {
         let runtime = Runtime::new().expect("cannot start Tokio runtime");
+        let state = runtime.block_on(AppState::load());
         Self {
-            app: Self::init_app().expect("Unable to init the application"),
-            state: runtime.block_on(AppState::load()),
+            app: Self::init_app(&state).expect("Unable to init the application"),
+            state,
             quit: false,
             redraw: true,
             current_screen: Screen::Main,
@@ -222,7 +225,9 @@ impl<'a> Model<'a> {
         }
     }
 
-    fn init_app() -> Result<Application<ComponentId, Message, NoUserEvent>, ApplicationError> {
+    fn init_app(
+        state: &AppState,
+    ) -> Result<Application<ComponentId, Message, NoUserEvent>, ApplicationError> {
         let mut app = Application::init(
             EventListenerCfg::default()
                 .default_input_listener(Duration::from_millis(20))
@@ -246,7 +251,11 @@ impl<'a> Model<'a> {
             Box::new(Breadcrumbs::new()),
             Vec::new(),
         )?;
-        app.mount(ComponentId::Status, Box::new(Status::new()), Vec::new())?;
+        app.mount(
+            ComponentId::Status,
+            Box::new(Status::new(state)),
+            Vec::new(),
+        )?;
 
         // Setting focus on the screen so it will react to events
         app.active(&ComponentId::CommandPallet)?;
@@ -382,7 +391,10 @@ impl<'a> Model<'a> {
                 self.app
                     .remount(
                         ComponentId::CommandPallet,
-                        Box::new(WalletScreenCommands::new(self.state.loaded_wallet.is_some(), self.state.loaded_identity.is_some())),
+                        Box::new(WalletScreenCommands::new(
+                            self.state.loaded_wallet.is_some(),
+                            self.state.loaded_identity.is_some(),
+                        )),
                         Vec::new(),
                     )
                     .expect("unable to remount screen");
@@ -810,6 +822,8 @@ impl Update<Message> for Model<'_> {
 
                         self.runtime.block_on(wallet.reload_utxos());
 
+                        self.state.save();
+
                         self.app
                             .remount(
                                 ComponentId::Screen,
@@ -865,7 +879,64 @@ impl Update<Message> for Model<'_> {
                     None
                 }
                 Message::RegisterIdentity => {
-                    let _ = self.state.register_new_identity(self.sdk, 10000000);
+                    self.app
+                        .remount(
+                            ComponentId::Screen,
+                            Box::new(WalletScreen::new(
+                                &self.state,
+                                "Registering new identity with 0.1 Dash",
+                            )),
+                            make_screen_subs(),
+                        )
+                        .expect("unable to remount screen");
+
+                    self.view();
+
+                    let result = self
+                        .runtime
+                        .block_on(self.state.register_new_identity(self.sdk, 10000000));
+
+                    if let Err(error) = result {
+                        if (error.to_string().contains("invalid transaction")
+                            || error.to_string().contains("rejected"))
+                            && self
+                                .state
+                                .identity_asset_lock_private_key_in_creation
+                                .is_some()
+                        {
+                            // we should copy the transaction to the screen and clipboard
+
+                            let transaction_bytes =
+                                dpp::dashcore::psbt::serialize::Serialize::serialize(
+                                    &self
+                                        .state
+                                        .identity_asset_lock_private_key_in_creation
+                                        .as_ref()
+                                        .unwrap()
+                                        .0,
+                                );
+                            cli_clipboard::set_contents(transaction_bytes.encode_hex()).unwrap();
+                            self.app
+                                .remount(
+                                    ComponentId::Screen,
+                                    Box::new(WalletScreen::new(&self.state, "error registering transaction: invalid transaction copied to clipboard")),
+                                    make_screen_subs(),
+                                )
+                                .expect("unable to remount screen");
+                        } else {
+                            self.app
+                                .remount(
+                                    ComponentId::Screen,
+                                    Box::new(WalletScreen::new(
+                                        &self.state,
+                                        error.to_string().as_str(),
+                                    )),
+                                    make_screen_subs(),
+                                )
+                                .expect("unable to remount screen");
+                        }
+                    }
+                    self.view();
                     None
                 }
                 Message::FetchVersionUpgradeState => {
@@ -1628,7 +1699,10 @@ impl Update<Message> for Model<'_> {
                     self.app
                         .remount(
                             ComponentId::Screen,
-                            Box::new(WalletScreen::new(&self.state, "Copied Address to clipboard")),
+                            Box::new(WalletScreen::new(
+                                &self.state,
+                                "Copied Address to clipboard",
+                            )),
                             make_screen_subs(),
                         )
                         .expect("unable to remount screen");
