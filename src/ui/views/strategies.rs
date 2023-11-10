@@ -1,5 +1,6 @@
 //! Screens and forms related to strategies manipulation.
 
+use strategy_tests::Strategy;
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
     tui::prelude::Rect,
@@ -31,6 +32,12 @@ pub(crate) struct StrategiesScreenController {
 
 impl StrategiesScreenController {
     pub(crate) fn new(app_state: &AppState) -> Self {
+        let selected_strategy = app_state
+            .selected_strategy
+            .as_ref()
+            .map(|s| app_state.available_strategies.get(s.as_str()))
+            .flatten();
+
         StrategiesScreenController {
             info: Info::new_fixed("Strategies management commands"),
             available_strategies: app_state.available_strategies.keys().cloned().collect(),
@@ -117,4 +124,8 @@ impl FormController for SelectStrategyFormController {
     fn steps_number(&self) -> u8 {
         1
     }
+}
+
+fn display_strategy(strategy: &Strategy) -> String {
+    todo!()
 }
