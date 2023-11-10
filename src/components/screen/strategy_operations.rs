@@ -346,7 +346,7 @@ pub(crate) struct DocumentStruct {
     component: List,
     selected_index: usize,
     selection_state: DocumentSelectionState,
-    known_contracts: BTreeMap<String, CreatedDataContract>,
+    known_contracts: BTreeMap<String, DataContract>,
     available_document_types: Option<BTreeMap<String, DocumentType>>,
 }
 
@@ -449,13 +449,11 @@ impl Component<Message, NoUserEvent> for DocumentStruct {
                 code: Key::Enter, ..
             }) => match &mut self.selection_state {
                 DocumentSelectionState::SelectingContract => {
-                    let contract_clone = self
+                    let selected_contract = self
                         .known_contracts
                         .values()
                         .nth(self.selected_index)
-                        .unwrap()
-                        .clone();
-                    let selected_contract = contract_clone.data_contract();
+                        .expect("expected contract");
                     let document_types = selected_contract.document_types();
 
                     self.selection_state = DocumentSelectionState::SelectingDocumentType {

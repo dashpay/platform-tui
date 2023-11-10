@@ -1,5 +1,8 @@
 //! Contract screen module.
 
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::platform_value::string_encoding::Encoding;
+use std::vec;
 use tui_realm_stdlib::Paragraph;
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
@@ -7,6 +10,7 @@ use tuirealm::{
     Component, Event, MockComponent, NoUserEvent,
 };
 
+use crate::app::state::AppState;
 use crate::{
     app::{Message, Screen},
     mock_components::{CommandPallet, CommandPalletKey, KeyType},
@@ -18,10 +22,26 @@ pub(crate) struct ContractScreen {
 }
 
 impl ContractScreen {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(state: &AppState) -> Self {
+        let text_spans = if state.known_contracts.is_empty() {
+            vec![TextSpan::new("No known contracts, fetch some!")]
+        } else {
+            state
+                .known_contracts
+                .iter()
+                .map(|(name, contract)| {
+                    TextSpan::new(format!(
+                        "{} : {} ({} Types)",
+                        name,
+                        contract.id_ref().to_string(Encoding::Base58),
+                        contract.document_types().len()
+                    ))
+                })
+                .collect::<Vec<_>>()
+        };
+
         ContractScreen {
-            component: Paragraph::default()
-                .text([TextSpan::new("Contract management commands")].as_ref()),
+            component: Paragraph::default().text(&text_spans),
         }
     }
 }
@@ -47,8 +67,13 @@ impl ContractScreenCommands {
                     key_type: KeyType::Command,
                 },
                 CommandPalletKey {
-                    key: 'g',
-                    description: "Get Contract",
+                    key: 'u',
+                    description: "Fetch User Contract",
+                    key_type: KeyType::Command,
+                },
+                CommandPalletKey {
+                    key: 's',
+                    description: "Fetch System Contract",
                     key_type: KeyType::Command,
                 },
             ]),
@@ -64,9 +89,13 @@ impl Component<Message, NoUserEvent> for ContractScreenCommands {
                 modifiers: KeyModifiers::NONE,
             }) => Some(Message::PrevScreen),
             Event::Keyboard(KeyEvent {
-                code: Key::Char('g'),
+                code: Key::Char('u'),
                 modifiers: KeyModifiers::NONE,
-            }) => Some(Message::NextScreen(Screen::GetContract)),
+            }) => Some(Message::NextScreen(Screen::FetchUserContract(None))),
+            Event::Keyboard(KeyEvent {
+                code: Key::Char('s'),
+                modifiers: KeyModifiers::NONE,
+            }) => Some(Message::NextScreen(Screen::FetchSystemContract(None))),
             _ => None,
         }
     }

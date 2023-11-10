@@ -1,5 +1,8 @@
 //! Get contract screen
 
+use dpp::identifier::Identifier;
+use dpp::platform_value::string_encoding::Encoding;
+use dpp::platform_value::Error;
 use tui_realm_stdlib::Textarea;
 use tuirealm::{
     command::CmdResult,
@@ -16,32 +19,32 @@ use crate::{
 };
 
 #[derive(MockComponent)]
-pub(crate) struct GetContractScreen {
+pub(crate) struct GetUserContractScreen {
     component: Textarea,
 }
 
-impl GetContractScreen {
+impl GetUserContractScreen {
     pub(crate) fn new() -> Self {
-        GetContractScreen {
+        GetUserContractScreen {
             component: Textarea::default(),
         }
     }
 }
 
-impl Component<Message, NoUserEvent> for GetContractScreen {
+impl Component<Message, NoUserEvent> for GetUserContractScreen {
     fn on(&mut self, _ev: Event<NoUserEvent>) -> Option<Message> {
         None
     }
 }
 
 #[derive(MockComponent)]
-pub(crate) struct GetContractScreenCommands {
+pub(crate) struct GetUserContractScreenCommands {
     component: CommandPallet,
 }
 
-impl GetContractScreenCommands {
+impl GetUserContractScreenCommands {
     pub(crate) fn new() -> Self {
-        GetContractScreenCommands {
+        GetUserContractScreenCommands {
             component: CommandPallet::new(vec![
                 CommandPalletKey {
                     key: 'q',
@@ -63,7 +66,7 @@ impl GetContractScreenCommands {
     }
 }
 
-impl Component<Message, NoUserEvent> for GetContractScreenCommands {
+impl Component<Message, NoUserEvent> for GetUserContractScreenCommands {
     fn on(&mut self, ev: Event<NoUserEvent>) -> Option<Message> {
         match ev {
             Event::Keyboard(KeyEvent {
@@ -80,11 +83,11 @@ impl Component<Message, NoUserEvent> for GetContractScreenCommands {
 }
 
 #[derive(MockComponent)]
-pub(crate) struct ContractIdInput {
+pub(crate) struct UserContractIdInput {
     component: CompletingInput<HistoryCompletionEngine>,
 }
 
-impl ContractIdInput {
+impl UserContractIdInput {
     pub(crate) fn new() -> Self {
         let mut completions = HistoryCompletionEngine::default();
         // TODO: should be a history item not hardcoded but it's useful for development
@@ -102,14 +105,19 @@ impl ContractIdInput {
     }
 }
 
-impl Component<Message, NoUserEvent> for ContractIdInput {
+impl Component<Message, NoUserEvent> for UserContractIdInput {
     fn on(&mut self, ev: Event<NoUserEvent>) -> Option<Message> {
         match ev {
             Event::Keyboard(key_event) => {
                 let cmd = key_event_to_cmd(key_event);
                 match self.component.perform(cmd) {
                     CmdResult::Submit(State::One(StateValue::String(s))) => {
-                        Some(Message::FetchContractById(s))
+                        match Identifier::from_string(s.as_str(), Encoding::Base58) {
+                            Ok(identifier) => {
+                                Some(Message::FetchContractById("name".to_string(), identifier))
+                            }
+                            Err(e) => Some(Message::DisplayError(e.to_string())),
+                        }
                     }
                     CmdResult::Submit(State::None) => Some(Message::ReloadScreen),
                     _ => Some(Message::Redraw),

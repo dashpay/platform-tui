@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 
 use dpp::data_contract::created_data_contract::CreatedDataContract;
+use dpp::prelude::DataContract;
 use tui_realm_stdlib::{List, Paragraph};
 use tuirealm::{
     command::{Cmd, Direction},
@@ -122,7 +123,7 @@ pub(crate) struct AddContractStruct {
     component: List,
     selected_index: usize,
     selection_state: StrategySelectionState,
-    known_contracts: BTreeMap<String, CreatedDataContract>,
+    known_contracts: BTreeMap<String, DataContract>,
 }
 
 impl AddContractStruct {

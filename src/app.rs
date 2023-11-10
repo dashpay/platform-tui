@@ -48,6 +48,7 @@ use tuirealm::{
     Sub, SubClause, SubEventClause, Update,
 };
 
+use crate::app::error::Error;
 use crate::components::screen::shared::Info;
 use crate::{
     app::{
@@ -91,15 +92,17 @@ fn make_screen_subs() -> Vec<Sub<ComponentId, NoUserEvent>> {
         ),
     ]
 }
+type ErrorString = String;
 
 /// Screen identifiers
-#[derive(Debug, Hash, Clone, Eq, PartialEq, Copy, strum::AsRefStr)]
+#[derive(Debug, Hash, Clone, Eq, PartialEq, strum::AsRefStr)]
 pub(super) enum Screen {
     Main,
     Identity,
-    GetIdentity,
+    GetIdentity(Option<ErrorString>),
     Contracts,
-    GetContract,
+    FetchUserContract(Option<ErrorString>),
+    FetchSystemContract(Option<ErrorString>),
     Wallet,
     AddWallet,
     VersionUpgrade,
@@ -111,6 +114,19 @@ pub(super) enum Screen {
     StrategyOperations,
     IdentityInserts,
     StartIdentities,
+}
+
+impl Screen {
+    pub(crate) fn set_error(&mut self, error: ErrorString) {
+        match self {
+            Screen::GetIdentity(e)
+            | Screen::FetchUserContract(e)
+            | Screen::FetchSystemContract(e) => {
+                let _ = e.insert(error);
+            }
+            _ => {}
+        }
+    }
 }
 
 /// Component identifiers, required to triggers screen switch which involves
@@ -153,13 +169,14 @@ pub(super) enum InputType {
 pub(super) enum Message {
     AppClose,
     NextScreen(Screen),
+    DisplayError(String),
     PrevScreen,
     CopyWalletAddress,
     ReloadScreen,
     ExpectingInput(InputType),
     Redraw,
     FetchIdentityById(String),
-    FetchContractById(String),
+    FetchContractById(String, Identifier),
     AddSingleKeyWallet(String),
     UpdateLoadedWalletUTXOsAndBalance,
     RegisterIdentity,
@@ -336,7 +353,7 @@ impl<'a> Model<'a> {
                 self.app
                     .remount(
                         ComponentId::Screen,
-                        Box::new(ContractScreen::new()),
+                        Box::new(ContractScreen::new(&self.state)),
                         make_screen_subs(),
                     )
                     .expect("unable to remount screen");
@@ -348,7 +365,7 @@ impl<'a> Model<'a> {
                     )
                     .expect("unable to remount screen");
             }
-            Screen::GetIdentity => {
+            Screen::GetIdentity(error) => {
                 self.app
                     .remount(
                         ComponentId::Screen,
@@ -364,18 +381,18 @@ impl<'a> Model<'a> {
                     )
                     .expect("unable to remount screen");
             }
-            Screen::GetContract => {
+            Screen::FetchUserContract(error) => {
                 self.app
                     .remount(
                         ComponentId::Screen,
-                        Box::new(GetContractScreen::new()),
+                        Box::new(GetUserContractScreen::new()),
                         make_screen_subs(),
                     )
                     .expect("unable to remount screen");
                 self.app
                     .remount(
                         ComponentId::CommandPallet,
-                        Box::new(GetContractScreenCommands::new()),
+                        Box::new(GetUserContractScreenCommands::new()),
                         Vec::new(),
                     )
                     .expect("unable to remount screen");
@@ -553,6 +570,22 @@ impl<'a> Model<'a> {
                     )
                     .expect("unable to remount screen");
             }
+            Screen::FetchSystemContract(error) => {
+                self.app
+                    .remount(
+                        ComponentId::Screen,
+                        Box::new(GetSystemContractScreen::new()),
+                        make_screen_subs(),
+                    )
+                    .expect("unable to remount screen");
+                self.app
+                    .remount(
+                        ComponentId::CommandPallet,
+                        Box::new(GetSystemContractScreenCommands::new()),
+                        Vec::new(),
+                    )
+                    .expect("unable to remount screen");
+            }
         }
         self.app
             .attr(
@@ -610,8 +643,8 @@ impl Update<Message> for Model<'_> {
                     None
                 }
                 Message::NextScreen(s) => {
-                    self.breadcrumbs.push(self.current_screen);
-                    self.current_screen = s;
+                    self.breadcrumbs.push(self.current_screen.clone());
+                    self.current_screen = s.clone();
                     self.set_screen(s);
                     None
                 }
@@ -620,12 +653,12 @@ impl Update<Message> for Model<'_> {
                         .breadcrumbs
                         .pop()
                         .expect("must not be triggered on the main screen");
-                    self.current_screen = screen;
+                    self.current_screen = screen.clone();
                     self.set_screen(screen);
                     None
                 }
                 Message::ReloadScreen => {
-                    self.set_screen(self.current_screen);
+                    self.set_screen(self.current_screen.clone());
                     None
                 }
                 Message::ExpectingInput(input_type) => {
@@ -647,7 +680,11 @@ impl Update<Message> for Model<'_> {
                         }
                         InputType::Base58ContractId => {
                             self.app
-                                .mount(ComponentId::Input, Box::new(ContractIdInput::new()), vec![])
+                                .mount(
+                                    ComponentId::Input,
+                                    Box::new(UserContractIdInput::new()),
+                                    vec![],
+                                )
                                 .expect("unable to mount component");
                         }
                         InputType::SeedPhrase => {
@@ -834,23 +871,18 @@ impl Update<Message> for Model<'_> {
                     }
                     None
                 }
-                Message::FetchContractById(s) => {
-                    self.app
-                        .umount(&ComponentId::Input)
-                        .expect("unable to umount component");
-                    self.app
-                        .mount(
-                            ComponentId::CommandPallet,
-                            Box::new(GetIdentityScreenCommands::new()),
-                            vec![],
-                        )
-                        .expect("unable to mount component");
-                    self.app
-                        .active(&ComponentId::CommandPallet)
-                        .expect("cannot set active");
+                Message::FetchContractById(name, identifier) => {
+                    let data_contract = self
+                        .runtime
+                        .block_on(DataContract::fetch(self.sdk, identifier));
 
-                    self.show_at_info(Err::<(), _>("unimplemented"));
-
+                    if let Ok(Some(data_contract)) = data_contract.as_ref() {
+                        self.state
+                            .known_contracts
+                            .insert(name, data_contract.clone());
+                        self.state.save();
+                    }
+                    self.show_at_info(data_contract);
                     None
                 }
                 Message::AddSingleKeyWallet(private_key) => {
@@ -972,32 +1004,33 @@ impl Update<Message> for Model<'_> {
                         .active(&ComponentId::CommandPallet)
                         .expect("cannot set active");
 
-                    let current = self.state.current_strategy.clone().unwrap_or_default();
-                    if let Some(strategy) = self.state.available_strategies.get_mut(&current) {
-                        if let Some(first_contract_key) = contracts.get(0) {
-                            if let Some(first_contract) =
-                                self.state.known_contracts.get(first_contract_key)
-                            {
-                                if contracts.len() == 1 {
-                                    strategy
-                                        .contracts_with_updates
-                                        .push((first_contract.clone(), None));
-                                } else {
-                                    let mut contract_updates = BTreeMap::new();
-
-                                    for (index, contract_key) in
-                                        contracts.iter().enumerate().skip(1)
-                                    {
-                                        if let Some(contract) =
-                                            self.state.known_contracts.get(contract_key)
-                                        {
-                                            contract_updates.insert(index as u64, contract.clone());
-                                        }
-                                    }
-
-                                    strategy
-                                        .contracts_with_updates
-                                        .push((first_contract.clone(), Some(contract_updates)));
+                    if let Some(current) = self.state.current_strategy.as_ref() {
+                        if let Some(strategy) = self.state.available_strategies.get_mut(current) {
+                            if let Some(first_contract_key) = contracts.get(0) {
+                                if let Some(first_contract) =
+                                    self.state.known_contracts.get(first_contract_key)
+                                {
+                                    // if contracts.len() == 1 {
+                                    //     strategy
+                                    //         .contracts_with_updates
+                                    //         .push((first_contract.clone(), None));
+                                    // } else {
+                                    //     let mut contract_updates = BTreeMap::new();
+                                    //
+                                    //     for (index, contract_key) in
+                                    //     contracts.iter().enumerate().skip(1)
+                                    //     {
+                                    //         if let Some(contract) =
+                                    //             self.state.known_contracts.get(contract_key)
+                                    //         {
+                                    //             contract_updates.insert(index as u64, contract.clone());
+                                    //         }
+                                    //     }
+                                    //
+                                    //     strategy
+                                    //         .contracts_with_updates
+                                    //         .push((first_contract.clone(), Some(contract_updates)));
+                                    // }
                                 }
                             }
                         }
@@ -1707,6 +1740,10 @@ impl Update<Message> for Model<'_> {
                         )
                         .expect("unable to remount screen");
 
+                    Some(Message::Redraw)
+                }
+                Message::DisplayError(error) => {
+                    self.current_screen.set_error(error);
                     Some(Message::Redraw)
                 }
             }

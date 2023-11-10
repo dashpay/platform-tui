@@ -2,8 +2,9 @@
 
 mod add_wallet;
 mod contract;
-mod get_contract;
 mod get_identity;
+mod get_system_contract;
+mod get_user_contract;
 mod identity;
 mod main;
 pub(crate) mod shared;
@@ -23,12 +24,14 @@ pub(crate) use add_wallet::AddWalletScreenCommands;
 pub(crate) use add_wallet::PrivateKeyInput;
 pub(crate) use contract::ContractScreen;
 pub(crate) use contract::ContractScreenCommands;
-pub(crate) use get_contract::ContractIdInput;
-pub(crate) use get_contract::GetContractScreen;
-pub(crate) use get_contract::GetContractScreenCommands;
 pub(crate) use get_identity::GetIdentityScreen;
 pub(crate) use get_identity::GetIdentityScreenCommands;
 pub(crate) use get_identity::IdentityIdInput;
+pub(crate) use get_system_contract::GetSystemContractScreen;
+pub(crate) use get_system_contract::GetSystemContractScreenCommands;
+pub(crate) use get_user_contract::GetUserContractScreen;
+pub(crate) use get_user_contract::GetUserContractScreenCommands;
+pub(crate) use get_user_contract::UserContractIdInput;
 pub(crate) use identity::IdentityScreen;
 pub(crate) use identity::IdentityScreenCommands;
 pub(crate) use main::MainScreen;
