@@ -75,7 +75,7 @@ impl<C: FormController> Form<C> {
 /// [FormController] to process all of the results to produce a [Task] to
 /// return, since a user's input precedes some action.
 pub(crate) enum FormStatus {
-    Done(Task),
+    Done { task: Task, block: bool },
     Redraw,
     None,
 }

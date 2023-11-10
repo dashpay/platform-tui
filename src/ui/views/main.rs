@@ -75,7 +75,11 @@ impl ScreenController for MainScreenController {
             Event::Key(KeyEvent {
                 code: Key::Char('i'),
                 modifiers: KeyModifiers::NONE,
-            }) => ScreenFeedback::NextScreen(Box::new(IdentitiesScreenController::new())),
+            }) => {
+                ScreenFeedback::NextScreen(Box::new(
+                    |_| Box::new(IdentitiesScreenController::new()),
+                ))
+            }
             Event::Key(KeyEvent {
                 code: Key::Char('c'),
                 modifiers: KeyModifiers::NONE,
@@ -83,7 +87,9 @@ impl ScreenController for MainScreenController {
             Event::Key(KeyEvent {
                 code: Key::Char('s'),
                 modifiers: KeyModifiers::NONE,
-            }) => ScreenFeedback::NextScreen(Box::new(StrategiesScreenController::new())),
+            }) => ScreenFeedback::NextScreen(Box::new(|app_state| {
+                Box::new(StrategiesScreenController::new(app_state))
+            })),
             Event::Key(KeyEvent {
                 code: Key::Char('w'),
                 modifiers: KeyModifiers::NONE,
@@ -142,9 +148,10 @@ impl TestFormController {
 impl FormController for TestFormController {
     fn on_event(&mut self, event: KeyEvent) -> crate::ui::form::FormStatus {
         match self.input.on_event(event) {
-            crate::ui::form::InputStatus::Done(result) => {
-                FormStatus::Done(Task::RenderData(format!("{:?}", result)))
-            }
+            crate::ui::form::InputStatus::Done(result) => FormStatus::Done {
+                task: Task::None,
+                block: false,
+            },
             crate::ui::form::InputStatus::Redraw => FormStatus::Redraw,
             crate::ui::form::InputStatus::None => FormStatus::None,
         }

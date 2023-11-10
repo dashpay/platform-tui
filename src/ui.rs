@@ -9,6 +9,8 @@ mod screen;
 mod status_bar;
 mod views;
 
+use std::ops::Deref;
+
 use tuirealm::{
     terminal::TerminalBridge,
     tui::prelude::{Constraint, Direction, Layout},
@@ -20,7 +22,7 @@ use self::{
     status_bar::StatusBarState,
     views::main::MainScreenController,
 };
-use crate::{BackendEvent, Event, Task};
+use crate::{backend::AppState, BackendEvent, Event, Task};
 
 /// TUI entry point that handles terminal events as well as terminal output,
 /// linking UI parts together.
@@ -38,7 +40,6 @@ pub(crate) enum UiFeedback {
     Quit,
     ExecuteTask(Task),
     None,
-    RequestState,
 }
 
 impl Ui {
@@ -89,7 +90,11 @@ impl Ui {
         ui
     }
 
-    pub(crate) fn on_event(&mut self, event: Event) -> UiFeedback {
+    pub(crate) fn on_event(
+        &mut self,
+        app_state: impl Deref<Target = AppState>,
+        event: Event,
+    ) -> UiFeedback {
         let mut redraw = false;
 
         if let Event::Backend(BackendEvent::TaskCompleted(..)) = &event {
@@ -104,10 +109,12 @@ impl Ui {
 
         let ui_feedback = if let (Some(form), Event::Key(event)) = (&mut self.form, &event) {
             match form.on_event(*event) {
-                FormStatus::Done(task) => {
+                FormStatus::Done { task, block } => {
                     self.form = None;
-                    self.status_bar_state.blocked = true;
-                    self.blocked = true;
+                    if block {
+                        self.status_bar_state.blocked = true;
+                        self.blocked = true;
+                    }
                     UiFeedback::ExecuteTask(task)
                 }
                 FormStatus::Redraw => UiFeedback::Redraw,
@@ -115,15 +122,18 @@ impl Ui {
             }
         } else {
             match self.screen.on_event(event) {
-                ScreenFeedback::NextScreen(controller) => {
+                ScreenFeedback::NextScreen(controller_builder) => {
+                    let controller = controller_builder(app_state.deref());
                     self.status_bar_state.add_child(controller.name());
                     self.screen = Screen::new(controller);
-                    UiFeedback::RequestState
+                    UiFeedback::Redraw
                 }
-                ScreenFeedback::PreviousScreen(controller) => {
+                ScreenFeedback::PreviousScreen(controller_builder) => {
+                    let controller = controller_builder(app_state.deref());
+                    self.status_bar_state.add_child(controller.name());
                     self.status_bar_state.to_parent();
                     self.screen = Screen::new(controller);
-                    UiFeedback::RequestState
+                    UiFeedback::Redraw
                 }
                 ScreenFeedback::Form(controller) => {
                     self.form = Some(Form::new(controller));

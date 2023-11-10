@@ -12,6 +12,7 @@ use tuirealm::{
 
 use self::widgets::command_pallet;
 use super::{form::FormController, BackendEvent, Event};
+use crate::backend::AppState;
 
 /// Screen is the unit of navigation and representation in the TUI.
 /// It consists of two blocks:
@@ -120,10 +121,12 @@ impl ScreenToggleKey {
 }
 
 pub(crate) enum ScreenFeedback {
-    NextScreen(Box<dyn ScreenController>),
-    PreviousScreen(Box<dyn ScreenController>),
+    NextScreen(ScreenControllerBuilder),
+    PreviousScreen(ScreenControllerBuilder),
     Form(Box<dyn FormController>),
     Redraw,
     Quit,
     None,
 }
+
+pub(crate) type ScreenControllerBuilder = Box<dyn FnOnce(&AppState) -> Box<dyn ScreenController>>;

@@ -56,7 +56,9 @@ impl ScreenController for IdentitiesScreenController {
             Event::Key(KeyEvent {
                 code: Key::Char('q'),
                 modifiers: KeyModifiers::NONE,
-            }) => ScreenFeedback::PreviousScreen(Box::new(MainScreenController::new())),
+            }) => {
+                ScreenFeedback::PreviousScreen(Box::new(|_| Box::new(MainScreenController::new())))
+            }
             Event::Key(KeyEvent {
                 code: Key::Char('i'),
                 modifiers: KeyModifiers::NONE,
@@ -105,7 +107,10 @@ impl GetIdentityByIdFormController {
 impl FormController for GetIdentityByIdFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
         match self.input.on_event(event) {
-            InputStatus::Done(value) => FormStatus::Done(Task::FetchIdentityById(value)),
+            InputStatus::Done(value) => FormStatus::Done {
+                task: Task::FetchIdentityById(value),
+                block: true,
+            },
             InputStatus::Redraw => FormStatus::Redraw,
             InputStatus::None => FormStatus::None,
         }

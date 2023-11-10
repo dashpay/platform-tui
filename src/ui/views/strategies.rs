@@ -7,7 +7,7 @@ use tuirealm::{
 };
 
 use crate::{
-    backend::{AppState, BackendEvent, Task},
+    backend::{AppState, Task},
     ui::{
         form::{FormController, FormStatus, Input, InputStatus, SelectInput},
         screen::{
@@ -30,10 +30,10 @@ pub(crate) struct StrategiesScreenController {
 }
 
 impl StrategiesScreenController {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(app_state: &AppState) -> Self {
         StrategiesScreenController {
             info: Info::new_fixed("Strategies management commands"),
-            available_strategies: Vec::new(),
+            available_strategies: app_state.available_strategies.keys().cloned().collect(),
         }
     }
 }
@@ -56,19 +56,15 @@ impl ScreenController for StrategiesScreenController {
             Event::Key(KeyEvent {
                 code: Key::Char('q'),
                 modifiers: KeyModifiers::NONE,
-            }) => ScreenFeedback::PreviousScreen(Box::new(MainScreenController::new())),
+            }) => {
+                ScreenFeedback::PreviousScreen(Box::new(|_| Box::new(MainScreenController::new())))
+            }
             Event::Key(KeyEvent {
                 code: Key::Char('s'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::Form(Box::new(SelectStrategyFormController::new(
                 self.available_strategies.clone(),
             ))),
-
-            Event::Backend(BackendEvent::AppStateUpdated(app_state)) => {
-                self.available_strategies =
-                    app_state.available_strategies.keys().cloned().collect();
-                ScreenFeedback::None
-            }
             _ => ScreenFeedback::None,
         }
     }
@@ -93,7 +89,10 @@ impl SelectStrategyFormController {
 impl FormController for SelectStrategyFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
         match self.input.on_event(event) {
-            InputStatus::Done(strategy_name) => FormStatus::Done(Task::RenderData(strategy_name)),
+            InputStatus::Done(strategy_name) => FormStatus::Done {
+                task: Task::SelectStrategy(strategy_name),
+                block: false,
+            },
             InputStatus::Redraw => FormStatus::Redraw,
             InputStatus::None => FormStatus::None,
         }

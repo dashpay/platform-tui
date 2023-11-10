@@ -6,11 +6,16 @@ mod insight;
 mod state;
 mod wallet;
 
-use std::fmt::Display;
+use std::{
+    collections::BTreeMap,
+    fmt::Display,
+    sync::{RwLock, RwLockReadGuard},
+};
 
 use rs_sdk::Sdk;
 use serde::Serialize;
 pub(crate) use state::AppState;
+use strategy_tests::Strategy;
 use tokio::sync::Mutex;
 
 use self::identities::fetch_identity_by_b58_id;
@@ -18,42 +23,56 @@ use self::identities::fetch_identity_by_b58_id;
 #[derive(Clone, PartialEq)]
 pub(crate) enum Task {
     FetchIdentityById(String),
+    SelectStrategy(String),
 
-    /// Variant for testing purposes
-    RenderData(String),
+    /// For testing purposes
+    None,
 }
 
-pub(crate) enum BackendEvent<'s> {
+pub(crate) enum BackendEvent {
     IdentityLoaded,
     IdentityUnloaded,
     TaskCompleted(Task, Result<String, String>),
-    AppStateUpdated(&'s AppState),
+    AppStateUpdated(AppStateUpdate),
+}
+
+pub(crate) enum AppStateUpdate {
+    AvailableStrategies(BTreeMap<String, Strategy>),
+    SelectedStrategy(String),
 }
 
 pub(crate) struct Backend {
     sdk: Mutex<Sdk>,
-    app_state: AppState,
+    app_state: RwLock<AppState>,
 }
 
 impl Backend {
     pub(crate) async fn new(sdk: Sdk) -> Self {
         Backend {
             sdk: Mutex::new(sdk),
-            app_state: AppState::load().await,
+            app_state: RwLock::new(AppState::load().await),
         }
     }
 
-    pub(crate) fn state(&self) -> &AppState {
-        &self.app_state
+    pub(crate) fn state(&self) -> RwLockReadGuard<AppState> {
+        self.app_state.read().expect("lock is poisoned")
     }
 
-    pub(crate) async fn run_task(&self, task: Task) -> Result<String, String> {
+    pub(crate) async fn run_task(&self, task: Task) -> BackendEvent {
         match task {
-            Task::FetchIdentityById(base58_id) => {
+            Task::FetchIdentityById(ref base58_id) => {
                 let mut sdk = self.sdk.lock().await;
-                fetch_identity_by_b58_id(&mut sdk, &base58_id).await
+                let result = fetch_identity_by_b58_id(&mut sdk, &base58_id).await;
+                BackendEvent::TaskCompleted(task, result)
             }
-            Task::RenderData(s) => Ok(s),
+            Task::SelectStrategy(strategy) => {
+                self.app_state
+                    .write()
+                    .expect("lock is poisoned")
+                    .selected_strategy = Some(strategy.clone());
+                BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(strategy))
+            }
+            Task::None => BackendEvent::TaskCompleted(task, Ok("".to_owned())),
         }
     }
 }
