@@ -5,7 +5,8 @@ mod status;
 pub(crate) use breadcrumbs::Breadcrumbs;
 pub(crate) use screen::{
     AddContractStruct, AddWalletScreen, AddWalletScreenCommands, ConfirmStrategyScreen,
-    ConfirmStrategyScreenCommands, ContractScreen, ContractScreenCommands, ContractUpdateStruct,
+    ConfirmStrategyScreenCommands, ContractScreen, ContractScreenCommands, ChooseDocumentTypeScreen,
+    ChooseDocumentTypeScreenCommands, DocumentTypeScreen, DocumentTypeScreenCommands, ContractUpdateStruct,
     CreateStrategyScreen, CreateStrategyScreenCommands, DeleteStrategyStruct, DocumentStruct,
     FrequencyStruct, GetIdentityScreen, GetIdentityScreenCommands, GetSystemContractScreen,
     GetSystemContractScreenCommands, GetUserContractScreen, GetUserContractScreenCommands,

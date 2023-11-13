@@ -4,11 +4,15 @@ use dapi_grpc::core::v0::{
     BroadcastTransactionRequest, BroadcastTransactionResponse, GetTransactionRequest,
 };
 use std::collections::BTreeMap;
+use dapi_grpc::platform::v0::get_identity_balance_request::GetIdentityBalanceRequestV0;
+use dapi_grpc::platform::v0::{get_identity_balance_request, GetIdentityBalanceRequest};
+use dash_platform_sdk::platform::Fetch;
 
 use dash_platform_sdk::platform::transition::put_identity::PutIdentity;
 use dash_platform_sdk::Sdk;
 use dpp::dashcore::psbt::serialize::Serialize;
 use dpp::dashcore::{InstantLock, OutPoint, Transaction};
+use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
 use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use dpp::prelude::{AssetLockProof, Identity, IdentityPublicKey};
 use rand::rngs::StdRng;
@@ -30,6 +34,18 @@ pub(super) fn identity_to_spans(identity: &Identity) -> Result<Vec<PropValue>, E
 
 
 impl AppState {
+    pub(crate) async fn refresh_identity_balance(
+        &mut self,
+        sdk: &Sdk,
+    ) -> Result<(), Error> {
+        if let Some(identity) = self.loaded_identity.as_mut() {
+            let balance = u64::fetch(sdk, GetIdentityBalanceRequest { version: Some(get_identity_balance_request::Version::V0(GetIdentityBalanceRequestV0 { id: identity.id().to_vec(), prove: true })) }).await?;
+            if let Some(balance) = balance {
+                identity.set_balance(balance)
+            }
+        }
+        Ok(())
+    }
     pub(crate) async fn register_new_identity(
         &mut self,
         sdk: &Sdk,

@@ -18,12 +18,18 @@ mod strategy_operations;
 mod strategy_start_identities;
 mod version_upgrade;
 mod wallet;
+mod choose_document_type;
+mod document_type;
 
 pub(crate) use add_wallet::AddWalletScreen;
 pub(crate) use add_wallet::AddWalletScreenCommands;
 pub(crate) use add_wallet::PrivateKeyInput;
 pub(crate) use contract::ContractScreen;
 pub(crate) use contract::ContractScreenCommands;
+pub(crate) use choose_document_type::ChooseDocumentTypeScreen;
+pub(crate) use choose_document_type::ChooseDocumentTypeScreenCommands;
+pub(crate) use document_type::DocumentTypeScreen;
+pub(crate) use document_type::DocumentTypeScreenCommands;
 pub(crate) use get_identity::GetIdentityScreen;
 pub(crate) use get_identity::GetIdentityScreenCommands;
 pub(crate) use get_identity::IdentityIdInput;

@@ -10,12 +10,13 @@ mod wallet;
 use dpp::dashcore::secp256k1::rand::rngs::StdRng;
 use dpp::dashcore::secp256k1::rand::SeedableRng;
 use std::cmp::min;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::v0::random_document_type::{
     FieldMinMaxBounds, FieldTypeWeights, RandomDocumentTypeParameters,
 };
+use dash_platform_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::prelude::{DataContract, Identifier};
 use dpp::version::PlatformVersion;
@@ -32,11 +33,19 @@ use cli_clipboard::{ClipboardContext, ClipboardProvider};
 use dash_platform_sdk::platform::Fetch;
 use dash_platform_sdk::Sdk;
 use std::{fmt::Display, time::Duration};
+use dapi_grpc::platform::v0::{get_identity_balance_request, GetIdentityBalanceRequest};
+use dapi_grpc::platform::v0::get_identity_balance_request::GetIdentityBalanceRequestV0;
 
 use dpp::dashcore::psbt::serialize::Serialize as dashcoreSerialize;
 use dpp::dashcore::{secp256k1::Secp256k1, Address, Network, PrivateKey};
-use dpp::identity::Identity;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::random_document::CreateRandomDocument;
+use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::{Identity, KeyType, Purpose};
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::platform_value::string_encoding::Encoding;
+use dpp::state_transition::documents_batch_transition::{DocumentCreateTransition, DocumentsBatchTransition};
+use dpp::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use hex::ToHex;
 use serde::Serialize;
 use tokio::runtime::{Handle, Runtime};
@@ -57,6 +66,7 @@ use crate::{
     },
     components::*,
 };
+use crate::app::Message::UpdateIdentityBalance;
 
 use self::strategies::{default_strategy, Description};
 
@@ -101,6 +111,10 @@ fn make_screen_subs() -> Vec<Sub<ComponentId, NoUserEvent>> {
 }
 type ErrorString = String;
 
+type DataContractName = String;
+
+type DocumentTypeName = String;
+
 /// Screen identifiers
 #[derive(Debug, Hash, Clone, Eq, PartialEq, strum::AsRefStr)]
 pub(super) enum Screen {
@@ -111,6 +125,8 @@ pub(super) enum Screen {
     FetchUserContract(Option<ErrorString>),
     FetchSystemContract(Option<ErrorString>),
     SelectContract,
+    ChooseDocumentType(DataContractName),
+    DocumentType(DataContractName, DocumentTypeName),
     Wallet,
     AddWallet,
     VersionUpgrade,
@@ -188,6 +204,7 @@ pub(super) enum Message {
     FetchContractById(String, Identifier),
     AddSingleKeyWallet(String),
     UpdateLoadedWalletUTXOsAndBalance,
+    UpdateIdentityBalance,
     RegisterIdentity,
     FetchVersionUpgradeState,
     SelectedStrategy(usize),
@@ -212,6 +229,8 @@ pub(super) enum Message {
     ContractCreate,
     ContractUpdate(usize),
     SelectContract(usize),
+    SelectDocumentType(String, usize),
+    BroadcastRandomDocument(DataContract, DocumentType),
 }
 
 pub(super) struct Model<'a> {
@@ -609,6 +628,43 @@ impl<'a> Model<'a> {
                     .umount(&ComponentId::CommandPallet)
                     .expect("unable to remount screen");
             }
+            Screen::ChooseDocumentType(data_contract_identifier) => {
+                let data_contract = self.state.known_contracts.get(&data_contract_identifier).expect("expected a contract");
+                self.app
+                    .remount(
+                        ComponentId::Screen,
+                        Box::new(ChooseDocumentTypeScreen::new(data_contract_identifier, data_contract.clone())),
+                        make_screen_subs(),
+                    )
+                    .expect("unable to remount screen");
+
+                self.app
+                    .remount(
+                        ComponentId::CommandPallet,
+                        Box::new(ChooseDocumentTypeScreenCommands::new()),
+                        Vec::new(),
+                    )
+                    .expect("unable to remount screen");
+            }
+            Screen::DocumentType(data_contract_identifier, document_type_name) => {
+                let data_contract = self.state.known_contracts.get(&data_contract_identifier).expect("expected a contract");
+                let document_type = data_contract.document_types().get(&document_type_name).expect("expected a document type");
+                self.app
+                    .remount(
+                        ComponentId::Screen,
+                        Box::new(DocumentTypeScreen::new(data_contract.clone(), document_type.clone())),
+                        make_screen_subs(),
+                    )
+                    .expect("unable to remount screen");
+
+                self.app
+                    .remount(
+                        ComponentId::CommandPallet,
+                        Box::new(DocumentTypeScreenCommands::new()),
+                        Vec::new(),
+                    )
+                    .expect("unable to remount screen");
+            }
         }
         self.app
             .attr(
@@ -888,6 +944,32 @@ impl Update<Message> for Model<'_> {
                             .remount(
                                 ComponentId::Screen,
                                 Box::new(WalletScreen::new(&self.state, "Updated balance")),
+                                make_screen_subs(),
+                            )
+                            .expect("unable to remount screen");
+                    }
+                    None
+                }
+                Message::UpdateIdentityBalance => {
+                    if let Some(identity) = self.state.loaded_identity.as_ref() {
+                        self.app
+                            .remount(
+                                ComponentId::Screen,
+                                Box::new(WalletScreen::new(&self.state, "Updating identity balance")),
+                                make_screen_subs(),
+                            )
+                            .expect("unable to remount screen");
+
+                        self.view();
+
+                        self.runtime.block_on(self.state.refresh_identity_balance(self.sdk)).expect("expected to refresh balance");
+
+                        self.state.save();
+
+                        self.app
+                            .remount(
+                                ComponentId::Screen,
+                                Box::new(WalletScreen::new(&self.state, "Updated identity balance")),
                                 make_screen_subs(),
                             )
                             .expect("unable to remount screen");
@@ -1774,7 +1856,32 @@ impl Update<Message> for Model<'_> {
                     Some(Message::Redraw)
                 }
                 Message::SelectContract(contract_index) => {
-                    dbg!(contract_index);
+                    let contract = self.state.known_contracts.keys().nth(contract_index).unwrap();
+                    Some(Message::NextScreen(Screen::ChooseDocumentType(contract.clone())))
+                }
+                Message::SelectDocumentType(data_contract_name, document_type_index) => {
+                    let data_contract = self.state.known_contracts.get(&data_contract_name).unwrap();
+                    let document_type = data_contract.document_types().keys().nth(document_type_index).unwrap();
+                    Some(Message::NextScreen(Screen::DocumentType(data_contract_name, document_type.clone())))
+                }
+                Message::BroadcastRandomDocument(data_contract, document_type) => {
+                    let mut std_rng = StdRng::from_entropy();
+                    let random_document = document_type.random_document_with_rng(&mut std_rng, self.sdk.version()).expect("expected a random document");
+                    let Some(current_identity) = self.state.loaded_identity.as_ref() else {
+                        return None
+                    };
+
+                    let key = current_identity.get_first_public_key_matching(Purpose::AUTHENTICATION, HashSet::from([document_type.security_level_requirement()]), HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381])).expect("expected a key");
+                    let mut signer = SimpleSigner::default();
+
+                    signer.add_key(key.clone(), self.state.identity_private_keys.get(&(current_identity.id(), key.id())).expect("expected private key").to_bytes());
+
+                    let transition = DocumentsBatchTransition::new_document_creation_transition_from_document(random_document, document_type.as_ref(), std_rng.gen(), key, &signer, self.sdk.version(), None, None, None).expect("expected a document create transition");
+
+                    let result = self
+                        .runtime
+                        .block_on(transition.broadcast_and_wait(self.sdk,None));
+                    self.view();
                     None
                 }
             }

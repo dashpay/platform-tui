@@ -97,6 +97,11 @@ impl WalletScreenCommands {
                             description: "Refresh utxos and balance",
                             key_type: KeyType::Command,
                         },
+                        CommandPalletKey {
+                            key: 'b',
+                            description: "Refresh identity balance",
+                            key_type: KeyType::Command,
+                        },
                     ]),
                 }
             } else {
@@ -176,6 +181,10 @@ impl Component<Message, NoUserEvent> for WalletScreenCommands {
                 code: Key::Char('r'),
                 modifiers: KeyModifiers::NONE,
             }) => Some(Message::UpdateLoadedWalletUTXOsAndBalance),
+            Event::Keyboard(KeyEvent {
+                code: Key::Char('b'),
+                modifiers: KeyModifiers::NONE,
+            }) => Some(Message::UpdateIdentityBalance),
             _ => None,
         }
     }
