@@ -2,13 +2,35 @@
 
 use std::collections::BTreeMap;
 
-use dpp::{prelude::DataContract, data_contract::{document_type::{DocumentType, random_document::{DocumentFieldFillType, DocumentFieldFillSize}}, created_data_contract::CreatedDataContract, accessors::v0::DataContractV0Getters}};
+use dpp::{
+    data_contract::{
+        accessors::v0::DataContractV0Getters,
+        created_data_contract::CreatedDataContract,
+        document_type::{
+            random_document::{DocumentFieldFillSize, DocumentFieldFillType},
+            DocumentType,
+        },
+    },
+    prelude::DataContract,
+};
 use strategy_tests::operations::DocumentAction;
-use tui_realm_stdlib::{Paragraph, List};
-use tuirealm::{MockComponent, Component, NoUserEvent, Event, event::{KeyEvent, Key, KeyModifiers}, props::{TextSpan, TableBuilder, Alignment}, command::{Cmd, Direction}};
+use tui_realm_stdlib::{List, Paragraph};
+use tuirealm::{
+    command::{Cmd, Direction},
+    event::{Key, KeyEvent, KeyModifiers},
+    props::{Alignment, TableBuilder, TextSpan},
+    Component, Event, MockComponent, NoUserEvent,
+};
 
-use crate::{app::{Message, state::AppState, strategies::{default_strategy, Description}}, mock_components::{CommandPallet, CommandPalletKey, KeyType}};
 use crate::app::InputType::SelectOperationType;
+use crate::{
+    app::{
+        state::AppState,
+        strategies::{default_strategy, Description},
+        Message,
+    },
+    mock_components::{CommandPallet, CommandPalletKey, KeyType},
+};
 
 #[derive(MockComponent)]
 pub(crate) struct StrategyOperationsScreen {
@@ -17,20 +39,21 @@ pub(crate) struct StrategyOperationsScreen {
 
 impl StrategyOperationsScreen {
     pub(crate) fn new(app_state: &AppState) -> Self {
-
         let mut combined_spans = Vec::new();
         if let Some(strategy_key) = &app_state.current_strategy {
             // Append the current strategy name in bold to combined_spans
             combined_spans.push(TextSpan::new(&format!("{}:", strategy_key)).bold());
-        
+
             if let Some(strategy) = app_state.available_strategies.get(strategy_key) {
                 for (key, value) in &strategy.strategy_description() {
                     combined_spans.push(TextSpan::new(&format!("  {}:", key)).bold());
-                    combined_spans.push(TextSpan::new(&format!("    {}",value)));
+                    combined_spans.push(TextSpan::new(&format!("    {}", value)));
                 }
             } else {
                 // Handle the case where the strategy_key doesn't exist in available_strategies
-                combined_spans.push(TextSpan::new("Error: current strategy not found in available strategies."));
+                combined_spans.push(TextSpan::new(
+                    "Error: current strategy not found in available strategies.",
+                ));
             }
         } else {
             // Handle the case where app_state.current_strategy is None
@@ -38,7 +61,7 @@ impl StrategyOperationsScreen {
         }
 
         StrategyOperationsScreen {
-            component: Paragraph::default().text(combined_spans.as_ref())
+            component: Paragraph::default().text(combined_spans.as_ref()),
         }
     }
 }
@@ -108,19 +131,21 @@ impl SelectOperationTypeStruct {
     pub(crate) fn new(app_state: &mut AppState) -> Self {
         if app_state.current_strategy.is_none() {
             app_state.current_strategy = Some("new_strategy".to_string());
-            app_state.available_strategies.insert("new_strategy".to_string(), default_strategy());
+            app_state
+                .available_strategies
+                .insert("new_strategy".to_string(), default_strategy());
         }
 
         let op_types: Vec<String> = vec![
-            "Document".to_string(), 
-            "IdentityTopUp".to_string(), 
-            "IdentityUpdate".to_string(), 
+            "Document".to_string(),
+            "IdentityTopUp".to_string(),
+            "IdentityUpdate".to_string(),
             "IdentityWithdrawal".to_string(),
             "ContractCreate".to_string(),
             "ContractUpdate".to_string(),
             "IdentityTransfer".to_string(),
-            ];
-                
+        ];
+
         let mut rows = TableBuilder::default();
         for name in op_types.iter() {
             rows.add_col(TextSpan::from(name));
@@ -129,13 +154,16 @@ impl SelectOperationTypeStruct {
 
         Self {
             component: List::default()
-                    .title("Select an operation type. Press 'q' to go back.", Alignment::Center)
-                    .scroll(true)
-                    .highlighted_str("> ")
-                    .rewind(true)
-                    .step(1)
-                    .rows(rows.build())
-                    .selected_line(0),
+                .title(
+                    "Select an operation type. Press 'q' to go back.",
+                    Alignment::Center,
+                )
+                .scroll(true)
+                .highlighted_str("> ")
+                .rewind(true)
+                .step(1)
+                .rows(rows.build())
+                .selected_line(0),
             selected_index: 0,
         }
     }
@@ -147,32 +175,27 @@ impl Component<Message, NoUserEvent> for SelectOperationTypeStruct {
             Event::Keyboard(KeyEvent {
                 code: Key::Down, ..
             }) => {
-                let max_index = self.component.states.list_len-2;
+                let max_index = self.component.states.list_len - 2;
                 if self.selected_index < max_index {
                     self.selected_index = self.selected_index + 1;
                     self.perform(Cmd::Move(Direction::Down));
                 }
                 Some(Message::Redraw)
-            },
-            Event::Keyboard(KeyEvent { 
-                code: Key::Up, .. 
-            }) => {
+            }
+            Event::Keyboard(KeyEvent { code: Key::Up, .. }) => {
                 if self.selected_index > 0 {
                     self.selected_index -= 1;
                     self.perform(Cmd::Move(Direction::Up));
-                }            
+                }
                 Some(Message::Redraw)
-            },
+            }
             Event::Keyboard(KeyEvent {
                 code: Key::Enter, ..
-            }) => {
-                Some(Message::SelectOperationType(self.selected_index))
-            }
+            }) => Some(Message::SelectOperationType(self.selected_index)),
             Event::Keyboard(KeyEvent {
-                code: Key::Char('q'), ..
-            }) => {
-                Some(Message::ReloadScreen)
-            }
+                code: Key::Char('q'),
+                ..
+            }) => Some(Message::ReloadScreen),
             _ => None,
         }
     }
@@ -188,7 +211,7 @@ pub(crate) struct FrequencyStruct {
     component: List,
     selected_index: usize,
     selection_state: FrequencySelectionState,
-    field: String
+    field: String,
 }
 
 impl FrequencyStruct {
@@ -201,7 +224,10 @@ impl FrequencyStruct {
             rows.add_row();
         }
         self.component = List::default()
-            .title("Select the chance per block (CPB) for the action to occur", Alignment::Center)
+            .title(
+                "Select the chance per block (CPB) for the action to occur",
+                Alignment::Center,
+            )
             .scroll(true)
             .highlighted_str("> ")
             .rewind(true)
@@ -220,7 +246,10 @@ impl FrequencyStruct {
 
         Self {
             component: List::default()
-                .title("Select the times per block (TPB) for the action to occur", Alignment::Center)
+                .title(
+                    "Select the times per block (TPB) for the action to occur",
+                    Alignment::Center,
+                )
                 .scroll(true)
                 .highlighted_str("> ")
                 .rewind(true)
@@ -229,7 +258,7 @@ impl FrequencyStruct {
                 .selected_line(0),
             selected_index: 0,
             selection_state: FrequencySelectionState::SelectingTimesPerBlockRange,
-            field: field,
+            field,
         }
     }
 }
@@ -240,70 +269,62 @@ impl Component<Message, NoUserEvent> for FrequencyStruct {
             Event::Keyboard(KeyEvent {
                 code: Key::Down, ..
             }) => {
-                let max_index = self.component.states.list_len-2;
+                let max_index = self.component.states.list_len - 2;
                 if self.selected_index < max_index {
                     self.selected_index = self.selected_index + 1;
                     self.perform(Cmd::Move(Direction::Down));
                 }
                 Some(Message::Redraw)
-            },
-            Event::Keyboard(KeyEvent { 
-                code: Key::Up, .. 
-            }) => {
+            }
+            Event::Keyboard(KeyEvent { code: Key::Up, .. }) => {
                 if self.selected_index > 0 {
                     self.selected_index -= 1;
                     self.perform(Cmd::Move(Direction::Up));
-                }            
-                Some(Message::Redraw)
-            },
-            Event::Keyboard(KeyEvent { code: Key::Enter, .. }) => {
-                match &mut self.selection_state {
-                    FrequencySelectionState::SelectingTimesPerBlockRange => {
-                        let tpbr = match self.selected_index {
-                            0 => 1,
-                            1 => 2,
-                            2 => 5,
-                            3 => 10,
-                            4 => 20,
-                            5 => 40,
-                            6 => 100,
-                            7 => 1000,
-                            _ => panic!("Invalid tpbr index"),
-                        };
-
-                        self.selection_state = FrequencySelectionState::SelectingChancePerBlock { 
-                            tpbr,
-                        };
-
-                        self.update_component_for_cpb();
-
-                        Some(Message::Redraw)
-                    },
-                    FrequencySelectionState::SelectingChancePerBlock { tpbr } => {
-                        let cpb = match self.selected_index {
-                            0 => 1.0,
-                            1 => 0.9,
-                            2 => 0.75,
-                            3 => 0.5,
-                            4 => 0.25,
-                            5 => 0.1,
-                            6 => 0.05,
-                            7 => 0.01,
-                            _ => panic!("Invalid tpbr index"),
-                        };
-                        Some(Message::Frequency(
-                            self.field.clone(),
-                            tpbr.clone(),
-                            cpb,
-                        ))
-                    },
                 }
+                Some(Message::Redraw)
             }
             Event::Keyboard(KeyEvent {
-                code: Key::Char('q'), ..
-            }) => {
-                Some(Message::ReloadScreen)
-            }
+                code: Key::Enter, ..
+            }) => match &mut self.selection_state {
+                FrequencySelectionState::SelectingTimesPerBlockRange => {
+                    let tpbr = match self.selected_index {
+                        0 => 1,
+                        1 => 2,
+                        2 => 5,
+                        3 => 10,
+                        4 => 20,
+                        5 => 40,
+                        6 => 100,
+                        7 => 1000,
+                        _ => panic!("Invalid tpbr index"),
+                    };
+
+                    self.selection_state =
+                        FrequencySelectionState::SelectingChancePerBlock { tpbr };
+
+                    self.update_component_for_cpb();
+
+                    Some(Message::Redraw)
+                }
+                FrequencySelectionState::SelectingChancePerBlock { tpbr } => {
+                    let cpb = match self.selected_index {
+                        0 => 1.0,
+                        1 => 0.9,
+                        2 => 0.75,
+                        3 => 0.5,
+                        4 => 0.25,
+                        5 => 0.1,
+                        6 => 0.05,
+                        7 => 0.01,
+                        _ => panic!("Invalid tpbr index"),
+                    };
+                    Some(Message::Frequency(self.field.clone(), tpbr.clone(), cpb))
+                }
+            },
+            Event::Keyboard(KeyEvent {
+                code: Key::Char('q'),
+                ..
+            }) => Some(Message::ReloadScreen),
             _ => None,
         }
     }
@@ -311,8 +332,13 @@ impl Component<Message, NoUserEvent> for FrequencyStruct {
 
 enum DocumentSelectionState {
     SelectingContract,
-    SelectingDocumentType { contract: DataContract },
-    SelectingAction { contract: DataContract, doc_type: DocumentType },
+    SelectingDocumentType {
+        contract: DataContract,
+    },
+    SelectingAction {
+        contract: DataContract,
+        doc_type: DocumentType,
+    },
 }
 
 #[derive(MockComponent)]
@@ -320,7 +346,7 @@ pub(crate) struct DocumentStruct {
     component: List,
     selected_index: usize,
     selection_state: DocumentSelectionState,
-    known_contracts: BTreeMap<String, CreatedDataContract>,
+    known_contracts: BTreeMap<String, DataContract>,
     available_document_types: Option<BTreeMap<String, DocumentType>>,
 }
 
@@ -334,7 +360,10 @@ impl DocumentStruct {
             rows.add_row();
         }
         self.component = List::default()
-            .title("Select a document type. Press 'q' to go back.", Alignment::Center)
+            .title(
+                "Select a document type. Press 'q' to go back.",
+                Alignment::Center,
+            )
             .scroll(true)
             .highlighted_str("> ")
             .rewind(true)
@@ -364,7 +393,9 @@ impl DocumentStruct {
     pub(crate) fn new(app_state: &mut AppState) -> Self {
         if app_state.current_strategy.is_none() {
             app_state.current_strategy = Some("new_strategy".to_string());
-            app_state.available_strategies.insert("new_strategy".to_string(), default_strategy());
+            app_state
+                .available_strategies
+                .insert("new_strategy".to_string(), default_strategy());
         }
 
         let contracts = &app_state.known_contracts;
@@ -376,7 +407,10 @@ impl DocumentStruct {
 
         Self {
             component: List::default()
-                .title("Select a contract. Press 'q' to go back.", Alignment::Center)
+                .title(
+                    "Select a contract. Press 'q' to go back.",
+                    Alignment::Center,
+                )
                 .scroll(true)
                 .highlighted_str("> ")
                 .rewind(true)
@@ -397,67 +431,79 @@ impl Component<Message, NoUserEvent> for DocumentStruct {
             Event::Keyboard(KeyEvent {
                 code: Key::Down, ..
             }) => {
-                let max_index = self.component.states.list_len-2;
+                let max_index = self.component.states.list_len - 2;
                 if self.selected_index < max_index {
                     self.selected_index = self.selected_index + 1;
                     self.perform(Cmd::Move(Direction::Down));
                 }
                 Some(Message::Redraw)
-            },
-            Event::Keyboard(KeyEvent { 
-                code: Key::Up, .. 
-            }) => {
+            }
+            Event::Keyboard(KeyEvent { code: Key::Up, .. }) => {
                 if self.selected_index > 0 {
                     self.selected_index -= 1;
                     self.perform(Cmd::Move(Direction::Up));
-                }            
-                Some(Message::Redraw)
-            },
-            Event::Keyboard(KeyEvent { code: Key::Enter, .. }) => {
-                match &mut self.selection_state {
-                    DocumentSelectionState::SelectingContract => {
-                        let contract_clone = self.known_contracts.values().nth(self.selected_index).unwrap().clone();
-                        let selected_contract = contract_clone.data_contract();
-                        let document_types = selected_contract.document_types();
-                                                
-                        self.selection_state = DocumentSelectionState::SelectingDocumentType { contract: selected_contract.clone() };
-                        self.available_document_types = Some(document_types.clone());
-                        self.update_component_for_document_types();
-                        
-                        Some(Message::Redraw)
-                    },
-                    DocumentSelectionState::SelectingDocumentType { contract } => {
-                        let selected_document_type = self.available_document_types.clone().unwrap().values().nth(self.selected_index).unwrap().clone();
-                                
-                        self.selection_state = DocumentSelectionState::SelectingAction { 
-                            contract: contract.clone(),
-                            doc_type: selected_document_type.clone(),
-                        };
-                        self.update_component_for_actions();
-                        
-                        Some(Message::Redraw)
-                    },
-                    DocumentSelectionState::SelectingAction { contract, doc_type } => {
-                        let action = match self.selected_index {
-                            0 => DocumentAction::DocumentActionInsertRandom(DocumentFieldFillType::FillIfNotRequired, DocumentFieldFillSize::AnyDocumentFillSize),
-                            1 => DocumentAction::DocumentActionDelete,
-                            2 => DocumentAction::DocumentActionReplace,
-                            _ => panic!("Invalid action index"),
-                        };
-
-                        Some(Message::DocumentOp(
-                            contract.clone(), 
-                            doc_type.clone(),
-                            action.clone(),
-                        ))
-                    },
                 }
+                Some(Message::Redraw)
             }
             Event::Keyboard(KeyEvent {
-                code: Key::Char('q'), ..
-            }) => {
-                Some(Message::ReloadScreen)
-            }
+                code: Key::Enter, ..
+            }) => match &mut self.selection_state {
+                DocumentSelectionState::SelectingContract => {
+                    let selected_contract = self
+                        .known_contracts
+                        .values()
+                        .nth(self.selected_index)
+                        .expect("expected contract");
+                    let document_types = selected_contract.document_types();
+
+                    self.selection_state = DocumentSelectionState::SelectingDocumentType {
+                        contract: selected_contract.clone(),
+                    };
+                    self.available_document_types = Some(document_types.clone());
+                    self.update_component_for_document_types();
+
+                    Some(Message::Redraw)
+                }
+                DocumentSelectionState::SelectingDocumentType { contract } => {
+                    let selected_document_type = self
+                        .available_document_types
+                        .clone()
+                        .unwrap()
+                        .values()
+                        .nth(self.selected_index)
+                        .unwrap()
+                        .clone();
+
+                    self.selection_state = DocumentSelectionState::SelectingAction {
+                        contract: contract.clone(),
+                        doc_type: selected_document_type.clone(),
+                    };
+                    self.update_component_for_actions();
+
+                    Some(Message::Redraw)
+                }
+                DocumentSelectionState::SelectingAction { contract, doc_type } => {
+                    let action = match self.selected_index {
+                        0 => DocumentAction::DocumentActionInsertRandom(
+                            DocumentFieldFillType::FillIfNotRequired,
+                            DocumentFieldFillSize::AnyDocumentFillSize,
+                        ),
+                        1 => DocumentAction::DocumentActionDelete,
+                        2 => DocumentAction::DocumentActionReplace,
+                        _ => panic!("Invalid action index"),
+                    };
+
+                    Some(Message::DocumentOp(
+                        contract.clone(),
+                        doc_type.clone(),
+                        action.clone(),
+                    ))
+                }
+            },
+            Event::Keyboard(KeyEvent {
+                code: Key::Char('q'),
+                ..
+            }) => Some(Message::ReloadScreen),
             _ => None,
         }
     }
@@ -477,7 +523,6 @@ pub(crate) struct IdentityUpdateStruct {
 }
 
 impl IdentityUpdateStruct {
-
     fn update_component_for_add_keys(&mut self) {
         self.selected_index = 0;
 
@@ -489,7 +534,10 @@ impl IdentityUpdateStruct {
             rows.add_row();
         }
         self.component = List::default()
-            .title("How many keys to add? Press 'q' to go back.", Alignment::Center)
+            .title(
+                "How many keys to add? Press 'q' to go back.",
+                Alignment::Center,
+            )
             .scroll(true)
             .highlighted_str("> ")
             .rewind(true)
@@ -509,7 +557,10 @@ impl IdentityUpdateStruct {
             rows.add_row();
         }
         self.component = List::default()
-            .title("How many keys to disable? Press 'q' to go back.", Alignment::Center)
+            .title(
+                "How many keys to disable? Press 'q' to go back.",
+                Alignment::Center,
+            )
             .scroll(true)
             .highlighted_str("> ")
             .rewind(true)
@@ -519,8 +570,7 @@ impl IdentityUpdateStruct {
     }
 
     pub(crate) fn new() -> Self {
-
-        let options = vec!["Add keys","Disable keys"];
+        let options = vec!["Add keys", "Disable keys"];
         let mut rows = TableBuilder::default();
         for option in options {
             rows.add_col(TextSpan::from(option));
@@ -529,7 +579,10 @@ impl IdentityUpdateStruct {
 
         Self {
             component: List::default()
-                .title("Select an IdentityUpdate operation. Press 'q' to go back.", Alignment::Center)
+                .title(
+                    "Select an IdentityUpdate operation. Press 'q' to go back.",
+                    Alignment::Center,
+                )
                 .scroll(true)
                 .highlighted_str("> ")
                 .rewind(true)
@@ -548,56 +601,62 @@ impl Component<Message, NoUserEvent> for IdentityUpdateStruct {
             Event::Keyboard(KeyEvent {
                 code: Key::Down, ..
             }) => {
-                let max_index = self.component.states.list_len-2;
+                let max_index = self.component.states.list_len - 2;
                 if self.selected_index < max_index {
                     self.selected_index = self.selected_index + 1;
                     self.perform(Cmd::Move(Direction::Down));
                 }
                 Some(Message::Redraw)
-            },
-            Event::Keyboard(KeyEvent { 
-                code: Key::Up, .. 
-            }) => {
+            }
+            Event::Keyboard(KeyEvent { code: Key::Up, .. }) => {
                 if self.selected_index > 0 {
                     self.selected_index -= 1;
                     self.perform(Cmd::Move(Direction::Up));
-                }            
+                }
                 Some(Message::Redraw)
-            },
-            Event::Keyboard(KeyEvent { code: Key::Enter, .. }) => {
-                match &mut self.selection_state {
-                    IdentityUpdateSelectionState::SelectingOp => {
-                        match self.selected_index {
-                            0 => {
-                                self.selection_state = IdentityUpdateSelectionState::SelectingAddKeys { op: "add".to_string() };
-                                self.update_component_for_add_keys();
-                            },
-                            1 => {
-                                self.selection_state = IdentityUpdateSelectionState::SelectingDisableKeys { op: "disable".to_string() };
-                                self.update_component_for_disable_keys();
-                            },
-                            _ => panic!("IdentityUpdateSelectionState::SelectingOp index out of bounds"),
-                        };
+            }
+            Event::Keyboard(KeyEvent {
+                code: Key::Enter, ..
+            }) => match &mut self.selection_state {
+                IdentityUpdateSelectionState::SelectingOp => {
+                    match self.selected_index {
+                        0 => {
+                            self.selection_state = IdentityUpdateSelectionState::SelectingAddKeys {
+                                op: "add".to_string(),
+                            };
+                            self.update_component_for_add_keys();
+                        }
+                        1 => {
+                            self.selection_state =
+                                IdentityUpdateSelectionState::SelectingDisableKeys {
+                                    op: "disable".to_string(),
+                                };
+                            self.update_component_for_disable_keys();
+                        }
+                        _ => {
+                            panic!("IdentityUpdateSelectionState::SelectingOp index out of bounds")
+                        }
+                    };
 
-                        Some(Message::Redraw)
-                    },
-                    IdentityUpdateSelectionState::SelectingAddKeys { op } => {     
+                    Some(Message::Redraw)
+                }
+                IdentityUpdateSelectionState::SelectingAddKeys { op } => {
+                    let count: u16 = match self.selected_index {
+                        0 => 1,
+                        1 => 10,
+                        2 => 100,
+                        3 => 1000,
+                        4 => 10000,
+                        5 => 65535,
+                        _ => panic!(
+                            "IdentityUpdateSelectionState::SelectingAddKeys index out of bounds"
+                        ),
+                    };
 
-                        let count: u16 = match self.selected_index {
-                            0 => 1,
-                            1 => 10,
-                            2 => 100,
-                            3 => 1000,
-                            4 => 10000,
-                            5 => 65535,
-                            _ => panic!("IdentityUpdateSelectionState::SelectingAddKeys index out of bounds"),
-                        };
-                        
-                        Some(Message::IdentityUpdate(op.to_string(), count))
-                    },
-                    IdentityUpdateSelectionState::SelectingDisableKeys { op } => {
-                        
-                        let count: u16 = match self.selected_index {
+                    Some(Message::IdentityUpdate(op.to_string(), count))
+                }
+                IdentityUpdateSelectionState::SelectingDisableKeys { op } => {
+                    let count: u16 = match self.selected_index {
                             0 => 1,
                             1 => 10,
                             2 => 100,
@@ -606,16 +665,14 @@ impl Component<Message, NoUserEvent> for IdentityUpdateStruct {
                             5 => 65535,
                             _ => panic!("IdentityUpdateSelectionState::SelectingDisableKeys index out of bounds"),
                         };
-                        
-                        Some(Message::IdentityUpdate(op.to_string(), count))
-                    },
+
+                    Some(Message::IdentityUpdate(op.to_string(), count))
                 }
-            }
+            },
             Event::Keyboard(KeyEvent {
-                code: Key::Char('q'), ..
-            }) => {
-                Some(Message::ReloadScreen)
-            }
+                code: Key::Char('q'),
+                ..
+            }) => Some(Message::ReloadScreen),
             _ => None,
         }
     }
@@ -629,7 +686,6 @@ pub(crate) struct ContractUpdateStruct {
 
 impl ContractUpdateStruct {
     pub(crate) fn new() -> Self {
-
         let options = vec!["New Document Types", "New Optional Fields"];
 
         let mut rows = TableBuilder::default();
@@ -640,14 +696,17 @@ impl ContractUpdateStruct {
 
         Self {
             component: List::default()
-                    .title("What type of contract update would you like to perform?", Alignment::Center)
-                    .scroll(true)
-                    .highlighted_str("> ")
-                    .rewind(true)
-                    .step(1)
-                    .rows(rows.build())
-                    .selected_line(0),
-                selected_index: 0,
+                .title(
+                    "What type of contract update would you like to perform?",
+                    Alignment::Center,
+                )
+                .scroll(true)
+                .highlighted_str("> ")
+                .rewind(true)
+                .step(1)
+                .rows(rows.build())
+                .selected_line(0),
+            selected_index: 0,
         }
     }
 }
@@ -658,32 +717,27 @@ impl Component<Message, NoUserEvent> for ContractUpdateStruct {
             Event::Keyboard(KeyEvent {
                 code: Key::Down, ..
             }) => {
-                let max_index = self.component.states.list_len-2;
+                let max_index = self.component.states.list_len - 2;
                 if self.selected_index < max_index {
                     self.selected_index = self.selected_index + 1;
                     self.perform(Cmd::Move(Direction::Down));
                 }
                 Some(Message::Redraw)
-            },
-            Event::Keyboard(KeyEvent { 
-                code: Key::Up, .. 
-            }) => {
+            }
+            Event::Keyboard(KeyEvent { code: Key::Up, .. }) => {
                 if self.selected_index > 0 {
                     self.selected_index -= 1;
                     self.perform(Cmd::Move(Direction::Up));
-                }            
+                }
                 Some(Message::Redraw)
-            },
+            }
             Event::Keyboard(KeyEvent {
                 code: Key::Enter, ..
-            }) => {
-                Some(Message::ContractUpdate(self.selected_index))
-            }
+            }) => Some(Message::ContractUpdate(self.selected_index)),
             Event::Keyboard(KeyEvent {
-                code: Key::Char('q'), ..
-            }) => {
-                Some(Message::ReloadScreen)
-            }
+                code: Key::Char('q'),
+                ..
+            }) => Some(Message::ReloadScreen),
             _ => None,
         }
     }

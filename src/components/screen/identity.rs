@@ -66,7 +66,7 @@ impl Component<Message, NoUserEvent> for IdentityScreenCommands {
             Event::Keyboard(KeyEvent {
                 code: Key::Char('g'),
                 modifiers: KeyModifiers::NONE,
-            }) => Some(Message::NextScreen(Screen::GetIdentity)),
+            }) => Some(Message::NextScreen(Screen::GetIdentity(None))),
             _ => None,
         }
     }

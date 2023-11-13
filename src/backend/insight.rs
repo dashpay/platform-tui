@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use dpp::dashcore::{network::Address, OutPoint, ScriptBuf, TxOut, Txid};
+use dpp::dashcore::{Address, OutPoint, ScriptBuf, TxOut, Txid};
 
 const ADDRESS_UTXO_PATH: &str = "addrs/utxo";
 const INSIGHT_URL: &str = "https://insight.dash.org/insight-api-dash";
@@ -39,7 +39,11 @@ async fn utxos(
 ) -> Result<HashMap<OutPoint, TxOut>, InsightError> {
     let url = format!("{}/{}", insight_url, ADDRESS_UTXO_PATH);
 
-    let addr_str = "TODO FIXME"; // addresses.join(",");
+    let addr_str = addresses
+        .iter()
+        .map(|address| address.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
     let resp = reqwest::Client::new()
         .post(&url)
         .header("Content-Type", "application/x-www-form-urlencoded")

@@ -7,7 +7,7 @@ mod start_identities;
 
 use std::collections::BTreeMap;
 
-use strategy_tests::{frequency::Frequency, Strategy};
+use strategy_tests::Strategy;
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
     tui::prelude::Rect,
@@ -20,9 +20,8 @@ use self::{
     start_identities::StrategyStartIdentitiesFormController,
 };
 use crate::{
-    backend::{AppState, BackendEvent, Task},
+    backend::{AppState, BackendEvent},
     ui::{
-        form::{ComposedInput, Field, FormController, FormStatus, Input, InputStatus, SelectInput},
         screen::{
             widgets::info::Info, ScreenCommandKey, ScreenController, ScreenFeedback,
             ScreenToggleKey,

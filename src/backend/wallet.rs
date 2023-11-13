@@ -12,8 +12,9 @@ use bincode::{
 };
 use dpp::dashcore::{
     hashes::Hash,
+    psbt::serialize::Serialize,
     secp256k1::{Message, Secp256k1},
-    sighash::{LegacySighash, SighashCache},
+    sighash::SighashCache,
     transaction::special_transaction::{asset_lock::AssetLockPayload, TransactionPayload},
     Address, Network, OutPoint, PrivateKey, PublicKey, Script, ScriptBuf, Transaction, TxIn, TxOut,
 };
@@ -22,11 +23,15 @@ use rand::{prelude::StdRng, Rng, SeedableRng};
 use super::insight::{utxos_with_amount_for_addresses, InsightError};
 
 #[derive(Debug, thiserror::Error)]
-#[error("wallet error: {0}")]
-pub(crate) struct WalletError(String);
+pub(crate) enum WalletError {
+    #[error(transparent)]
+    Insight(InsightError),
+    #[error("not enough balance")]
+    Balance,
+}
 
 #[derive(Debug, Clone, Encode, Decode)]
-pub(crate) enum Wallet {
+pub enum Wallet {
     SingleKeyWallet(SingleKeyWallet),
 }
 
@@ -48,6 +53,7 @@ impl Wallet {
             None => StdRng::from_entropy(),
             Some(seed_value) => StdRng::seed_from_u64(seed_value),
         };
+        let fee = 2000;
         let random_private_key: [u8; 32] = rng.gen();
         let private_key = PrivateKey::from_slice(&random_private_key, Network::Testnet)
             .expect("expected a private key");
@@ -59,24 +65,27 @@ impl Wallet {
 
         let (mut utxos, change) = self
             .take_unspent_utxos_for(amount)
-            .ok_or(WalletError("Not enough balance in wallet".to_string()))?;
+            .ok_or(WalletError::Balance)?;
 
         let change_address = self.change_address();
 
-        let burn_output = TxOut {
+        let payload_output = TxOut {
             value: amount, // 1 Dash
             script_pubkey: ScriptBuf::new_p2pkh(&one_time_key_hash),
         };
-        let payload_output = TxOut {
-            value: 100000000, // 1 Dash
+        let burn_output = TxOut {
+            value: amount, // 1 Dash
             script_pubkey: ScriptBuf::new_op_return(&[]),
         };
+        if change < fee {
+            return Err(WalletError::Balance);
+        }
         let change_output = TxOut {
-            value: change,
+            value: change - fee,
             script_pubkey: change_address.script_pubkey(),
         };
         let payload = AssetLockPayload {
-            version: 0,
+            version: 1,
             credit_outputs: vec![payload_output],
         };
 
@@ -85,15 +94,12 @@ impl Wallet {
         let mut inputs = utxos
             .iter()
             .map(|(utxo, _)| {
-                // let mut tx_in = TxIn::default();
-                // tx_in.previous_output = utxo.clone()
-                todo!()
+                let mut tx_in = TxIn::default();
+                tx_in.previous_output = utxo.clone();
+                tx_in
             })
             .collect();
 
-        let mut writer = LegacySighash::engine();
-        let input_index = 0;
-        let script_pubkey = ScriptBuf::new();
         let sighash_u32 = 1u32;
 
         let mut tx: Transaction = Transaction {
@@ -103,53 +109,71 @@ impl Wallet {
             output: vec![burn_output, change_output],
             special_transaction_payload: Some(TransactionPayload::AssetLockPayloadType(payload)),
         };
+
         let cache = SighashCache::new(&tx);
-        let result = cache
-            .legacy_encode_signing_data_to(&mut writer, input_index, &script_pubkey, sighash_u32)
-            .is_sighash_single_bug()
-            .expect("writer can't fail");
 
-        // tx.input.iter_mut().enumerate().for_each(|(i, input)| {
-        //     // You need to provide the actual script_pubkey of the UTXO being spent
-        //     let (tx_out, public_key, input_address) = utxos
-        //         .remove(&input.previous_output)
-        //         .expect("expected a txout");
-        //     let script_pubkey = tx_out.script_pubkey;
+        // Next, collect the sighashes for each input since that's what we need from the
+        // cache
+        let sighashes: Vec<_> = tx
+            .input
+            .iter()
+            .enumerate()
+            .map(|(i, input)| {
+                let script_pubkey = utxos
+                    .get(&input.previous_output)
+                    .expect("expected a txout")
+                    .0
+                    .script_pubkey
+                    .clone();
+                cache
+                    .legacy_signature_hash(i, &script_pubkey, sighash_u32)
+                    .expect("expected sighash")
+            })
+            .collect();
 
-        //     // Create a message to sign by hashing the transaction with the
-        // appropriate sighash     let sighash = cache
-        //         .legacy_signature_hash(i, &script_pubkey, sighash_u32)
-        //         .expect("expected sighash");
-        //     let message =
-        //         Message::from_slice(sighash.as_byte_array()).expect("Error creating
-        // message");
+        // Now we can drop the cache to end the immutable borrow
+        drop(cache);
 
-        //     let private_key = self.private_key_for_address(&input_address);
+        tx.input
+            .iter_mut()
+            .zip(sighashes.into_iter())
+            .for_each(|(input, sighash)| {
+                // You need to provide the actual script_pubkey of the UTXO being spent
+                let (_, public_key, input_address) = utxos
+                    .remove(&input.previous_output)
+                    .expect("expected a txout");
+                let message =
+                    Message::from_slice(sighash.as_byte_array()).expect("Error creating message");
 
-        //     // Sign the message with the private key
-        //     let sig = secp.sign_ecdsa(&message, &private_key.inner);
+                let private_key = self.private_key_for_address(&input_address);
 
-        //     // Create the script_sig with the signature and the public key
-        //     // This is a simple P2PKH script_sig format, adjust as necessary for
-        // other formats     // input.script_sig =
-        // Script::new_p2pkh_sig(&sig.serialize_der(), &public_key);
-        //     todo!();
+                // Sign the message with the private key
+                let sig = secp.sign_ecdsa(&message, &private_key.inner);
 
-        //     // Serialize the DER-encoded signature and append the sighash type
-        //     let mut sig_script = sig.serialize_der().to_vec();
+                // Serialize the DER-encoded signature and append the sighash type
+                let mut serialized_sig = sig.serialize_der().to_vec();
 
-        //     sig_script.push(sighash_u32 as u8); // Assuming sighash_u32 is something
-        // like SIGHASH_ALL (0x01)
+                let mut sig_script = vec![serialized_sig.len() as u8 + 1];
 
-        //     // Create script_sig
-        //     // input.script_sig = Builder::new()
-        //     //     .push_slice(sig_script.as_slice())
-        //     //     .push_slice(&public_key.to_bytes())
-        //     //     .into_script();
-        //     todo!()
-        // });
+                sig_script.append(&mut serialized_sig);
+
+                sig_script.push(1);
+
+                let mut serialized_pub_key = public_key.serialize();
+
+                sig_script.push(serialized_pub_key.len() as u8);
+                sig_script.append(&mut serialized_pub_key);
+                // Create script_sig
+                input.script_sig = ScriptBuf::from_bytes(sig_script);
+            });
 
         Ok((tx, private_key))
+    }
+
+    pub fn receive_address(&self) -> Address {
+        match self {
+            Wallet::SingleKeyWallet(wallet) => wallet.receive_address(),
+        }
     }
 
     pub fn change_address(&self) -> Address {
@@ -163,7 +187,7 @@ impl Wallet {
             Wallet::SingleKeyWallet(wallet) => {
                 format!(
                     "Single Key Wallet \npublic key: {} \naddress: {} \nbalance: {}",
-                    hex::encode(wallet.public_key.to_bytes()),
+                    hex::encode(wallet.public_key.inner.serialize()),
                     wallet.address.to_string().as_str(),
                     wallet.balance_dash_formatted()
                 )
@@ -195,8 +219,7 @@ impl Wallet {
     pub async fn reload_utxos(&self) {
         match self {
             Wallet::SingleKeyWallet(wallet) => {
-                let Ok(utxos) =
-                    utxos_with_amount_for_addresses(&[todo!() /* &wallet.address */], false).await
+                let Ok(utxos) = utxos_with_amount_for_addresses(&[&wallet.address], false).await
                 else {
                     return;
                 };
@@ -236,7 +259,7 @@ impl Encode for SingleKeyWallet {
                 (
                     outpoint.to_string(),
                     txout.value,
-                    txout.script_pubkey.to_string(),
+                    hex::encode(txout.script_pubkey.as_bytes()),
                 )
             })
             .collect::<Vec<_>>();
@@ -246,7 +269,7 @@ impl Encode for SingleKeyWallet {
 
 impl Decode for SingleKeyWallet {
     fn decode<D: Decoder>(decoder: &mut D) -> Result<Self, DecodeError> {
-        let bytes: [u8; 32] = Vec::<u8>::decode(decoder)?.try_into().unwrap();
+        let bytes = <[u8; 32]>::decode(decoder)?;
         let string_utxos = Vec::<(String, u64, String)>::decode(decoder)?;
 
         let private_key = PrivateKey::from_slice(bytes.as_slice(), Network::Testnet)
@@ -261,7 +284,12 @@ impl Decode for SingleKeyWallet {
             .iter()
             .map(|(outpoint, value, script)| {
                 let script = ScriptBuf::from_hex(script)
-                    .map_err(|_| InsightError("Invalid scriptPubKey format from load".into()))
+                    .map_err(|_| {
+                        InsightError(format!(
+                            "Invalid scriptPubKey format from load of {}",
+                            script
+                        ))
+                    })
                     .unwrap();
                 (
                     OutPoint::from_str(outpoint).expect("expected valid outpoint"),
@@ -284,7 +312,7 @@ impl Decode for SingleKeyWallet {
 
 impl<'a> BorrowDecode<'a> for SingleKeyWallet {
     fn borrow_decode<D: BorrowDecoder<'a>>(decoder: &mut D) -> Result<Self, DecodeError> {
-        let bytes: [u8; 32] = Vec::<u8>::decode(decoder)?.try_into().unwrap();
+        let bytes = <[u8; 32]>::decode(decoder)?;
         let string_utxos = Vec::<(String, u64, String)>::decode(decoder)?;
 
         let private_key = PrivateKey::from_slice(bytes.as_slice(), Network::Testnet)
@@ -299,7 +327,12 @@ impl<'a> BorrowDecode<'a> for SingleKeyWallet {
             .iter()
             .map(|(outpoint, value, script)| {
                 let script = ScriptBuf::from_hex(script)
-                    .map_err(|_| InsightError("Invalid scriptPubKey format from load".into()))
+                    .map_err(|_| {
+                        InsightError(format!(
+                            "Invalid scriptPubKey format from load of {}",
+                            script
+                        ))
+                    })
                     .unwrap();
                 (
                     OutPoint::from_str(outpoint).expect("expected valid outpoint"),
@@ -366,6 +399,10 @@ impl SingleKeyWallet {
     }
 
     pub fn change_address(&self) -> Address {
+        self.address.clone()
+    }
+
+    pub fn receive_address(&self) -> Address {
         self.address.clone()
     }
 

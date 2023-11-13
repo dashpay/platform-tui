@@ -7,7 +7,9 @@ mod ui;
 
 use crossterm::event::{Event as TuiEvent, EventStream};
 use dash_platform_sdk::SdkBuilder;
+use dpp::version::PlatformVersion;
 use futures::{future::OptionFuture, select, FutureExt, StreamExt};
+use rs_dapi_client::AddressList;
 use tuirealm::event::KeyEvent;
 
 use self::{
@@ -23,6 +25,22 @@ pub(crate) enum Event<'s> {
 #[tokio::main]
 async fn main() {
     // Setup Platform SDK
+    let mut address_list = AddressList::new();
+    address_list.add_uri(rs_dapi_client::Uri::from_static(
+        "https://44.239.39.153:1443",
+    ));
+    // address_list.add_uri(rs_dapi_client::Uri::from_static(
+    //     "https://54.149.33.167:1443",
+    // ));
+    // address_list.add_uri(rs_dapi_client::Uri::from_static(
+    //     "https://35.164.23.245:1443",
+    // ));
+    // address_list.add_uri(rs_dapi_client::Uri::from_static("https://52.33.28.47:1443"));
+    let mut sdk = SdkBuilder::new(address_list)
+        .with_version(PlatformVersion::get(1).unwrap())
+        .with_core("127.0.0.1", 19998, "dashrpc", "password")
+        .build()
+        .expect("expected to build sdk");
     let sdk = SdkBuilder::new_mock()
         .build()
         .expect("cannot setup Platform SDK");

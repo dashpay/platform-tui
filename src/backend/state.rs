@@ -6,22 +6,22 @@ use std::{collections::BTreeMap, fs, ops::Deref, path::Path, sync::Arc};
 
 use bincode::{Decode, Encode};
 use dpp::{
-    dashcore::{Network, PrivateKey, Transaction},
-    data_contract::created_data_contract::CreatedDataContract,
+    dashcore::{
+        psbt::serialize::{Deserialize, Serialize},
+        Network, PrivateKey, Transaction,
+    },
     identity::KeyID,
     prelude::{AssetLockProof, DataContract, Identifier, Identity},
     serialization::{
         PlatformDeserializableWithPotentialValidationFromVersionedStructure,
         PlatformSerializableWithPlatformVersion,
     },
-    tests::json_document::json_document_to_created_contract,
     util::deserializer::ProtocolVersion,
     version::PlatformVersion,
     ProtocolError,
     ProtocolError::{PlatformDeserializationError, PlatformSerializationError},
 };
-use strategy_tests::{frequency::Frequency, Strategy};
-use walkdir::{DirEntry, WalkDir};
+use strategy_tests::Strategy;
 
 use super::wallet::Wallet;
 
@@ -35,8 +35,7 @@ pub(crate) struct AppState {
     pub identity_private_keys: BTreeMap<(Identifier, KeyID), PrivateKey>,
     pub loaded_wallet: Option<Arc<Wallet>>,
     pub known_identities: BTreeMap<String, Identity>,
-    pub known_contracts: BTreeMap<String, CreatedDataContract>,
-    // TODO move strategies state into one structure to keep them in sync
+    pub known_contracts: BTreeMap<String, DataContract>,
     pub available_strategies: BTreeMap<String, Strategy>,
     /// Because we don't store which contract support file was used exactly we
     /// cannot properly restore the state and display a strategy, so this
@@ -60,113 +59,105 @@ pub fn default_strategy_description(mut map: BTreeMap<String, String>) -> BTreeM
 
 impl Default for AppState {
     fn default() -> Self {
-        let mut known_contracts = BTreeMap::new();
-        let mut available_strategies = BTreeMap::new();
-        let mut available_strategies_contract_names = BTreeMap::new();
+        // let mut known_contracts = BTreeMap::new();
+        // let mut available_strategies = BTreeMap::new();
+        //
+        // let platform_version =
+        // PlatformVersion::get(CURRENT_PROTOCOL_VERSION).unwrap();
 
-        let platform_version = PlatformVersion::get(CURRENT_PROTOCOL_VERSION).unwrap();
-
-        fn is_json(entry: &DirEntry) -> bool {
-            entry.path().extension().and_then(|s| s.to_str()) == Some("json")
-        }
-
-        for entry in WalkDir::new("supporting_files/contract")
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(is_json)
-        {
-            let path = entry.path();
-            let contract_name = path.file_stem().unwrap().to_str().unwrap().to_string();
-
-            let contract = json_document_to_created_contract(&path, true, platform_version)
-                .expect("expected to get contract from a json document");
-
-            known_contracts.insert(contract_name, contract);
-        }
-
-        let mut description1 = default_strategy_description(BTreeMap::new());
-        let mut description2 = default_strategy_description(BTreeMap::new());
-        let mut description3 = default_strategy_description(BTreeMap::new());
-        description1.insert("contracts_with_updates".to_string(), "dashpay1".to_string());
-        description2.insert("contracts_with_updates".to_string(), "dashpay2".to_string());
-        description3.insert("contracts_with_updates".to_string(), "dashpay3".to_string());
-
-        let default_strategy_1 = Strategy {
-            contracts_with_updates: vec![(
-                known_contracts
-                    .get(&String::from("dashpay-contract-all-mutable"))
-                    .unwrap()
-                    .clone(),
-                None,
-            )],
-            operations: vec![],
-            start_identities: vec![],
-            identities_inserts: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
-            signer: None,
-        };
-        let default_strategy_2 = Strategy {
-            contracts_with_updates: vec![(
-                known_contracts
-                    .get(&String::from("dashpay-contract-all-mutable-update-1"))
-                    .unwrap()
-                    .clone(),
-                None,
-            )],
-            operations: vec![],
-            start_identities: vec![],
-            identities_inserts: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
-            signer: None,
-        };
-        let default_strategy_3 = Strategy {
-            contracts_with_updates: vec![(
-                known_contracts
-                    .get(&String::from("dashpay-contract-all-mutable-update-2"))
-                    .unwrap()
-                    .clone(),
-                None,
-            )],
-            operations: vec![],
-            start_identities: vec![],
-            identities_inserts: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
-            signer: None,
-        };
-
-        available_strategies.insert(String::from("default_strategy_1"), default_strategy_1);
-        available_strategies_contract_names.insert(
-            String::from("default_strategy_1"),
-            vec![("dashpay-contract-all-mutable".to_owned(), None)],
-        );
-        available_strategies.insert(String::from("default_strategy_2"), default_strategy_2);
-        available_strategies_contract_names.insert(
-            String::from("default_strategy_2"),
-            vec![("dashpay-contract-all-mutable-update-1".to_owned(), None)],
-        );
-        available_strategies.insert(String::from("default_strategy_3"), default_strategy_3);
-        available_strategies_contract_names.insert(
-            String::from("default_strategy_3"),
-            vec![("dashpay-contract-all-mutable-update-2".to_owned(), None)],
-        );
+        // fn is_json(entry: &DirEntry) -> bool {
+        //     entry.path().extension().and_then(|s| s.to_str()) == Some("json")
+        // }
+        //
+        // for entry in WalkDir::new("supporting_files/contract")
+        //     .into_iter()
+        //     .filter_map(|e| e.ok())
+        //     .filter(is_json)
+        // {
+        //     let path = entry.path();
+        //     let contract_name =
+        // path.file_stem().unwrap().to_str().unwrap().to_string();
+        //
+        //     let contract = json_document_to_created_contract(&path, true,
+        // platform_version)         .expect("expected to get contract from a
+        // json document");
+        //
+        //     known_contracts.insert(contract_name, contract);
+        // }
+        //
+        // let mut description1 = default_strategy_description(BTreeMap::new());
+        // let mut description2 = default_strategy_description(BTreeMap::new());
+        // let mut description3 = default_strategy_description(BTreeMap::new());
+        // description1.insert("contracts_with_updates".to_string(),
+        // "dashpay1".to_string()); description2.insert("contracts_with_updates"
+        // .to_string(), "dashpay2".to_string()); description3.insert("
+        // contracts_with_updates".to_string(), "dashpay3".to_string());
+        //
+        // let default_strategy_1 = Strategy {
+        //     contracts_with_updates: vec![(
+        //         known_contracts
+        //             .get(&String::from("dashpay-contract-all-mutable"))
+        //             .unwrap()
+        //             .clone(),
+        //         None,
+        //     )],
+        //     operations: vec![],
+        //     start_identities: vec![],
+        //     identities_inserts: Frequency {
+        //         times_per_block_range: Default::default(),
+        //         chance_per_block: None,
+        //     },
+        //     signer: None,
+        // };
+        // let default_strategy_2 = Strategy {
+        //     contracts_with_updates: vec![(
+        //         known_contracts
+        //             .get(&String::from("dashpay-contract-all-mutable-update-1"))
+        //             .unwrap()
+        //             .clone(),
+        //         None,
+        //     )],
+        //     operations: vec![],
+        //     start_identities: vec![],
+        //     identities_inserts: Frequency {
+        //         times_per_block_range: Default::default(),
+        //         chance_per_block: None,
+        //     },
+        //     signer: None,
+        // };
+        // let default_strategy_3 = Strategy {
+        //     contracts_with_updates: vec![(
+        //         known_contracts
+        //             .get(&String::from("dashpay-contract-all-mutable-update-2"))
+        //             .unwrap()
+        //             .clone(),
+        //         None,
+        //     )],
+        //     operations: vec![],
+        //     start_identities: vec![],
+        //     identities_inserts: Frequency {
+        //         times_per_block_range: Default::default(),
+        //         chance_per_block: None,
+        //     },
+        //     signer: None,
+        // };
+        //
+        // available_strategies.insert(String::from("default_strategy_1"),
+        // default_strategy_1); available_strategies.insert(String::from("
+        // default_strategy_2"), default_strategy_2); available_strategies.
+        // insert(String::from("default_strategy_3"), default_strategy_3);
 
         AppState {
             loaded_identity: None,
             identity_private_keys: Default::default(),
             loaded_wallet: None,
             known_identities: BTreeMap::new(),
-            known_contracts,
-            available_strategies,
+            known_contracts: BTreeMap::new(),
+            available_strategies: BTreeMap::new(),
             current_strategy: None,
             selected_strategy: None,
             identity_asset_lock_private_key_in_creation: None,
-            available_strategies_contract_names,
+            available_strategies_contract_names: BTreeMap::new(),
         }
     }
 }
@@ -183,6 +174,8 @@ struct AppStateInSerializationFormat {
         BTreeMap<String, Vec<(ContractFileName, Option<BTreeMap<u64, ContractFileName>>)>>,
     pub current_strategy: Option<String>,
     pub selected_strategy: Option<String>,
+    pub identity_asset_lock_private_key_in_creation:
+        Option<(Vec<u8>, [u8; 32], Option<AssetLockProof>)>,
 }
 
 impl PlatformSerializableWithPlatformVersion for AppState {
@@ -233,11 +226,19 @@ impl PlatformSerializableWithPlatformVersion for AppState {
 
         let identity_private_keys = identity_private_keys
             .into_iter()
-            .map(|(key, value)| {
-                // (key, value.inner)
-                todo!()
-            })
+            .map(|(key, value)| (key, value.inner.secret_bytes()))
             .collect();
+
+        let identity_asset_lock_private_key_in_creation =
+            identity_asset_lock_private_key_in_creation.map(
+                |(transaction, private_key, asset_lock_proof)| {
+                    (
+                        transaction.serialize(),
+                        private_key.inner.secret_bytes(),
+                        asset_lock_proof,
+                    )
+                },
+            );
 
         let app_state_in_serialization_format = AppStateInSerializationFormat {
             loaded_identity,
@@ -249,6 +250,7 @@ impl PlatformSerializableWithPlatformVersion for AppState {
             current_strategy,
             selected_strategy,
             available_strategies_contract_names,
+            identity_asset_lock_private_key_in_creation,
         };
 
         let config = bincode::config::standard()
@@ -290,12 +292,13 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
             current_strategy,
             selected_strategy,
             available_strategies_contract_names,
+            identity_asset_lock_private_key_in_creation,
         } = app_state;
 
         let known_contracts = known_contracts
             .into_iter()
             .map(|(key, contract)| {
-                let contract = CreatedDataContract::versioned_deserialize(
+                let contract = DataContract::versioned_deserialize(
                     contract.as_slice(),
                     validate,
                     platform_version,
@@ -306,7 +309,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
                 })?;
                 Ok((key, contract))
             })
-            .collect::<Result<BTreeMap<String, CreatedDataContract>, ProtocolError>>()?;
+            .collect::<Result<BTreeMap<String, DataContract>, ProtocolError>>()?;
 
         let available_strategies = available_strategies
             .into_iter()
@@ -337,6 +340,19 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
             })
             .collect();
 
+        let identity_asset_lock_private_key_in_creation =
+            identity_asset_lock_private_key_in_creation.map(
+                |(transaction, private_key, asset_lock_proof)| {
+                    (
+                        Transaction::deserialize(&transaction)
+                            .expect("expected to deserialize transaction"),
+                        PrivateKey::from_slice(&private_key, Network::Testnet)
+                            .expect("expected private key"),
+                        asset_lock_proof,
+                    )
+                },
+            );
+
         Ok(AppState {
             loaded_identity,
             identity_private_keys,
@@ -346,8 +362,8 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
             available_strategies,
             current_strategy,
             selected_strategy,
-            identity_asset_lock_private_key_in_creation: None,
             available_strategies_contract_names,
+            identity_asset_lock_private_key_in_creation,
         })
     }
 }
