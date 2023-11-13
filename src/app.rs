@@ -103,6 +103,7 @@ pub(super) enum Screen {
     Contracts,
     FetchUserContract(Option<ErrorString>),
     FetchSystemContract(Option<ErrorString>),
+    SelectContract,
     Wallet,
     AddWallet,
     VersionUpgrade,
@@ -172,6 +173,7 @@ pub(super) enum Message {
     DisplayError(String),
     PrevScreen,
     CopyWalletAddress,
+    ClearAssetLockTransaction,
     ReloadScreen,
     ExpectingInput(InputType),
     Redraw,
@@ -585,6 +587,17 @@ impl<'a> Model<'a> {
                         Vec::new(),
                     )
                     .expect("unable to remount screen");
+            }
+            Screen::SelectContract => {
+                self.app
+                    .remount(
+                        ComponentId::Screen,
+                        Box::new(ContractScreen::new(&self.state)),
+                        make_screen_subs(),
+                    )
+                    .expect("unable to remount screen");
+
+                self.app.umount(&ComponentId::CommandPallet).expect("unable to remount screen");
             }
         }
         self.app
@@ -1744,6 +1757,10 @@ impl Update<Message> for Model<'_> {
                 }
                 Message::DisplayError(error) => {
                     self.current_screen.set_error(error);
+                    Some(Message::Redraw)
+                }
+                Message::ClearAssetLockTransaction => {
+                    self.state.identity_asset_lock_private_key_in_creation = None;
                     Some(Message::Redraw)
                 }
             }

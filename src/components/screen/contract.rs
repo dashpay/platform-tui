@@ -3,7 +3,7 @@
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::platform_value::string_encoding::Encoding;
 use std::vec;
-use tui_realm_stdlib::Paragraph;
+use tui_realm_stdlib::{Paragraph, Textarea};
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
     props::TextSpan,
@@ -15,10 +15,11 @@ use crate::{
     app::{Message, Screen},
     mock_components::{CommandPallet, CommandPalletKey, KeyType},
 };
+use crate::components::screen::shared::Info;
 
 #[derive(MockComponent)]
 pub(crate) struct ContractScreen {
-    component: Paragraph,
+    component: Info<true, false>,
 }
 
 impl ContractScreen {
@@ -41,7 +42,7 @@ impl ContractScreen {
         };
 
         ContractScreen {
-            component: Paragraph::default().text(&text_spans),
+            component: Info::new_scrollable_text_rows(text_spans.as_slice())
         }
     }
 }
@@ -72,7 +73,7 @@ impl ContractScreenCommands {
                     key_type: KeyType::Command,
                 },
                 CommandPalletKey {
-                    key: 's',
+                    key: 'c',
                     description: "Fetch System Contract",
                     key_type: KeyType::Command,
                 },
@@ -93,7 +94,7 @@ impl Component<Message, NoUserEvent> for ContractScreenCommands {
                 modifiers: KeyModifiers::NONE,
             }) => Some(Message::NextScreen(Screen::FetchUserContract(None))),
             Event::Keyboard(KeyEvent {
-                code: Key::Char('s'),
+                code: Key::Char('c'),
                 modifiers: KeyModifiers::NONE,
             }) => Some(Message::NextScreen(Screen::FetchSystemContract(None))),
             _ => None,

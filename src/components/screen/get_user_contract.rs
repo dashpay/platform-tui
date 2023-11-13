@@ -2,7 +2,6 @@
 
 use dpp::identifier::Identifier;
 use dpp::platform_value::string_encoding::Encoding;
-use dpp::platform_value::Error;
 use tui_realm_stdlib::Textarea;
 use tuirealm::{
     command::CmdResult,

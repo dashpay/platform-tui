@@ -113,6 +113,11 @@ impl WalletScreenCommands {
                             key_type: KeyType::Command,
                         },
                         CommandPalletKey {
+                            key: 'l',
+                            description: "Clear asset lock transaction",
+                            key_type: KeyType::Command,
+                        },
+                        CommandPalletKey {
                             key: 'i',
                             description: "Register identity",
                             key_type: KeyType::Command,
@@ -159,6 +164,10 @@ impl Component<Message, NoUserEvent> for WalletScreenCommands {
                 code: Key::Char('c'),
                 modifiers: KeyModifiers::NONE,
             }) => Some(Message::CopyWalletAddress),
+            Event::Keyboard(KeyEvent {
+                code: Key::Char('l'),
+                modifiers: KeyModifiers::NONE,
+            }) => Some(Message::ClearAssetLockTransaction),
             Event::Keyboard(KeyEvent {
                 code: Key::Char('i'),
                 modifiers: KeyModifiers::NONE,

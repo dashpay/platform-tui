@@ -7,7 +7,6 @@ use dpp::{
 use tuirealm::props::{PropValue, TextSpan};
 
 use crate::app::error::Error;
-use crate::app::state::AppState;
 
 pub(super) fn data_contract_bytes_to_spans(bytes: &[u8]) -> Result<Vec<PropValue>, Error> {
     let data_contract =

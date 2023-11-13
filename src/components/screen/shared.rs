@@ -59,6 +59,13 @@ impl Info<true, false> {
             .text_rows(&str_to_spans(text));
         Info { component }
     }
+
+    pub(crate) fn new_scrollable_text_rows(text_rows: &[TextSpan]) -> Info<true, false> {
+        let component = Textarea::default()
+            .highlighted_str(">")
+            .text_rows(text_rows);
+        Info { component }
+    }
 }
 
 impl Info<false, false> {

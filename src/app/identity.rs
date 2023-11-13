@@ -1,10 +1,8 @@
 //! Identities backend logic.
 
-use bip37_bloom_filter::{BloomFilter, BloomFilterData};
 use dapi_grpc::core::v0::{
     BroadcastTransactionRequest, BroadcastTransactionResponse, GetTransactionRequest,
 };
-use dapi_grpc::tonic::Status;
 use std::collections::BTreeMap;
 
 use dash_platform_sdk::platform::transition::put_identity::PutIdentity;
@@ -17,9 +15,19 @@ use rand::rngs::StdRng;
 use rand::SeedableRng;
 use rs_dapi_client::{Dapi, DapiClientError, RequestSettings};
 use simple_signer::signer::SimpleSigner;
+use tuirealm::props::{PropValue, TextSpan};
 
 use crate::app::error::Error;
 use crate::app::state::AppState;
+
+pub(super) fn identity_to_spans(identity: &Identity) -> Result<Vec<PropValue>, Error> {
+    let textual = toml::to_string_pretty(identity).expect("identity is serializable");
+    Ok(textual
+        .lines()
+        .map(|line| PropValue::TextSpan(TextSpan::new(line)))
+        .collect())
+}
+
 
 impl AppState {
     pub(crate) async fn register_new_identity(
@@ -61,28 +69,6 @@ impl AppState {
 
                 (asset_lock_transaction, asset_lock_proof_private_key, None)
             };
-
-        // create the bloom filter
-
-        // let bloom_filter = BloomFilter::builder(1, 0.0001)
-        //     .expect("this FP rate allows up to 10000 items")
-        //     .add_element(asset_lock_transaction.txid().as_ref())
-        //     .build();
-        //
-        // let bloom_filter_proto = {
-        //     let BloomFilterData {
-        //         v_data,
-        //         n_hash_funcs,
-        //         n_tweak,
-        //         n_flags,
-        //     } = bloom_filter.into();
-        //     dapi_grpc::core::v0::BloomFilter {
-        //         v_data,
-        //         n_hash_funcs,
-        //         n_tweak,
-        //         n_flags,
-        //     }
-        // };
 
         // let block_hash: Vec<u8> = (GetStatusRequest {})
         //     .execute(dapi_client, RequestSettings::default())
@@ -154,7 +140,7 @@ impl AppState {
         sdk: &Sdk,
         asset_lock_transaction: &Transaction,
     ) -> Result<AssetLockProof, dash_platform_sdk::Error> {
-        let asset_lock_stream = sdk.start_instant_send_lock_stream().await?;
+        let asset_lock_stream = sdk.start_instant_send_lock_stream(asset_lock_transaction.txid()).await?;
 
         // we need to broadcast the transaction to core
         let request = BroadcastTransactionRequest {
