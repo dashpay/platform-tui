@@ -1,22 +1,22 @@
 //! Forms for operations management in strategy.
 
 mod identity_top_up;
+mod identity_update;
 
 use strum::IntoEnumIterator;
 use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
-use self::identity_top_up::StrategyOpIdentityTopUpFormController;
-use crate::{
-    backend::Task,
-    ui::form::{
-        ComposedInput, Field, Form, FormController, FormStatus, Input, InputStatus, SelectInput,
-    },
+use self::{
+    identity_top_up::StrategyOpIdentityTopUpFormController,
+    identity_update::StrategyOpIdentityUpdateFormController,
 };
+use crate::ui::form::{FormController, FormStatus, Input, InputStatus, SelectInput};
 
 #[derive(Debug, strum::Display, Clone, strum::EnumIter, Copy)]
 enum OperationType {
     IdentityTopUp,
-    IdentityUpdate,
+    IdentityAddKeys,
+    IdentityDisableKeys,
     IdentityWithdrawal,
     IdentityTransfer,
     ContractCreate,
@@ -44,7 +44,18 @@ impl StrategyAddOperationFormController {
             OperationType::IdentityTopUp => Box::new(StrategyOpIdentityTopUpFormController::new(
                 self.strategy_name.clone(),
             )),
-            OperationType::IdentityUpdate => todo!(),
+            OperationType::IdentityAddKeys => {
+                Box::new(StrategyOpIdentityUpdateFormController::new(
+                    self.strategy_name.clone(),
+                    identity_update::KeyUpdateOp::AddKeys,
+                ))
+            }
+            OperationType::IdentityDisableKeys => {
+                Box::new(StrategyOpIdentityUpdateFormController::new(
+                    self.strategy_name.clone(),
+                    identity_update::KeyUpdateOp::DisableKeys,
+                ))
+            }
             OperationType::IdentityWithdrawal => todo!(),
             OperationType::IdentityTransfer => todo!(),
             OperationType::ContractCreate => todo!(),

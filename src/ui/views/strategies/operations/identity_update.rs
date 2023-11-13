@@ -1,8 +1,8 @@
-//! Identity top up form for strategy.
+//! Forms for strategy operations related to identity updates.
 
 use strategy_tests::{
     frequency::Frequency,
-    operations::{Operation, OperationType},
+    operations::{IdentityUpdateOp, Operation, OperationType},
 };
 use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
@@ -11,15 +11,33 @@ use crate::{
     ui::form::{ComposedInput, Field, FormController, FormStatus, Input, InputStatus, SelectInput},
 };
 
-pub(super) struct StrategyOpIdentityTopUpFormController {
-    input: ComposedInput<(Field<SelectInput<u16>>, Field<SelectInput<f64>>)>,
+pub(super) struct StrategyOpIdentityUpdateFormController {
+    input: ComposedInput<(
+        Field<SelectInput<u16>>,
+        Field<SelectInput<u16>>,
+        Field<SelectInput<f64>>,
+    )>,
     selected_strategy: String,
+    key_update_op: KeyUpdateOp,
 }
 
-impl StrategyOpIdentityTopUpFormController {
-    pub(super) fn new(selected_strategy: String) -> Self {
-        StrategyOpIdentityTopUpFormController {
+pub(super) enum KeyUpdateOp {
+    AddKeys,
+    DisableKeys,
+}
+
+impl StrategyOpIdentityUpdateFormController {
+    pub(super) fn new(selected_strategy: String, key_update_op: KeyUpdateOp) -> Self {
+        let count_message = match key_update_op {
+            KeyUpdateOp::AddKeys => "How many keys to add",
+            KeyUpdateOp::DisableKeys => "How many keys to disable",
+        };
+        StrategyOpIdentityUpdateFormController {
             input: ComposedInput::new((
+                Field::new(
+                    count_message,
+                    SelectInput::new(vec![1, 2, 5, 10, 20, 40, 100, 1000]),
+                ),
                 Field::new(
                     "Times per block",
                     SelectInput::new(vec![1, 2, 5, 10, 20, 40, 100, 1000]),
@@ -30,18 +48,24 @@ impl StrategyOpIdentityTopUpFormController {
                 ),
             )),
             selected_strategy,
+            key_update_op,
         }
     }
 }
 
-impl FormController for StrategyOpIdentityTopUpFormController {
+impl FormController for StrategyOpIdentityUpdateFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
         match self.input.on_event(event) {
-            InputStatus::Done((times_per_block, chance_per_block)) => FormStatus::Done {
+            InputStatus::Done((count, times_per_block, chance_per_block)) => FormStatus::Done {
                 task: Task::Strategy(StrategyTask::AddOperation {
                     strategy_name: self.selected_strategy.clone(),
                     operation: Operation {
-                        op_type: OperationType::IdentityTopUp,
+                        op_type: OperationType::IdentityUpdate(match self.key_update_op {
+                            KeyUpdateOp::AddKeys => IdentityUpdateOp::IdentityUpdateAddKeys(count),
+                            KeyUpdateOp::DisableKeys => {
+                                IdentityUpdateOp::IdentityUpdateDisableKey(count)
+                            }
+                        }),
                         frequency: Frequency {
                             times_per_block_range: 1..times_per_block,
                             chance_per_block: Some(chance_per_block),
@@ -56,7 +80,7 @@ impl FormController for StrategyOpIdentityTopUpFormController {
     }
 
     fn form_name(&self) -> &'static str {
-        "Identity top up operation"
+        "Identity keys updates operation"
     }
 
     fn step_view(&mut self, frame: &mut Frame, area: Rect) {
@@ -72,6 +96,6 @@ impl FormController for StrategyOpIdentityTopUpFormController {
     }
 
     fn steps_number(&self) -> u8 {
-        2
+        3
     }
 }
