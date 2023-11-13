@@ -1,6 +1,7 @@
 //! Forms for operations management in strategy.
 
 mod identity_top_up;
+mod identity_transfer;
 mod identity_update;
 mod identity_withdrawal;
 
@@ -9,6 +10,7 @@ use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
 use self::{
     identity_top_up::StrategyOpIdentityTopUpFormController,
+    identity_transfer::StrategyOpIdentityTransferFormController,
     identity_update::StrategyOpIdentityUpdateFormController,
     identity_withdrawal::StrategyOpIdentityWithdrawalFormController,
 };
@@ -61,7 +63,9 @@ impl StrategyAddOperationFormController {
             OperationType::IdentityWithdrawal => Box::new(
                 StrategyOpIdentityWithdrawalFormController::new(self.strategy_name.clone()),
             ),
-            OperationType::IdentityTransfer => todo!(),
+            OperationType::IdentityTransfer => Box::new(
+                StrategyOpIdentityTransferFormController::new(self.strategy_name.clone()),
+            ),
             OperationType::ContractCreate => todo!(),
             OperationType::ContractUpdate => todo!(),
             OperationType::Document => todo!(),
