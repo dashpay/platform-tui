@@ -2,6 +2,7 @@
 
 mod identity_top_up;
 mod identity_update;
+mod identity_withdrawal;
 
 use strum::IntoEnumIterator;
 use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
@@ -9,6 +10,7 @@ use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 use self::{
     identity_top_up::StrategyOpIdentityTopUpFormController,
     identity_update::StrategyOpIdentityUpdateFormController,
+    identity_withdrawal::StrategyOpIdentityWithdrawalFormController,
 };
 use crate::ui::form::{FormController, FormStatus, Input, InputStatus, SelectInput};
 
@@ -56,7 +58,9 @@ impl StrategyAddOperationFormController {
                     identity_update::KeyUpdateOp::DisableKeys,
                 ))
             }
-            OperationType::IdentityWithdrawal => todo!(),
+            OperationType::IdentityWithdrawal => Box::new(
+                StrategyOpIdentityWithdrawalFormController::new(self.strategy_name.clone()),
+            ),
             OperationType::IdentityTransfer => todo!(),
             OperationType::ContractCreate => todo!(),
             OperationType::ContractUpdate => todo!(),
@@ -82,7 +86,11 @@ impl FormController for StrategyAddOperationFormController {
     }
 
     fn form_name(&self) -> &'static str {
-        "Add strategy operation"
+        if let Some(form) = &self.op_specific_form {
+            form.form_name()
+        } else {
+            "Add strategy operation"
+        }
     }
 
     fn step_view(&mut self, frame: &mut Frame, area: Rect) {
