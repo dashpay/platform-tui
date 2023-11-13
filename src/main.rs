@@ -6,8 +6,8 @@ mod backend;
 mod ui;
 
 use crossterm::event::{Event as TuiEvent, EventStream};
+use dash_platform_sdk::SdkBuilder;
 use futures::{future::OptionFuture, select, FutureExt, StreamExt};
-use rs_sdk::SdkBuilder;
 use tuirealm::event::KeyEvent;
 
 use self::{

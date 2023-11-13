@@ -1,9 +1,9 @@
 //! Screens and forms related to strategies manipulation.
 
 mod identity_inserts;
+mod operations;
 mod select_strategy;
 mod start_identities;
-mod operations;
 
 use std::collections::BTreeMap;
 
@@ -14,6 +14,11 @@ use tuirealm::{
     Frame,
 };
 
+use self::{
+    identity_inserts::StrategyIdentityInsertsFormController,
+    operations::StrategyAddOperationFormController, select_strategy::SelectStrategyFormController,
+    start_identities::StrategyStartIdentitiesFormController,
+};
 use crate::{
     backend::{AppState, BackendEvent, Task},
     ui::{
@@ -27,25 +32,21 @@ use crate::{
     Event,
 };
 
-use self::{
-    identity_inserts::StrategyIdentityInsertsFormController,
-    select_strategy::SelectStrategyFormController,
-    start_identities::StrategyStartIdentitiesFormController,
-};
-
 const COMMAND_KEYS: [ScreenCommandKey; 2] = [
     ScreenCommandKey::new("q", "Back to Main"),
     ScreenCommandKey::new("s", "Select a strategy"),
 ];
 
-const COMMANDS_KEYS_ON_STRATEGY_SELECTED: [ScreenCommandKey; 7] = [
+const COMMANDS_KEYS_ON_STRATEGY_SELECTED: [ScreenCommandKey; 9] = [
     ScreenCommandKey::new("q", "Back to Main"),
     ScreenCommandKey::new("s", "Select a strategy"),
     ScreenCommandKey::new("c", "Set contracts with updates"),
     ScreenCommandKey::new("i", "Set identity inserts"),
     ScreenCommandKey::new("b", "Set start identities"),
+    ScreenCommandKey::new("o", "Add operations"),
     ScreenCommandKey::new("Ctrl-i", "Remove identity inserts"),
     ScreenCommandKey::new("Ctrl-b", "Remove start identities"),
+    ScreenCommandKey::new("Ctrl-o", "Remove operations"),
 ];
 
 pub(crate) struct StrategiesScreenController {
@@ -139,6 +140,18 @@ impl ScreenController for StrategiesScreenController {
             }) => {
                 if let Some(strategy_name) = &self.selected_strategy {
                     ScreenFeedback::Form(Box::new(StrategyStartIdentitiesFormController::new(
+                        strategy_name.clone(),
+                    )))
+                } else {
+                    ScreenFeedback::None
+                }
+            }
+            Event::Key(KeyEvent {
+                code: Key::Char('o'),
+                modifiers: KeyModifiers::NONE,
+            }) => {
+                if let Some(strategy_name) = &self.selected_strategy {
+                    ScreenFeedback::Form(Box::new(StrategyAddOperationFormController::new(
                         strategy_name.clone(),
                     )))
                 } else {

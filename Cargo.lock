@@ -51,6 +51,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "allocator-api2"
+version = "0.2.16"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0942ffc6dcaadf03badf6e6a2d0228460359d5e34b57ccdc720b7382dfbd5ec5"
+
+[[package]]
 name = "android-tzdata"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -991,6 +997,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "dash-platform-sdk"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bincode 2.0.0-rc.3",
+ "bip37-bloom-filter",
+ "ciborium",
+ "dapi-grpc",
+ "dapi-grpc-macros",
+ "dashcore-rpc",
+ "derive_more",
+ "dotenvy",
+ "dpp",
+ "drive",
+ "drive-abci",
+ "drive-proof-verifier",
+ "envy",
+ "futures",
+ "hex",
+ "http",
+ "lru",
+ "rs-dapi-client",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
 name = "dashcore"
 version = "0.30.0"
 source = "git+https://github.com/dashpay/rust-dashcore?branch=master#43ffb72915ae55574ac44fcdbd47589e0c815b59"
@@ -1893,6 +1930,10 @@ name = "hashbrown"
 version = "0.14.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f93e7192158dbcda357bdec5fb5788eebf8bbac027f3f33e719d29135ae84156"
+dependencies = [
+ "ahash 0.8.6",
+ "allocator-api2",
+]
 
 [[package]]
 name = "heck"
@@ -2394,6 +2435,15 @@ name = "log"
 version = "0.4.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b5e6163cb8c49088c2c36f57875e58ccd8c87c7427f7fbd50ea6710b2f3f2e8f"
+
+[[package]]
+name = "lru"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1efa59af2ddfad1854ae27d75009d538d0998b4b2fd47083e743ac1a10e46c60"
+dependencies = [
+ "hashbrown 0.14.2",
+]
 
 [[package]]
 name = "lz4-sys"
@@ -3491,6 +3541,7 @@ dependencies = [
  "bs58 0.5.0",
  "crossterm 0.27.0",
  "dapi-grpc",
+ "dash-platform-sdk",
  "dpp",
  "futures",
  "hex",
@@ -3498,7 +3549,6 @@ dependencies = [
  "rand",
  "reqwest",
  "rs-dapi-client",
- "rs-sdk",
  "serde",
  "serde_json",
  "simple-signer",
@@ -3510,34 +3560,6 @@ dependencies = [
  "tui-realm-stdlib",
  "tuirealm",
  "walkdir",
-]
-
-[[package]]
-name = "rs-sdk"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "bincode 2.0.0-rc.3",
- "ciborium",
- "dapi-grpc",
- "dapi-grpc-macros",
- "dashcore-rpc",
- "derive_more",
- "dotenvy",
- "dpp",
- "drive",
- "drive-abci",
- "drive-proof-verifier",
- "envy",
- "futures",
- "hex",
- "http",
- "rs-dapi-client",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "tracing",
 ]
 
 [[package]]

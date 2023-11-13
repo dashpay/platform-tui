@@ -3,7 +3,7 @@
 use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
 use crate::{
-    backend::Task,
+    backend::{StrategyTask, Task},
     ui::form::{FormController, FormStatus, Input, InputStatus, SelectInput},
 };
 
@@ -23,7 +23,7 @@ impl FormController for SelectStrategyFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
         match self.input.on_event(event) {
             InputStatus::Done(strategy_name) => FormStatus::Done {
-                task: Task::SelectStrategy(strategy_name),
+                task: Task::Strategy(StrategyTask::SelectStrategy(strategy_name)),
                 block: false,
             },
             InputStatus::Redraw => FormStatus::Redraw,

@@ -1,10 +1,10 @@
 //! Backend functionality related to identities.
 
+use dash_platform_sdk::{platform::Fetch, Sdk};
 use dpp::{
     platform_value::string_encoding::Encoding,
     prelude::{Identifier, Identity},
 };
-use rs_sdk::{platform::Fetch, Sdk};
 
 use super::stringify_result;
 

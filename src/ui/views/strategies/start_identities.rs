@@ -3,7 +3,7 @@
 use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
 use crate::{
-    backend::Task,
+    backend::{StrategyTask, Task},
     ui::form::{ComposedInput, Field, FormController, FormStatus, Input, InputStatus, SelectInput},
 };
 
@@ -34,11 +34,11 @@ impl FormController for StrategyStartIdentitiesFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
         match self.input.on_event(event) {
             InputStatus::Done((count, key_count)) => FormStatus::Done {
-                task: Task::StrategyStartIdentities {
+                task: Task::Strategy(StrategyTask::SetStartIdentities {
                     strategy_name: self.selected_strategy.clone(),
                     count,
                     key_count,
-                },
+                }),
                 block: true,
             },
             InputStatus::Redraw => FormStatus::Redraw,

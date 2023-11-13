@@ -1,6 +1,9 @@
-//! Strategy's identity inserts form.
+//! Identity top up form for strategy.
 
-use strategy_tests::frequency::Frequency;
+use strategy_tests::{
+    frequency::Frequency,
+    operations::{Operation, OperationType},
+};
 use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
 use crate::{
@@ -8,14 +11,14 @@ use crate::{
     ui::form::{ComposedInput, Field, FormController, FormStatus, Input, InputStatus, SelectInput},
 };
 
-pub(super) struct StrategyIdentityInsertsFormController {
+pub(super) struct StrategyOpIdentityTopUpFormController {
     input: ComposedInput<(Field<SelectInput<u16>>, Field<SelectInput<f64>>)>,
     selected_strategy: String,
 }
 
-impl StrategyIdentityInsertsFormController {
+impl StrategyOpIdentityTopUpFormController {
     pub(super) fn new(selected_strategy: String) -> Self {
-        StrategyIdentityInsertsFormController {
+        StrategyOpIdentityTopUpFormController {
             input: ComposedInput::new((
                 Field::new(
                     "Times per block",
@@ -31,15 +34,18 @@ impl StrategyIdentityInsertsFormController {
     }
 }
 
-impl FormController for StrategyIdentityInsertsFormController {
+impl FormController for StrategyOpIdentityTopUpFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
         match self.input.on_event(event) {
             InputStatus::Done((count, chance)) => FormStatus::Done {
-                task: Task::Strategy(StrategyTask::SetIdentityInserts {
+                task: Task::Strategy(StrategyTask::AddOperation {
                     strategy_name: self.selected_strategy.clone(),
-                    identity_inserts_frequency: Frequency {
-                        times_per_block_range: 1..count,
-                        chance_per_block: Some(chance),
+                    operation: Operation {
+                        op_type: OperationType::IdentityTopUp,
+                        frequency: Frequency {
+                            times_per_block_range: 1..count,
+                            chance_per_block: Some(chance),
+                        },
                     },
                 }),
                 block: false,
