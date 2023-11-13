@@ -1,6 +1,7 @@
 //! Screens and forms related to strategies manipulation.
 
 mod identity_inserts;
+mod new_strategy;
 mod operations;
 mod select_strategy;
 mod start_identities;
@@ -16,7 +17,8 @@ use tuirealm::{
 
 use self::{
     identity_inserts::StrategyIdentityInsertsFormController,
-    operations::StrategyAddOperationFormController, select_strategy::SelectStrategyFormController,
+    new_strategy::NewStrategyFormController, operations::StrategyAddOperationFormController,
+    select_strategy::SelectStrategyFormController,
     start_identities::StrategyStartIdentitiesFormController,
 };
 use crate::{
@@ -31,13 +33,15 @@ use crate::{
     Event,
 };
 
-const COMMAND_KEYS: [ScreenCommandKey; 2] = [
+const COMMAND_KEYS: [ScreenCommandKey; 3] = [
     ScreenCommandKey::new("q", "Back to Main"),
+    ScreenCommandKey::new("n", "New strategy"),
     ScreenCommandKey::new("s", "Select a strategy"),
 ];
 
-const COMMANDS_KEYS_ON_STRATEGY_SELECTED: [ScreenCommandKey; 9] = [
+const COMMANDS_KEYS_ON_STRATEGY_SELECTED: [ScreenCommandKey; 10] = [
     ScreenCommandKey::new("q", "Back to Main"),
+    ScreenCommandKey::new("n", "New strategy"),
     ScreenCommandKey::new("s", "Select a strategy"),
     ScreenCommandKey::new("c", "Set contracts with updates"),
     ScreenCommandKey::new("i", "Set identity inserts"),
@@ -157,20 +161,23 @@ impl ScreenController for StrategiesScreenController {
                     ScreenFeedback::None
                 }
             }
+            Event::Key(KeyEvent {
+                code: Key::Char('n'),
+                modifiers: KeyModifiers::NONE,
+            }) => ScreenFeedback::Form(Box::new(NewStrategyFormController::new())),
 
             Event::Backend(
                 BackendEvent::AppStateUpdated(app_state)
                 | BackendEvent::TaskCompletedStateChange(_, app_state),
             ) => {
                 self.info = Self::build_info(&app_state);
+                self.available_strategies =
+                    app_state.available_strategies.keys().cloned().collect();
                 if let Some(strategy_name) = &app_state.selected_strategy {
                     self.selected_strategy = Some(strategy_name.clone());
                 }
                 ScreenFeedback::Redraw
             }
-
-            // Event::Backend(BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy {})) =>
-            // {}
             _ => ScreenFeedback::None,
         }
     }
