@@ -4,10 +4,10 @@
 mod identities;
 mod insight;
 mod state;
+mod strategies;
 mod wallet;
 
 use std::{
-    collections::BTreeMap,
     fmt::Display,
     sync::{RwLock, RwLockReadGuard},
 };
@@ -15,16 +15,22 @@ use std::{
 use rs_sdk::Sdk;
 use serde::Serialize;
 pub(crate) use state::AppState;
-use strategy_tests::Strategy;
+use strategy_tests::frequency::Frequency;
 use tokio::sync::Mutex;
-
-use self::{identities::fetch_identity_by_b58_id, state::ContractFileName};
 
 #[derive(Clone, PartialEq)]
 pub(crate) enum Task {
     FetchIdentityById(String),
     SelectStrategy(String),
-
+    StrategySetIdentityInserts {
+        strategy_name: String,
+        identity_inserts_frequency: Frequency,
+    },
+    StrategyStartIdentities {
+        strategy_name: String,
+        count: u16,
+        key_count: u32,
+    },
     /// For testing purposes
     None,
 }
@@ -33,6 +39,7 @@ pub(crate) enum BackendEvent<'s> {
     IdentityLoaded,
     IdentityUnloaded,
     TaskCompleted(Task, Result<String, String>),
+    TaskCompletedStateChange(Task, RwLockReadGuard<'s, AppState>),
     AppStateUpdated(RwLockReadGuard<'s, AppState>),
     None,
 }
@@ -58,7 +65,7 @@ impl Backend {
         match task {
             Task::FetchIdentityById(ref base58_id) => {
                 let mut sdk = self.sdk.lock().await;
-                let result = fetch_identity_by_b58_id(&mut sdk, &base58_id).await;
+                let result = identities::fetch_identity_by_b58_id(&mut sdk, &base58_id).await;
                 BackendEvent::TaskCompleted(task, result)
             }
             Task::SelectStrategy(strategy_name) => {
@@ -67,6 +74,56 @@ impl Backend {
                     .expect("lock is poisoned")
                     .selected_strategy = Some(strategy_name);
                 BackendEvent::AppStateUpdated(self.app_state.read().expect("lock is poisoned"))
+            }
+            Task::StrategySetIdentityInserts {
+                strategy_name,
+                identity_inserts_frequency,
+            } => {
+                let state_updated = if let Some(strategy) = self
+                    .app_state
+                    .write()
+                    .expect("lock is poisoned")
+                    .available_strategies
+                    .get_mut(&strategy_name)
+                {
+                    strategy.identities_inserts = identity_inserts_frequency;
+                    true
+                } else {
+                    false
+                };
+
+                if state_updated {
+                    BackendEvent::AppStateUpdated(self.app_state.read().expect("lock is poisoned"))
+                } else {
+                    BackendEvent::None
+                }
+            }
+            Task::StrategyStartIdentities {
+                ref strategy_name,
+                count,
+                key_count,
+            } => {
+                let state_updated = if let Some(strategy) = self
+                    .app_state
+                    .write()
+                    .expect("lock is poisoned")
+                    .available_strategies
+                    .get_mut(strategy_name.as_str())
+                {
+                    strategies::set_start_identities(strategy, count, key_count);
+                    true
+                } else {
+                    false
+                };
+
+                if state_updated {
+                    BackendEvent::TaskCompletedStateChange(
+                        task.clone(),
+                        self.app_state.read().expect("lock is poisoned"),
+                    )
+                } else {
+                    BackendEvent::None
+                }
             }
             Task::None => BackendEvent::TaskCompleted(task, Ok("".to_owned())),
         }
