@@ -1,5 +1,6 @@
 //! Forms for operations management in strategy.
 
+mod contract_create;
 mod identity_top_up;
 mod identity_transfer;
 mod identity_update;
@@ -9,6 +10,7 @@ use strum::IntoEnumIterator;
 use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
 use self::{
+    contract_create::StrategyOpContractCreateFormController,
     identity_top_up::StrategyOpIdentityTopUpFormController,
     identity_transfer::StrategyOpIdentityTransferFormController,
     identity_update::StrategyOpIdentityUpdateFormController,
@@ -66,7 +68,9 @@ impl StrategyAddOperationFormController {
             OperationType::IdentityTransfer => Box::new(
                 StrategyOpIdentityTransferFormController::new(self.strategy_name.clone()),
             ),
-            OperationType::ContractCreate => todo!(),
+            OperationType::ContractCreate => Box::new(StrategyOpContractCreateFormController::new(
+                self.strategy_name.clone(),
+            )),
             OperationType::ContractUpdate => todo!(),
             OperationType::Document => todo!(),
         });
