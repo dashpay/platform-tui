@@ -1,5 +1,10 @@
 //! Screens and forms related to strategies manipulation.
 
+mod identity_inserts;
+mod select_strategy;
+mod start_identities;
+mod operations;
+
 use std::collections::BTreeMap;
 
 use strategy_tests::{frequency::Frequency, Strategy};
@@ -22,18 +27,25 @@ use crate::{
     Event,
 };
 
+use self::{
+    identity_inserts::StrategyIdentityInsertsFormController,
+    select_strategy::SelectStrategyFormController,
+    start_identities::StrategyStartIdentitiesFormController,
+};
+
 const COMMAND_KEYS: [ScreenCommandKey; 2] = [
     ScreenCommandKey::new("q", "Back to Main"),
     ScreenCommandKey::new("s", "Select a strategy"),
 ];
 
-// TODO: maybe write a macro to reduce duplication
-const COMMANDS_KEYS_ON_STRATEGY_SELECTED: [ScreenCommandKey; 5] = [
+const COMMANDS_KEYS_ON_STRATEGY_SELECTED: [ScreenCommandKey; 7] = [
     ScreenCommandKey::new("q", "Back to Main"),
     ScreenCommandKey::new("s", "Select a strategy"),
     ScreenCommandKey::new("c", "Set contracts with updates"),
     ScreenCommandKey::new("i", "Set identity inserts"),
     ScreenCommandKey::new("b", "Set start identities"),
+    ScreenCommandKey::new("Ctrl-i", "Remove identity inserts"),
+    ScreenCommandKey::new("Ctrl-b", "Remove start identities"),
 ];
 
 pub(crate) struct StrategiesScreenController {
@@ -153,173 +165,6 @@ impl ScreenController for StrategiesScreenController {
 
     fn view(&mut self, frame: &mut Frame, area: Rect) {
         self.info.view(frame, area)
-    }
-}
-
-pub(crate) struct SelectStrategyFormController {
-    input: SelectInput<String>,
-}
-
-impl SelectStrategyFormController {
-    pub(crate) fn new(strategies: Vec<String>) -> Self {
-        SelectStrategyFormController {
-            input: SelectInput::new(strategies),
-        }
-    }
-}
-
-impl FormController for SelectStrategyFormController {
-    fn on_event(&mut self, event: KeyEvent) -> FormStatus {
-        match self.input.on_event(event) {
-            InputStatus::Done(strategy_name) => FormStatus::Done {
-                task: Task::SelectStrategy(strategy_name),
-                block: false,
-            },
-            InputStatus::Redraw => FormStatus::Redraw,
-            InputStatus::None => FormStatus::None,
-        }
-    }
-
-    fn form_name(&self) -> &'static str {
-        "Strategy selection"
-    }
-
-    fn step_view(&mut self, frame: &mut Frame, area: Rect) {
-        self.input.view(frame, area)
-    }
-
-    fn step_name(&self) -> &'static str {
-        "By name"
-    }
-
-    fn step_index(&self) -> u8 {
-        0
-    }
-
-    fn steps_number(&self) -> u8 {
-        1
-    }
-}
-
-struct StrategyIdentityInsertsFormController {
-    input: ComposedInput<(Field<SelectInput<u16>>, Field<SelectInput<f64>>)>,
-    selected_strategy: String,
-}
-
-impl StrategyIdentityInsertsFormController {
-    fn new(selected_strategy: String) -> Self {
-        StrategyIdentityInsertsFormController {
-            input: ComposedInput::new((
-                Field::new(
-                    "Times per block",
-                    SelectInput::new(vec![1, 2, 5, 10, 20, 40, 100, 1000]),
-                ),
-                Field::new(
-                    "Chance per block",
-                    SelectInput::new(vec![1.0, 0.9, 0.75, 0.5, 0.25, 0.1, 0.05, 0.01]),
-                ),
-            )),
-            selected_strategy,
-        }
-    }
-}
-
-impl FormController for StrategyIdentityInsertsFormController {
-    fn on_event(&mut self, event: KeyEvent) -> FormStatus {
-        match self.input.on_event(event) {
-            InputStatus::Done((count, chance)) => FormStatus::Done {
-                task: Task::StrategySetIdentityInserts {
-                    strategy_name: self.selected_strategy.clone(),
-                    identity_inserts_frequency: Frequency {
-                        times_per_block_range: 1..count,
-                        chance_per_block: Some(chance),
-                    },
-                },
-                block: false,
-            },
-            InputStatus::Redraw => FormStatus::Redraw,
-            InputStatus::None => FormStatus::None,
-        }
-    }
-
-    fn form_name(&self) -> &'static str {
-        "Identity inserts for strategy"
-    }
-
-    fn step_view(&mut self, frame: &mut Frame, area: Rect) {
-        self.input.view(frame, area)
-    }
-
-    fn step_name(&self) -> &'static str {
-        self.input.step_name()
-    }
-
-    fn step_index(&self) -> u8 {
-        self.input.step_index()
-    }
-
-    fn steps_number(&self) -> u8 {
-        2
-    }
-}
-
-struct StrategyStartIdentitiesFormController {
-    input: ComposedInput<(Field<SelectInput<u16>>, Field<SelectInput<u32>>)>,
-    selected_strategy: String,
-}
-
-impl StrategyStartIdentitiesFormController {
-    fn new(selected_strategy: String) -> Self {
-        StrategyStartIdentitiesFormController {
-            input: ComposedInput::new((
-                Field::new(
-                    "Number of identities",
-                    SelectInput::new(vec![1, 10, 100, 1000, 10000, u16::MAX]),
-                ),
-                Field::new(
-                    "Keys per identity",
-                    SelectInput::new(vec![2, 3, 4, 5, 10, 20, 32]),
-                ),
-            )),
-            selected_strategy,
-        }
-    }
-}
-
-impl FormController for StrategyStartIdentitiesFormController {
-    fn on_event(&mut self, event: KeyEvent) -> FormStatus {
-        match self.input.on_event(event) {
-            InputStatus::Done((count, key_count)) => FormStatus::Done {
-                task: Task::StrategyStartIdentities {
-                    strategy_name: self.selected_strategy.clone(),
-                    count,
-                    key_count,
-                },
-                block: true,
-            },
-            InputStatus::Redraw => FormStatus::Redraw,
-            InputStatus::None => FormStatus::None,
-        }
-    }
-
-    fn form_name(&self) -> &'static str {
-        "Identity inserts for strategy"
-    }
-
-    fn step_view(&mut self, frame: &mut Frame, area: Rect) {
-        self.input.view(frame, area)
-    }
-
-    fn step_name(&self) -> &'static str {
-        self.input.step_name()
-    }
-
-    fn step_index(&self) -> u8 {
-        self.input.step_index()
-    }
-
-    fn steps_number(&self) -> u8 {
-        2
     }
 }
 
