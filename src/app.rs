@@ -90,6 +90,13 @@ fn make_screen_subs() -> Vec<Sub<ComponentId, NoUserEvent>> {
             }),
             SubClause::IsMounted(ComponentId::CommandPallet),
         ),
+        Sub::new(
+            SubEventClause::Keyboard(KeyEvent {
+                code: Key::Enter,
+                modifiers: KeyModifiers::NONE,
+            }),
+            SubClause::IsMounted(ComponentId::CommandPallet),
+        ),
     ]
 }
 type ErrorString = String;
@@ -204,6 +211,7 @@ pub(super) enum Message {
     RemoveStartIdentities,
     ContractCreate,
     ContractUpdate(usize),
+    SelectContract(usize),
 }
 
 pub(super) struct Model<'a> {
@@ -597,7 +605,9 @@ impl<'a> Model<'a> {
                     )
                     .expect("unable to remount screen");
 
-                self.app.umount(&ComponentId::CommandPallet).expect("unable to remount screen");
+                self.app
+                    .umount(&ComponentId::CommandPallet)
+                    .expect("unable to remount screen");
             }
         }
         self.app
@@ -1762,6 +1772,10 @@ impl Update<Message> for Model<'_> {
                 Message::ClearAssetLockTransaction => {
                     self.state.identity_asset_lock_private_key_in_creation = None;
                     Some(Message::Redraw)
+                }
+                Message::SelectContract(contract_index) => {
+                    dbg!(contract_index);
+                    None
                 }
             }
         } else {

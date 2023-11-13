@@ -3,53 +3,90 @@
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::platform_value::string_encoding::Encoding;
 use std::vec;
-use tui_realm_stdlib::{Paragraph, Textarea};
+use tui_realm_stdlib::{List, Paragraph, Textarea};
 use tuirealm::{
+    command::{Cmd, Direction},
     event::{Key, KeyEvent, KeyModifiers},
-    props::TextSpan,
-    Component, Event, MockComponent, NoUserEvent,
+    props::{Color, TextSpan},
+    AttrValue, Attribute, Component, Event, MockComponent, NoUserEvent,
 };
 
 use crate::app::state::AppState;
+use crate::components::screen::shared::Info;
 use crate::{
     app::{Message, Screen},
     mock_components::{CommandPallet, CommandPalletKey, KeyType},
 };
-use crate::components::screen::shared::Info;
 
 #[derive(MockComponent)]
 pub(crate) struct ContractScreen {
-    component: Info<true, false>,
+    component: List,
 }
 
 impl ContractScreen {
     pub(crate) fn new(state: &AppState) -> Self {
         let text_spans = if state.known_contracts.is_empty() {
-            vec![TextSpan::new("No known contracts, fetch some!")]
+            vec![vec![TextSpan::new("No known contracts, fetch some!")]]
         } else {
             state
                 .known_contracts
                 .iter()
                 .map(|(name, contract)| {
-                    TextSpan::new(format!(
+                    vec![TextSpan::new(format!(
                         "{} : {} ({} Types)",
                         name,
                         contract.id_ref().to_string(Encoding::Base58),
                         contract.document_types().len()
-                    ))
+                    ))]
                 })
                 .collect::<Vec<_>>()
         };
 
-        ContractScreen {
-            component: Info::new_scrollable_text_rows(text_spans.as_slice())
-        }
+        let mut component = List::default()
+            .rows(text_spans)
+            .highlighted_color(Color::LightYellow);
+        component.attr(Attribute::Scroll, AttrValue::Flag(true));
+        component.attr(Attribute::Focus, AttrValue::Flag(true));
+
+        ContractScreen { component }
     }
 }
 
 impl Component<Message, NoUserEvent> for ContractScreen {
-    fn on(&mut self, _ev: Event<NoUserEvent>) -> Option<Message> {
-        None
+    fn on(&mut self, ev: Event<NoUserEvent>) -> Option<Message> {
+        match ev {
+            Event::Keyboard(
+                KeyEvent {
+                    code: Key::Down,
+                    modifiers: KeyModifiers::NONE,
+                }
+                | KeyEvent {
+                    code: Key::Char('n'),
+                    modifiers: KeyModifiers::CONTROL,
+                },
+            ) => {
+                self.component.perform(Cmd::Move(Direction::Down));
+                Some(Message::Redraw)
+            }
+            Event::Keyboard(
+                KeyEvent {
+                    code: Key::Up,
+                    modifiers: KeyModifiers::NONE,
+                }
+                | KeyEvent {
+                    code: Key::Char('p'),
+                    modifiers: KeyModifiers::CONTROL,
+                },
+            ) => {
+                self.component.perform(Cmd::Move(Direction::Up));
+                Some(Message::Redraw)
+            }
+            Event::Keyboard(KeyEvent {
+                code: Key::Enter,
+                modifiers: KeyModifiers::NONE,
+            }) => Some(Message::SelectContract(self.component.state().unwrap_one().unwrap_usize())),
+            _ => None,
+        }
     }
 }
 
