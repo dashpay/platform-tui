@@ -18,7 +18,7 @@ pub(crate) use state::AppState;
 use strategy_tests::Strategy;
 use tokio::sync::Mutex;
 
-use self::identities::fetch_identity_by_b58_id;
+use self::{identities::fetch_identity_by_b58_id, state::ContractFileName};
 
 #[derive(Clone, PartialEq)]
 pub(crate) enum Task {
@@ -29,16 +29,12 @@ pub(crate) enum Task {
     None,
 }
 
-pub(crate) enum BackendEvent {
+pub(crate) enum BackendEvent<'s> {
     IdentityLoaded,
     IdentityUnloaded,
     TaskCompleted(Task, Result<String, String>),
-    AppStateUpdated(AppStateUpdate),
-}
-
-pub(crate) enum AppStateUpdate {
-    AvailableStrategies(BTreeMap<String, Strategy>),
-    SelectedStrategy(String),
+    AppStateUpdated(RwLockReadGuard<'s, AppState>),
+    None,
 }
 
 pub(crate) struct Backend {
@@ -65,12 +61,12 @@ impl Backend {
                 let result = fetch_identity_by_b58_id(&mut sdk, &base58_id).await;
                 BackendEvent::TaskCompleted(task, result)
             }
-            Task::SelectStrategy(strategy) => {
+            Task::SelectStrategy(strategy_name) => {
                 self.app_state
                     .write()
                     .expect("lock is poisoned")
-                    .selected_strategy = Some(strategy.clone());
-                BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(strategy))
+                    .selected_strategy = Some(strategy_name);
+                BackendEvent::AppStateUpdated(self.app_state.read().expect("lock is poisoned"))
             }
             Task::None => BackendEvent::TaskCompleted(task, Ok("".to_owned())),
         }

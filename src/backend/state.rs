@@ -27,6 +27,8 @@ use super::wallet::Wallet;
 
 const CURRENT_PROTOCOL_VERSION: ProtocolVersion = 1;
 
+pub(crate) type ContractFileName = String;
+
 #[derive(Debug, Clone)]
 pub(crate) struct AppState {
     pub loaded_identity: Option<Identity>,
@@ -34,7 +36,14 @@ pub(crate) struct AppState {
     pub loaded_wallet: Option<Arc<Wallet>>,
     pub known_identities: BTreeMap<String, Identity>,
     pub known_contracts: BTreeMap<String, CreatedDataContract>,
+    // TODO move strategies state into one structure to keep them in sync
     pub available_strategies: BTreeMap<String, Strategy>,
+    /// Because we don't store which contract support file was used exactly we
+    /// cannot properly restore the state and display a strategy, so this
+    /// field serves as a double of strategies' `contracts_with_updates`,
+    /// but using file names
+    pub available_strategies_contract_names:
+        BTreeMap<String, Vec<(ContractFileName, Option<BTreeMap<u64, ContractFileName>>)>>,
     pub current_strategy: Option<String>,
     pub selected_strategy: Option<String>,
     pub identity_asset_lock_private_key_in_creation:
@@ -53,6 +62,7 @@ impl Default for AppState {
     fn default() -> Self {
         let mut known_contracts = BTreeMap::new();
         let mut available_strategies = BTreeMap::new();
+        let mut available_strategies_contract_names = BTreeMap::new();
 
         let platform_version = PlatformVersion::get(CURRENT_PROTOCOL_VERSION).unwrap();
 
@@ -131,8 +141,20 @@ impl Default for AppState {
         };
 
         available_strategies.insert(String::from("default_strategy_1"), default_strategy_1);
+        available_strategies_contract_names.insert(
+            String::from("default_strategy_1"),
+            vec![("dashpay-contract-all-mutable".to_owned(), None)],
+        );
         available_strategies.insert(String::from("default_strategy_2"), default_strategy_2);
+        available_strategies_contract_names.insert(
+            String::from("default_strategy_2"),
+            vec![("dashpay-contract-all-mutable-update-1".to_owned(), None)],
+        );
         available_strategies.insert(String::from("default_strategy_3"), default_strategy_3);
+        available_strategies_contract_names.insert(
+            String::from("default_strategy_3"),
+            vec![("dashpay-contract-all-mutable-update-2".to_owned(), None)],
+        );
 
         AppState {
             loaded_identity: None,
@@ -144,6 +166,7 @@ impl Default for AppState {
             current_strategy: None,
             selected_strategy: None,
             identity_asset_lock_private_key_in_creation: None,
+            available_strategies_contract_names,
         }
     }
 }
@@ -156,6 +179,8 @@ struct AppStateInSerializationFormat {
     pub known_identities: BTreeMap<String, Identity>,
     pub known_contracts: BTreeMap<String, Vec<u8>>,
     pub available_strategies: BTreeMap<String, Vec<u8>>,
+    pub available_strategies_contract_names:
+        BTreeMap<String, Vec<(ContractFileName, Option<BTreeMap<u64, ContractFileName>>)>>,
     pub current_strategy: Option<String>,
     pub selected_strategy: Option<String>,
 }
@@ -185,6 +210,7 @@ impl PlatformSerializableWithPlatformVersion for AppState {
             current_strategy,
             selected_strategy,
             identity_asset_lock_private_key_in_creation,
+            available_strategies_contract_names,
         } = self;
 
         let known_contracts_in_serialization_format = known_contracts
@@ -222,6 +248,7 @@ impl PlatformSerializableWithPlatformVersion for AppState {
             available_strategies: available_strategies_in_serialization_format,
             current_strategy,
             selected_strategy,
+            available_strategies_contract_names,
         };
 
         let config = bincode::config::standard()
@@ -262,6 +289,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
             available_strategies,
             current_strategy,
             selected_strategy,
+            available_strategies_contract_names,
         } = app_state;
 
         let known_contracts = known_contracts
@@ -319,6 +347,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
             current_strategy,
             selected_strategy,
             identity_asset_lock_private_key_in_creation: None,
+            available_strategies_contract_names,
         })
     }
 }

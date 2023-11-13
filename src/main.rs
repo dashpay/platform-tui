@@ -15,9 +15,9 @@ use self::{
     ui::{Ui, UiFeedback},
 };
 
-pub(crate) enum Event {
+pub(crate) enum Event<'s> {
     Key(KeyEvent),
-    Backend(BackendEvent),
+    Backend(BackendEvent<'s>),
 }
 
 #[tokio::main]
