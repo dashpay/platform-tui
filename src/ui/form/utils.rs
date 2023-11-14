@@ -51,7 +51,7 @@ macro_rules! impl_sequential_input {
     // Macro entry point
     ($($input:ident),*) => {
         impl<$($input: Input),*> Input for ComposedInput<($(Field<$input>),*)> {
-            #[allow(dead_code)]
+            #![allow(dead_code)]
 
             // ComposedInput's output is a tuple of all outputs, so
             // (Field<TextInput>, Field<TextInput>) will give us (String, String).
@@ -81,7 +81,7 @@ macro_rules! impl_sequential_input {
         }
 
         impl<$($input: Input),*> ComposedInput<($(Field<$input>),*)> {
-            #[allow(dead_code)]
+            #![allow(dead_code)]
 
             pub(crate) fn step_name(&self) -> &'static str {
                 impl_sequential_input!{

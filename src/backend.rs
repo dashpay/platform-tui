@@ -73,6 +73,14 @@ impl Backend {
     }
 }
 
+impl Drop for Backend {
+    fn drop(&mut self) {
+        if let Ok(state) = self.app_state.read() {
+            state.save();
+        }
+    }
+}
+
 fn stringify_result<T: Serialize, E: Display>(result: Result<T, E>) -> Result<String, String> {
     match result {
         Ok(data) => {
