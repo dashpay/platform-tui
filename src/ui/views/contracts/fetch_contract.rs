@@ -1,0 +1,1 @@
+//! Contract fetching screen module.

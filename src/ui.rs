@@ -133,7 +133,6 @@ impl Ui {
                 }
                 ScreenFeedback::PreviousScreen(controller_builder) => {
                     let controller = controller_builder(app_state.deref());
-                    self.status_bar_state.add_child(controller.name());
                     self.status_bar_state.to_parent();
                     self.screen = Screen::new(controller);
                     UiFeedback::Redraw

@@ -6,7 +6,7 @@ use tuirealm::{
     Frame,
 };
 
-use super::wallet::WalletScreenController;
+use super::{contracts::ContractsScreenController, wallet::WalletScreenController};
 use crate::{
     ui::{
         screen::{
@@ -79,10 +79,6 @@ impl ScreenController for MainScreenController {
                 ))
             }
             Event::Key(KeyEvent {
-                code: Key::Char('c'),
-                modifiers: KeyModifiers::NONE,
-            }) => ScreenFeedback::None,
-            Event::Key(KeyEvent {
                 code: Key::Char('s'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::NextScreen(Box::new(|app_state| {
@@ -93,6 +89,12 @@ impl ScreenController for MainScreenController {
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::NextScreen(Box::new(|app_state| {
                 Box::new(WalletScreenController::new(app_state))
+            })),
+            Event::Key(KeyEvent {
+                code: Key::Char('c'),
+                modifiers: KeyModifiers::NONE,
+            }) => ScreenFeedback::NextScreen(Box::new(|app_state| {
+                Box::new(ContractsScreenController::new(app_state))
             })),
             Event::Key(KeyEvent {
                 code: Key::Char('v'),
