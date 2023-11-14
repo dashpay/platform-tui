@@ -17,19 +17,21 @@ use serde::Serialize;
 pub(crate) use state::AppState;
 use tokio::sync::Mutex;
 
-pub(crate) use self::strategies::StrategyTask;
+pub(crate) use self::{
+    strategies::StrategyTask,
+    wallet::{Wallet, WalletTask},
+};
 
 #[derive(Clone, PartialEq)]
 pub(crate) enum Task {
     FetchIdentityById(String),
     Strategy(StrategyTask),
+    Wallet(WalletTask),
     /// For testing purposes
     None,
 }
 
 pub(crate) enum BackendEvent<'s> {
-    IdentityLoaded,
-    IdentityUnloaded,
     TaskCompleted(Task, Result<String, String>),
     TaskCompletedStateChange(Task, RwLockReadGuard<'s, AppState>),
     AppStateUpdated(RwLockReadGuard<'s, AppState>),
@@ -62,6 +64,9 @@ impl Backend {
             }
             Task::Strategy(strategy_task) => {
                 strategies::run_strategy_task(&self.app_state, strategy_task)
+            }
+            Task::Wallet(wallet_task) => {
+                wallet::run_wallet_task(&self.app_state, wallet_task).await
             }
             Task::None => BackendEvent::TaskCompleted(task, Ok("".to_owned())),
         }

@@ -2,7 +2,7 @@
 //! This kind of state does not include UI details and basically all about
 //! persistence required by backend.
 
-use std::{collections::BTreeMap, fs, ops::Deref, path::Path, sync::Arc};
+use std::{collections::BTreeMap, fs, path::Path};
 
 use bincode::{Decode, Encode};
 use dpp::{
@@ -33,7 +33,7 @@ pub(crate) type ContractFileName = String;
 pub(crate) struct AppState {
     pub loaded_identity: Option<Identity>,
     pub identity_private_keys: BTreeMap<(Identifier, KeyID), PrivateKey>,
-    pub loaded_wallet: Option<Arc<Wallet>>,
+    pub loaded_wallet: Option<Wallet>,
     pub known_identities: BTreeMap<String, Identity>,
     pub known_contracts: BTreeMap<String, DataContract>,
     pub available_strategies: BTreeMap<String, Strategy>,
@@ -243,7 +243,7 @@ impl PlatformSerializableWithPlatformVersion for AppState {
         let app_state_in_serialization_format = AppStateInSerializationFormat {
             loaded_identity,
             identity_private_keys,
-            loaded_wallet: loaded_wallet.map(|wallet| wallet.deref().clone()),
+            loaded_wallet,
             known_identities,
             known_contracts: known_contracts_in_serialization_format,
             available_strategies: available_strategies_in_serialization_format,
@@ -356,7 +356,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
         Ok(AppState {
             loaded_identity,
             identity_private_keys,
-            loaded_wallet: loaded_wallet.map(|loaded_wallet| Arc::new(loaded_wallet)),
+            loaded_wallet,
             known_identities,
             known_contracts,
             available_strategies,
@@ -376,7 +376,7 @@ impl AppState {
             return AppState::default();
         };
 
-        let Ok(app_state) = AppState::versioned_deserialize(
+        let Ok(mut app_state) = AppState::versioned_deserialize(
             read_result.as_slice(),
             false,
             PlatformVersion::get(CURRENT_PROTOCOL_VERSION).unwrap(),
@@ -384,8 +384,7 @@ impl AppState {
             return AppState::default();
         };
 
-        if let Some(wallet) = app_state.loaded_wallet.as_ref() {
-            let wallet = wallet.clone();
+        if let Some(wallet) = app_state.loaded_wallet.as_mut() {
             wallet.reload_utxos().await;
         }
 

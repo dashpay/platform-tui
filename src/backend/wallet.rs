@@ -16,11 +16,77 @@ use dpp::dashcore::{
     secp256k1::{Message, Secp256k1},
     sighash::SighashCache,
     transaction::special_transaction::{asset_lock::AssetLockPayload, TransactionPayload},
-    Address, Network, OutPoint, PrivateKey, PublicKey, Script, ScriptBuf, Transaction, TxIn, TxOut,
+    Address, Network, OutPoint, PrivateKey, PublicKey, ScriptBuf, Transaction, TxIn, TxOut,
 };
 use rand::{prelude::StdRng, Rng, SeedableRng};
 
-use super::insight::{utxos_with_amount_for_addresses, InsightError};
+use super::{
+    insight::{utxos_with_amount_for_addresses, InsightError},
+    AppState, BackendEvent, Task,
+};
+
+#[derive(Clone, PartialEq)]
+pub(crate) enum WalletTask {
+    AddByPrivateKey(String),
+    Refresh,
+}
+
+pub(super) async fn run_wallet_task(
+    app_state: &RwLock<AppState>,
+    task: WalletTask,
+) -> BackendEvent {
+    match task {
+        WalletTask::AddByPrivateKey(ref private_key) => {
+            let private_key = if private_key.len() == 64 {
+                // hex
+                let bytes = hex::decode(private_key).expect("expected hex");
+                PrivateKey::from_slice(bytes.as_slice(), Network::Testnet)
+                    .expect("expected private key")
+            } else {
+                PrivateKey::from_wif(private_key.as_str()).expect("expected WIF key")
+            };
+
+            let secp = Secp256k1::new();
+            let public_key = private_key.public_key(&secp);
+            // todo: make the network be part of state
+            let address = Address::p2pkh(&public_key, Network::Testnet);
+            let wallet = Wallet::SingleKeyWallet(SingleKeyWallet {
+                private_key,
+                public_key,
+                address,
+                utxos: Default::default(),
+            });
+
+            app_state.write().expect("lock is poisoned").loaded_wallet = Some(wallet);
+            BackendEvent::TaskCompletedStateChange(
+                Task::Wallet(task),
+                app_state.read().expect("lock is poisoned"),
+            )
+        }
+        WalletTask::Refresh => {
+            let updated = if let Some(wallet) = app_state
+                .write()
+                .expect("lock is poisoned")
+                .loaded_wallet
+                .as_mut()
+            {
+                wallet.reload_utxos().await;
+                true
+            } else {
+                false
+            };
+
+            if updated {
+                BackendEvent::TaskCompletedStateChange(
+                    Task::Wallet(task),
+                    app_state.read().expect("lock is poisoned"),
+                )
+            } else {
+                BackendEvent::None
+            }
+        }
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum WalletError {
@@ -45,7 +111,7 @@ impl Wallet {
     }
 
     pub(crate) fn registration_transaction(
-        &self,
+        &mut self,
         seed: Option<u64>,
         amount: u64,
     ) -> Result<(Transaction, PrivateKey), WalletError> {
@@ -208,7 +274,7 @@ impl Wallet {
     }
 
     pub fn take_unspent_utxos_for(
-        &self,
+        &mut self,
         amount: u64,
     ) -> Option<(BTreeMap<OutPoint, (TxOut, PublicKey, Address)>, u64)> {
         match self {
@@ -216,15 +282,14 @@ impl Wallet {
         }
     }
 
-    pub async fn reload_utxos(&self) {
+    pub async fn reload_utxos(&mut self) {
         match self {
             Wallet::SingleKeyWallet(wallet) => {
                 let Ok(utxos) = utxos_with_amount_for_addresses(&[&wallet.address], false).await
                 else {
                     return;
                 };
-                let mut write_guard = wallet.utxos.write().unwrap();
-                *write_guard = utxos;
+                wallet.utxos = utxos;
             }
         }
     }
@@ -235,7 +300,7 @@ pub struct SingleKeyWallet {
     pub private_key: PrivateKey,
     pub public_key: PublicKey,
     pub address: Address,
-    pub utxos: RwLock<HashMap<OutPoint, TxOut>>,
+    pub utxos: HashMap<OutPoint, TxOut>,
 }
 
 impl Clone for SingleKeyWallet {
@@ -244,7 +309,7 @@ impl Clone for SingleKeyWallet {
             private_key: self.private_key,
             public_key: self.public_key.clone(),
             address: self.address.clone(),
-            utxos: RwLock::new(self.utxos.read().unwrap().clone()),
+            utxos: self.utxos.clone(),
         }
     }
 }
@@ -252,8 +317,8 @@ impl Clone for SingleKeyWallet {
 impl Encode for SingleKeyWallet {
     fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), EncodeError> {
         self.private_key.inner.as_ref().encode(encoder)?;
-        let utxos = self.utxos.read().unwrap();
-        let string_utxos = utxos
+        let string_utxos = self
+            .utxos
             .iter()
             .map(|(outpoint, txout)| {
                 (
@@ -305,7 +370,7 @@ impl Decode for SingleKeyWallet {
             private_key,
             public_key,
             address,
-            utxos: RwLock::new(utxos),
+            utxos,
         })
     }
 }
@@ -348,7 +413,7 @@ impl<'a> BorrowDecode<'a> for SingleKeyWallet {
             private_key,
             public_key,
             address,
-            utxos: RwLock::new(utxos),
+            utxos,
         })
     }
 }
@@ -361,20 +426,17 @@ impl SingleKeyWallet {
     }
 
     pub fn balance(&self) -> u64 {
-        let utxos = self.utxos.read().unwrap();
-        utxos.iter().map(|(_, out)| out.value).sum()
+        self.utxos.iter().map(|(_, out)| out.value).sum()
     }
 
     pub fn take_unspent_utxos_for(
-        &self,
+        &mut self,
         amount: u64,
     ) -> Option<(BTreeMap<OutPoint, (TxOut, PublicKey, Address)>, u64)> {
-        let mut utxos = self.utxos.write().unwrap();
-
         let mut required: i64 = amount as i64;
         let mut taken_utxos = BTreeMap::new();
 
-        for (outpoint, utxo) in utxos.iter() {
+        for (outpoint, utxo) in self.utxos.iter() {
             if required <= 0 {
                 break;
             }
@@ -392,7 +454,7 @@ impl SingleKeyWallet {
 
         // Remove taken UTXOs from the original list
         for (outpoint, _) in &taken_utxos {
-            utxos.remove(outpoint);
+            self.utxos.remove(outpoint);
         }
 
         Some((taken_utxos, required.abs() as u64))

@@ -142,6 +142,13 @@ impl Ui {
                     self.form = Some(Form::new(controller));
                     UiFeedback::Redraw
                 }
+                ScreenFeedback::Task { task, block } => {
+                    if block {
+                        self.status_bar_state.blocked = true;
+                        self.blocked = true;
+                    }
+                    UiFeedback::ExecuteTask(task)
+                }
                 ScreenFeedback::Redraw => UiFeedback::Redraw,
                 ScreenFeedback::Quit => UiFeedback::Quit,
                 ScreenFeedback::None => UiFeedback::None,

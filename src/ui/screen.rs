@@ -5,14 +5,13 @@ pub(crate) mod widgets;
 use std::ops::{Deref, DerefMut};
 
 use tuirealm::{
-    event::KeyEvent,
     tui::prelude::{Constraint, Direction, Layout, Rect},
     Frame,
 };
 
 use self::widgets::command_pallet;
-use super::{form::FormController, BackendEvent, Event};
-use crate::backend::AppState;
+use super::{form::FormController, Event};
+use crate::backend::{AppState, Task};
 
 /// Screen is the unit of navigation and representation in the TUI.
 /// It consists of two blocks:
@@ -124,6 +123,7 @@ pub(crate) enum ScreenFeedback {
     NextScreen(ScreenControllerBuilder),
     PreviousScreen(ScreenControllerBuilder),
     Form(Box<dyn FormController>),
+    Task { task: Task, block: bool },
     Redraw,
     Quit,
     None,

@@ -77,7 +77,7 @@ async fn main() {
         match ui_feedback {
             UiFeedback::Quit => active = false,
             UiFeedback::ExecuteTask(task) => {
-                backend_task = Some(backend.run_task(task.clone()).boxed().fuse()).into();
+                backend_task = Some(backend.run_task(task.clone()).boxed_local().fuse()).into();
                 ui.redraw();
             }
             UiFeedback::Redraw => ui.redraw(), // TODO Debounce redraw?
