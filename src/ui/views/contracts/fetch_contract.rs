@@ -1,5 +1,6 @@
 //! Contract fetching screen module.
 
+use futures::FutureExt;
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
     tui::prelude::Rect,
@@ -56,7 +57,11 @@ impl ScreenController for FetchSystemContractScreenController {
                 code: Key::Char('q'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::PreviousScreen(Box::new(|app_state| {
-                Box::new(ContractsScreenController::new(app_state))
+                async {
+                    Box::new(ContractsScreenController::new(app_state).await)
+                        as Box<dyn ScreenController>
+                }
+                .boxed()
             })),
             Event::Key(KeyEvent {
                 code: Key::Char('p'),

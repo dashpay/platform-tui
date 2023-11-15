@@ -67,9 +67,11 @@ async fn main() {
             },
         };
 
-        let ui_feedback = event
-            .map(|e| ui.on_event(backend.state(), e))
-            .unwrap_or(UiFeedback::None);
+        let ui_feedback = if let Some(e) = event {
+            ui.on_event(backend.state(), e).await
+        } else {
+            UiFeedback::None
+        };
 
         match ui_feedback {
             UiFeedback::Quit => active = false,

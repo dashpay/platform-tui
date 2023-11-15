@@ -1,5 +1,6 @@
 //! Screens and forms related to wallet management.
 
+use futures::FutureExt;
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
     tui::prelude::Rect,
@@ -8,7 +9,7 @@ use tuirealm::{
 
 use super::main::MainScreenController;
 use crate::{
-    backend::{AppState, BackendEvent, Task, Wallet, WalletTask},
+    backend::{AppState, AppStateUpdate, BackendEvent, Task, Wallet, WalletTask},
     ui::{
         form::{FormController, FormStatus, Input, InputStatus, TextInput},
         screen::{
@@ -35,15 +36,16 @@ pub(crate) struct WalletScreenController {
 }
 
 impl WalletScreenController {
-    pub(crate) fn new(app_state: &AppState) -> Self {
-        let (info, wallet_loaded) = if let Some(wallet) = &app_state.loaded_wallet {
-            (Info::new_fixed(&display_wallet(wallet)), true)
-        } else {
-            (
-                Info::new_fixed("Wallet management commands\n\nNo wallet loaded yet"),
-                false,
-            )
-        };
+    pub(crate) async fn new(app_state: &AppState) -> Self {
+        let (info, wallet_loaded) =
+            if let Some(wallet) = app_state.loaded_wallet.lock().await.as_ref() {
+                (Info::new_fixed(&display_wallet(&wallet)), true)
+            } else {
+                (
+                    Info::new_fixed("Wallet management commands\n\nNo wallet loaded yet"),
+                    false,
+                )
+            };
 
         WalletScreenController {
             info,
@@ -78,9 +80,9 @@ impl ScreenController for WalletScreenController {
             Event::Key(KeyEvent {
                 code: Key::Char('q'),
                 modifiers: KeyModifiers::NONE,
-            }) => {
-                ScreenFeedback::PreviousScreen(Box::new(|_| Box::new(MainScreenController::new())))
-            }
+            }) => ScreenFeedback::PreviousScreen(Box::new(|_| {
+                async { Box::new(MainScreenController::new()) as Box<dyn ScreenController> }.boxed()
+            })),
             Event::Key(KeyEvent {
                 code: Key::Char('a'),
                 modifiers: KeyModifiers::NONE,
@@ -96,16 +98,15 @@ impl ScreenController for WalletScreenController {
             },
 
             Event::Backend(
-                BackendEvent::AppStateUpdated(app_state)
-                | BackendEvent::TaskCompletedStateChange { app_state, .. },
+                BackendEvent::AppStateUpdated(AppStateUpdate::LoadedWallet(wallet))
+                | BackendEvent::TaskCompletedStateChange {
+                    app_state_update: AppStateUpdate::LoadedWallet(wallet),
+                    ..
+                },
             ) => {
-                if let Some(wallet) = &app_state.loaded_wallet {
-                    self.info = Info::new_fixed(&display_wallet(wallet));
-                    self.wallet_loaded = true;
-                    ScreenFeedback::Redraw
-                } else {
-                    ScreenFeedback::None
-                }
+                self.info = Info::new_fixed(&display_wallet(&wallet));
+                self.wallet_loaded = true;
+                ScreenFeedback::Redraw
             }
             _ => ScreenFeedback::None,
         }

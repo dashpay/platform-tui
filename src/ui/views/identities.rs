@@ -1,5 +1,6 @@
 //! UI definitions related to identities.
 
+use futures::FutureExt;
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
     tui::prelude::Rect,
@@ -56,9 +57,9 @@ impl ScreenController for IdentitiesScreenController {
             Event::Key(KeyEvent {
                 code: Key::Char('q'),
                 modifiers: KeyModifiers::NONE,
-            }) => {
-                ScreenFeedback::PreviousScreen(Box::new(|_| Box::new(MainScreenController::new())))
-            }
+            }) => ScreenFeedback::PreviousScreen(Box::new(|_| {
+                async { Box::new(MainScreenController::new()) as Box<dyn ScreenController> }.boxed()
+            })),
             Event::Key(KeyEvent {
                 code: Key::Char('i'),
                 modifiers: KeyModifiers::NONE,

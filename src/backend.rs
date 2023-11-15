@@ -8,19 +8,18 @@ mod state;
 mod strategies;
 mod wallet;
 
-use std::{
-    fmt::Display,
-    ops::DerefMut,
-    sync::{RwLock, RwLockReadGuard},
-};
+use std::{collections::BTreeMap, fmt::Display, ops::DerefMut};
 
 use dash_platform_sdk::Sdk;
 use serde::Serialize;
 pub(crate) use state::AppState;
-use tokio::sync::Mutex;
+use strategy_tests::Strategy;
+use tokio::sync::{MappedMutexGuard, Mutex, MutexGuard};
 
+use self::state::{KnownContractsMap, StrategiesMap};
 pub(crate) use self::{
     contracts::ContractTask,
+    state::StrategyContractNames,
     strategies::StrategyTask,
     wallet::{Wallet, WalletTask},
 };
@@ -41,27 +40,41 @@ pub(crate) enum BackendEvent<'s> {
     TaskCompletedStateChange {
         task: Task,
         execution_result: Result<String, String>,
-        app_state: RwLockReadGuard<'s, AppState>,
+        app_state_update: AppStateUpdate<'s>,
     },
-    AppStateUpdated(RwLockReadGuard<'s, AppState>),
+    AppStateUpdated(AppStateUpdate<'s>),
     None,
+}
+
+pub(crate) enum AppStateUpdate<'s> {
+    KnownContracts(MutexGuard<'s, KnownContractsMap>),
+    LoadedWallet(MappedMutexGuard<'s, Wallet>),
+    Strategies(
+        MutexGuard<'s, StrategiesMap>,
+        MutexGuard<'s, BTreeMap<String, StrategyContractNames>>,
+    ),
+    SelectedStrategy(
+        String,
+        MappedMutexGuard<'s, Strategy>,
+        MappedMutexGuard<'s, StrategyContractNames>,
+    ),
 }
 
 pub(crate) struct Backend {
     sdk: Mutex<Sdk>,
-    app_state: RwLock<AppState>,
+    app_state: AppState,
 }
 
 impl Backend {
     pub(crate) async fn new(sdk: Sdk) -> Self {
         Backend {
             sdk: Mutex::new(sdk),
-            app_state: RwLock::new(AppState::load().await),
+            app_state: AppState::load().await,
         }
     }
 
-    pub(crate) fn state(&self) -> RwLockReadGuard<AppState> {
-        self.app_state.read().expect("lock is poisoned")
+    pub(crate) fn state(&self) -> &AppState {
+        &self.app_state
     }
 
     pub(crate) async fn run_task(&self, task: Task) -> BackendEvent {
@@ -76,15 +89,21 @@ impl Backend {
                 }
             }
             Task::Strategy(strategy_task) => {
-                strategies::run_strategy_task(&self.app_state, strategy_task)
+                strategies::run_strategy_task(
+                    &self.app_state.available_strategies,
+                    &self.app_state.available_strategies_contract_names,
+                    &self.app_state.selected_strategy,
+                    strategy_task,
+                )
+                .await
             }
             Task::Wallet(wallet_task) => {
-                wallet::run_wallet_task(&self.app_state, wallet_task).await
+                wallet::run_wallet_task(&self.app_state.loaded_wallet, wallet_task).await
             }
             Task::Contract(contract_task) => {
                 contracts::run_contract_task(
                     self.sdk.lock().await.deref_mut(),
-                    &self.app_state,
+                    &self.app_state.known_contracts,
                     contract_task,
                 )
                 .await
@@ -95,9 +114,7 @@ impl Backend {
 
 impl Drop for Backend {
     fn drop(&mut self) {
-        if let Ok(state) = self.app_state.read() {
-            state.save();
-        }
+        self.app_state.save()
     }
 }
 

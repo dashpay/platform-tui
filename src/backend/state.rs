@@ -22,6 +22,7 @@ use dpp::{
     ProtocolError::{PlatformDeserializationError, PlatformSerializationError},
 };
 use strategy_tests::Strategy;
+use tokio::sync::Mutex;
 
 use super::wallet::Wallet;
 
@@ -29,26 +30,29 @@ const CURRENT_PROTOCOL_VERSION: ProtocolVersion = 1;
 
 pub(crate) type ContractFileName = String;
 
+pub(super) type StrategiesMap = BTreeMap<String, Strategy>;
+pub(crate) type StrategyContractNames =
+    Vec<(ContractFileName, Option<BTreeMap<u64, ContractFileName>>)>;
+pub(super) type KnownContractsMap = BTreeMap<String, DataContract>;
+
 // TODO: each state part should be in it's own mutex in case multiple backend
 // tasks are executed on different state parts,
 // moreover single mutex hold during rendering will block unrelated tasks from
 // finishing
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(crate) struct AppState {
     pub loaded_identity: Option<Identity>,
     pub identity_private_keys: BTreeMap<(Identifier, KeyID), PrivateKey>,
-    pub loaded_wallet: Option<Wallet>,
+    pub loaded_wallet: Mutex<Option<Wallet>>,
     pub known_identities: BTreeMap<String, Identity>,
-    pub known_contracts: BTreeMap<String, DataContract>,
-    pub available_strategies: BTreeMap<String, Strategy>,
+    pub known_contracts: Mutex<KnownContractsMap>,
+    pub available_strategies: Mutex<StrategiesMap>,
     /// Because we don't store which contract support file was used exactly we
     /// cannot properly restore the state and display a strategy, so this
     /// field serves as a double of strategies' `contracts_with_updates`,
     /// but using file names
-    pub available_strategies_contract_names:
-        BTreeMap<String, Vec<(ContractFileName, Option<BTreeMap<u64, ContractFileName>>)>>,
-    pub current_strategy: Option<String>,
-    pub selected_strategy: Option<String>,
+    pub available_strategies_contract_names: Mutex<BTreeMap<String, StrategyContractNames>>,
+    pub selected_strategy: Mutex<Option<String>>,
     pub identity_asset_lock_private_key_in_creation:
         Option<(Transaction, PrivateKey, Option<AssetLockProof>)>,
 }
@@ -154,14 +158,13 @@ impl Default for AppState {
         AppState {
             loaded_identity: None,
             identity_private_keys: Default::default(),
-            loaded_wallet: None,
+            loaded_wallet: None.into(),
             known_identities: BTreeMap::new(),
-            known_contracts: BTreeMap::new(),
-            available_strategies: BTreeMap::new(),
-            current_strategy: None,
-            selected_strategy: None,
+            known_contracts: BTreeMap::new().into(),
+            available_strategies: BTreeMap::new().into(),
+            selected_strategy: None.into(),
             identity_asset_lock_private_key_in_creation: None,
-            available_strategies_contract_names: BTreeMap::new(),
+            available_strategies_contract_names: BTreeMap::new().into(),
         }
     }
 }
@@ -176,7 +179,6 @@ struct AppStateInSerializationFormat {
     pub available_strategies: BTreeMap<String, Vec<u8>>,
     pub available_strategies_contract_names:
         BTreeMap<String, Vec<(ContractFileName, Option<BTreeMap<u64, ContractFileName>>)>>,
-    pub current_strategy: Option<String>,
     pub selected_strategy: Option<String>,
     pub identity_asset_lock_private_key_in_creation:
         Option<(Vec<u8>, [u8; 32], Option<AssetLockProof>)>,
@@ -185,16 +187,15 @@ struct AppStateInSerializationFormat {
 impl PlatformSerializableWithPlatformVersion for AppState {
     type Error = ProtocolError;
 
-    fn serialize_to_bytes_with_platform_version(
-        &self,
-        platform_version: &PlatformVersion,
-    ) -> Result<Vec<u8>, ProtocolError> {
-        self.clone()
-            .serialize_consume_to_bytes_with_platform_version(platform_version)
-    }
-
     fn serialize_consume_to_bytes_with_platform_version(
         self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<u8>, ProtocolError> {
+        self.serialize_to_bytes_with_platform_version(&platform_version)
+    }
+
+    fn serialize_to_bytes_with_platform_version(
+        &self,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, ProtocolError> {
         let AppState {
@@ -204,56 +205,58 @@ impl PlatformSerializableWithPlatformVersion for AppState {
             known_identities,
             known_contracts,
             available_strategies,
-            current_strategy,
             selected_strategy,
             identity_asset_lock_private_key_in_creation,
             available_strategies_contract_names,
         } = self;
 
         let known_contracts_in_serialization_format = known_contracts
-            .into_iter()
+            .blocking_lock()
+            .iter()
             .map(|(key, contract)| {
                 let serialized_contract =
-                    contract.serialize_consume_to_bytes_with_platform_version(platform_version)?;
-                Ok((key, serialized_contract))
+                    contract.serialize_to_bytes_with_platform_version(platform_version)?;
+                Ok((key.clone(), serialized_contract))
             })
             .collect::<Result<BTreeMap<String, Vec<u8>>, ProtocolError>>()?;
 
         let available_strategies_in_serialization_format = available_strategies
-            .into_iter()
+            .blocking_lock()
+            .iter()
             .map(|(key, strategy)| {
                 let serialized_strategy =
-                    strategy.serialize_consume_to_bytes_with_platform_version(platform_version)?;
-                Ok((key, serialized_strategy))
+                    strategy.serialize_to_bytes_with_platform_version(platform_version)?;
+                Ok((key.clone(), serialized_strategy))
             })
             .collect::<Result<BTreeMap<String, Vec<u8>>, ProtocolError>>()?;
 
         let identity_private_keys = identity_private_keys
-            .into_iter()
-            .map(|(key, value)| (key, value.inner.secret_bytes()))
+            .iter()
+            .map(|(key, value)| (key.clone(), value.inner.secret_bytes()))
             .collect();
 
         let identity_asset_lock_private_key_in_creation =
-            identity_asset_lock_private_key_in_creation.map(
+            identity_asset_lock_private_key_in_creation.as_ref().map(
                 |(transaction, private_key, asset_lock_proof)| {
                     (
                         transaction.serialize(),
                         private_key.inner.secret_bytes(),
-                        asset_lock_proof,
+                        asset_lock_proof.clone(),
                     )
                 },
             );
 
         let app_state_in_serialization_format = AppStateInSerializationFormat {
-            loaded_identity,
+            loaded_identity: loaded_identity.clone(),
             identity_private_keys,
-            loaded_wallet,
-            known_identities,
+            loaded_wallet: loaded_wallet.blocking_lock().clone(),
+            known_identities: known_identities.clone(),
             known_contracts: known_contracts_in_serialization_format,
             available_strategies: available_strategies_in_serialization_format,
-            current_strategy,
-            selected_strategy,
-            available_strategies_contract_names,
+            selected_strategy: selected_strategy.blocking_lock().clone(),
+            available_strategies_contract_names: available_strategies_contract_names
+                .blocking_lock()
+                .clone(),
             identity_asset_lock_private_key_in_creation,
         };
 
@@ -293,7 +296,6 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
             known_identities,
             known_contracts,
             available_strategies,
-            current_strategy,
             selected_strategy,
             available_strategies_contract_names,
             identity_asset_lock_private_key_in_creation,
@@ -360,13 +362,12 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
         Ok(AppState {
             loaded_identity,
             identity_private_keys,
-            loaded_wallet,
+            loaded_wallet: loaded_wallet.into(),
             known_identities,
-            known_contracts,
-            available_strategies,
-            current_strategy,
-            selected_strategy,
-            available_strategies_contract_names,
+            known_contracts: known_contracts.into(),
+            available_strategies: available_strategies.into(),
+            selected_strategy: selected_strategy.into(),
+            available_strategies_contract_names: available_strategies_contract_names.into(),
             identity_asset_lock_private_key_in_creation,
         })
     }
@@ -380,7 +381,7 @@ impl AppState {
             return AppState::default();
         };
 
-        let Ok(mut app_state) = AppState::versioned_deserialize(
+        let Ok(app_state) = AppState::versioned_deserialize(
             read_result.as_slice(),
             false,
             PlatformVersion::get(CURRENT_PROTOCOL_VERSION).unwrap(),
@@ -388,20 +389,23 @@ impl AppState {
             return AppState::default();
         };
 
-        if let Some(wallet) = app_state.loaded_wallet.as_mut() {
+        if let Some(wallet) = app_state.loaded_wallet.lock().await.as_mut() {
             wallet.reload_utxos().await;
         }
 
         app_state
     }
 
+    /// Used in backend destructor, must not panic
     pub fn save(&self) {
         let platform_version = PlatformVersion::get(CURRENT_PROTOCOL_VERSION).unwrap();
         let path = Path::new("explorer.state");
 
-        let serialized_state = self
-            .serialize_to_bytes_with_platform_version(platform_version)
-            .expect("expected to save state");
-        fs::write(path, serialized_state).unwrap();
+        let serialized_state = tokio::task::block_in_place(|| {
+            self.serialize_to_bytes_with_platform_version(platform_version)
+        });
+        if let Ok(state) = serialized_state {
+            let _ = fs::write(path, state);
+        }
     }
 }

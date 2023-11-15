@@ -1,7 +1,7 @@
 use std::{
     collections::{BTreeMap, HashMap},
+    ops::DerefMut,
     str::FromStr,
-    sync::RwLock,
 };
 
 use bincode::{
@@ -19,10 +19,11 @@ use dpp::dashcore::{
     Address, Network, OutPoint, PrivateKey, PublicKey, ScriptBuf, Transaction, TxIn, TxOut,
 };
 use rand::{prelude::StdRng, Rng, SeedableRng};
+use tokio::sync::{Mutex, MutexGuard};
 
 use super::{
     insight::{utxos_with_amount_for_addresses, InsightError},
-    AppState, BackendEvent, Task,
+    AppStateUpdate, BackendEvent, Task,
 };
 
 #[derive(Clone, PartialEq)]
@@ -32,7 +33,7 @@ pub(crate) enum WalletTask {
 }
 
 pub(super) async fn run_wallet_task(
-    app_state: &RwLock<AppState>,
+    wallet_state: &Mutex<Option<Wallet>>,
     task: WalletTask,
 ) -> BackendEvent {
     match task {
@@ -58,32 +59,30 @@ pub(super) async fn run_wallet_task(
                 utxos: Default::default(),
             });
 
-            app_state.write().expect("lock is poisoned").loaded_wallet = Some(wallet);
+            let mut wallet_guard = wallet_state.lock().await;
+            *wallet_guard = Some(wallet);
+            let loaded_wallet_update = MutexGuard::map(wallet_guard, |opt| {
+                opt.as_mut().expect("wallet was set above")
+            });
+
             BackendEvent::TaskCompletedStateChange {
                 task: Task::Wallet(task),
                 execution_result: Ok("Added wallet".to_owned()),
-                app_state: app_state.read().expect("lock is poisoned"),
+                app_state_update: AppStateUpdate::LoadedWallet(loaded_wallet_update),
             }
         }
         WalletTask::Refresh => {
-            let updated = if let Some(wallet) = app_state
-                .write()
-                .expect("lock is poisoned")
-                .loaded_wallet
-                .as_mut()
-            {
+            let mut wallet_guard = wallet_state.lock().await;
+            if let Some(wallet) = wallet_guard.deref_mut() {
                 wallet.reload_utxos().await;
-                true
-            } else {
-                false
-            };
-
-            if updated {
+                let loaded_wallet_update = MutexGuard::map(wallet_guard, |opt| {
+                    opt.as_mut().expect("wallet was set above")
+                });
                 BackendEvent::TaskCompletedStateChange {
                     task: Task::Wallet(task),
                     execution_result: Ok("Refreshed wallet".to_owned()), /* TODO actually failure
                                                                           * is not reported */
-                    app_state: app_state.read().expect("lock is poisoned"),
+                    app_state_update: AppStateUpdate::LoadedWallet(loaded_wallet_update),
                 }
             } else {
                 BackendEvent::None

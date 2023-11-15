@@ -1,5 +1,6 @@
 //! The view a user sees on application start.
 
+use futures::FutureExt;
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
     tui::prelude::Rect,
@@ -73,28 +74,39 @@ impl ScreenController for MainScreenController {
             Event::Key(KeyEvent {
                 code: Key::Char('i'),
                 modifiers: KeyModifiers::NONE,
-            }) => {
-                ScreenFeedback::NextScreen(Box::new(
-                    |_| Box::new(IdentitiesScreenController::new()),
-                ))
-            }
+            }) => ScreenFeedback::NextScreen(Box::new(|_| {
+                async { Box::new(IdentitiesScreenController::new()) as Box<dyn ScreenController> }
+                    .boxed()
+            })),
             Event::Key(KeyEvent {
                 code: Key::Char('s'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::NextScreen(Box::new(|app_state| {
-                Box::new(StrategiesScreenController::new(app_state))
+                async {
+                    Box::new(StrategiesScreenController::new(app_state).await)
+                        as Box<dyn ScreenController>
+                }
+                .boxed()
             })),
             Event::Key(KeyEvent {
                 code: Key::Char('w'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::NextScreen(Box::new(|app_state| {
-                Box::new(WalletScreenController::new(app_state))
+                async {
+                    Box::new(WalletScreenController::new(app_state).await)
+                        as Box<dyn ScreenController>
+                }
+                .boxed()
             })),
             Event::Key(KeyEvent {
                 code: Key::Char('c'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::NextScreen(Box::new(|app_state| {
-                Box::new(ContractsScreenController::new(app_state))
+                async {
+                    Box::new(ContractsScreenController::new(app_state).await)
+                        as Box<dyn ScreenController>
+                }
+                .boxed()
             })),
             Event::Key(KeyEvent {
                 code: Key::Char('v'),

@@ -4,6 +4,7 @@ pub(crate) mod widgets;
 
 use std::ops::{Deref, DerefMut};
 
+use futures::future::BoxFuture;
 use tuirealm::{
     tui::prelude::{Constraint, Direction, Layout, Rect},
     Frame,
@@ -129,4 +130,5 @@ pub(crate) enum ScreenFeedback {
     None,
 }
 
-pub(crate) type ScreenControllerBuilder = Box<dyn FnOnce(&AppState) -> Box<dyn ScreenController>>;
+pub(crate) type ScreenControllerBuilder =
+    Box<dyn FnOnce(&AppState) -> BoxFuture<Box<dyn ScreenController>>>;

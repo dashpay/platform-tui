@@ -8,6 +8,7 @@ mod start_identities;
 
 use std::collections::BTreeMap;
 
+use futures::FutureExt;
 use strategy_tests::Strategy;
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
@@ -22,7 +23,7 @@ use self::{
     start_identities::StrategyStartIdentitiesFormController,
 };
 use crate::{
-    backend::{AppState, BackendEvent},
+    backend::{AppState, AppStateUpdate, BackendEvent},
     ui::{
         screen::{
             widgets::info::Info, ScreenCommandKey, ScreenController, ScreenFeedback,
@@ -59,37 +60,31 @@ pub(crate) struct StrategiesScreenController {
 }
 
 impl StrategiesScreenController {
-    pub(crate) fn new(app_state: &AppState) -> Self {
-        let info = Self::build_info(app_state);
+    pub(crate) async fn new(app_state: &AppState) -> Self {
+        let available_strategies_lock = app_state.available_strategies.lock().await;
+        let selected_strategy_lock = app_state.selected_strategy.lock().await;
+
+        let info = if let Some(name) = selected_strategy_lock.as_ref() {
+            let strategy = available_strategies_lock
+                .get(name.as_str())
+                .expect("inconsistent data");
+            let contract_names_lock = app_state.available_strategies_contract_names.lock().await;
+
+            Info::new_fixed(&display_strategy(
+                &name,
+                strategy,
+                contract_names_lock
+                    .get(name.as_str())
+                    .expect("inconsistent data"),
+            ))
+        } else {
+            Info::new_fixed("Strategies management commands.\nNo selected strategy.")
+        };
 
         StrategiesScreenController {
             info,
-            available_strategies: app_state.available_strategies.keys().cloned().collect(),
-            selected_strategy: app_state.selected_strategy.clone(),
-        }
-    }
-
-    fn build_info(app_state: &AppState) -> Info {
-        let selected_strategy_name = app_state.selected_strategy.as_ref();
-        let selected_strategy = selected_strategy_name
-            .map(|s| app_state.available_strategies.get(s.as_str()))
-            .flatten();
-        let selected_strategy_contracts_updates = selected_strategy_name
-            .map(|s| {
-                app_state
-                    .available_strategies_contract_names
-                    .get(s.as_str())
-            })
-            .flatten();
-
-        if let (Some(name), Some(strategy), Some(contract_updates)) = (
-            selected_strategy_name,
-            selected_strategy,
-            selected_strategy_contracts_updates,
-        ) {
-            Info::new_fixed(&display_strategy(name, strategy, contract_updates))
-        } else {
-            Info::new_fixed("Strategies management commands.\nNo selected strategy.")
+            available_strategies: available_strategies_lock.keys().cloned().collect(),
+            selected_strategy: selected_strategy_lock.clone(),
         }
     }
 }
@@ -116,9 +111,9 @@ impl ScreenController for StrategiesScreenController {
             Event::Key(KeyEvent {
                 code: Key::Char('q'),
                 modifiers: KeyModifiers::NONE,
-            }) => {
-                ScreenFeedback::PreviousScreen(Box::new(|_| Box::new(MainScreenController::new())))
-            }
+            }) => ScreenFeedback::PreviousScreen(Box::new(|_| {
+                async { Box::new(MainScreenController::new()) as Box<dyn ScreenController> }.boxed()
+            })),
             Event::Key(KeyEvent {
                 code: Key::Char('s'),
                 modifiers: KeyModifiers::NONE,
@@ -167,15 +162,33 @@ impl ScreenController for StrategiesScreenController {
             }) => ScreenFeedback::Form(Box::new(NewStrategyFormController::new())),
 
             Event::Backend(
-                BackendEvent::AppStateUpdated(app_state)
-                | BackendEvent::TaskCompletedStateChange { app_state, .. },
+                BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
+                    strategy_name,
+                    strategy,
+                    contract_names,
+                ))
+                | BackendEvent::TaskCompletedStateChange {
+                    app_state_update:
+                        AppStateUpdate::SelectedStrategy(strategy_name, strategy, contract_names),
+                    ..
+                },
             ) => {
-                self.info = Self::build_info(&app_state);
-                self.available_strategies =
-                    app_state.available_strategies.keys().cloned().collect();
-                if let Some(strategy_name) = &app_state.selected_strategy {
-                    self.selected_strategy = Some(strategy_name.clone());
-                }
+                self.info = Info::new_fixed(&display_strategy(
+                    &strategy_name,
+                    &strategy,
+                    &contract_names,
+                ));
+                self.selected_strategy = Some(strategy_name);
+                ScreenFeedback::Redraw
+            }
+            Event::Backend(
+                BackendEvent::AppStateUpdated(AppStateUpdate::Strategies(strategies, ..))
+                | BackendEvent::TaskCompletedStateChange {
+                    app_state_update: AppStateUpdate::Strategies(strategies, ..),
+                    ..
+                },
+            ) => {
+                self.available_strategies = strategies.keys().cloned().collect();
                 ScreenFeedback::Redraw
             }
             _ => ScreenFeedback::None,

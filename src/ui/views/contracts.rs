@@ -2,6 +2,7 @@
 
 mod fetch_contract;
 
+use futures::FutureExt;
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
     tui::prelude::Rect,
@@ -11,7 +12,7 @@ use tuirealm::{
 use self::fetch_contract::FetchSystemContractScreenController;
 use super::main::MainScreenController;
 use crate::{
-    backend::{AppState, BackendEvent},
+    backend::{AppState, AppStateUpdate, BackendEvent},
     ui::{
         form::{Input, SelectInput},
         screen::{
@@ -32,10 +33,11 @@ pub(crate) struct ContractsScreenController {
 }
 
 impl ContractsScreenController {
-    pub(crate) fn new(app_state: &AppState) -> Self {
-        let select = if app_state.known_contracts.len() > 0 {
+    pub(crate) async fn new(app_state: &AppState) -> Self {
+        let known_contracts_lock = app_state.known_contracts.lock().await;
+        let select = if known_contracts_lock.len() > 0 {
             Some(SelectInput::new(
-                app_state.known_contracts.keys().cloned().collect(),
+                known_contracts_lock.keys().cloned().collect(),
             ))
         } else {
             None
@@ -70,24 +72,29 @@ impl ScreenController for ContractsScreenController {
             Event::Key(KeyEvent {
                 code: Key::Char('q'),
                 modifiers: KeyModifiers::NONE,
-            }) => {
-                ScreenFeedback::PreviousScreen(Box::new(|_| Box::new(MainScreenController::new())))
-            }
+            }) => ScreenFeedback::PreviousScreen(Box::new(|_| {
+                async { Box::new(MainScreenController::new()) as Box<dyn ScreenController> }.boxed()
+            })),
             Event::Key(KeyEvent {
                 code: Key::Char('s'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::NextScreen(Box::new(|_| {
-                Box::new(FetchSystemContractScreenController::new())
+                async {
+                    Box::new(FetchSystemContractScreenController::new())
+                        as Box<dyn ScreenController>
+                }
+                .boxed()
             })),
 
             Event::Backend(
-                BackendEvent::AppStateUpdated(app_state)
-                | BackendEvent::TaskCompletedStateChange { app_state, .. },
+                BackendEvent::AppStateUpdated(AppStateUpdate::KnownContracts(known_contracts))
+                | BackendEvent::TaskCompletedStateChange {
+                    app_state_update: AppStateUpdate::KnownContracts(known_contracts),
+                    ..
+                },
             ) => {
-                self.select = if app_state.known_contracts.len() > 0 {
-                    Some(SelectInput::new(
-                        app_state.known_contracts.keys().cloned().collect(),
-                    ))
+                self.select = if known_contracts.len() > 0 {
+                    Some(SelectInput::new(known_contracts.keys().cloned().collect()))
                 } else {
                     None
                 };

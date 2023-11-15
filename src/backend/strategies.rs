@@ -1,6 +1,6 @@
 //! Strategies management backend module.
 
-use std::sync::RwLock;
+use std::collections::BTreeMap;
 
 use dpp::version::PlatformVersion;
 use rand::{rngs::StdRng, SeedableRng};
@@ -9,8 +9,9 @@ use strategy_tests::{
     frequency::Frequency, operations::Operation, transitions::create_identities_state_transitions,
     Strategy,
 };
+use tokio::sync::{Mutex, MutexGuard};
 
-use super::{AppState, BackendEvent, Task};
+use super::{state::StrategiesMap, AppStateUpdate, BackendEvent, StrategyContractNames, Task};
 
 #[derive(Debug, PartialEq, Clone)]
 pub(crate) enum StrategyTask {
@@ -31,52 +32,68 @@ pub(crate) enum StrategyTask {
     },
 }
 
-pub(crate) fn run_strategy_task(app_state: &RwLock<AppState>, task: StrategyTask) -> BackendEvent {
+pub(crate) async fn run_strategy_task<'s>(
+    available_strategies: &'s Mutex<StrategiesMap>,
+    available_strategies_contract_names: &'s Mutex<BTreeMap<String, StrategyContractNames>>,
+    selected_strategy: &'s Mutex<Option<String>>,
+    task: StrategyTask,
+) -> BackendEvent<'s> {
     match task {
         StrategyTask::CreateStrategy(strategy_name) => {
-            {
-                let mut state = app_state.write().expect("lock is poisoned");
-                state.available_strategies.insert(
-                    strategy_name.clone(),
-                    Strategy {
-                        contracts_with_updates: Default::default(),
-                        operations: Default::default(),
-                        start_identities: Default::default(),
-                        identities_inserts: Default::default(),
-                        signer: Default::default(),
-                    },
-                );
-                state
-                    .available_strategies_contract_names
-                    .insert(strategy_name, Default::default());
-            }
-            BackendEvent::AppStateUpdated(app_state.read().expect("lock is poisoned"))
+            let mut strategies_lock = available_strategies.lock().await;
+            let mut contract_names_lock = available_strategies_contract_names.lock().await;
+
+            strategies_lock.insert(
+                strategy_name.clone(),
+                Strategy {
+                    contracts_with_updates: Default::default(),
+                    operations: Default::default(),
+                    start_identities: Default::default(),
+                    identities_inserts: Default::default(),
+                    signer: Default::default(),
+                },
+            );
+            contract_names_lock.insert(strategy_name, Default::default());
+            BackendEvent::AppStateUpdated(AppStateUpdate::Strategies(
+                strategies_lock,
+                contract_names_lock,
+            ))
         }
-        StrategyTask::SelectStrategy(strategy_name) => {
-            app_state
-                .write()
-                .expect("lock is poisoned")
-                .selected_strategy = Some(strategy_name);
-            BackendEvent::AppStateUpdated(app_state.read().expect("lock is poisoned"))
+        StrategyTask::SelectStrategy(ref strategy_name) => {
+            let mut selected_strategy_lock = selected_strategy.lock().await;
+            let strategies_lock = available_strategies.lock().await;
+
+            if strategies_lock.contains_key(strategy_name) {
+                *selected_strategy_lock = Some(strategy_name.clone());
+                BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
+                    strategy_name.clone(),
+                    MutexGuard::map(strategies_lock, |strategies| {
+                        strategies.get_mut(strategy_name).expect("strategy exists")
+                    }),
+                    MutexGuard::map(available_strategies_contract_names.lock().await, |names| {
+                        names.get_mut(strategy_name).expect("inconsistent data")
+                    }),
+                ))
+            } else {
+                BackendEvent::None
+            }
         }
         StrategyTask::SetIdentityInserts {
             strategy_name,
             identity_inserts_frequency,
         } => {
-            let state_updated = if let Some(strategy) = app_state
-                .write()
-                .expect("lock is poisoned")
-                .available_strategies
-                .get_mut(&strategy_name)
-            {
+            let mut strategies_lock = available_strategies.lock().await;
+            if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
                 strategy.identities_inserts = identity_inserts_frequency;
-                true
-            } else {
-                false
-            };
-
-            if state_updated {
-                BackendEvent::AppStateUpdated(app_state.read().expect("lock is poisoned"))
+                BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
+                    strategy_name.clone(),
+                    MutexGuard::map(strategies_lock, |strategies| {
+                        strategies.get_mut(&strategy_name).expect("strategy exists")
+                    }),
+                    MutexGuard::map(available_strategies_contract_names.lock().await, |names| {
+                        names.get_mut(&strategy_name).expect("inconsistent data")
+                    }),
+                ))
             } else {
                 BackendEvent::None
             }
@@ -86,23 +103,22 @@ pub(crate) fn run_strategy_task(app_state: &RwLock<AppState>, task: StrategyTask
             count,
             key_count,
         } => {
-            let state_updated = if let Some(strategy) = app_state
-                .write()
-                .expect("lock is poisoned")
-                .available_strategies
-                .get_mut(strategy_name.as_str())
-            {
+            let mut strategies_lock = available_strategies.lock().await;
+            if let Some(strategy) = strategies_lock.get_mut(strategy_name) {
                 set_start_identities(strategy, count, key_count);
-                true
-            } else {
-                false
-            };
-
-            if state_updated {
                 BackendEvent::TaskCompletedStateChange {
                     task: Task::Strategy(task.clone()),
                     execution_result: Ok("Start identities set".to_owned()),
-                    app_state: app_state.read().expect("lock is poisoned"),
+                    app_state_update: AppStateUpdate::SelectedStrategy(
+                        strategy_name.clone(),
+                        MutexGuard::map(strategies_lock, |strategies| {
+                            strategies.get_mut(strategy_name).expect("strategy exists")
+                        }),
+                        MutexGuard::map(
+                            available_strategies_contract_names.lock().await,
+                            |names| names.get_mut(strategy_name).expect("inconsistent data"),
+                        ),
+                    ),
                 }
             } else {
                 BackendEvent::None
@@ -112,24 +128,18 @@ pub(crate) fn run_strategy_task(app_state: &RwLock<AppState>, task: StrategyTask
             ref strategy_name,
             ref operation,
         } => {
-            let state_updated = if let Some(strategy) = app_state
-                .write()
-                .expect("lock is poisoned")
-                .available_strategies
-                .get_mut(strategy_name.as_str())
-            {
+            let mut strategies_lock = available_strategies.lock().await;
+            if let Some(strategy) = strategies_lock.get_mut(strategy_name) {
                 strategy.operations.push(operation.clone());
-                true
-            } else {
-                false
-            };
-
-            if state_updated {
-                BackendEvent::TaskCompletedStateChange {
-                    task: Task::Strategy(task.clone()),
-                    execution_result: Ok("Added operation".to_owned()),
-                    app_state: app_state.read().expect("lock is poisoned"),
-                }
+                BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
+                    strategy_name.clone(),
+                    MutexGuard::map(strategies_lock, |strategies| {
+                        strategies.get_mut(strategy_name).expect("strategy exists")
+                    }),
+                    MutexGuard::map(available_strategies_contract_names.lock().await, |names| {
+                        names.get_mut(strategy_name).expect("inconsistent data")
+                    }),
+                ))
             } else {
                 BackendEvent::None
             }

@@ -1,14 +1,15 @@
 //! Contracts backend.
 
-use std::sync::RwLock;
-
 use dash_platform_sdk::{platform::Fetch, Sdk};
 use dpp::{
     prelude::{DataContract, Identifier},
     system_data_contracts::{dashpay_contract, dpns_contract},
 };
+use tokio::sync::Mutex;
 
-use super::{as_toml, stringify_result, AppState, BackendEvent, Task};
+use super::{
+    as_toml, state::KnownContractsMap, stringify_result, AppStateUpdate, BackendEvent, Task,
+};
 
 #[derive(Clone, PartialEq)]
 pub(crate) enum ContractTask {
@@ -21,7 +22,7 @@ const DPNS_CONTRACT_NAME: &str = "dpns";
 
 pub(super) async fn run_contract_task<'s>(
     sdk: &mut Sdk,
-    app_state: &'s RwLock<AppState>,
+    known_contracts: &'s Mutex<KnownContractsMap>,
     task: ContractTask,
 ) -> BackendEvent<'s> {
     match task {
@@ -31,15 +32,13 @@ pub(super) async fn run_contract_task<'s>(
             {
                 Ok(Some(data_contract)) => {
                     let contract_str = as_toml(&data_contract);
-                    app_state
-                        .write()
-                        .expect("lock is poisoned")
-                        .known_contracts
-                        .insert(DASHPAY_CONTRACT_NAME.to_owned(), data_contract);
+                    let mut contracts_lock = known_contracts.lock().await;
+                    contracts_lock.insert(DASHPAY_CONTRACT_NAME.to_owned(), data_contract);
+
                     BackendEvent::TaskCompletedStateChange {
                         task: Task::Contract(task),
                         execution_result: Ok(contract_str),
-                        app_state: app_state.read().expect("lock is poisoned"),
+                        app_state_update: AppStateUpdate::KnownContracts(contracts_lock),
                     }
                 }
                 result => BackendEvent::TaskCompleted {
@@ -53,15 +52,13 @@ pub(super) async fn run_contract_task<'s>(
             {
                 Ok(Some(data_contract)) => {
                     let contract_str = as_toml(&data_contract);
-                    app_state
-                        .write()
-                        .expect("lock is poisoned")
-                        .known_contracts
-                        .insert(DPNS_CONTRACT_NAME.to_owned(), data_contract);
+                    let mut contracts_lock = known_contracts.lock().await;
+                    contracts_lock.insert(DPNS_CONTRACT_NAME.to_owned(), data_contract);
+
                     BackendEvent::TaskCompletedStateChange {
                         task: Task::Contract(task),
                         execution_result: Ok(contract_str),
-                        app_state: app_state.read().expect("lock is poisoned"),
+                        app_state_update: AppStateUpdate::KnownContracts(contracts_lock),
                     }
                 }
                 result => BackendEvent::TaskCompleted {

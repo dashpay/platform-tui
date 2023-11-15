@@ -90,10 +90,10 @@ impl Ui {
         ui
     }
 
-    pub(crate) fn on_event(
+    pub(crate) async fn on_event<'s>(
         &mut self,
         app_state: impl Deref<Target = AppState>,
-        event: Event,
+        event: Event<'s>,
     ) -> UiFeedback {
         let mut redraw = false;
 
@@ -126,13 +126,13 @@ impl Ui {
         } else {
             match self.screen.on_event(event) {
                 ScreenFeedback::NextScreen(controller_builder) => {
-                    let controller = controller_builder(app_state.deref());
+                    let controller = controller_builder(app_state.deref()).await;
                     self.status_bar_state.add_child(controller.name());
                     self.screen = Screen::new(controller);
                     UiFeedback::Redraw
                 }
                 ScreenFeedback::PreviousScreen(controller_builder) => {
-                    let controller = controller_builder(app_state.deref());
+                    let controller = controller_builder(app_state.deref()).await;
                     self.status_bar_state.to_parent();
                     self.screen = Screen::new(controller);
                     UiFeedback::Redraw
