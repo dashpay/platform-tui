@@ -36,17 +36,14 @@ async fn main() {
     //     "https://35.164.23.245:1443",
     // ));
     // address_list.add_uri(rs_dapi_client::Uri::from_static("https://52.33.28.47:1443"));
-    let mut sdk = SdkBuilder::new(address_list)
+    let sdk = SdkBuilder::new(address_list)
         .with_version(PlatformVersion::get(1).unwrap())
         .with_core("127.0.0.1", 19998, "dashrpc", "password")
         .build()
         .expect("expected to build sdk");
-    let sdk = SdkBuilder::new_mock()
-        .build()
-        .expect("cannot setup Platform SDK");
 
     let mut ui = Ui::new();
-    let mut backend = Backend::new(sdk).await;
+    let backend = Backend::new(sdk).await;
 
     let mut active = true;
 

@@ -1,6 +1,7 @@
 //! Application backend.
 //! This includes all logic unrelated to UI.
 
+mod contracts;
 mod identities;
 mod insight;
 mod state;
@@ -9,6 +10,7 @@ mod wallet;
 
 use std::{
     fmt::Display,
+    ops::DerefMut,
     sync::{RwLock, RwLockReadGuard},
 };
 
@@ -18,6 +20,7 @@ pub(crate) use state::AppState;
 use tokio::sync::Mutex;
 
 pub(crate) use self::{
+    contracts::ContractTask,
     strategies::StrategyTask,
     wallet::{Wallet, WalletTask},
 };
@@ -27,13 +30,12 @@ pub(crate) enum Task {
     FetchIdentityById(String),
     Strategy(StrategyTask),
     Wallet(WalletTask),
-    /// For testing purposes
-    None,
+    Contract(ContractTask),
 }
 
 pub(crate) enum BackendEvent<'s> {
     TaskCompleted(Task, Result<String, String>),
-    TaskCompletedStateChange(Task, RwLockReadGuard<'s, AppState>),
+    TaskCompletedStateChange(Task, Result<String, String>, RwLockReadGuard<'s, AppState>),
     AppStateUpdated(RwLockReadGuard<'s, AppState>),
     None,
 }
@@ -68,7 +70,14 @@ impl Backend {
             Task::Wallet(wallet_task) => {
                 wallet::run_wallet_task(&self.app_state, wallet_task).await
             }
-            Task::None => BackendEvent::TaskCompleted(task, Ok("".to_owned())),
+            Task::Contract(contract_task) => {
+                contracts::run_contract_task(
+                    self.sdk.lock().await.deref_mut(),
+                    &self.app_state,
+                    contract_task,
+                )
+                .await
+            }
         }
     }
 }
@@ -83,9 +92,11 @@ impl Drop for Backend {
 
 fn stringify_result<T: Serialize, E: Display>(result: Result<T, E>) -> Result<String, String> {
     match result {
-        Ok(data) => {
-            Ok(toml::to_string_pretty(&data).unwrap_or("Cannot serialize as TOML".to_owned()))
-        }
+        Ok(data) => Ok(as_toml(data)),
         Err(e) => Err(e.to_string()),
     }
+}
+
+fn as_toml<T: Serialize>(value: T) -> String {
+    toml::to_string_pretty(&value).unwrap_or("Cannot serialize as TOML".to_owned())
 }

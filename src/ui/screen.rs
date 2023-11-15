@@ -123,7 +123,7 @@ pub(crate) enum ScreenFeedback {
     NextScreen(ScreenControllerBuilder),
     PreviousScreen(ScreenControllerBuilder),
     Form(Box<dyn FormController>),
-    Task { task: Task, block: bool },
+    Task { task: Task, block: bool }, // TODO task should define whether it blocks or not
     Redraw,
     Quit,
     None,

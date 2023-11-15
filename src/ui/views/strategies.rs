@@ -168,7 +168,7 @@ impl ScreenController for StrategiesScreenController {
 
             Event::Backend(
                 BackendEvent::AppStateUpdated(app_state)
-                | BackendEvent::TaskCompletedStateChange(_, app_state),
+                | BackendEvent::TaskCompletedStateChange(_, _, app_state),
             ) => {
                 self.info = Self::build_info(&app_state);
                 self.available_strategies =

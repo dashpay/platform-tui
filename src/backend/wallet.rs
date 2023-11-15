@@ -39,11 +39,12 @@ pub(super) async fn run_wallet_task(
         WalletTask::AddByPrivateKey(ref private_key) => {
             let private_key = if private_key.len() == 64 {
                 // hex
-                let bytes = hex::decode(private_key).expect("expected hex");
+                let bytes = hex::decode(private_key).expect("expected hex"); // TODO error hadling
                 PrivateKey::from_slice(bytes.as_slice(), Network::Testnet)
                     .expect("expected private key")
             } else {
                 PrivateKey::from_wif(private_key.as_str()).expect("expected WIF key")
+                // TODO error handling
             };
 
             let secp = Secp256k1::new();
@@ -60,6 +61,7 @@ pub(super) async fn run_wallet_task(
             app_state.write().expect("lock is poisoned").loaded_wallet = Some(wallet);
             BackendEvent::TaskCompletedStateChange(
                 Task::Wallet(task),
+                Ok("Added wallet".to_owned()),
                 app_state.read().expect("lock is poisoned"),
             )
         }
@@ -79,6 +81,7 @@ pub(super) async fn run_wallet_task(
             if updated {
                 BackendEvent::TaskCompletedStateChange(
                     Task::Wallet(task),
+                    Ok("Refreshed wallet".to_owned()), // TODO actually failure is not reported
                     app_state.read().expect("lock is poisoned"),
                 )
             } else {

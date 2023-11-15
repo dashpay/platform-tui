@@ -8,9 +8,10 @@ use tuirealm::{
     Frame,
 };
 
+use self::fetch_contract::FetchSystemContractScreenController;
 use super::main::MainScreenController;
 use crate::{
-    backend::AppState,
+    backend::{AppState, BackendEvent},
     ui::{
         form::{Input, SelectInput},
         screen::{
@@ -71,6 +72,26 @@ impl ScreenController for ContractsScreenController {
                 modifiers: KeyModifiers::NONE,
             }) => {
                 ScreenFeedback::PreviousScreen(Box::new(|_| Box::new(MainScreenController::new())))
+            }
+            Event::Key(KeyEvent {
+                code: Key::Char('s'),
+                modifiers: KeyModifiers::NONE,
+            }) => ScreenFeedback::NextScreen(Box::new(|_| {
+                Box::new(FetchSystemContractScreenController::new())
+            })),
+
+            Event::Backend(
+                BackendEvent::AppStateUpdated(app_state)
+                | BackendEvent::TaskCompletedStateChange(_, _, app_state),
+            ) => {
+                self.select = if app_state.known_contracts.len() > 0 {
+                    Some(SelectInput::new(
+                        app_state.known_contracts.keys().cloned().collect(),
+                    ))
+                } else {
+                    None
+                };
+                ScreenFeedback::Redraw
             }
             _ => ScreenFeedback::None,
         }
