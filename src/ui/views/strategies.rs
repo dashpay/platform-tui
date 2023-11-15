@@ -8,7 +8,6 @@ mod start_identities;
 
 use std::collections::BTreeMap;
 
-use futures::FutureExt;
 use strategy_tests::Strategy;
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
@@ -26,8 +25,8 @@ use crate::{
     backend::{AppState, AppStateUpdate, BackendEvent},
     ui::{
         screen::{
-            widgets::info::Info, ScreenCommandKey, ScreenController, ScreenFeedback,
-            ScreenToggleKey,
+            utils::impl_builder, widgets::info::Info, ScreenCommandKey, ScreenController,
+            ScreenFeedback, ScreenToggleKey,
         },
         views::main::MainScreenController,
     },
@@ -58,6 +57,8 @@ pub(crate) struct StrategiesScreenController {
     available_strategies: Vec<String>,
     selected_strategy: Option<String>,
 }
+
+impl_builder!(StrategiesScreenController);
 
 impl StrategiesScreenController {
     pub(crate) async fn new(app_state: &AppState) -> Self {
@@ -111,9 +112,7 @@ impl ScreenController for StrategiesScreenController {
             Event::Key(KeyEvent {
                 code: Key::Char('q'),
                 modifiers: KeyModifiers::NONE,
-            }) => ScreenFeedback::PreviousScreen(Box::new(|_| {
-                async { Box::new(MainScreenController::new()) as Box<dyn ScreenController> }.boxed()
-            })),
+            }) => ScreenFeedback::PreviousScreen(MainScreenController::builder()),
             Event::Key(KeyEvent {
                 code: Key::Char('s'),
                 modifiers: KeyModifiers::NONE,

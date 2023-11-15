@@ -105,7 +105,7 @@ pub(crate) async fn run_strategy_task<'s>(
         } => {
             let mut strategies_lock = available_strategies.lock().await;
             if let Some(strategy) = strategies_lock.get_mut(strategy_name) {
-                set_start_identities(strategy, count, key_count);
+                tokio::task::block_in_place(|| set_start_identities(strategy, count, key_count));
                 BackendEvent::TaskCompletedStateChange {
                     task: Task::Strategy(task.clone()),
                     execution_result: Ok("Start identities set".to_owned()),

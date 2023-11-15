@@ -1,6 +1,5 @@
 //! Contract fetching screen module.
 
-use futures::FutureExt;
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
     tui::prelude::Rect,
@@ -11,7 +10,8 @@ use super::ContractsScreenController;
 use crate::{
     backend::{BackendEvent, ContractTask, Task},
     ui::screen::{
-        widgets::info::Info, ScreenCommandKey, ScreenController, ScreenFeedback, ScreenToggleKey,
+        utils::impl_builder_no_args, widgets::info::Info, ScreenCommandKey, ScreenController,
+        ScreenFeedback, ScreenToggleKey,
     },
     Event,
 };
@@ -25,6 +25,8 @@ const COMMAND_KEYS: [ScreenCommandKey; 3] = [
 pub(crate) struct FetchSystemContractScreenController {
     info: Info,
 }
+
+impl_builder_no_args!(FetchSystemContractScreenController);
 
 impl FetchSystemContractScreenController {
     pub(crate) fn new() -> Self {
@@ -56,13 +58,7 @@ impl ScreenController for FetchSystemContractScreenController {
             Event::Key(KeyEvent {
                 code: Key::Char('q'),
                 modifiers: KeyModifiers::NONE,
-            }) => ScreenFeedback::PreviousScreen(Box::new(|app_state| {
-                async {
-                    Box::new(ContractsScreenController::new(app_state).await)
-                        as Box<dyn ScreenController>
-                }
-                .boxed()
-            })),
+            }) => ScreenFeedback::PreviousScreen(ContractsScreenController::builder()),
             Event::Key(KeyEvent {
                 code: Key::Char('p'),
                 modifiers: KeyModifiers::NONE,

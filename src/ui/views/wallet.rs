@@ -1,6 +1,5 @@
 //! Screens and forms related to wallet management.
 
-use futures::FutureExt;
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
     tui::prelude::Rect,
@@ -13,8 +12,8 @@ use crate::{
     ui::{
         form::{FormController, FormStatus, Input, InputStatus, TextInput},
         screen::{
-            widgets::info::Info, ScreenCommandKey, ScreenController, ScreenFeedback,
-            ScreenToggleKey,
+            utils::impl_builder, widgets::info::Info, ScreenCommandKey, ScreenController,
+            ScreenFeedback, ScreenToggleKey,
         },
     },
     Event,
@@ -34,6 +33,8 @@ pub(crate) struct WalletScreenController {
     info: Info,
     wallet_loaded: bool,
 }
+
+impl_builder!(WalletScreenController);
 
 impl WalletScreenController {
     pub(crate) async fn new(app_state: &AppState) -> Self {
@@ -80,9 +81,7 @@ impl ScreenController for WalletScreenController {
             Event::Key(KeyEvent {
                 code: Key::Char('q'),
                 modifiers: KeyModifiers::NONE,
-            }) => ScreenFeedback::PreviousScreen(Box::new(|_| {
-                async { Box::new(MainScreenController::new()) as Box<dyn ScreenController> }.boxed()
-            })),
+            }) => ScreenFeedback::PreviousScreen(MainScreenController::builder()),
             Event::Key(KeyEvent {
                 code: Key::Char('a'),
                 modifiers: KeyModifiers::NONE,

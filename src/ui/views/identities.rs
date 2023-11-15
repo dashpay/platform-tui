@@ -1,6 +1,5 @@
 //! UI definitions related to identities.
 
-use futures::FutureExt;
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
     tui::prelude::Rect,
@@ -12,8 +11,8 @@ use crate::{
     ui::{
         form::{FormController, FormStatus, Input, InputStatus, TextInput},
         screen::{
-            widgets::info::Info, ScreenCommandKey, ScreenController, ScreenFeedback,
-            ScreenToggleKey,
+            utils::impl_builder_no_args, widgets::info::Info, ScreenCommandKey, ScreenController,
+            ScreenFeedback, ScreenToggleKey,
         },
         views::main::MainScreenController,
     },
@@ -29,6 +28,8 @@ pub(crate) struct IdentitiesScreenController {
     toggle_keys: [ScreenToggleKey; 1],
     info: Info,
 }
+
+impl_builder_no_args!(IdentitiesScreenController);
 
 impl IdentitiesScreenController {
     pub(crate) fn new() -> Self {
@@ -57,9 +58,7 @@ impl ScreenController for IdentitiesScreenController {
             Event::Key(KeyEvent {
                 code: Key::Char('q'),
                 modifiers: KeyModifiers::NONE,
-            }) => ScreenFeedback::PreviousScreen(Box::new(|_| {
-                async { Box::new(MainScreenController::new()) as Box<dyn ScreenController> }.boxed()
-            })),
+            }) => ScreenFeedback::PreviousScreen(MainScreenController::builder()),
             Event::Key(KeyEvent {
                 code: Key::Char('i'),
                 modifiers: KeyModifiers::NONE,

@@ -16,8 +16,8 @@ use crate::{
     ui::{
         form::{Input, SelectInput},
         screen::{
-            widgets::info::Info, ScreenCommandKey, ScreenController, ScreenFeedback,
-            ScreenToggleKey,
+            utils::impl_builder, widgets::info::Info, ScreenCommandKey, ScreenController,
+            ScreenFeedback, ScreenToggleKey,
         },
     },
     Event,
@@ -31,6 +31,8 @@ const COMMAND_KEYS: [ScreenCommandKey; 2] = [
 pub(crate) struct ContractsScreenController {
     select: Option<SelectInput<String>>,
 }
+
+impl_builder!(ContractsScreenController);
 
 impl ContractsScreenController {
     pub(crate) async fn new(app_state: &AppState) -> Self {
@@ -72,19 +74,11 @@ impl ScreenController for ContractsScreenController {
             Event::Key(KeyEvent {
                 code: Key::Char('q'),
                 modifiers: KeyModifiers::NONE,
-            }) => ScreenFeedback::PreviousScreen(Box::new(|_| {
-                async { Box::new(MainScreenController::new()) as Box<dyn ScreenController> }.boxed()
-            })),
+            }) => ScreenFeedback::PreviousScreen(MainScreenController::builder()),
             Event::Key(KeyEvent {
                 code: Key::Char('s'),
                 modifiers: KeyModifiers::NONE,
-            }) => ScreenFeedback::NextScreen(Box::new(|_| {
-                async {
-                    Box::new(FetchSystemContractScreenController::new())
-                        as Box<dyn ScreenController>
-                }
-                .boxed()
-            })),
+            }) => ScreenFeedback::NextScreen(FetchSystemContractScreenController::builder()),
 
             Event::Backend(
                 BackendEvent::AppStateUpdated(AppStateUpdate::KnownContracts(known_contracts))

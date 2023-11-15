@@ -1,5 +1,6 @@
 //! Screen module.
 
+pub(crate) mod utils;
 pub(crate) mod widgets;
 
 use std::ops::{Deref, DerefMut};

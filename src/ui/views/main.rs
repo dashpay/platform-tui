@@ -11,8 +11,8 @@ use super::{contracts::ContractsScreenController, wallet::WalletScreenController
 use crate::{
     ui::{
         screen::{
-            widgets::info::Info, ScreenCommandKey, ScreenController, ScreenFeedback,
-            ScreenToggleKey,
+            utils::impl_builder_no_args, widgets::info::Info, ScreenCommandKey, ScreenController,
+            ScreenFeedback, ScreenToggleKey,
         },
         views::{identities::IdentitiesScreenController, strategies::StrategiesScreenController},
     },
@@ -52,6 +52,8 @@ Use Ctrl+q to go back from completion list or once again to leave input at all.
     }
 }
 
+impl_builder_no_args!(MainScreenController);
+
 impl ScreenController for MainScreenController {
     fn name(&self) -> &'static str {
         "Main menu"
@@ -74,40 +76,19 @@ impl ScreenController for MainScreenController {
             Event::Key(KeyEvent {
                 code: Key::Char('i'),
                 modifiers: KeyModifiers::NONE,
-            }) => ScreenFeedback::NextScreen(Box::new(|_| {
-                async { Box::new(IdentitiesScreenController::new()) as Box<dyn ScreenController> }
-                    .boxed()
-            })),
+            }) => ScreenFeedback::NextScreen(IdentitiesScreenController::builder()),
             Event::Key(KeyEvent {
                 code: Key::Char('s'),
                 modifiers: KeyModifiers::NONE,
-            }) => ScreenFeedback::NextScreen(Box::new(|app_state| {
-                async {
-                    Box::new(StrategiesScreenController::new(app_state).await)
-                        as Box<dyn ScreenController>
-                }
-                .boxed()
-            })),
+            }) => ScreenFeedback::NextScreen(StrategiesScreenController::builder()),
             Event::Key(KeyEvent {
                 code: Key::Char('w'),
                 modifiers: KeyModifiers::NONE,
-            }) => ScreenFeedback::NextScreen(Box::new(|app_state| {
-                async {
-                    Box::new(WalletScreenController::new(app_state).await)
-                        as Box<dyn ScreenController>
-                }
-                .boxed()
-            })),
+            }) => ScreenFeedback::NextScreen(WalletScreenController::builder()),
             Event::Key(KeyEvent {
                 code: Key::Char('c'),
                 modifiers: KeyModifiers::NONE,
-            }) => ScreenFeedback::NextScreen(Box::new(|app_state| {
-                async {
-                    Box::new(ContractsScreenController::new(app_state).await)
-                        as Box<dyn ScreenController>
-                }
-                .boxed()
-            })),
+            }) => ScreenFeedback::NextScreen(ContractsScreenController::builder()),
             Event::Key(KeyEvent {
                 code: Key::Char('v'),
                 modifiers: KeyModifiers::NONE,
