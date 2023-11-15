@@ -29,6 +29,10 @@ const CURRENT_PROTOCOL_VERSION: ProtocolVersion = 1;
 
 pub(crate) type ContractFileName = String;
 
+// TODO: each state part should be in it's own mutex in case multiple backend
+// tasks are executed on different state parts,
+// moreover single mutex hold during rendering will block unrelated tasks from
+// finishing
 #[derive(Debug, Clone)]
 pub(crate) struct AppState {
     pub loaded_identity: Option<Identity>,

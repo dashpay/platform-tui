@@ -34,8 +34,15 @@ pub(crate) enum Task {
 }
 
 pub(crate) enum BackendEvent<'s> {
-    TaskCompleted(Task, Result<String, String>),
-    TaskCompletedStateChange(Task, Result<String, String>, RwLockReadGuard<'s, AppState>),
+    TaskCompleted {
+        task: Task,
+        execution_result: Result<String, String>,
+    },
+    TaskCompletedStateChange {
+        task: Task,
+        execution_result: Result<String, String>,
+        app_state: RwLockReadGuard<'s, AppState>,
+    },
     AppStateUpdated(RwLockReadGuard<'s, AppState>),
     None,
 }
@@ -61,8 +68,12 @@ impl Backend {
         match task {
             Task::FetchIdentityById(ref base58_id) => {
                 let mut sdk = self.sdk.lock().await;
-                let result = identities::fetch_identity_by_b58_id(&mut sdk, &base58_id).await;
-                BackendEvent::TaskCompleted(task, result)
+                let execution_result =
+                    identities::fetch_identity_by_b58_id(&mut sdk, &base58_id).await;
+                BackendEvent::TaskCompleted {
+                    task,
+                    execution_result,
+                }
             }
             Task::Strategy(strategy_task) => {
                 strategies::run_strategy_task(&self.app_state, strategy_task)

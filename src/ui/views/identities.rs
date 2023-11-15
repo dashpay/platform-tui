@@ -79,8 +79,11 @@ impl ScreenController for IdentitiesScreenController {
                 }
             }
 
-            Event::Backend(BackendEvent::TaskCompleted(Task::FetchIdentityById(_), result)) => {
-                self.info = Info::new_from_result(result);
+            Event::Backend(BackendEvent::TaskCompleted {
+                task: Task::FetchIdentityById(_),
+                execution_result,
+            }) => {
+                self.info = Info::new_from_result(execution_result);
                 ScreenFeedback::Redraw
             }
             _ => ScreenFeedback::None,

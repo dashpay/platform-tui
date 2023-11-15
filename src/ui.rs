@@ -98,7 +98,7 @@ impl Ui {
         let mut redraw = false;
 
         if let Event::Backend(
-            BackendEvent::TaskCompleted(..) | BackendEvent::TaskCompletedStateChange(..),
+            BackendEvent::TaskCompleted { .. } | BackendEvent::TaskCompletedStateChange { .. },
         ) = &event
         {
             self.status_bar_state.blocked = false;

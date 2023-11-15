@@ -82,7 +82,7 @@ impl ScreenController for ContractsScreenController {
 
             Event::Backend(
                 BackendEvent::AppStateUpdated(app_state)
-                | BackendEvent::TaskCompletedStateChange(_, _, app_state),
+                | BackendEvent::TaskCompletedStateChange { app_state, .. },
             ) => {
                 self.select = if app_state.known_contracts.len() > 0 {
                     Some(SelectInput::new(

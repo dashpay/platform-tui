@@ -59,11 +59,11 @@ pub(super) async fn run_wallet_task(
             });
 
             app_state.write().expect("lock is poisoned").loaded_wallet = Some(wallet);
-            BackendEvent::TaskCompletedStateChange(
-                Task::Wallet(task),
-                Ok("Added wallet".to_owned()),
-                app_state.read().expect("lock is poisoned"),
-            )
+            BackendEvent::TaskCompletedStateChange {
+                task: Task::Wallet(task),
+                execution_result: Ok("Added wallet".to_owned()),
+                app_state: app_state.read().expect("lock is poisoned"),
+            }
         }
         WalletTask::Refresh => {
             let updated = if let Some(wallet) = app_state
@@ -79,11 +79,12 @@ pub(super) async fn run_wallet_task(
             };
 
             if updated {
-                BackendEvent::TaskCompletedStateChange(
-                    Task::Wallet(task),
-                    Ok("Refreshed wallet".to_owned()), // TODO actually failure is not reported
-                    app_state.read().expect("lock is poisoned"),
-                )
+                BackendEvent::TaskCompletedStateChange {
+                    task: Task::Wallet(task),
+                    execution_result: Ok("Refreshed wallet".to_owned()), /* TODO actually failure
+                                                                          * is not reported */
+                    app_state: app_state.read().expect("lock is poisoned"),
+                }
             } else {
                 BackendEvent::None
             }

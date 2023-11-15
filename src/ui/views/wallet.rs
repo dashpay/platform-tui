@@ -97,7 +97,7 @@ impl ScreenController for WalletScreenController {
 
             Event::Backend(
                 BackendEvent::AppStateUpdated(app_state)
-                | BackendEvent::TaskCompletedStateChange(_, _, app_state),
+                | BackendEvent::TaskCompletedStateChange { app_state, .. },
             ) => {
                 if let Some(wallet) = &app_state.loaded_wallet {
                     self.info = Info::new_fixed(&display_wallet(wallet));

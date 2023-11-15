@@ -36,15 +36,16 @@ pub(super) async fn run_contract_task<'s>(
                         .expect("lock is poisoned")
                         .known_contracts
                         .insert(DASHPAY_CONTRACT_NAME.to_owned(), data_contract);
-                    BackendEvent::TaskCompletedStateChange(
-                        Task::Contract(task),
-                        Ok(contract_str),
-                        app_state.read().expect("lock is poisoned"),
-                    )
+                    BackendEvent::TaskCompletedStateChange {
+                        task: Task::Contract(task),
+                        execution_result: Ok(contract_str),
+                        app_state: app_state.read().expect("lock is poisoned"),
+                    }
                 }
-                result => {
-                    BackendEvent::TaskCompleted(Task::Contract(task), stringify_result(result))
-                }
+                result => BackendEvent::TaskCompleted {
+                    task: Task::Contract(task),
+                    execution_result: stringify_result(result),
+                },
             }
         }
         ContractTask::FetchDPNSContract => {
@@ -57,15 +58,16 @@ pub(super) async fn run_contract_task<'s>(
                         .expect("lock is poisoned")
                         .known_contracts
                         .insert(DPNS_CONTRACT_NAME.to_owned(), data_contract);
-                    BackendEvent::TaskCompletedStateChange(
-                        Task::Contract(task),
-                        Ok(contract_str),
-                        app_state.read().expect("lock is poisoned"),
-                    )
+                    BackendEvent::TaskCompletedStateChange {
+                        task: Task::Contract(task),
+                        execution_result: Ok(contract_str),
+                        app_state: app_state.read().expect("lock is poisoned"),
+                    }
                 }
-                result => {
-                    BackendEvent::TaskCompleted(Task::Contract(task), stringify_result(result))
-                }
+                result => BackendEvent::TaskCompleted {
+                    task: Task::Contract(task),
+                    execution_result: stringify_result(result),
+                },
             }
         }
     }

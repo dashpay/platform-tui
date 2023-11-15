@@ -74,11 +74,18 @@ impl ScreenController for FetchSystemContractScreenController {
             },
 
             Event::Backend(
-                BackendEvent::TaskCompleted(Task::Contract(_), data)
-                | BackendEvent::TaskCompletedStateChange(Task::Contract(_), data, _),
+                BackendEvent::TaskCompleted {
+                    task: Task::Contract(_),
+                    execution_result,
+                }
+                | BackendEvent::TaskCompletedStateChange {
+                    task: Task::Contract(_),
+                    execution_result,
+                    ..
+                },
             ) => {
                 self.info = Info::new_from_result(
-                    data.map(|_| "Successfully fetched a contract".to_owned()),
+                    execution_result.map(|_| "Successfully fetched a contract".to_owned()),
                 );
                 ScreenFeedback::Redraw
             }

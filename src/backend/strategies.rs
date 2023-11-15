@@ -99,11 +99,11 @@ pub(crate) fn run_strategy_task(app_state: &RwLock<AppState>, task: StrategyTask
             };
 
             if state_updated {
-                BackendEvent::TaskCompletedStateChange(
-                    Task::Strategy(task.clone()),
-                    Ok("Start identities set".to_owned()),
-                    app_state.read().expect("lock is poisoned"),
-                )
+                BackendEvent::TaskCompletedStateChange {
+                    task: Task::Strategy(task.clone()),
+                    execution_result: Ok("Start identities set".to_owned()),
+                    app_state: app_state.read().expect("lock is poisoned"),
+                }
             } else {
                 BackendEvent::None
             }
@@ -125,11 +125,11 @@ pub(crate) fn run_strategy_task(app_state: &RwLock<AppState>, task: StrategyTask
             };
 
             if state_updated {
-                BackendEvent::TaskCompletedStateChange(
-                    Task::Strategy(task.clone()),
-                    Ok("Added operation".to_owned()),
-                    app_state.read().expect("lock is poisoned"),
-                )
+                BackendEvent::TaskCompletedStateChange {
+                    task: Task::Strategy(task.clone()),
+                    execution_result: Ok("Added operation".to_owned()),
+                    app_state: app_state.read().expect("lock is poisoned"),
+                }
             } else {
                 BackendEvent::None
             }
