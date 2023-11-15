@@ -12,15 +12,33 @@ use tuirealm::{application::PollStrategy, AttrValue, Attribute, Update};
 fn main() {
     // Setup DAPI client
     let mut address_list = AddressList::new();
-    address_list.add_uri(rs_dapi_client::Uri::from_static(
-        "https://44.239.39.153:1443",
-    ));
+    // address_list.add_uri(rs_dapi_client::Uri::from_static(
+    //     "https://44.239.39.153:1443",
+    // ));
     // address_list.add_uri(rs_dapi_client::Uri::from_static(
     //     "https://54.149.33.167:1443",
     // ));
     // address_list.add_uri(rs_dapi_client::Uri::from_static(
     //     "https://35.164.23.245:1443",
     // ));
+
+    // address_list.add_uri(rs_dapi_client::Uri::from_static(
+    //     "https://44.240.98.102:1443",
+    // ));
+
+    address_list.add_uri(rs_dapi_client::Uri::from_static(
+        "https://54.201.32.131:1443",
+    ));
+
+    // address_list.add_uri(rs_dapi_client::Uri::from_static(
+    //     "https://52.10.229.11:1443",
+    // ));
+    //
+    //
+    // address_list.add_uri(rs_dapi_client::Uri::from_static(
+    //     "https://52.13.132.146:1443",
+    // ));
+
     // address_list.add_uri(rs_dapi_client::Uri::from_static("https://52.33.28.47:1443"));
     let mut sdk = SdkBuilder::new(address_list)
         .with_version(PlatformVersion::get(1).unwrap())

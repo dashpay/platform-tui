@@ -19,7 +19,7 @@ use strategy_tests::Strategy;
 
 use crate::app::wallet::Wallet;
 use dpp::data_contract::created_data_contract::CreatedDataContract;
-use dpp::identity::KeyID;
+use dpp::identity::{IdentityPublicKey, KeyID};
 use dpp::prelude::{AssetLockProof, Identifier};
 use dpp::tests::json_document::json_document_to_created_contract;
 use strategy_tests::frequency::Frequency;
@@ -38,8 +38,12 @@ pub struct AppState {
     pub available_strategies: BTreeMap<String, Strategy>,
     pub current_strategy: Option<String>,
     pub selected_strategy: Option<String>,
-    pub identity_asset_lock_private_key_in_creation:
-        Option<(Transaction, PrivateKey, Option<AssetLockProof>)>,
+    pub identity_asset_lock_private_key_in_creation: Option<(
+        Transaction,
+        PrivateKey,
+        Option<AssetLockProof>,
+        Option<(Identity, BTreeMap<IdentityPublicKey, Vec<u8>>)>,
+    )>,
 }
 
 pub fn default_strategy_description(mut map: BTreeMap<String, String>) -> BTreeMap<String, String> {
@@ -159,8 +163,12 @@ struct AppStateInSerializationFormat {
     pub available_strategies: BTreeMap<String, Vec<u8>>,
     pub current_strategy: Option<String>,
     pub selected_strategy: Option<String>,
-    pub identity_asset_lock_private_key_in_creation:
-        Option<(Vec<u8>, [u8; 32], Option<AssetLockProof>)>,
+    pub identity_asset_lock_private_key_in_creation: Option<(
+        Vec<u8>,
+        [u8; 32],
+        Option<AssetLockProof>,
+        Option<(Identity, BTreeMap<IdentityPublicKey, Vec<u8>>)>,
+    )>,
 }
 
 impl PlatformSerializableWithPlatformVersion for AppState {
@@ -215,11 +223,12 @@ impl PlatformSerializableWithPlatformVersion for AppState {
 
         let identity_asset_lock_private_key_in_creation =
             identity_asset_lock_private_key_in_creation.map(
-                |(transaction, private_key, asset_lock_proof)| {
+                |(transaction, private_key, asset_lock_proof, identity_info)| {
                     (
                         transaction.serialize(),
                         private_key.inner.secret_bytes(),
                         asset_lock_proof,
+                        identity_info,
                     )
                 },
             );
@@ -324,13 +333,14 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
 
         let identity_asset_lock_private_key_in_creation =
             identity_asset_lock_private_key_in_creation.map(
-                |(transaction, private_key, asset_lock_proof)| {
+                |(transaction, private_key, asset_lock_proof, identity_info)| {
                     (
                         Transaction::deserialize(&transaction)
                             .expect("expected to deserialize transaction"),
                         PrivateKey::from_slice(&private_key, Network::Testnet)
                             .expect("expected private key"),
                         asset_lock_proof,
+                        identity_info,
                     )
                 },
             );

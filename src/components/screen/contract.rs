@@ -84,7 +84,9 @@ impl Component<Message, NoUserEvent> for ContractScreen {
             Event::Keyboard(KeyEvent {
                 code: Key::Enter,
                 modifiers: KeyModifiers::NONE,
-            }) => Some(Message::SelectContract(self.component.state().unwrap_one().unwrap_usize())),
+            }) => Some(Message::SelectContract(
+                self.component.state().unwrap_one().unwrap_usize(),
+            )),
             _ => None,
         }
     }

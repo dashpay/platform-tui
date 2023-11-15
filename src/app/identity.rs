@@ -3,16 +3,17 @@
 use dapi_grpc::core::v0::{
     BroadcastTransactionRequest, BroadcastTransactionResponse, GetTransactionRequest,
 };
-use std::collections::BTreeMap;
 use dapi_grpc::platform::v0::get_identity_balance_request::GetIdentityBalanceRequestV0;
 use dapi_grpc::platform::v0::{get_identity_balance_request, GetIdentityBalanceRequest};
 use dash_platform_sdk::platform::Fetch;
+use std::collections::BTreeMap;
 
 use dash_platform_sdk::platform::transition::put_identity::PutIdentity;
 use dash_platform_sdk::Sdk;
 use dpp::dashcore::psbt::serialize::Serialize;
-use dpp::dashcore::{InstantLock, OutPoint, Transaction};
+use dpp::dashcore::{InstantLock, Network, OutPoint, PrivateKey, Transaction};
 use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use dpp::prelude::{AssetLockProof, Identity, IdentityPublicKey};
 use rand::rngs::StdRng;
@@ -32,14 +33,21 @@ pub(super) fn identity_to_spans(identity: &Identity) -> Result<Vec<PropValue>, E
         .collect())
 }
 
-
 impl AppState {
-    pub(crate) async fn refresh_identity_balance(
-        &mut self,
-        sdk: &Sdk,
-    ) -> Result<(), Error> {
+    pub(crate) async fn refresh_identity_balance(&mut self, sdk: &Sdk) -> Result<(), Error> {
         if let Some(identity) = self.loaded_identity.as_mut() {
-            let balance = u64::fetch(sdk, GetIdentityBalanceRequest { version: Some(get_identity_balance_request::Version::V0(GetIdentityBalanceRequestV0 { id: identity.id().to_vec(), prove: true })) }).await?;
+            let balance = u64::fetch(
+                sdk,
+                GetIdentityBalanceRequest {
+                    version: Some(get_identity_balance_request::Version::V0(
+                        GetIdentityBalanceRequestV0 {
+                            id: identity.id().to_vec(),
+                            prove: true,
+                        },
+                    )),
+                },
+            )
+            .await?;
             if let Some(balance) = balance {
                 identity.set_balance(balance)
             }
@@ -59,32 +67,44 @@ impl AppState {
 
         // first we create the wallet registration transaction, this locks funds that we
         // can transfer from core to platform
-        let (asset_lock_transaction, asset_lock_proof_private_key, mut maybe_asset_lock_proof) =
-            if let Some((
+        let (
+            asset_lock_transaction,
+            asset_lock_proof_private_key,
+            mut maybe_asset_lock_proof,
+            mut maybe_identity_info,
+        ) = if let Some((
+            asset_lock_transaction,
+            asset_lock_proof_private_key,
+            maybe_asset_lock_proof,
+            maybe_identity,
+        )) = &self.identity_asset_lock_private_key_in_creation
+        {
+            (
+                asset_lock_transaction.clone(),
+                asset_lock_proof_private_key.clone(),
+                maybe_asset_lock_proof.clone(),
+                maybe_identity.clone(),
+            )
+        } else {
+            let (asset_lock_transaction, asset_lock_proof_private_key) =
+                wallet.registration_transaction(None, amount)?;
+
+            self.identity_asset_lock_private_key_in_creation = Some((
+                asset_lock_transaction.clone(),
+                asset_lock_proof_private_key.clone(),
+                None,
+                None,
+            ));
+
+            self.save();
+
+            (
                 asset_lock_transaction,
                 asset_lock_proof_private_key,
-                maybe_asset_lock_proof,
-            )) = &self.identity_asset_lock_private_key_in_creation
-            {
-                (
-                    asset_lock_transaction.clone(),
-                    asset_lock_proof_private_key.clone(),
-                    maybe_asset_lock_proof.clone(),
-                )
-            } else {
-                let (asset_lock_transaction, asset_lock_proof_private_key) =
-                    wallet.registration_transaction(None, amount)?;
-
-                self.identity_asset_lock_private_key_in_creation = Some((
-                    asset_lock_transaction.clone(),
-                    asset_lock_proof_private_key.clone(),
-                    None,
-                ));
-
-                self.save();
-
-                (asset_lock_transaction, asset_lock_proof_private_key, None)
-            };
+                None,
+                None,
+            )
+        };
 
         // let block_hash: Vec<u8> = (GetStatusRequest {})
         //     .execute(dapi_client, RequestSettings::default())
@@ -116,6 +136,7 @@ impl AppState {
                 asset_lock_transaction.clone(),
                 asset_lock_proof_private_key.clone(),
                 Some(asset_lock.clone()),
+                None,
             ));
             self.save();
             asset_lock
@@ -123,14 +144,31 @@ impl AppState {
 
         //// Platform steps
 
-        let mut std_rng = StdRng::from_entropy();
-
         let (identity, keys): (Identity, BTreeMap<IdentityPublicKey, Vec<u8>>) =
-            Identity::random_identity_with_main_keys_with_private_key(
-                2,
-                &mut std_rng,
-                sdk.version(),
-            )?;
+            if let Some(identity_info) = maybe_identity_info {
+                identity_info.clone()
+            } else {
+                let mut std_rng = StdRng::from_entropy();
+                let (mut identity, keys): (Identity, BTreeMap<IdentityPublicKey, Vec<u8>>) =
+                    Identity::random_identity_with_main_keys_with_private_key(
+                        2,
+                        &mut std_rng,
+                        sdk.version(),
+                    )?;
+                identity.set_id(
+                    asset_lock_proof
+                        .create_identifier()
+                        .expect("expected to create an identifier"),
+                );
+                self.identity_asset_lock_private_key_in_creation = Some((
+                    asset_lock_transaction.clone(),
+                    asset_lock_proof_private_key.clone(),
+                    Some(asset_lock_proof.clone()),
+                    Some((identity.clone(), keys.clone())),
+                ));
+                self.save();
+                (identity, keys)
+            };
 
         let mut signer = SimpleSigner::default();
 
@@ -145,7 +183,28 @@ impl AppState {
             )
             .await?;
 
+        if updated_identity.id() != identity.id() {
+            panic!("identity ids don't match");
+        }
+
         self.loaded_identity = Some(updated_identity);
+
+        let keys = self
+            .identity_asset_lock_private_key_in_creation
+            .take()
+            .expect("expected something to be in creation")
+            .3
+            .expect("expected an identity")
+            .1
+            .into_iter()
+            .map(|(key, private_key)| {
+                (
+                    (identity.id(), key.id()),
+                    PrivateKey::from_slice(private_key.as_slice(), Network::Testnet).unwrap(),
+                )
+            });
+
+        self.identity_private_keys.extend(keys);
 
         self.save();
 
@@ -156,7 +215,9 @@ impl AppState {
         sdk: &Sdk,
         asset_lock_transaction: &Transaction,
     ) -> Result<AssetLockProof, dash_platform_sdk::Error> {
-        let asset_lock_stream = sdk.start_instant_send_lock_stream(asset_lock_transaction.txid()).await?;
+        let asset_lock_stream = sdk
+            .start_instant_send_lock_stream(asset_lock_transaction.txid())
+            .await?;
 
         // we need to broadcast the transaction to core
         let request = BroadcastTransactionRequest {

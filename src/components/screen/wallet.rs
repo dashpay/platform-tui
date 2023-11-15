@@ -33,7 +33,7 @@ impl WalletScreen {
                 identity.balance() as f64 / 100000000.0,
                 identity.public_keys()
             ))
-        } else if let Some((_, _, asset_lock)) = app_state
+        } else if let Some((_, _, asset_lock, _)) = app_state
             .identity_asset_lock_private_key_in_creation
             .as_ref()
         {
