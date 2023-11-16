@@ -3,6 +3,7 @@ use std::{
     ops::DerefMut,
     str::FromStr,
 };
+use std::ops::Deref;
 
 use bincode::{
     de::{BorrowDecoder, Decoder},
@@ -30,6 +31,8 @@ use super::{
 pub(crate) enum WalletTask {
     AddByPrivateKey(String),
     Refresh,
+    CopyAddress,
+    RegisterIdentity,
 }
 
 pub(super) async fn run_wallet_task(
@@ -87,6 +90,22 @@ pub(super) async fn run_wallet_task(
             } else {
                 BackendEvent::None
             }
+        }
+        WalletTask::CopyAddress => {
+            let mut wallet_guard = wallet_state.lock().await;
+            if let Some(wallet) = wallet_guard.deref() {
+                let address = wallet.receive_address();
+                cli_clipboard::set_contents(address.to_string()).unwrap();
+                BackendEvent::TaskCompleted {
+                    task: Task::Wallet(task),
+                    execution_result: Ok("Copied Address".to_owned()),
+                }
+            } else {
+                BackendEvent::None
+            }
+        }
+        WalletTask::RegisterIdentity => {
+
         }
     }
 }

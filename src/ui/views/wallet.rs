@@ -67,7 +67,7 @@ impl WalletScreenController {
         WalletScreenController {
             info,
             wallet_loaded,
-            identity_loaded: false,
+            identity_loaded,
         }
     }
 }
@@ -83,7 +83,11 @@ impl ScreenController for WalletScreenController {
 
     fn command_keys(&self) -> &[ScreenCommandKey] {
         if self.wallet_loaded {
-            COMMANDS.as_ref()
+            if self.identity_loaded {
+                COMMANDS.as_ref()
+            } else {
+                WALLET_BUT_NO_IDENTITY_COMMANDS.as_ref()
+            }
         } else {
             NO_WALLET_COMMANDS.as_ref()
         }
@@ -110,6 +114,21 @@ impl ScreenController for WalletScreenController {
                 modifiers: KeyModifiers::NONE,
             }) if self.wallet_loaded => ScreenFeedback::Task {
                 task: Task::Wallet(WalletTask::Refresh),
+                block: true,
+            },
+            Event::Key(KeyEvent {
+                           code: Key::Char('i'),
+                           modifiers: KeyModifiers::NONE,
+                       }) if self.wallet_loaded && !self.identity_loaded => ScreenFeedback::Task {
+                task: Task::Wallet(WalletTask::RegisterIdentity),
+                block: true,
+            },
+
+            Event::Key(KeyEvent {
+                           code: Key::Char('c'),
+                           modifiers: KeyModifiers::NONE,
+                       }) if self.wallet_loaded => ScreenFeedback::Task {
+                task: Task::Wallet(WalletTask::CopyAddress),
                 block: true,
             },
 
