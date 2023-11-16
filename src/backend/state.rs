@@ -41,7 +41,7 @@ pub(super) type KnownContractsMap = BTreeMap<String, DataContract>;
 // finishing
 #[derive(Debug)]
 pub(crate) struct AppState {
-    pub loaded_identity: Option<Identity>,
+    pub loaded_identity: Mutex<Option<Identity>>,
     pub identity_private_keys: BTreeMap<(Identifier, KeyID), PrivateKey>,
     pub loaded_wallet: Mutex<Option<Wallet>>,
     pub known_identities: BTreeMap<String, Identity>,
@@ -156,7 +156,7 @@ impl Default for AppState {
         // insert(String::from("default_strategy_3"), default_strategy_3);
 
         AppState {
-            loaded_identity: None,
+            loaded_identity: None.into(),
             identity_private_keys: Default::default(),
             loaded_wallet: None.into(),
             known_identities: BTreeMap::new(),
@@ -247,7 +247,7 @@ impl PlatformSerializableWithPlatformVersion for AppState {
             );
 
         let app_state_in_serialization_format = AppStateInSerializationFormat {
-            loaded_identity: loaded_identity.clone(),
+            loaded_identity: loaded_identity.blocking_lock().clone(),
             identity_private_keys,
             loaded_wallet: loaded_wallet.blocking_lock().clone(),
             known_identities: known_identities.clone(),
@@ -360,7 +360,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
             );
 
         Ok(AppState {
-            loaded_identity,
+            loaded_identity: loaded_identity.into(),
             identity_private_keys,
             loaded_wallet: loaded_wallet.into(),
             known_identities,

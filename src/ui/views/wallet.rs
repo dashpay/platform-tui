@@ -1,5 +1,6 @@
 //! Screens and forms related to wallet management.
 
+use dpp::prelude::Identity;
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
     tui::prelude::Rect,
@@ -24,26 +25,41 @@ const NO_WALLET_COMMANDS: [ScreenCommandKey; 2] = [
     ScreenCommandKey::new("a", "Add by private key"),
 ];
 
-const COMMANDS: [ScreenCommandKey; 2] = [
+const WALLET_BUT_NO_IDENTITY_COMMANDS: [ScreenCommandKey; 4] = [
     ScreenCommandKey::new("q", "Back to Main"),
     ScreenCommandKey::new("r", "Refresh utxos and balance"),
+    ScreenCommandKey::new("c", "Copy Address"),
+    ScreenCommandKey::new("i", "Register Identity"),
+];
+
+const COMMANDS: [ScreenCommandKey; 3] = [
+    ScreenCommandKey::new("q", "Back to Main"),
+    ScreenCommandKey::new("r", "Refresh utxos and balance"),
+    ScreenCommandKey::new("c", "Copy Address"),
 ];
 
 pub(crate) struct WalletScreenController {
     info: Info,
     wallet_loaded: bool,
+    identity_loaded: bool,
 }
 
 impl_builder!(WalletScreenController);
 
 impl WalletScreenController {
     pub(crate) async fn new(app_state: &AppState) -> Self {
-        let (info, wallet_loaded) =
+        let (info, wallet_loaded, identity_loaded) =
             if let Some(wallet) = app_state.loaded_wallet.lock().await.as_ref() {
-                (Info::new_fixed(&display_wallet(&wallet)), true)
+
+                if let Some(identity) = app_state.loaded_identity.lock().await.as_ref() {
+                    (Info::new_fixed(&display_wallet_and_identity(wallet, identity)), true, true)
+                } else {
+                    (Info::new_fixed(&display_wallet(wallet)), true, false)
+                }
             } else {
                 (
                     Info::new_fixed("Wallet management commands\n\nNo wallet loaded yet"),
+                    false,
                     false,
                 )
             };
@@ -51,6 +67,7 @@ impl WalletScreenController {
         WalletScreenController {
             info,
             wallet_loaded,
+            identity_loaded: false,
         }
     }
 }
@@ -160,3 +177,8 @@ impl FormController for AddWalletPrivateKeyFormController {
 fn display_wallet(wallet: &Wallet) -> String {
     wallet.description()
 }
+
+fn display_wallet_and_identity(wallet: &Wallet, identity: &Identity) -> String {
+    wallet.description()
+}
+

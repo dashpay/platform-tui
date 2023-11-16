@@ -7,6 +7,7 @@ mod insight;
 mod state;
 mod strategies;
 mod wallet;
+mod info_display;
 
 use std::{collections::BTreeMap, fmt::Display, ops::DerefMut};
 
