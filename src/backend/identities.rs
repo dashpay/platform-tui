@@ -61,7 +61,7 @@ impl AppState {
                 let result = self
                     .register_new_identity(sdk, amount)
                     .await
-                    .map(|maybe_identity| maybe_identity.display_info(0))
+                    .map(|identity| identity.display_info(0))
                     .map_err(|e| e.to_string());
                 BackendEvent::TaskCompleted {
                     task: Task::Identity(task),

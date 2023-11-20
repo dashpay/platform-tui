@@ -124,7 +124,7 @@ impl ScreenController for WalletScreenController {
                 code: Key::Char('i'),
                 modifiers: KeyModifiers::NONE,
             }) if self.wallet_loaded && !self.identity_loaded => ScreenFeedback::Task {
-                task: Task::Identity(IdentityTask::RegisterIdentity(1)),
+                task: Task::Identity(IdentityTask::RegisterIdentity(1000000000)),
                 block: true,
             },
 
