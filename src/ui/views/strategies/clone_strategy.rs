@@ -1,29 +1,29 @@
-//! Strategy selection form.
+//! Form to clone the existing strategy with new name.
 
 use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
 use crate::{
     backend::{StrategyTask, Task},
-    ui::form::{FormController, FormStatus, Input, InputStatus, SelectInput},
+    ui::form::{FormController, FormStatus, Input, InputStatus, TextInput},
 };
 
-pub(super) struct SelectStrategyFormController {
-    input: SelectInput<String>,
+pub(crate) struct CloneStrategyFormController {
+    input: TextInput,
 }
 
-impl SelectStrategyFormController {
-    pub(super) fn new(strategies: Vec<String>) -> Self {
-        SelectStrategyFormController {
-            input: SelectInput::new(strategies),
+impl CloneStrategyFormController {
+    pub(crate) fn new() -> Self {
+        CloneStrategyFormController {
+            input: TextInput::new("strategy name"),
         }
     }
 }
 
-impl FormController for SelectStrategyFormController {
+impl FormController for CloneStrategyFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
         match self.input.on_event(event) {
             InputStatus::Done(strategy_name) => FormStatus::Done {
-                task: Task::Strategy(StrategyTask::SelectStrategy(strategy_name)),
+                task: Task::Strategy(StrategyTask::CloneStrategy(strategy_name)),
                 block: false,
             },
             InputStatus::Redraw => FormStatus::Redraw,
@@ -33,7 +33,7 @@ impl FormController for SelectStrategyFormController {
     }
 
     fn form_name(&self) -> &'static str {
-        "Strategy selection"
+        "Clone strategy"
     }
 
     fn step_view(&mut self, frame: &mut Frame, area: Rect) {
@@ -41,7 +41,7 @@ impl FormController for SelectStrategyFormController {
     }
 
     fn step_name(&self) -> &'static str {
-        "By name"
+        "Strategy name"
     }
 
     fn step_index(&self) -> u8 {

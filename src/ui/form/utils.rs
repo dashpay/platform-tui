@@ -163,6 +163,7 @@ macro_rules! impl_sequential_input {
                 }
                 InputStatus::Redraw => InputStatus::Redraw,
                 InputStatus::None => InputStatus::None,
+                InputStatus::Exit => InputStatus::Exit,
             }
         }
 
@@ -190,6 +191,7 @@ macro_rules! impl_sequential_input {
             }
             InputStatus::Redraw => InputStatus::Redraw,
             InputStatus::None => InputStatus::None,
+            InputStatus::Exit => InputStatus::Exit,
         }
     };
 }

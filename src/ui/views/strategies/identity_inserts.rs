@@ -46,6 +46,7 @@ impl FormController for StrategyIdentityInsertsFormController {
             },
             InputStatus::Redraw => FormStatus::Redraw,
             InputStatus::None => FormStatus::None,
+            InputStatus::Exit => FormStatus::Exit,
         }
     }
 
