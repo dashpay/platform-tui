@@ -91,6 +91,7 @@ impl AppState {
         }
         Ok(())
     }
+
     pub(crate) async fn register_new_identity(
         &self,
         sdk: &Sdk,
@@ -108,6 +109,10 @@ impl AppState {
 
         //// Core steps
 
+        let mut identity_asset_lock_private_key_in_creation = self
+            .identity_asset_lock_private_key_in_creation
+            .lock().await;
+
         // We create the wallet registration transaction, this locks funds that we
         // can transfer from core to platform
         let (
@@ -120,9 +125,7 @@ impl AppState {
             asset_lock_proof_private_key,
             maybe_asset_lock_proof,
             maybe_identity,
-        )) = self
-            .identity_asset_lock_private_key_in_creation
-            .blocking_lock()
+        )) = identity_asset_lock_private_key_in_creation
             .as_ref()
         {
             (
@@ -134,10 +137,6 @@ impl AppState {
         } else {
             let (asset_lock_transaction, asset_lock_proof_private_key) =
                 wallet.registration_transaction(None, amount)?;
-
-            let mut identity_asset_lock_private_key_in_creation = self
-                .identity_asset_lock_private_key_in_creation
-                .blocking_lock();
 
             identity_asset_lock_private_key_in_creation.replace((
                 asset_lock_transaction.clone(),
@@ -183,10 +182,6 @@ impl AppState {
                     Error::SdkExplainedError("error broadcasting transaction".to_string(), e.into())
                 })?;
 
-            let mut identity_asset_lock_private_key_in_creation = self
-                .identity_asset_lock_private_key_in_creation
-                .blocking_lock();
-
             identity_asset_lock_private_key_in_creation.replace((
                 asset_lock_transaction.clone(),
                 asset_lock_proof_private_key.clone(),
@@ -217,10 +212,6 @@ impl AppState {
                         .expect("expected to create an identifier"),
                 );
 
-                let mut identity_asset_lock_private_key_in_creation = self
-                    .identity_asset_lock_private_key_in_creation
-                    .blocking_lock();
-
                 identity_asset_lock_private_key_in_creation.replace((
                     asset_lock_transaction.clone(),
                     asset_lock_proof_private_key.clone(),
@@ -249,13 +240,11 @@ impl AppState {
             panic!("identity ids don't match");
         }
 
-        self.loaded_identity
-            .blocking_lock()
-            .replace(updated_identity.clone());
+        let mut loaded_identity = self.loaded_identity.lock().await;
 
-        let keys = self
-            .identity_asset_lock_private_key_in_creation
-            .blocking_lock()
+        loaded_identity.replace(updated_identity.clone());
+
+        let keys = identity_asset_lock_private_key_in_creation
             .take()
             .expect("expected something to be in creation")
             .3
@@ -269,7 +258,9 @@ impl AppState {
                 )
             });
 
-        self.identity_private_keys.blocking_lock().extend(keys);
+        let mut identity_private_keys = self.identity_private_keys.lock().await;
+
+        identity_private_keys.extend(keys);
 
         self.save();
 
