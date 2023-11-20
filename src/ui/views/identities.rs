@@ -80,7 +80,7 @@ impl ScreenController for IdentitiesScreenController {
             }
 
             Event::Backend(BackendEvent::TaskCompleted {
-                task: Task::FetchIdentityById(_),
+                task: Task::FetchIdentityById(..),
                 execution_result,
             }) => {
                 self.info = Info::new_from_result(execution_result);
@@ -111,7 +111,7 @@ impl FormController for GetIdentityByIdFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
         match self.input.on_event(event) {
             InputStatus::Done(value) => FormStatus::Done {
-                task: Task::FetchIdentityById(value),
+                task: Task::FetchIdentityById(value, false),
                 block: true,
             },
             InputStatus::Redraw => FormStatus::Redraw,

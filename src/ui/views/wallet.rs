@@ -8,6 +8,7 @@ use tuirealm::{
 };
 
 use super::main::MainScreenController;
+use crate::backend::identities::IdentityTask;
 use crate::{
     backend::{AppState, AppStateUpdate, BackendEvent, Task, Wallet, WalletTask},
     ui::{
@@ -50,9 +51,12 @@ impl WalletScreenController {
     pub(crate) async fn new(app_state: &AppState) -> Self {
         let (info, wallet_loaded, identity_loaded) =
             if let Some(wallet) = app_state.loaded_wallet.lock().await.as_ref() {
-
                 if let Some(identity) = app_state.loaded_identity.lock().await.as_ref() {
-                    (Info::new_fixed(&display_wallet_and_identity(wallet, identity)), true, true)
+                    (
+                        Info::new_fixed(&display_wallet_and_identity(wallet, identity)),
+                        true,
+                        true,
+                    )
                 } else {
                     (Info::new_fixed(&display_wallet(wallet)), true, false)
                 }
@@ -117,17 +121,17 @@ impl ScreenController for WalletScreenController {
                 block: true,
             },
             Event::Key(KeyEvent {
-                           code: Key::Char('i'),
-                           modifiers: KeyModifiers::NONE,
-                       }) if self.wallet_loaded && !self.identity_loaded => ScreenFeedback::Task {
-                task: Task::Wallet(WalletTask::RegisterIdentity),
+                code: Key::Char('i'),
+                modifiers: KeyModifiers::NONE,
+            }) if self.wallet_loaded && !self.identity_loaded => ScreenFeedback::Task {
+                task: Task::Identity(IdentityTask::RegisterIdentity(1)),
                 block: true,
             },
 
             Event::Key(KeyEvent {
-                           code: Key::Char('c'),
-                           modifiers: KeyModifiers::NONE,
-                       }) if self.wallet_loaded => ScreenFeedback::Task {
+                code: Key::Char('c'),
+                modifiers: KeyModifiers::NONE,
+            }) if self.wallet_loaded => ScreenFeedback::Task {
                 task: Task::Wallet(WalletTask::CopyAddress),
                 block: true,
             },
@@ -200,4 +204,3 @@ fn display_wallet(wallet: &Wallet) -> String {
 fn display_wallet_and_identity(wallet: &Wallet, identity: &Identity) -> String {
     wallet.description()
 }
-

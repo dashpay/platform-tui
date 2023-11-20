@@ -1,9 +1,9 @@
+use std::ops::Deref;
 use std::{
     collections::{BTreeMap, HashMap},
     ops::DerefMut,
     str::FromStr,
 };
-use std::ops::Deref;
 
 use bincode::{
     de::{BorrowDecoder, Decoder},
@@ -32,7 +32,6 @@ pub(crate) enum WalletTask {
     AddByPrivateKey(String),
     Refresh,
     CopyAddress,
-    RegisterIdentity,
 }
 
 pub(super) async fn run_wallet_task(
@@ -103,9 +102,6 @@ pub(super) async fn run_wallet_task(
             } else {
                 BackendEvent::None
             }
-        }
-        WalletTask::RegisterIdentity => {
-
         }
     }
 }

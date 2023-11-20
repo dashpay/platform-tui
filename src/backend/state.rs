@@ -2,9 +2,11 @@
 //! This kind of state does not include UI details and basically all about
 //! persistence required by backend.
 
+use std::ops::Deref;
 use std::{collections::BTreeMap, fs, path::Path};
 
 use bincode::{Decode, Encode};
+use dpp::identity::IdentityPublicKey;
 use dpp::{
     dashcore::{
         psbt::serialize::{Deserialize, Serialize},
@@ -42,9 +44,9 @@ pub(super) type KnownContractsMap = BTreeMap<String, DataContract>;
 #[derive(Debug)]
 pub(crate) struct AppState {
     pub loaded_identity: Mutex<Option<Identity>>,
-    pub identity_private_keys: BTreeMap<(Identifier, KeyID), PrivateKey>,
+    pub identity_private_keys: Mutex<BTreeMap<(Identifier, KeyID), PrivateKey>>,
     pub loaded_wallet: Mutex<Option<Wallet>>,
-    pub known_identities: BTreeMap<String, Identity>,
+    pub known_identities: Mutex<BTreeMap<Identifier, Identity>>,
     pub known_contracts: Mutex<KnownContractsMap>,
     pub available_strategies: Mutex<StrategiesMap>,
     /// Because we don't store which contract support file was used exactly we
@@ -53,8 +55,14 @@ pub(crate) struct AppState {
     /// but using file names
     pub available_strategies_contract_names: Mutex<BTreeMap<String, StrategyContractNames>>,
     pub selected_strategy: Mutex<Option<String>>,
-    pub identity_asset_lock_private_key_in_creation:
-        Option<(Transaction, PrivateKey, Option<AssetLockProof>)>,
+    pub identity_asset_lock_private_key_in_creation: Mutex<
+        Option<(
+            Transaction,
+            PrivateKey,
+            Option<AssetLockProof>,
+            Option<(Identity, BTreeMap<IdentityPublicKey, Vec<u8>>)>,
+        )>,
+    >,
 }
 
 pub fn default_strategy_description(mut map: BTreeMap<String, String>) -> BTreeMap<String, String> {
@@ -159,11 +167,11 @@ impl Default for AppState {
             loaded_identity: None.into(),
             identity_private_keys: Default::default(),
             loaded_wallet: None.into(),
-            known_identities: BTreeMap::new(),
+            known_identities: BTreeMap::new().into(),
             known_contracts: BTreeMap::new().into(),
             available_strategies: BTreeMap::new().into(),
             selected_strategy: None.into(),
-            identity_asset_lock_private_key_in_creation: None,
+            identity_asset_lock_private_key_in_creation: None.into(),
             available_strategies_contract_names: BTreeMap::new().into(),
         }
     }
@@ -174,14 +182,18 @@ struct AppStateInSerializationFormat {
     pub loaded_identity: Option<Identity>,
     pub identity_private_keys: BTreeMap<(Identifier, KeyID), [u8; 32]>,
     pub loaded_wallet: Option<Wallet>,
-    pub known_identities: BTreeMap<String, Identity>,
+    pub known_identities: BTreeMap<Identifier, Identity>,
     pub known_contracts: BTreeMap<String, Vec<u8>>,
     pub available_strategies: BTreeMap<String, Vec<u8>>,
     pub available_strategies_contract_names:
         BTreeMap<String, Vec<(ContractFileName, Option<BTreeMap<u64, ContractFileName>>)>>,
     pub selected_strategy: Option<String>,
-    pub identity_asset_lock_private_key_in_creation:
-        Option<(Vec<u8>, [u8; 32], Option<AssetLockProof>)>,
+    pub identity_asset_lock_private_key_in_creation: Option<(
+        Vec<u8>,
+        [u8; 32],
+        Option<AssetLockProof>,
+        Option<(Identity, BTreeMap<IdentityPublicKey, Vec<u8>>)>,
+    )>,
 }
 
 impl PlatformSerializableWithPlatformVersion for AppState {
@@ -231,26 +243,31 @@ impl PlatformSerializableWithPlatformVersion for AppState {
             .collect::<Result<BTreeMap<String, Vec<u8>>, ProtocolError>>()?;
 
         let identity_private_keys = identity_private_keys
+            .blocking_lock()
             .iter()
             .map(|(key, value)| (key.clone(), value.inner.secret_bytes()))
             .collect();
 
         let identity_asset_lock_private_key_in_creation =
-            identity_asset_lock_private_key_in_creation.as_ref().map(
-                |(transaction, private_key, asset_lock_proof)| {
-                    (
-                        transaction.serialize(),
-                        private_key.inner.secret_bytes(),
-                        asset_lock_proof.clone(),
-                    )
-                },
-            );
+            identity_asset_lock_private_key_in_creation
+                .blocking_lock()
+                .as_ref()
+                .map(
+                    |(transaction, private_key, asset_lock_proof, identity_info)| {
+                        (
+                            transaction.serialize(),
+                            private_key.inner.secret_bytes(),
+                            asset_lock_proof.clone(),
+                            identity_info.clone(),
+                        )
+                    },
+                );
 
         let app_state_in_serialization_format = AppStateInSerializationFormat {
             loaded_identity: loaded_identity.blocking_lock().clone(),
             identity_private_keys,
             loaded_wallet: loaded_wallet.blocking_lock().clone(),
-            known_identities: known_identities.clone(),
+            known_identities: known_identities.blocking_lock().clone(),
             known_contracts: known_contracts_in_serialization_format,
             available_strategies: available_strategies_in_serialization_format,
             selected_strategy: selected_strategy.blocking_lock().clone(),
@@ -344,17 +361,19 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
                     PrivateKey::from_slice(&value, Network::Testnet).expect("expected private key"),
                 )
             })
-            .collect();
+            .collect::<BTreeMap<(Identifier, u32), PrivateKey>>()
+            .into();
 
         let identity_asset_lock_private_key_in_creation =
             identity_asset_lock_private_key_in_creation.map(
-                |(transaction, private_key, asset_lock_proof)| {
+                |(transaction, private_key, asset_lock_proof, identity_info)| {
                     (
                         Transaction::deserialize(&transaction)
                             .expect("expected to deserialize transaction"),
                         PrivateKey::from_slice(&private_key, Network::Testnet)
                             .expect("expected private key"),
                         asset_lock_proof,
+                        identity_info,
                     )
                 },
             );
@@ -363,12 +382,13 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
             loaded_identity: loaded_identity.into(),
             identity_private_keys,
             loaded_wallet: loaded_wallet.into(),
-            known_identities,
+            known_identities: known_identities.into(),
             known_contracts: known_contracts.into(),
             available_strategies: available_strategies.into(),
             selected_strategy: selected_strategy.into(),
             available_strategies_contract_names: available_strategies_contract_names.into(),
-            identity_asset_lock_private_key_in_creation,
+            identity_asset_lock_private_key_in_creation:
+                identity_asset_lock_private_key_in_creation.into(),
         })
     }
 }
