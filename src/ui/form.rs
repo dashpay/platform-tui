@@ -37,6 +37,8 @@ pub(crate) enum InputStatus<T> {
     Redraw,
     /// Input is incomplete and the key event was discarded
     None,
+    /// Exit
+    Exit,
 }
 
 /// Form is a component that is responsible for handling key events and drawing
@@ -78,6 +80,7 @@ pub(crate) enum FormStatus {
     Done { task: Task, block: bool },
     Redraw,
     None,
+    Exit,
 }
 
 /// Similar to [crate::ui::ScreenController], a generic form knows how to draw

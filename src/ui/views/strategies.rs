@@ -5,6 +5,8 @@ mod new_strategy;
 mod operations;
 mod select_strategy;
 mod start_identities;
+mod delete_strategy;
+mod clone_strategy;
 
 use std::collections::BTreeMap;
 
@@ -20,6 +22,8 @@ use self::{
     new_strategy::NewStrategyFormController, operations::StrategyAddOperationFormController,
     select_strategy::SelectStrategyFormController,
     start_identities::StrategyStartIdentitiesFormController,
+    delete_strategy::DeleteStrategyFormController,
+    clone_strategy::CloneStrategyFormController,
 };
 use crate::{
     backend::{AppState, AppStateUpdate, BackendEvent},
@@ -39,10 +43,12 @@ const COMMAND_KEYS: [ScreenCommandKey; 3] = [
     ScreenCommandKey::new("s", "Select a strategy"),
 ];
 
-const COMMANDS_KEYS_ON_STRATEGY_SELECTED: [ScreenCommandKey; 10] = [
+const COMMANDS_KEYS_ON_STRATEGY_SELECTED: [ScreenCommandKey; 12] = [
     ScreenCommandKey::new("q", "Back to Main"),
     ScreenCommandKey::new("n", "New strategy"),
     ScreenCommandKey::new("s", "Select a strategy"),
+    ScreenCommandKey::new("d", "Delete a strategy"),
+    ScreenCommandKey::new("l", "Clone current strategy"),
     ScreenCommandKey::new("c", "Set contracts with updates"),
     ScreenCommandKey::new("i", "Set identity inserts"),
     ScreenCommandKey::new("b", "Set start identities"),
@@ -119,6 +125,16 @@ impl ScreenController for StrategiesScreenController {
             }) => ScreenFeedback::Form(Box::new(SelectStrategyFormController::new(
                 self.available_strategies.clone(),
             ))),
+            Event::Key(KeyEvent {
+                code: Key::Char('d'),
+                modifiers: KeyModifiers::NONE,
+            }) => ScreenFeedback::Form(Box::new(DeleteStrategyFormController::new(
+                self.available_strategies.clone(),
+            ))),
+            Event::Key(KeyEvent {
+                code: Key::Char('l'),
+                modifiers: KeyModifiers::NONE,
+            }) => ScreenFeedback::Form(Box::new(CloneStrategyFormController::new())),
             Event::Key(KeyEvent {
                 code: Key::Char('i'),
                 modifiers: KeyModifiers::NONE,

@@ -1,4 +1,4 @@
-//! Strategy selection form.
+//! Strategy deletion form.
 
 use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
@@ -7,23 +7,23 @@ use crate::{
     ui::form::{FormController, FormStatus, Input, InputStatus, SelectInput},
 };
 
-pub(super) struct SelectStrategyFormController {
+pub(super) struct DeleteStrategyFormController {
     input: SelectInput<String>,
 }
 
-impl SelectStrategyFormController {
+impl DeleteStrategyFormController {
     pub(super) fn new(strategies: Vec<String>) -> Self {
-        SelectStrategyFormController {
+        DeleteStrategyFormController {
             input: SelectInput::new(strategies),
         }
     }
 }
 
-impl FormController for SelectStrategyFormController {
+impl FormController for DeleteStrategyFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
         match self.input.on_event(event) {
             InputStatus::Done(strategy_name) => FormStatus::Done {
-                task: Task::Strategy(StrategyTask::SelectStrategy(strategy_name)),
+                task: Task::Strategy(StrategyTask::DeleteStrategy(strategy_name)),
                 block: false,
             },
             InputStatus::Redraw => FormStatus::Redraw,
@@ -33,7 +33,7 @@ impl FormController for SelectStrategyFormController {
     }
 
     fn form_name(&self) -> &'static str {
-        "Strategy selection"
+        "Strategy deletion"
     }
 
     fn step_view(&mut self, frame: &mut Frame, area: Rect) {

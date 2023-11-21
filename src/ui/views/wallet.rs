@@ -173,6 +173,7 @@ impl FormController for AddWalletPrivateKeyFormController {
             },
             InputStatus::Redraw => FormStatus::Redraw,
             InputStatus::None => FormStatus::None,
+            InputStatus::Exit => FormStatus::Exit,
         }
     }
 

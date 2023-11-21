@@ -116,6 +116,7 @@ impl FormController for GetIdentityByIdFormController {
             },
             InputStatus::Redraw => FormStatus::Redraw,
             InputStatus::None => FormStatus::None,
+            InputStatus::Exit => FormStatus::Exit,
         }
     }
 

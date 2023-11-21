@@ -76,6 +76,7 @@ impl FormController for StrategyOpIdentityUpdateFormController {
             },
             InputStatus::Redraw => FormStatus::Redraw,
             InputStatus::None => FormStatus::None,
+            InputStatus::Exit => FormStatus::Exit,
         }
     }
 
