@@ -45,7 +45,7 @@ Italics are used to mark flags.
 Bold italics are flags that are enabled.
 
 Text inputs with completions support both arrows and Ctrl+n / Ctrl+p keys for selection.
-Use Ctrl+q to go back from completion list or once again to leave input at all.
+Use q to go back from completion list or once again to leave input at all.
 "#,
             ),
         }

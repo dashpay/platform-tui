@@ -23,6 +23,7 @@ pub(crate) enum StrategyTask {
         strategy_name: String,
         identity_inserts_frequency: Frequency,
     },
+    // RemoveIdentityInserts(String),
     SetStartIdentities {
         strategy_name: String,
         count: u16,
@@ -150,6 +151,23 @@ pub(crate) async fn run_strategy_task<'s>(
                 BackendEvent::None
             }
         }
+        // StrategyTask::RemoveIdentityInserts(strategy_name) => {
+        //     let mut strategies_lock = available_strategies.lock().await;
+        //     let contract_names_lock = available_strategies_contract_names.lock().await;
+        
+        //     if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
+        //         // Reset identity_inserts_frequency to its default value
+        //         strategy.identities_inserts = Default::default(); // Adjust as per your default
+        
+        //         // Return AppStateUpdated with Strategies variant
+        //         BackendEvent::AppStateUpdated(AppStateUpdate::Strategies(
+        //             strategies_lock,
+        //             contract_names_lock,
+        //         ))
+        //     } else {
+        //         BackendEvent::None
+        //     }
+        // }
         StrategyTask::SetStartIdentities {
             ref strategy_name,
             count,

@@ -26,7 +26,7 @@ use self::{
     clone_strategy::CloneStrategyFormController,
 };
 use crate::{
-    backend::{AppState, AppStateUpdate, BackendEvent},
+    backend::{AppState, AppStateUpdate, BackendEvent, StrategyTask},
     ui::{
         screen::{
             utils::impl_builder, widgets::info::Info, ScreenCommandKey, ScreenController,
@@ -53,7 +53,7 @@ const COMMANDS_KEYS_ON_STRATEGY_SELECTED: [ScreenCommandKey; 12] = [
     ScreenCommandKey::new("i", "Set identity inserts"),
     ScreenCommandKey::new("b", "Set start identities"),
     ScreenCommandKey::new("o", "Add operations"),
-    ScreenCommandKey::new("Ctrl-i", "Remove identity inserts"),
+    ScreenCommandKey::new("y", "Remove identity inserts"),
     ScreenCommandKey::new("Ctrl-b", "Remove start identities"),
     ScreenCommandKey::new("Ctrl-o", "Remove operations"),
 ];
@@ -147,6 +147,13 @@ impl ScreenController for StrategiesScreenController {
                     ScreenFeedback::None
                 }
             }
+            // Event::Key(KeyEvent {
+            //     code: Key::Char('y'),
+            //     modifiers: KeyModifiers::NONE,
+            // }) => {
+            //     StrategyTask::RemoveIdentityInserts(self.selected_strategy.clone().unwrap());
+            //     ScreenFeedback::None
+            // }
             Event::Key(KeyEvent {
                 code: Key::Char('b'),
                 modifiers: KeyModifiers::NONE,

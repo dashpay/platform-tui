@@ -5,6 +5,12 @@ mod backend;
 // mod mock_components;
 mod ui;
 
+use std::fs::File;
+use std::io::Write;
+use std::panic;
+use std::sync::Mutex;
+use std::path::Path;
+
 use crossterm::event::{Event as TuiEvent, EventStream};
 use dash_platform_sdk::SdkBuilder;
 use dpp::version::PlatformVersion;
@@ -24,6 +30,25 @@ pub(crate) enum Event<'s> {
 
 #[tokio::main]
 async fn main() {
+
+    // Error logs to file
+    // Initialize the log file
+    let log_file_path = Path::new("panic.log");
+    let log_file = File::create(log_file_path).expect("Failed to create log file");
+
+    // Use a Mutex to allow the log file to be shared safely across threads
+    let log_file = Mutex::new(log_file);
+
+    // Set the custom panic hook
+    panic::set_hook(Box::new(move |panic_info| {
+        let mut file = log_file.lock().unwrap();
+        let message = match panic_info.payload().downcast_ref::<&str>() {
+            Some(s) => *s,
+            None => "Panic occurred but can't get the message.",
+        };
+        writeln!(file, "Panic occurred: {}", message).expect("Failed to write to log file");
+    }));    
+
     // Setup Platform SDK
     let mut address_list = AddressList::new();
     address_list.add_uri(rs_dapi_client::Uri::from_static(

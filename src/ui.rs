@@ -169,7 +169,6 @@ impl Ui {
 
 impl Drop for Ui {
     fn drop(&mut self) {
-        std::thread::sleep(Duration::from_secs(30));
         let _ = self.terminal.leave_alternate_screen();
         let _ = self.terminal.disable_raw_mode();
         let _ = self.terminal.clear_screen();
