@@ -112,6 +112,7 @@ impl Backend {
                     &self.app_state.available_strategies,
                     &self.app_state.available_strategies_contract_names,
                     &self.app_state.selected_strategy,
+                    &self.app_state.known_contracts,
                     strategy_task,
                 )
                 .await

@@ -10,7 +10,6 @@ mod status_bar;
 mod views;
 
 use std::ops::Deref;
-use std::time::Duration;
 
 use tuirealm::{
     terminal::TerminalBridge,

@@ -7,6 +7,7 @@ mod select_strategy;
 mod start_identities;
 mod delete_strategy;
 mod clone_strategy;
+mod contracts_with_updates;
 
 use std::collections::BTreeMap;
 
@@ -24,9 +25,10 @@ use self::{
     start_identities::StrategyStartIdentitiesFormController,
     delete_strategy::DeleteStrategyFormController,
     clone_strategy::CloneStrategyFormController,
+    contracts_with_updates::StrategyContractsFormController,
 };
 use crate::{
-    backend::{AppState, AppStateUpdate, BackendEvent, StrategyTask},
+    backend::{AppState, AppStateUpdate, BackendEvent, StrategyTask, Task},
     ui::{
         screen::{
             utils::impl_builder, widgets::info::Info, ScreenCommandKey, ScreenController,
@@ -37,31 +39,35 @@ use crate::{
     Event,
 };
 
+use dash_platform_sdk::platform::DataContract;
+
 const COMMAND_KEYS: [ScreenCommandKey; 3] = [
     ScreenCommandKey::new("q", "Back to Main"),
     ScreenCommandKey::new("n", "New strategy"),
     ScreenCommandKey::new("s", "Select a strategy"),
 ];
 
-const COMMANDS_KEYS_ON_STRATEGY_SELECTED: [ScreenCommandKey; 12] = [
+const COMMANDS_KEYS_ON_STRATEGY_SELECTED: [ScreenCommandKey; 13] = [
     ScreenCommandKey::new("q", "Back to Main"),
     ScreenCommandKey::new("n", "New strategy"),
     ScreenCommandKey::new("s", "Select a strategy"),
     ScreenCommandKey::new("d", "Delete a strategy"),
     ScreenCommandKey::new("l", "Clone current strategy"),
-    ScreenCommandKey::new("c", "Set contracts with updates"),
+    ScreenCommandKey::new("c", "Add contract with updates"),
+    ScreenCommandKey::new("o", "Add operations"),
     ScreenCommandKey::new("i", "Set identity inserts"),
     ScreenCommandKey::new("b", "Set start identities"),
-    ScreenCommandKey::new("o", "Add operations"),
-    ScreenCommandKey::new("y", "Remove identity inserts"),
-    ScreenCommandKey::new("Ctrl-b", "Remove start identities"),
-    ScreenCommandKey::new("Ctrl-o", "Remove operations"),
+    ScreenCommandKey::new("w", "Remove last contract"),
+    ScreenCommandKey::new("x", "Remove identity inserts"),
+    ScreenCommandKey::new("y", "Remove start identities"),
+    ScreenCommandKey::new("z", "Remove last operation"),
 ];
 
 pub(crate) struct StrategiesScreenController {
     info: Info,
     available_strategies: Vec<String>,
     selected_strategy: Option<String>,
+    known_contracts: BTreeMap<String, DataContract>,
 }
 
 impl_builder!(StrategiesScreenController);
@@ -70,6 +76,7 @@ impl StrategiesScreenController {
     pub(crate) async fn new(app_state: &AppState) -> Self {
         let available_strategies_lock = app_state.available_strategies.lock().await;
         let selected_strategy_lock = app_state.selected_strategy.lock().await;
+        let known_contracts_lock = app_state.known_contracts.lock().await;
 
         let info = if let Some(name) = selected_strategy_lock.as_ref() {
             let strategy = available_strategies_lock
@@ -92,6 +99,7 @@ impl StrategiesScreenController {
             info,
             available_strategies: available_strategies_lock.keys().cloned().collect(),
             selected_strategy: selected_strategy_lock.clone(),
+            known_contracts: known_contracts_lock.clone() // Clone the underlying BTreeMap
         }
     }
 }
@@ -120,6 +128,10 @@ impl ScreenController for StrategiesScreenController {
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::PreviousScreen(MainScreenController::builder()),
             Event::Key(KeyEvent {
+                code: Key::Char('n'),
+                modifiers: KeyModifiers::NONE,
+            }) => ScreenFeedback::Form(Box::new(NewStrategyFormController::new())),
+            Event::Key(KeyEvent {
                 code: Key::Char('s'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::Form(Box::new(SelectStrategyFormController::new(
@@ -136,6 +148,19 @@ impl ScreenController for StrategiesScreenController {
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::Form(Box::new(CloneStrategyFormController::new())),
             Event::Key(KeyEvent {
+                code: Key::Char('c'),
+                modifiers: KeyModifiers::NONE,
+            }) => {
+                if let Some(strategy_name) = &self.selected_strategy {
+                    ScreenFeedback::Form(Box::new(StrategyContractsFormController::new(
+                        strategy_name.clone(),
+                        self.known_contracts.clone(),
+                    )))
+                } else {
+                    ScreenFeedback::None
+                }
+            }
+            Event::Key(KeyEvent {
                 code: Key::Char('i'),
                 modifiers: KeyModifiers::NONE,
             }) => {
@@ -147,13 +172,6 @@ impl ScreenController for StrategiesScreenController {
                     ScreenFeedback::None
                 }
             }
-            // Event::Key(KeyEvent {
-            //     code: Key::Char('y'),
-            //     modifiers: KeyModifiers::NONE,
-            // }) => {
-            //     StrategyTask::RemoveIdentityInserts(self.selected_strategy.clone().unwrap());
-            //     ScreenFeedback::None
-            // }
             Event::Key(KeyEvent {
                 code: Key::Char('b'),
                 modifiers: KeyModifiers::NONE,
@@ -179,9 +197,29 @@ impl ScreenController for StrategiesScreenController {
                 }
             }
             Event::Key(KeyEvent {
-                code: Key::Char('n'),
+                code: Key::Char('w'),
                 modifiers: KeyModifiers::NONE,
-            }) => ScreenFeedback::Form(Box::new(NewStrategyFormController::new())),
+            }) => {
+                ScreenFeedback::Task { task: Task::Strategy(StrategyTask::RemoveLastContract(self.selected_strategy.clone().unwrap())), block: false }
+            }
+            Event::Key(KeyEvent {
+                code: Key::Char('x'),
+                modifiers: KeyModifiers::NONE,
+            }) => {
+                ScreenFeedback::Task { task: Task::Strategy(StrategyTask::RemoveIdentityInserts(self.selected_strategy.clone().unwrap())), block: false }
+            }
+            Event::Key(KeyEvent {
+                code: Key::Char('y'),
+                modifiers: KeyModifiers::NONE,
+            }) => {
+                ScreenFeedback::Task { task: Task::Strategy(StrategyTask::RemoveStartIdentities(self.selected_strategy.clone().unwrap())), block: false }
+            }
+            Event::Key(KeyEvent {
+                code: Key::Char('z'),
+                modifiers: KeyModifiers::NONE,
+            }) => {
+                ScreenFeedback::Task { task: Task::Strategy(StrategyTask::RemoveLastOperation(self.selected_strategy.clone().unwrap())), block: false }
+            }
 
             Event::Backend(
                 BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
