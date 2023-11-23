@@ -2,9 +2,11 @@ use dapi_grpc::tonic::Status;
 use dpp::ProtocolError;
 use rs_dapi_client::DapiClientError;
 
-use crate::backend::error::Error::{ParsingError, SdkError, WalletError};
-use crate::backend::insight::InsightError;
-use crate::backend::wallet;
+use crate::backend::{
+    error::Error::{ParsingError, SdkError, WalletError},
+    insight::InsightError,
+    wallet,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum Error {

@@ -11,11 +11,12 @@ mod state;
 mod strategies;
 mod wallet;
 
-use std::ops::Deref;
-use std::{collections::BTreeMap, fmt::Display, ops::DerefMut};
+use std::{
+    collections::BTreeMap,
+    fmt::Display,
+    ops::{Deref, DerefMut},
+};
 
-use crate::backend::identities::IdentityTask;
-use crate::backend::screen_state::ScreenState;
 use dash_platform_sdk::Sdk;
 use dpp::identity::accessors::IdentityGettersV0;
 use serde::Serialize;
@@ -30,6 +31,7 @@ pub(crate) use self::{
     strategies::StrategyTask,
     wallet::{Wallet, WalletTask},
 };
+use crate::backend::{identities::IdentityTask, screen_state::ScreenState};
 
 #[derive(Clone, PartialEq)]
 pub(crate) enum Task {

@@ -8,7 +8,7 @@ use crate::{
 };
 
 pub(crate) struct CloneStrategyFormController {
-    input: TextInput,
+    input: TextInput<String>,
 }
 
 impl CloneStrategyFormController {

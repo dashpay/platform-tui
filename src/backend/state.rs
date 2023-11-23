@@ -2,17 +2,15 @@
 //! This kind of state does not include UI details and basically all about
 //! persistence required by backend.
 
-use std::ops::Deref;
-use std::{collections::BTreeMap, fs, path::Path};
+use std::{collections::BTreeMap, fs, ops::Deref, path::Path};
 
 use bincode::{Decode, Encode};
-use dpp::identity::IdentityPublicKey;
 use dpp::{
     dashcore::{
         psbt::serialize::{Deserialize, Serialize},
         Network, PrivateKey, Transaction,
     },
-    identity::KeyID,
+    identity::{IdentityPublicKey, KeyID},
     prelude::{AssetLockProof, DataContract, Identifier, Identity},
     serialization::{
         PlatformDeserializableWithPotentialValidationFromVersionedStructure,

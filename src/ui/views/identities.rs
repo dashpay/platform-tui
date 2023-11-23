@@ -96,7 +96,7 @@ impl ScreenController for IdentitiesScreenController {
 }
 
 pub(crate) struct GetIdentityByIdFormController {
-    input: TextInput,
+    input: TextInput<String>,
 }
 
 impl GetIdentityByIdFormController {

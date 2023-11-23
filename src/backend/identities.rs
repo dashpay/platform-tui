@@ -1,32 +1,40 @@
 //! Identities backend logic.
 
-use dapi_grpc::core::v0::{
-    BroadcastTransactionRequest, BroadcastTransactionResponse, GetTransactionRequest,
-};
-use dapi_grpc::platform::v0::get_identity_balance_request::GetIdentityBalanceRequestV0;
-use dapi_grpc::platform::v0::{get_identity_balance_request, GetIdentityBalanceRequest};
-use dash_platform_sdk::platform::Fetch;
 use std::collections::BTreeMap;
 
-use crate::backend::error::Error;
-use crate::backend::info_display::InfoDisplay;
-use crate::backend::{stringify_result, stringify_result_keep_item, AppState, BackendEvent, Task};
-use dash_platform_sdk::platform::transition::put_identity::PutIdentity;
-use dash_platform_sdk::Sdk;
-use dpp::dashcore::psbt::serialize::Serialize;
-use dpp::dashcore::{InstantLock, Network, OutPoint, PrivateKey, Transaction};
-use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
-use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
-use dpp::platform_value::string_encoding::Encoding;
-use dpp::platform_value::Identifier;
-use dpp::prelude::{AssetLockProof, Identity, IdentityPublicKey};
-use rand::rngs::StdRng;
-use rand::SeedableRng;
+use dapi_grpc::{
+    core::v0::{BroadcastTransactionRequest, BroadcastTransactionResponse, GetTransactionRequest},
+    platform::v0::{
+        get_identity_balance_request, get_identity_balance_request::GetIdentityBalanceRequestV0,
+        GetIdentityBalanceRequest,
+    },
+};
+use dash_platform_sdk::{
+    platform::{transition::put_identity::PutIdentity, Fetch},
+    Sdk,
+};
+use dpp::{
+    dashcore::{
+        psbt::serialize::Serialize, InstantLock, Network, OutPoint, PrivateKey, Transaction,
+    },
+    identity::{
+        accessors::{IdentityGettersV0, IdentitySettersV0},
+        identity_public_key::accessors::v0::IdentityPublicKeyGettersV0,
+        state_transition::asset_lock_proof::chain::ChainAssetLockProof,
+    },
+    platform_value::{string_encoding::Encoding, Identifier},
+    prelude::{AssetLockProof, Identity, IdentityPublicKey},
+};
+use rand::{rngs::StdRng, SeedableRng};
 use rs_dapi_client::{Dapi, DapiClientError, RequestSettings};
 use simple_signer::signer::SimpleSigner;
 use toml::to_string;
 use tuirealm::props::{PropValue, TextSpan};
+
+use crate::backend::{
+    error::Error, info_display::InfoDisplay, stringify_result, stringify_result_keep_item,
+    AppState, BackendEvent, Task,
+};
 
 pub(super) fn identity_to_spans(identity: &Identity) -> Result<Vec<PropValue>, Error> {
     let textual = toml::to_string_pretty(identity).expect("identity is serializable");
@@ -111,7 +119,8 @@ impl AppState {
 
         let mut identity_asset_lock_private_key_in_creation = self
             .identity_asset_lock_private_key_in_creation
-            .lock().await;
+            .lock()
+            .await;
 
         // We create the wallet registration transaction, this locks funds that we
         // can transfer from core to platform
@@ -125,8 +134,7 @@ impl AppState {
             asset_lock_proof_private_key,
             maybe_asset_lock_proof,
             maybe_identity,
-        )) = identity_asset_lock_private_key_in_creation
-            .as_ref()
+        )) = identity_asset_lock_private_key_in_creation.as_ref()
         {
             (
                 asset_lock_transaction.clone(),
@@ -161,7 +169,8 @@ impl AppState {
         //     .map_err(|e| RegisterIdentityError(e.to_string()))?
         //     .chain
         //     .map(|chain| chain.best_block_hash)
-        //     .ok_or_else(|| RegisterIdentityError("missing `chain` field".to_owned()))?;
+        //     .ok_or_else(|| RegisterIdentityError("missing `chain`
+        // field".to_owned()))?;
 
         // let core_transactions_stream = TransactionsWithProofsRequest {
         //     bloom_filter: Some(bloom_filter_proto),
@@ -277,7 +286,8 @@ impl AppState {
 
         // we need to broadcast the transaction to core
         let request = BroadcastTransactionRequest {
-            transaction: asset_lock_transaction.serialize(), // transaction but how to encode it as bytes?,
+            transaction: asset_lock_transaction.serialize(), /* transaction but how to encode it
+                                                              * as bytes?, */
             allow_high_fees: false,
             bypass_limits: false,
         };

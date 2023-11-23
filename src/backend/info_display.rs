@@ -1,6 +1,10 @@
-use dpp::identity::accessors::IdentityGettersV0;
-use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::prelude::{Identity, IdentityPublicKey};
+use dpp::{
+    identity::{
+        accessors::IdentityGettersV0,
+        identity_public_key::accessors::v0::IdentityPublicKeyGettersV0,
+    },
+    prelude::{Identity, IdentityPublicKey},
+};
 
 pub struct TabbedString {
     pub indent: usize,
@@ -9,6 +13,7 @@ pub struct TabbedString {
 
 impl TabbedString {
     const SPACES_PER_INDENT: usize = 2;
+
     pub fn new(indent: usize, content: &str) -> Self {
         TabbedString {
             indent,

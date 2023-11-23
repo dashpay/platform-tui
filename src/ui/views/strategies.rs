@@ -1,12 +1,12 @@
 //! Screens and forms related to strategies manipulation.
 
+mod clone_strategy;
+mod delete_strategy;
 mod identity_inserts;
 mod new_strategy;
 mod operations;
 mod select_strategy;
 mod start_identities;
-mod delete_strategy;
-mod clone_strategy;
 
 use std::collections::BTreeMap;
 
@@ -18,12 +18,11 @@ use tuirealm::{
 };
 
 use self::{
+    clone_strategy::CloneStrategyFormController, delete_strategy::DeleteStrategyFormController,
     identity_inserts::StrategyIdentityInsertsFormController,
     new_strategy::NewStrategyFormController, operations::StrategyAddOperationFormController,
     select_strategy::SelectStrategyFormController,
     start_identities::StrategyStartIdentitiesFormController,
-    delete_strategy::DeleteStrategyFormController,
-    clone_strategy::CloneStrategyFormController,
 };
 use crate::{
     backend::{AppState, AppStateUpdate, BackendEvent},
