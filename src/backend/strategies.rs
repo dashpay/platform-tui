@@ -2,8 +2,11 @@
 
 use std::collections::BTreeMap;
 
-use dpp::{version::PlatformVersion, data_contract::created_data_contract::CreatedDataContract, platform_value::Bytes32};
-use rand::{rngs::StdRng, SeedableRng, Rng};
+use dpp::{
+    data_contract::created_data_contract::CreatedDataContract, platform_value::Bytes32,
+    version::PlatformVersion,
+};
+use rand::{rngs::StdRng, Rng, SeedableRng};
 use simple_signer::signer::SimpleSigner;
 use strategy_tests::{
     frequency::Frequency, operations::Operation, transitions::create_identities_state_transitions,
@@ -11,7 +14,10 @@ use strategy_tests::{
 };
 use tokio::sync::{Mutex, MutexGuard};
 
-use super::{state::{StrategiesMap, KnownContractsMap}, AppStateUpdate, BackendEvent, StrategyContractNames, Task};
+use super::{
+    state::{KnownContractsMap, StrategiesMap},
+    AppStateUpdate, BackendEvent, StrategyContractNames, Task,
+};
 
 #[derive(Debug, PartialEq, Clone)]
 pub(crate) enum StrategyTask {
@@ -115,21 +121,22 @@ pub(crate) async fn run_strategy_task<'s>(
             let strategies_lock = available_strategies.lock().await;
             let mut contract_names_lock = available_strategies_contract_names.lock().await;
             let selected_strategy_lock = selected_strategy.lock().await;
-        
+
             if let Some(selected_strategy_name) = &*selected_strategy_lock {
                 if let Some(strategy_to_clone) = strategies_lock.get(selected_strategy_name) {
                     let cloned_strategy = strategy_to_clone.clone();
                     drop(strategies_lock); // Release the lock before re-acquiring it as mutable
-        
+
                     // Clone the display data for the new strategy
-                    let cloned_display_data = contract_names_lock.get(selected_strategy_name)
+                    let cloned_display_data = contract_names_lock
+                        .get(selected_strategy_name)
                         .cloned()
                         .unwrap_or_default();
-        
+
                     let mut strategies_lock = available_strategies.lock().await;
                     strategies_lock.insert(new_strategy_name.clone(), cloned_strategy);
                     contract_names_lock.insert(new_strategy_name.clone(), cloned_display_data);
-        
+
                     BackendEvent::AppStateUpdated(AppStateUpdate::Strategies(
                         strategies_lock,
                         contract_names_lock,
@@ -145,7 +152,7 @@ pub(crate) async fn run_strategy_task<'s>(
             let mut strategies_lock = available_strategies.lock().await;
             let known_contracts_lock = known_contracts.lock().await;
             let mut contract_names_lock = available_strategies_contract_names.lock().await;
-        
+
             if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
                 let mut rng = StdRng::from_entropy();
                 let platform_version = PlatformVersion::latest();
@@ -154,50 +161,69 @@ pub(crate) async fn run_strategy_task<'s>(
                     if let Some(data_contract) = known_contracts_lock.get(first_contract_name) {
                         let entropy = Bytes32::random_with_rng(&mut rng);
                         match CreatedDataContract::from_contract_and_entropy(
-                            data_contract.clone(), 
+                            data_contract.clone(),
                             entropy,
                             platform_version,
                         ) {
                             Ok(initial_contract) => {
                                 // Create a map for updates
                                 let mut updates = BTreeMap::new();
-        
+
                                 // Process the subsequent contracts as updates
-                                for (order, contract_name) in selected_contract_names.iter().enumerate().skip(1) {
-                                    if let Some(update_contract) = known_contracts_lock.get(contract_name) {
+                                for (order, contract_name) in
+                                    selected_contract_names.iter().enumerate().skip(1)
+                                {
+                                    if let Some(update_contract) =
+                                        known_contracts_lock.get(contract_name)
+                                    {
                                         let update_entropy = Bytes32::random_with_rng(&mut rng);
                                         match CreatedDataContract::from_contract_and_entropy(
-                                            update_contract.clone(), 
+                                            update_contract.clone(),
                                             update_entropy,
                                             platform_version,
                                         ) {
                                             Ok(created_update_contract) => {
-                                                updates.insert(order as u64, created_update_contract);
-                                            },
+                                                updates
+                                                    .insert(order as u64, created_update_contract);
+                                            }
                                             Err(e) => {
-                                                eprintln!("Error converting DataContract to CreatedDataContract for update: {:?}", e);
+                                                eprintln!(
+                                                    "Error converting DataContract to \
+                                                     CreatedDataContract for update: {:?}",
+                                                    e
+                                                );
                                             }
                                         }
                                     }
                                 }
-        
+
                                 // Add the initial contract and its updates as a new entry
                                 strategy.contracts_with_updates.push((
                                     initial_contract,
-                                    if updates.is_empty() { None } else { Some(updates) },
+                                    if updates.is_empty() {
+                                        None
+                                    } else {
+                                        Some(updates)
+                                    },
                                 ));
-                            },
+                            }
                             Err(e) => {
-                                eprintln!("Error converting DataContract to CreatedDataContract: {:?}", e);
+                                eprintln!(
+                                    "Error converting DataContract to CreatedDataContract: {:?}",
+                                    e
+                                );
                             }
                         }
                     }
-                }        
-        
+                }
+
                 // Transform the selected_contract_names into the expected format for display
                 let mut transformed_contract_names = Vec::new();
                 if let Some(first_contract_name) = selected_contract_names.first() {
-                    let updates: BTreeMap<u64, String> = selected_contract_names.iter().enumerate().skip(1)
+                    let updates: BTreeMap<u64, String> = selected_contract_names
+                        .iter()
+                        .enumerate()
+                        .skip(1)
                         .map(|(order, name)| (order as u64, name.clone()))
                         .collect();
                     transformed_contract_names.push((first_contract_name.clone(), Some(updates)));
@@ -294,17 +320,18 @@ pub(crate) async fn run_strategy_task<'s>(
         StrategyTask::RemoveLastContract(strategy_name) => {
             let mut strategies_lock = available_strategies.lock().await;
             let mut contract_names_lock = available_strategies_contract_names.lock().await;
-        
+
             if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
                 // Remove the last contract_with_update entry from the strategy
                 strategy.contracts_with_updates.pop();
-        
+
                 // Also remove the corresponding entry from the displayed contracts
                 if let Some(contract_names) = contract_names_lock.get_mut(&strategy_name) {
-                    // Assuming each entry in contract_names corresponds to an entry in contracts_with_updates
+                    // Assuming each entry in contract_names corresponds to an entry in
+                    // contracts_with_updates
                     contract_names.pop();
                 }
-        
+
                 BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
                     strategy_name.clone(),
                     MutexGuard::map(strategies_lock, |strategies| {
@@ -322,9 +349,9 @@ pub(crate) async fn run_strategy_task<'s>(
             let mut strategies_lock = available_strategies.lock().await;
             if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
                 strategy.identities_inserts = Frequency {
-                        times_per_block_range: Default::default(),
-                        chance_per_block: None,
-                    };
+                    times_per_block_range: Default::default(),
+                    chance_per_block: None,
+                };
                 BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
                     strategy_name.clone(),
                     MutexGuard::map(strategies_lock, |strategies| {

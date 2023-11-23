@@ -5,11 +5,7 @@ mod backend;
 // mod mock_components;
 mod ui;
 
-use std::fs::File;
-use std::io::Write;
-use std::panic;
-use std::sync::Mutex;
-use std::path::Path;
+use std::{fs::File, io::Write, panic, path::Path, sync::Mutex};
 
 use crossterm::event::{Event as TuiEvent, EventStream};
 use dash_platform_sdk::SdkBuilder;
@@ -30,7 +26,6 @@ pub(crate) enum Event<'s> {
 
 #[tokio::main]
 async fn main() {
-
     // Error logs to file
     // Initialize the log file
     let log_file_path = Path::new("panic.log");
@@ -47,7 +42,7 @@ async fn main() {
             None => "Panic occurred but can't get the message.",
         };
         writeln!(file, "Panic occurred: {}", message).expect("Failed to write to log file");
-    }));    
+    }));
 
     // Setup Platform SDK
     let mut address_list = AddressList::new();

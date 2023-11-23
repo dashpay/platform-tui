@@ -1,6 +1,7 @@
 //! Strategy's contracts with updates form.
 
 use std::collections::BTreeMap;
+
 use dash_platform_sdk::platform::DataContract;
 use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
@@ -18,8 +19,8 @@ pub(super) struct StrategyContractsFormController {
 
 impl StrategyContractsFormController {
     pub(super) fn new(
-        selected_strategy: String, 
-        known_contracts: BTreeMap<String, DataContract>
+        selected_strategy: String,
+        known_contracts: BTreeMap<String, DataContract>,
     ) -> Self {
         let contract_names: Vec<String> = known_contracts.keys().cloned().collect();
         StrategyContractsFormController {
@@ -27,12 +28,10 @@ impl StrategyContractsFormController {
             known_contracts,
             selected_contracts: Vec::new(),
             input: ComposedInput::new((
+                Field::new("Select Contract", SelectInput::new(contract_names)),
                 Field::new(
-                    "Select Contract",
-                    SelectInput::new(contract_names),
-                ),
-                Field::new(
-                    "Add Another Contract? Note only compatible contract updates will actually work.",
+                    "Add Another Contract? Note only compatible contract updates will actually \
+                     work.",
                     SelectInput::new(vec!["Yes".to_string(), "No".to_string()]),
                 ),
             )),
@@ -48,14 +47,13 @@ impl FormController for StrategyContractsFormController {
 
                 if add_another_answer == "Yes" {
                     // Reset the input fields for another contract selection
-                    let contract_names: Vec<String> = self.known_contracts.keys().cloned().collect();
+                    let contract_names: Vec<String> =
+                        self.known_contracts.keys().cloned().collect();
                     self.input = ComposedInput::new((
+                        Field::new("Select Contract", SelectInput::new(contract_names)),
                         Field::new(
-                            "Select Contract",
-                            SelectInput::new(contract_names),
-                        ),
-                        Field::new(
-                            "Add Another Contract? Note only compatible contract updates will actually work.",
+                            "Add Another Contract? Note only compatible contract updates will \
+                             actually work.",
                             SelectInput::new(vec!["Yes".to_string(), "No".to_string()]),
                         ),
                     ));
@@ -69,7 +67,7 @@ impl FormController for StrategyContractsFormController {
                         block: false,
                     }
                 }
-            },
+            }
             InputStatus::Redraw => FormStatus::Redraw,
             InputStatus::None => FormStatus::None,
             InputStatus::Exit => FormStatus::Exit,

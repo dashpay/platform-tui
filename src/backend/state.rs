@@ -5,7 +5,6 @@
 use std::{collections::BTreeMap, fs, ops::Deref, path::Path};
 
 use bincode::{Decode, Encode};
-
 use dpp::{
     dashcore::{
         psbt::serialize::{Deserialize, Serialize},
@@ -17,11 +16,11 @@ use dpp::{
         PlatformDeserializableWithPotentialValidationFromVersionedStructure,
         PlatformSerializableWithPlatformVersion,
     },
+    tests::json_document::json_document_to_created_contract,
     util::deserializer::ProtocolVersion,
     version::PlatformVersion,
     ProtocolError,
     ProtocolError::{PlatformDeserializationError, PlatformSerializationError},
-    tests::json_document::json_document_to_created_contract,
 };
 use strategy_tests::Strategy;
 use tokio::sync::Mutex;
@@ -34,7 +33,8 @@ const CURRENT_PROTOCOL_VERSION: ProtocolVersion = 1;
 pub(crate) type ContractFileName = String;
 
 pub(super) type StrategiesMap = BTreeMap<String, Strategy>;
-pub(crate) type StrategyContractNames = Vec<(ContractFileName, Option<BTreeMap<u64, ContractFileName>>)>;
+pub(crate) type StrategyContractNames =
+    Vec<(ContractFileName, Option<BTreeMap<u64, ContractFileName>>)>;
 pub(super) type KnownContractsMap = BTreeMap<String, DataContract>;
 
 // TODO: each state part should be in it's own mutex in case multiple backend
@@ -65,43 +65,40 @@ pub(crate) struct AppState {
     >,
 }
 
-// pub fn default_strategy_description(mut map: BTreeMap<String, String>) -> BTreeMap<String, String> {
-//     map.insert("contracts_with_updates".to_string(), "".to_string());
-//     map.insert("operations".to_string(), "".to_string());
-//     map.insert("start_identities".to_string(), "".to_string());
-//     map.insert("identities_inserts".to_string(), "".to_string());
-//     map
+// pub fn default_strategy_description(mut map: BTreeMap<String, String>) ->
+// BTreeMap<String, String> {     map.insert("contracts_with_updates".
+// to_string(), "".to_string());     map.insert("operations".to_string(),
+// "".to_string());     map.insert("start_identities".to_string(),
+// "".to_string());     map.insert("identities_inserts".to_string(),
+// "".to_string());     map
 // }
 
 impl Default for AppState {
     fn default() -> Self {
         let mut known_contracts_raw = BTreeMap::new();
         // let mut available_strategies = BTreeMap::new();
-        
-        let platform_version =
-        PlatformVersion::get(CURRENT_PROTOCOL_VERSION).unwrap();
+
+        let platform_version = PlatformVersion::get(CURRENT_PROTOCOL_VERSION).unwrap();
 
         fn is_json(entry: &DirEntry) -> bool {
             entry.path().extension().and_then(|s| s.to_str()) == Some("json")
         }
-        
+
         for entry in WalkDir::new("supporting_files/contract")
             .into_iter()
             .filter_map(|e| e.ok())
             .filter(is_json)
         {
             let path = entry.path();
-            let contract_name =
-        path.file_stem().unwrap().to_str().unwrap().to_string();
-        
+            let contract_name = path.file_stem().unwrap().to_str().unwrap().to_string();
+
             let contract = json_document_to_created_contract(&path, true, platform_version)
                 .expect("expected to get contract from a json document");
-        
+
             known_contracts_raw.insert(contract_name, contract.data_contract_owned());
         }
 
         let known_contracts = Mutex::from(known_contracts_raw);
-        //
         // let mut description1 = default_strategy_description(BTreeMap::new());
         // let mut description2 = default_strategy_description(BTreeMap::new());
         // let mut description3 = default_strategy_description(BTreeMap::new());

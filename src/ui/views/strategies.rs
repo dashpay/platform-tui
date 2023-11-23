@@ -1,17 +1,18 @@
 //! Screens and forms related to strategies manipulation.
 
 mod clone_strategy;
+mod contracts_with_updates;
 mod delete_strategy;
 mod identity_inserts;
 mod new_strategy;
 mod operations;
 mod select_strategy;
 mod start_identities;
-mod contracts_with_updates;
 
 use std::collections::BTreeMap;
 
-use dpp::{version::PlatformVersion, tests::json_document::json_document_to_created_contract};
+use dash_platform_sdk::platform::DataContract;
+use dpp::{tests::json_document::json_document_to_created_contract, version::PlatformVersion};
 use strategy_tests::Strategy;
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
@@ -21,13 +22,13 @@ use tuirealm::{
 use walkdir::WalkDir;
 
 use self::{
+    clone_strategy::CloneStrategyFormController,
+    contracts_with_updates::StrategyContractsFormController,
+    delete_strategy::DeleteStrategyFormController,
     identity_inserts::StrategyIdentityInsertsFormController,
     new_strategy::NewStrategyFormController, operations::StrategyAddOperationFormController,
     select_strategy::SelectStrategyFormController,
     start_identities::StrategyStartIdentitiesFormController,
-    delete_strategy::DeleteStrategyFormController,
-    clone_strategy::CloneStrategyFormController,
-    contracts_with_updates::StrategyContractsFormController,
 };
 use crate::{
     backend::{AppState, AppStateUpdate, BackendEvent, StrategyTask, Task},
@@ -40,8 +41,6 @@ use crate::{
     },
     Event,
 };
-
-use dash_platform_sdk::platform::DataContract;
 
 const COMMAND_KEYS: [ScreenCommandKey; 3] = [
     ScreenCommandKey::new("q", "Back to Main"),
@@ -101,7 +100,7 @@ impl StrategiesScreenController {
             info,
             available_strategies: available_strategies_lock.keys().cloned().collect(),
             selected_strategy: selected_strategy_lock.clone(),
-            known_contracts: known_contracts_lock.clone() // Clone the underlying BTreeMap
+            known_contracts: known_contracts_lock.clone(), // Clone the underlying BTreeMap
         }
     }
 
@@ -117,8 +116,11 @@ impl StrategiesScreenController {
             let contract_name = path.file_stem().unwrap().to_str().unwrap().to_string();
 
             if !self.known_contracts.contains_key(&contract_name) {
-                if let Ok(contract) = json_document_to_created_contract(&path, true, platform_version) {
-                    self.known_contracts.insert(contract_name, contract.data_contract_owned());
+                if let Ok(contract) =
+                    json_document_to_created_contract(&path, true, platform_version)
+                {
+                    self.known_contracts
+                        .insert(contract_name, contract.data_contract_owned());
                 }
             }
         }
@@ -134,7 +136,6 @@ impl StrategiesScreenController {
             })
         });
     }
-
 }
 
 impl ScreenController for StrategiesScreenController {
@@ -235,27 +236,39 @@ impl ScreenController for StrategiesScreenController {
             Event::Key(KeyEvent {
                 code: Key::Char('w'),
                 modifiers: KeyModifiers::NONE,
-            }) => {
-                ScreenFeedback::Task { task: Task::Strategy(StrategyTask::RemoveLastContract(self.selected_strategy.clone().unwrap())), block: false }
-            }
+            }) => ScreenFeedback::Task {
+                task: Task::Strategy(StrategyTask::RemoveLastContract(
+                    self.selected_strategy.clone().unwrap(),
+                )),
+                block: false,
+            },
             Event::Key(KeyEvent {
                 code: Key::Char('x'),
                 modifiers: KeyModifiers::NONE,
-            }) => {
-                ScreenFeedback::Task { task: Task::Strategy(StrategyTask::RemoveIdentityInserts(self.selected_strategy.clone().unwrap())), block: false }
-            }
+            }) => ScreenFeedback::Task {
+                task: Task::Strategy(StrategyTask::RemoveIdentityInserts(
+                    self.selected_strategy.clone().unwrap(),
+                )),
+                block: false,
+            },
             Event::Key(KeyEvent {
                 code: Key::Char('y'),
                 modifiers: KeyModifiers::NONE,
-            }) => {
-                ScreenFeedback::Task { task: Task::Strategy(StrategyTask::RemoveStartIdentities(self.selected_strategy.clone().unwrap())), block: false }
-            }
+            }) => ScreenFeedback::Task {
+                task: Task::Strategy(StrategyTask::RemoveStartIdentities(
+                    self.selected_strategy.clone().unwrap(),
+                )),
+                block: false,
+            },
             Event::Key(KeyEvent {
                 code: Key::Char('z'),
                 modifiers: KeyModifiers::NONE,
-            }) => {
-                ScreenFeedback::Task { task: Task::Strategy(StrategyTask::RemoveLastOperation(self.selected_strategy.clone().unwrap())), block: false }
-            }
+            }) => ScreenFeedback::Task {
+                task: Task::Strategy(StrategyTask::RemoveLastOperation(
+                    self.selected_strategy.clone().unwrap(),
+                )),
+                block: false,
+            },
 
             Event::Backend(
                 BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
