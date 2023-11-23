@@ -11,12 +11,14 @@ mod contracts_with_updates;
 
 use std::collections::BTreeMap;
 
+use dpp::{version::PlatformVersion, tests::json_document::json_document_to_created_contract};
 use strategy_tests::Strategy;
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
     tui::prelude::Rect,
     Frame,
 };
+use walkdir::WalkDir;
 
 use self::{
     identity_inserts::StrategyIdentityInsertsFormController,
@@ -102,6 +104,37 @@ impl StrategiesScreenController {
             known_contracts: known_contracts_lock.clone() // Clone the underlying BTreeMap
         }
     }
+
+    async fn update_known_contracts(&mut self) {
+        let platform_version = PlatformVersion::latest();
+
+        for entry in WalkDir::new("supporting_files/contract")
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("json"))
+        {
+            let path = entry.path();
+            let contract_name = path.file_stem().unwrap().to_str().unwrap().to_string();
+
+            if !self.known_contracts.contains_key(&contract_name) {
+                if let Ok(contract) = json_document_to_created_contract(&path, true, platform_version) {
+                    self.known_contracts.insert(contract_name, contract.data_contract_owned());
+                }
+            }
+        }
+    }
+
+    fn update_known_contracts_sync(&mut self) {
+        // Use block_in_place to wait for the async operation to complete
+        tokio::task::block_in_place(|| {
+            // Create a new Tokio runtime for the async operation
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(async {
+                self.update_known_contracts().await;
+            })
+        });
+    }
+
 }
 
 impl ScreenController for StrategiesScreenController {
@@ -151,9 +184,12 @@ impl ScreenController for StrategiesScreenController {
                 code: Key::Char('c'),
                 modifiers: KeyModifiers::NONE,
             }) => {
-                if let Some(strategy_name) = &self.selected_strategy {
+                if self.selected_strategy.is_some() {
+                    // Update known contracts before showing the form
+                    self.update_known_contracts_sync();
+
                     ScreenFeedback::Form(Box::new(StrategyContractsFormController::new(
-                        strategy_name.clone(),
+                        self.selected_strategy.clone().unwrap(),
                         self.known_contracts.clone(),
                     )))
                 } else {
