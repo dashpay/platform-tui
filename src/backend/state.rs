@@ -2,17 +2,16 @@
 //! This kind of state does not include UI details and basically all about
 //! persistence required by backend.
 
-use std::{collections::BTreeMap, fs, path::Path};
+use std::{collections::BTreeMap, fs, ops::Deref, path::Path};
 
 use bincode::{Decode, Encode};
-use dpp::identity::IdentityPublicKey;
-use dpp::tests::json_document::json_document_to_created_contract;
+
 use dpp::{
     dashcore::{
         psbt::serialize::{Deserialize, Serialize},
         Network, PrivateKey, Transaction,
     },
-    identity::KeyID,
+    identity::{IdentityPublicKey, KeyID},
     prelude::{AssetLockProof, DataContract, Identifier, Identity},
     serialization::{
         PlatformDeserializableWithPotentialValidationFromVersionedStructure,
@@ -22,6 +21,7 @@ use dpp::{
     version::PlatformVersion,
     ProtocolError,
     ProtocolError::{PlatformDeserializationError, PlatformSerializationError},
+    tests::json_document::json_document_to_created_contract,
 };
 use strategy_tests::Strategy;
 use tokio::sync::Mutex;

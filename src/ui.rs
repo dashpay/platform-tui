@@ -125,7 +125,7 @@ impl Ui {
                 FormStatus::Exit => {
                     self.form = None;
                     UiFeedback::Redraw
-                },
+                }
             }
         } else {
             match self.screen.on_event(event) {

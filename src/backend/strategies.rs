@@ -90,19 +90,19 @@ pub(crate) async fn run_strategy_task<'s>(
             let mut strategies_lock = available_strategies.lock().await;
             let mut contract_names_lock = available_strategies_contract_names.lock().await;
             let mut selected_strategy_lock = selected_strategy.lock().await;
-        
+
             // Check if the strategy exists and remove it
             if strategies_lock.contains_key(&strategy_name) {
                 strategies_lock.remove(&strategy_name);
                 contract_names_lock.remove(&strategy_name);
-        
+
                 // If the deleted strategy was the selected one, unset the selected strategy
                 if let Some(selected) = selected_strategy_lock.as_ref() {
                     if selected == &strategy_name {
                         *selected_strategy_lock = None;
                     }
                 }
-        
+
                 BackendEvent::AppStateUpdated(AppStateUpdate::Strategies(
                     strategies_lock,
                     contract_names_lock,
@@ -115,16 +115,16 @@ pub(crate) async fn run_strategy_task<'s>(
             let strategies_lock = available_strategies.lock().await;
             let mut contract_names_lock = available_strategies_contract_names.lock().await;
             let selected_strategy_lock = selected_strategy.lock().await;
-        
+
             if let Some(selected_strategy_name) = &*selected_strategy_lock {
                 if let Some(strategy_to_clone) = strategies_lock.get(selected_strategy_name) {
                     let cloned_strategy = strategy_to_clone.clone();
                     drop(strategies_lock); // Release the lock before re-acquiring it as mutable
-        
+
                     let mut strategies_lock = available_strategies.lock().await;
                     strategies_lock.insert(new_strategy_name.clone(), cloned_strategy);
                     contract_names_lock.insert(new_strategy_name, Default::default());
-        
+
                     BackendEvent::AppStateUpdated(AppStateUpdate::Strategies(
                         strategies_lock,
                         contract_names_lock,

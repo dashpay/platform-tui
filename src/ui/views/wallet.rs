@@ -8,9 +8,10 @@ use tuirealm::{
 };
 
 use super::main::MainScreenController;
-use crate::backend::identities::IdentityTask;
 use crate::{
-    backend::{AppState, AppStateUpdate, BackendEvent, Task, Wallet, WalletTask},
+    backend::{
+        identities::IdentityTask, AppState, AppStateUpdate, BackendEvent, Task, Wallet, WalletTask,
+    },
     ui::{
         form::{FormController, FormStatus, Input, InputStatus, TextInput},
         screen::{
@@ -46,6 +47,52 @@ pub(crate) struct WalletScreenController {
 }
 
 impl_builder!(WalletScreenController);
+
+struct RegisterIdentityFormController {
+    input: TextInput<u64>,
+}
+
+impl RegisterIdentityFormController {
+    fn new() -> Self {
+        RegisterIdentityFormController {
+            input: TextInput::new("Quantity (unsigned integer)"),
+        }
+    }
+}
+
+impl FormController for RegisterIdentityFormController {
+    fn on_event(&mut self, event: KeyEvent) -> FormStatus {
+        match self.input.on_event(event) {
+            InputStatus::Done(count) => FormStatus::Done {
+                task: Task::Identity(IdentityTask::RegisterIdentity(count)),
+                block: true,
+            },
+            InputStatus::Redraw => FormStatus::Redraw,
+            InputStatus::None => FormStatus::None,
+            InputStatus::Exit => FormStatus::Exit,
+        }
+    }
+
+    fn form_name(&self) -> &'static str {
+        "Identity registration"
+    }
+
+    fn step_view(&mut self, frame: &mut Frame, area: Rect) {
+        self.input.view(frame, area)
+    }
+
+    fn step_name(&self) -> &'static str {
+        "Identities quantity"
+    }
+
+    fn step_index(&self) -> u8 {
+        0
+    }
+
+    fn steps_number(&self) -> u8 {
+        1
+    }
+}
 
 impl WalletScreenController {
     pub(crate) async fn new(app_state: &AppState) -> Self {
@@ -123,10 +170,7 @@ impl ScreenController for WalletScreenController {
             Event::Key(KeyEvent {
                 code: Key::Char('i'),
                 modifiers: KeyModifiers::NONE,
-            }) if self.wallet_loaded && !self.identity_loaded => ScreenFeedback::Task {
-                task: Task::Identity(IdentityTask::RegisterIdentity(1000000000)),
-                block: true,
-            },
+            }) => ScreenFeedback::Form(Box::new(RegisterIdentityFormController::new())),
 
             Event::Key(KeyEvent {
                 code: Key::Char('c'),
@@ -147,13 +191,19 @@ impl ScreenController for WalletScreenController {
                 self.wallet_loaded = true;
                 ScreenFeedback::Redraw
             }
+            Event::Backend(BackendEvent::TaskCompleted {
+                execution_result, ..
+            }) => {
+                self.info = Info::new_from_result(execution_result);
+                ScreenFeedback::Redraw
+            }
             _ => ScreenFeedback::None,
         }
     }
 }
 
 struct AddWalletPrivateKeyFormController {
-    input: TextInput,
+    input: TextInput<String>, // TODO: provide parser to always have a typesafe valid output
 }
 
 impl AddWalletPrivateKeyFormController {

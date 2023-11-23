@@ -1,5 +1,4 @@
-use dpp::data_contract::document_type::DocumentType;
-use dpp::prelude::DataContract;
+use dpp::{data_contract::document_type::DocumentType, prelude::DataContract};
 
 #[derive(Debug, Clone, Default)]
 pub struct ScreenState {

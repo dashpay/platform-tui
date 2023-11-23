@@ -1,12 +1,12 @@
 //! Screens and forms related to strategies manipulation.
 
+mod clone_strategy;
+mod delete_strategy;
 mod identity_inserts;
 mod new_strategy;
 mod operations;
 mod select_strategy;
 mod start_identities;
-mod delete_strategy;
-mod clone_strategy;
 mod contracts_with_updates;
 
 use std::collections::BTreeMap;
