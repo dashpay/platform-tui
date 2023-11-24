@@ -28,9 +28,11 @@ use dpp::{
 use rand::{rngs::StdRng, SeedableRng};
 use rs_dapi_client::{Dapi, DapiClientError, RequestSettings};
 use simple_signer::signer::SimpleSigner;
+use tokio::sync::{MappedMutexGuard, MutexGuard};
 use toml::to_string;
 use tuirealm::props::{PropValue, TextSpan};
 
+use super::AppStateUpdate;
 use crate::backend::{
     error::Error, info_display::InfoDisplay, stringify_result, stringify_result_keep_item,
     AppState, BackendEvent, Task,
@@ -66,14 +68,20 @@ impl AppState {
     pub(crate) async fn run_identity_task(&self, sdk: &Sdk, task: IdentityTask) -> BackendEvent {
         match task {
             IdentityTask::RegisterIdentity(amount) => {
-                let result = self
-                    .register_new_identity(sdk, amount)
-                    .await
+                let result = self.register_new_identity(sdk, amount).await;
+                let execution_result = result
+                    .as_ref()
                     .map(|identity| identity.display_info(0))
                     .map_err(|e| e.to_string());
-                BackendEvent::TaskCompleted {
+                let app_state_update = match result {
+                    Ok(identity) => AppStateUpdate::LoadedIdentity(identity),
+                    Err(_) => AppStateUpdate::IdentityRegistrationProgressed,
+                };
+
+                BackendEvent::TaskCompletedStateChange {
                     task: Task::Identity(task),
-                    execution_result: result,
+                    execution_result,
+                    app_state_update,
                 }
             }
         }
@@ -100,11 +108,11 @@ impl AppState {
         Ok(())
     }
 
-    pub(crate) async fn register_new_identity(
-        &self,
+    pub(crate) async fn register_new_identity<'s>(
+        &'s self,
         sdk: &Sdk,
         amount: u64,
-    ) -> Result<Identity, Error> {
+    ) -> Result<MappedMutexGuard<'s, Identity>, Error> {
         // First we need to make the transaction from the wallet
         // We start by getting a lock on the wallet
 
@@ -247,7 +255,9 @@ impl AppState {
 
         let mut loaded_identity = self.loaded_identity.lock().await;
 
-        loaded_identity.replace(updated_identity.clone());
+        loaded_identity.replace(updated_identity);
+        let identity_result =
+            MutexGuard::map(loaded_identity, |x| x.as_mut().expect("assigned above"));
 
         let keys = identity_asset_lock_private_key_in_creation
             .take()
@@ -267,7 +277,7 @@ impl AppState {
 
         identity_private_keys.extend(keys);
 
-        Ok(updated_identity)
+        Ok(identity_result)
     }
 
     pub(crate) async fn broadcast_and_retrieve_asset_lock(

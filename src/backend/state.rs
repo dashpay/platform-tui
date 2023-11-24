@@ -2,7 +2,7 @@
 //! This kind of state does not include UI details and basically all about
 //! persistence required by backend.
 
-use std::{collections::BTreeMap, fs, ops::Deref, path::Path};
+use std::{collections::BTreeMap, fs, path::Path};
 
 use bincode::{Decode, Encode};
 use dpp::{

@@ -22,7 +22,10 @@ use self::{
     status_bar::StatusBarState,
     views::main::MainScreenController,
 };
-use crate::{backend::AppState, BackendEvent, Event, Task};
+use crate::{
+    backend::{AppState, AppStateUpdate},
+    BackendEvent, Event, Task,
+};
 
 /// TUI entry point that handles terminal events as well as terminal output,
 /// linking UI parts together.
@@ -97,12 +100,30 @@ impl Ui {
     ) -> UiFeedback {
         let mut redraw = false;
 
+        // On task completion we shall unfreeze the screen and update status bar
+        // "blocked" message
         if let Event::Backend(
             BackendEvent::TaskCompleted { .. } | BackendEvent::TaskCompletedStateChange { .. },
         ) = &event
         {
             self.status_bar_state.blocked = false;
             self.blocked = false;
+            redraw = true;
+        }
+
+        // A special treatment for loaded identity app state update: status bar should
+        // be updated as well
+        if matches!(
+            event,
+            Event::Backend(
+                BackendEvent::AppStateUpdated(AppStateUpdate::LoadedIdentity(_))
+                    | BackendEvent::TaskCompletedStateChange {
+                        app_state_update: AppStateUpdate::LoadedIdentity(_),
+                        ..
+                    }
+            )
+        ) {
+            self.status_bar_state.identity_loaded = true;
             redraw = true;
         }
 

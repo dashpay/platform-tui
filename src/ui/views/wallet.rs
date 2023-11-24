@@ -22,28 +22,46 @@ use crate::{
     Event,
 };
 
-const NO_WALLET_COMMANDS: [ScreenCommandKey; 2] = [
-    ScreenCommandKey::new("q", "Back to Main"),
-    ScreenCommandKey::new("a", "Add by private key"),
-];
-
-const WALLET_BUT_NO_IDENTITY_COMMANDS: [ScreenCommandKey; 4] = [
-    ScreenCommandKey::new("q", "Back to Main"),
-    ScreenCommandKey::new("r", "Refresh utxos and balance"),
-    ScreenCommandKey::new("c", "Copy Address"),
-    ScreenCommandKey::new("i", "Register Identity"),
-];
-
-const COMMANDS: [ScreenCommandKey; 3] = [
-    ScreenCommandKey::new("q", "Back to Main"),
+const WALLET_LOADED_COMMANDS: [ScreenCommandKey; 2] = [
     ScreenCommandKey::new("r", "Refresh utxos and balance"),
     ScreenCommandKey::new("c", "Copy Address"),
 ];
+
+const IDENTITY_LOADED_COMMANDS: [ScreenCommandKey; 1] =
+    [ScreenCommandKey::new("t", "Identity top up")];
+
+#[memoize::memoize]
+fn join_commands(
+    wallet_loaded: bool,
+    identity_loaded: bool,
+    identity_in_progress: bool,
+) -> &'static [ScreenCommandKey] {
+    let mut commands = vec![ScreenCommandKey::new("q", "Back to Main")];
+
+    if wallet_loaded {
+        commands.extend_from_slice(&WALLET_LOADED_COMMANDS);
+    } else {
+        commands.push(ScreenCommandKey::new("a", "Add wallet by private key"));
+    }
+
+    if identity_loaded {
+        commands.extend_from_slice(&IDENTITY_LOADED_COMMANDS);
+    } else {
+        if identity_in_progress {
+            commands.push(ScreenCommandKey::new("i", "Continue identity registration"));
+        } else {
+            commands.push(ScreenCommandKey::new("i", "Register identity"));
+        }
+    }
+
+    commands.leak()
+}
 
 pub(crate) struct WalletScreenController {
     info: Info,
     wallet_loaded: bool,
     identity_loaded: bool,
+    identity_in_progress: bool,
 }
 
 impl_builder!(WalletScreenController);
@@ -96,20 +114,32 @@ impl FormController for RegisterIdentityFormController {
 
 impl WalletScreenController {
     pub(crate) async fn new(app_state: &AppState) -> Self {
-        let (info, wallet_loaded, identity_loaded) =
+        let (info, wallet_loaded, identity_loaded, identity_in_progress) =
             if let Some(wallet) = app_state.loaded_wallet.lock().await.as_ref() {
                 if let Some(identity) = app_state.loaded_identity.lock().await.as_ref() {
                     (
                         Info::new_fixed(&display_wallet_and_identity(wallet, identity)),
                         true,
                         true,
+                        false,
                     )
                 } else {
-                    (Info::new_fixed(&display_wallet(wallet)), true, false)
+                    let identity_in_progress = app_state
+                        .identity_asset_lock_private_key_in_creation
+                        .lock()
+                        .await
+                        .is_some();
+                    (
+                        Info::new_fixed(&display_wallet(wallet)),
+                        true,
+                        false,
+                        identity_in_progress,
+                    )
                 }
             } else {
                 (
                     Info::new_fixed("Wallet management commands\n\nNo wallet loaded yet"),
+                    false,
                     false,
                     false,
                 )
@@ -119,6 +149,7 @@ impl WalletScreenController {
             info,
             wallet_loaded,
             identity_loaded,
+            identity_in_progress,
         }
     }
 }
@@ -133,15 +164,11 @@ impl ScreenController for WalletScreenController {
     }
 
     fn command_keys(&self) -> &[ScreenCommandKey] {
-        if self.wallet_loaded {
-            if self.identity_loaded {
-                COMMANDS.as_ref()
-            } else {
-                WALLET_BUT_NO_IDENTITY_COMMANDS.as_ref()
-            }
-        } else {
-            NO_WALLET_COMMANDS.as_ref()
-        }
+        join_commands(
+            self.wallet_loaded,
+            self.identity_loaded,
+            self.identity_in_progress,
+        )
     }
 
     fn toggle_keys(&self) -> &[ScreenToggleKey] {
@@ -154,12 +181,14 @@ impl ScreenController for WalletScreenController {
                 code: Key::Char('q'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::PreviousScreen(MainScreenController::builder()),
+
             Event::Key(KeyEvent {
                 code: Key::Char('a'),
                 modifiers: KeyModifiers::NONE,
             }) if !self.wallet_loaded => {
                 ScreenFeedback::Form(Box::new(AddWalletPrivateKeyFormController::new()))
             }
+
             Event::Key(KeyEvent {
                 code: Key::Char('r'),
                 modifiers: KeyModifiers::NONE,
@@ -167,6 +196,7 @@ impl ScreenController for WalletScreenController {
                 task: Task::Wallet(WalletTask::Refresh),
                 block: true,
             },
+
             Event::Key(KeyEvent {
                 code: Key::Char('i'),
                 modifiers: KeyModifiers::NONE,
@@ -191,6 +221,30 @@ impl ScreenController for WalletScreenController {
                 self.wallet_loaded = true;
                 ScreenFeedback::Redraw
             }
+
+            Event::Backend(BackendEvent::TaskCompletedStateChange {
+                task: Task::Identity(IdentityTask::RegisterIdentity(_)),
+                execution_result,
+                app_state_update: AppStateUpdate::LoadedIdentity(_identity),
+            }) => {
+                self.info = Info::new_from_result(execution_result);
+                self.identity_loaded = true;
+                self.identity_in_progress = false;
+                ScreenFeedback::Redraw
+            }
+
+            Event::Backend(BackendEvent::TaskCompletedStateChange {
+                task: Task::Identity(IdentityTask::RegisterIdentity(_)),
+                execution_result,
+                app_state_update: AppStateUpdate::IdentityRegistrationProgressed,
+            }) => {
+                self.info = Info::new_from_result(execution_result);
+                self.identity_loaded = false;
+                self.identity_in_progress = true;
+                ScreenFeedback::Redraw
+            }
+
+            // TODO identity register in progress state change
             Event::Backend(BackendEvent::TaskCompleted {
                 execution_result, ..
             }) => {

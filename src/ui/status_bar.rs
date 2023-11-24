@@ -14,7 +14,7 @@ use tuirealm::{
 pub(crate) struct StatusBarState {
     pub breadcrumbs: Vec<&'static str>,
     pub blocked: bool,
-    pub identity_private_keys_loaded: bool,
+    pub identity_loaded: bool,
 }
 
 impl StatusBarState {
@@ -37,7 +37,7 @@ pub(crate) fn view(frame: &mut Frame, area: Rect, state: &StatusBarState) {
         .split(block.inner(area));
 
     let breadcrumbs_str = state.breadcrumbs.join(" / ");
-    let identity_private_keys_loaded_str = if state.identity_private_keys_loaded {
+    let identity_private_keys_loaded_str = if state.identity_loaded {
         "Identity loaded"
     } else {
         "NO Identity"

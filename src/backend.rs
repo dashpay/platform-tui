@@ -6,7 +6,6 @@ mod error;
 pub(crate) mod identities;
 mod info_display;
 mod insight;
-mod screen_state;
 mod state;
 mod strategies;
 mod wallet;
@@ -18,7 +17,7 @@ use std::{
 };
 
 use dash_platform_sdk::Sdk;
-use dpp::identity::accessors::IdentityGettersV0;
+use dpp::{identity::accessors::IdentityGettersV0, prelude::Identity};
 use serde::Serialize;
 pub(crate) use state::AppState;
 use strategy_tests::Strategy;
@@ -31,7 +30,7 @@ pub(crate) use self::{
     strategies::StrategyTask,
     wallet::{Wallet, WalletTask},
 };
-use crate::backend::{identities::IdentityTask, screen_state::ScreenState};
+use crate::backend::identities::IdentityTask;
 
 #[derive(Clone, PartialEq)]
 pub(crate) enum Task {
@@ -68,12 +67,13 @@ pub(crate) enum AppStateUpdate<'s> {
         MappedMutexGuard<'s, Strategy>,
         MappedMutexGuard<'s, StrategyContractNames>,
     ),
+    IdentityRegistrationProgressed, // TODO provide state update details
+    LoadedIdentity(MappedMutexGuard<'s, Identity>),
 }
 
 pub(crate) struct Backend {
     sdk: Mutex<Sdk>,
     app_state: AppState,
-    screen_state: ScreenState,
 }
 
 impl Backend {
@@ -81,7 +81,6 @@ impl Backend {
         Backend {
             sdk: Mutex::new(sdk),
             app_state: AppState::load().await,
-            screen_state: ScreenState::default(),
         }
     }
 
