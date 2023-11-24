@@ -68,9 +68,7 @@ impl FormController for StrategyContractsFormController {
                     }
                 }
             }
-            InputStatus::Redraw => FormStatus::Redraw,
-            InputStatus::None => FormStatus::None,
-            InputStatus::Exit => FormStatus::Exit,
+            status => status.into(),
         }
     }
 

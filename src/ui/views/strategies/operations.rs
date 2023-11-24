@@ -87,9 +87,7 @@ impl FormController for StrategyAddOperationFormController {
                     self.set_op_form(op_type);
                     FormStatus::Redraw
                 }
-                InputStatus::Redraw => FormStatus::Redraw,
-                InputStatus::None => FormStatus::None,
-                InputStatus::Exit => FormStatus::Exit,
+                status => status.into(),
             }
         }
     }

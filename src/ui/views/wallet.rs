@@ -85,9 +85,7 @@ impl FormController for RegisterIdentityFormController {
                 task: Task::Identity(IdentityTask::RegisterIdentity(count)),
                 block: true,
             },
-            InputStatus::Redraw => FormStatus::Redraw,
-            InputStatus::None => FormStatus::None,
-            InputStatus::Exit => FormStatus::Exit,
+            status => status.into(),
         }
     }
 
@@ -244,7 +242,6 @@ impl ScreenController for WalletScreenController {
                 ScreenFeedback::Redraw
             }
 
-            // TODO identity register in progress state change
             Event::Backend(BackendEvent::TaskCompleted {
                 execution_result, ..
             }) => {
@@ -275,9 +272,7 @@ impl FormController for AddWalletPrivateKeyFormController {
                 task: Task::Wallet(WalletTask::AddByPrivateKey(private_key)),
                 block: false,
             },
-            InputStatus::Redraw => FormStatus::Redraw,
-            InputStatus::None => FormStatus::None,
-            InputStatus::Exit => FormStatus::Exit,
+            status => status.into(),
         }
     }
 

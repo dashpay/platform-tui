@@ -26,9 +26,7 @@ impl FormController for CloneStrategyFormController {
                 task: Task::Strategy(StrategyTask::CloneStrategy(strategy_name)),
                 block: false,
             },
-            InputStatus::Redraw => FormStatus::Redraw,
-            InputStatus::None => FormStatus::None,
-            InputStatus::Exit => FormStatus::Exit,
+            status => status.into(),
         }
     }
 

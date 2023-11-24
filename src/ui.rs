@@ -141,6 +141,13 @@ impl Ui {
                     }
                     UiFeedback::ExecuteTask(task)
                 }
+                FormStatus::NextScreen(controller_builder) => {
+                    self.form = None;
+                    let controller = controller_builder(app_state.deref()).await;
+                    self.status_bar_state.add_child(controller.name());
+                    self.screen = Screen::new(controller);
+                    UiFeedback::Redraw
+                }
                 FormStatus::Redraw => UiFeedback::Redraw,
                 FormStatus::None => UiFeedback::None,
                 FormStatus::Exit => {

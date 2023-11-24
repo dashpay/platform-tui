@@ -163,6 +163,6 @@ fn stringify_result_keep_item<T: Serialize, E: Display>(
     }
 }
 
-fn as_toml<T: Serialize>(value: &T) -> String {
+pub(crate) fn as_toml<T: Serialize>(value: &T) -> String {
     toml::to_string_pretty(&value).unwrap_or("Cannot serialize as TOML".to_owned())
 }
