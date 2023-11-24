@@ -153,8 +153,6 @@ impl AppState {
                 None,
             ));
 
-            self.save();
-
             (
                 asset_lock_transaction,
                 asset_lock_proof_private_key,
@@ -198,7 +196,6 @@ impl AppState {
                 None,
             ));
 
-            self.save();
             asset_lock
         };
 
@@ -228,7 +225,6 @@ impl AppState {
                     Some((identity.clone(), keys.clone())),
                 ));
 
-                self.save();
                 (identity, keys)
             };
 
@@ -270,8 +266,6 @@ impl AppState {
         let mut identity_private_keys = self.identity_private_keys.lock().await;
 
         identity_private_keys.extend(keys);
-
-        self.save();
 
         Ok(updated_identity)
     }
