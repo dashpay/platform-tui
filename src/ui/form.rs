@@ -16,6 +16,7 @@ pub(crate) use self::{
     utils::{ComposedInput, Field},
     widgets::{select::SelectInput, text::TextInput},
 };
+use super::screen::{ScreenController, ScreenControllerBuilder};
 use crate::backend::Task;
 
 /// Trait of every component suitable for processing user input.
@@ -39,6 +40,21 @@ pub(crate) enum InputStatus<T> {
     None,
     /// Exit
     Exit,
+}
+
+/// Partially defined conversion from [InputStatus] to [FormStatus].
+/// For [InputStatus::Done] there is no sensible automatic conversion, however
+/// there are simple defaults for the rest of variants, that could be used after
+/// `Done` variant was matched unsuccessfuly.
+impl<T> From<InputStatus<T>> for FormStatus {
+    fn from(value: InputStatus<T>) -> Self {
+        match value {
+            InputStatus::Done(_) => FormStatus::None,
+            InputStatus::Redraw => FormStatus::Redraw,
+            InputStatus::None => FormStatus::None,
+            InputStatus::Exit => FormStatus::Exit,
+        }
+    }
 }
 
 /// Form is a component that is responsible for handling key events and drawing
@@ -78,6 +94,7 @@ impl<C: FormController> Form<C> {
 /// return, since a user's input precedes some action.
 pub(crate) enum FormStatus {
     Done { task: Task, block: bool },
+    NextScreen(ScreenControllerBuilder),
     Redraw,
     None,
     Exit,

@@ -26,9 +26,7 @@ impl FormController for NewStrategyFormController {
                 task: Task::Strategy(StrategyTask::CreateStrategy(strategy_name)),
                 block: false,
             },
-            InputStatus::Redraw => FormStatus::Redraw,
-            InputStatus::None => FormStatus::None,
-            InputStatus::Exit => FormStatus::Exit,
+            status => status.into(),
         }
     }
 

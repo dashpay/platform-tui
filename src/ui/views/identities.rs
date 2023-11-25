@@ -114,9 +114,7 @@ impl FormController for GetIdentityByIdFormController {
                 task: Task::FetchIdentityById(value, false),
                 block: true,
             },
-            InputStatus::Redraw => FormStatus::Redraw,
-            InputStatus::None => FormStatus::None,
-            InputStatus::Exit => FormStatus::Exit,
+            status => status.into(),
         }
     }
 

@@ -41,9 +41,7 @@ impl FormController for StrategyStartIdentitiesFormController {
                 }),
                 block: true,
             },
-            InputStatus::Redraw => FormStatus::Redraw,
-            InputStatus::None => FormStatus::None,
-            InputStatus::Exit => FormStatus::Exit,
+            status => status.into(),
         }
     }
 
