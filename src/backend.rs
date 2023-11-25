@@ -4,7 +4,7 @@
 mod contracts;
 mod error;
 pub(crate) mod identities;
-mod info_display;
+pub(crate) mod info_display;
 mod insight;
 mod state;
 mod strategies;

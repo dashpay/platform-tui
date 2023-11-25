@@ -1,11 +1,14 @@
 //! Screens and forms related to wallet management.
 
 use dpp::prelude::Identity;
+use std::fmt::format;
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
     tui::prelude::Rect,
     Frame,
 };
+
+use crate::backend::info_display::InfoDisplay;
 
 use super::main::MainScreenController;
 use crate::{
@@ -23,12 +26,14 @@ use crate::{
 };
 
 const WALLET_LOADED_COMMANDS: [ScreenCommandKey; 2] = [
-    ScreenCommandKey::new("r", "Refresh utxos and balance"),
+    ScreenCommandKey::new("w", "Refresh wallet utxos and balance"),
     ScreenCommandKey::new("c", "Copy Address"),
 ];
 
-const IDENTITY_LOADED_COMMANDS: [ScreenCommandKey; 1] =
-    [ScreenCommandKey::new("t", "Identity top up")];
+const IDENTITY_LOADED_COMMANDS: [ScreenCommandKey; 2] = [
+    ScreenCommandKey::new("t", "Identity top up"),
+    ScreenCommandKey::new("r", "Identity refresh"),
+];
 
 #[memoize::memoize]
 fn join_commands(
@@ -236,10 +241,18 @@ impl ScreenController for WalletScreenController {
             }
 
             Event::Key(KeyEvent {
-                code: Key::Char('r'),
+                code: Key::Char('w'),
                 modifiers: KeyModifiers::NONE,
             }) if self.wallet_loaded => ScreenFeedback::Task {
                 task: Task::Wallet(WalletTask::Refresh),
+                block: true,
+            },
+
+            Event::Key(KeyEvent {
+                code: Key::Char('r'),
+                modifiers: KeyModifiers::NONE,
+            }) if self.identity_loaded => ScreenFeedback::Task {
+                task: Task::Identity(IdentityTask::Refresh),
                 block: true,
             },
 
@@ -355,5 +368,5 @@ fn display_wallet(wallet: &Wallet) -> String {
 }
 
 fn display_wallet_and_identity(wallet: &Wallet, identity: &Identity) -> String {
-    wallet.description()
+    format!("{} \n\n {}", wallet.description(), identity.display_info(0))
 }

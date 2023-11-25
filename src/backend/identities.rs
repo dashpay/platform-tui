@@ -2,6 +2,8 @@
 
 use std::collections::BTreeMap;
 
+use dapi_grpc::platform::v0::get_identity_request::GetIdentityRequestV0;
+use dapi_grpc::platform::v0::{get_identity_request, GetIdentityRequest};
 use dapi_grpc::{
     core::v0::{BroadcastTransactionRequest, BroadcastTransactionResponse, GetTransactionRequest},
     platform::v0::{
@@ -63,6 +65,7 @@ pub(super) async fn fetch_identity_by_b58_id(
 pub(crate) enum IdentityTask {
     RegisterIdentity(u64),
     TopUpIdentity(u64),
+    Refresh,
 }
 
 impl AppState {
@@ -70,6 +73,23 @@ impl AppState {
         match task {
             IdentityTask::RegisterIdentity(amount) => {
                 let result = self.register_new_identity(sdk, amount).await;
+                let execution_result = result
+                    .as_ref()
+                    .map(|identity| identity.display_info(0))
+                    .map_err(|e| e.to_string());
+                let app_state_update = match result {
+                    Ok(identity) => AppStateUpdate::LoadedIdentity(identity),
+                    Err(_) => AppStateUpdate::IdentityRegistrationProgressed,
+                };
+
+                BackendEvent::TaskCompletedStateChange {
+                    task: Task::Identity(task),
+                    execution_result,
+                    app_state_update,
+                }
+            }
+            IdentityTask::Refresh => {
+                let result = self.refresh_identity(sdk).await;
                 let execution_result = result
                     .as_ref()
                     .map(|identity| identity.display_info(0))
@@ -106,6 +126,23 @@ impl AppState {
                 }
             }
         }
+    }
+
+    pub(crate) async fn refresh_identity<'s>(
+        &'s self,
+        sdk: &Sdk,
+    ) -> Result<MappedMutexGuard<'s, Identity>, Error> {
+        let mut loaded_identity = self.loaded_identity.lock().await;
+
+        if let Some(identity) = loaded_identity.as_ref() {
+            let refreshed_identity = Identity::fetch(sdk, identity.id()).await?;
+            if let Some(refreshed_identity) = refreshed_identity {
+                loaded_identity.replace(refreshed_identity);
+            }
+        }
+        let identity_result =
+            MutexGuard::map(loaded_identity, |x| x.as_mut().expect("assigned above"));
+        Ok(identity_result)
     }
 
     pub(crate) async fn refresh_identity_balance(&mut self, sdk: &Sdk) -> Result<(), Error> {
