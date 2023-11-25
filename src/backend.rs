@@ -69,6 +69,7 @@ pub(crate) enum AppStateUpdate<'s> {
     ),
     IdentityRegistrationProgressed, // TODO provide state update details
     LoadedIdentity(MappedMutexGuard<'s, Identity>),
+    UpdatedBalance(u64),
 }
 
 pub(crate) struct Backend {

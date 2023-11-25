@@ -67,13 +67,13 @@ pub(crate) struct WalletScreenController {
 impl_builder!(WalletScreenController);
 
 struct RegisterIdentityFormController {
-    input: TextInput<u64>,
+    input: TextInput<f64>,
 }
 
 impl RegisterIdentityFormController {
     fn new() -> Self {
         RegisterIdentityFormController {
-            input: TextInput::new("Quantity (unsigned integer)"),
+            input: TextInput::new("Quantity (in Dash)"),
         }
     }
 }
@@ -81,8 +81,10 @@ impl RegisterIdentityFormController {
 impl FormController for RegisterIdentityFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
         match self.input.on_event(event) {
-            InputStatus::Done(count) => FormStatus::Done {
-                task: Task::Identity(IdentityTask::RegisterIdentity(count)),
+            InputStatus::Done(amount) => FormStatus::Done {
+                task: Task::Identity(IdentityTask::RegisterIdentity(
+                    (amount * 100000000.0) as u64,
+                )),
                 block: true,
             },
             InputStatus::Redraw => FormStatus::Redraw,
@@ -100,7 +102,53 @@ impl FormController for RegisterIdentityFormController {
     }
 
     fn step_name(&self) -> &'static str {
-        "Identities quantity"
+        "Funding amount"
+    }
+
+    fn step_index(&self) -> u8 {
+        0
+    }
+
+    fn steps_number(&self) -> u8 {
+        1
+    }
+}
+
+struct TopUpIdentityFormController {
+    input: TextInput<f64>,
+}
+
+impl TopUpIdentityFormController {
+    fn new() -> Self {
+        TopUpIdentityFormController {
+            input: TextInput::new("Quantity (in Dash)"),
+        }
+    }
+}
+
+impl FormController for TopUpIdentityFormController {
+    fn on_event(&mut self, event: KeyEvent) -> FormStatus {
+        match self.input.on_event(event) {
+            InputStatus::Done(amount) => FormStatus::Done {
+                task: Task::Identity(IdentityTask::TopUpIdentity((amount * 100000000.0) as u64)),
+                block: true,
+            },
+            InputStatus::Redraw => FormStatus::Redraw,
+            InputStatus::None => FormStatus::None,
+            InputStatus::Exit => FormStatus::Exit,
+        }
+    }
+
+    fn form_name(&self) -> &'static str {
+        "Identity top up"
+    }
+
+    fn step_view(&mut self, frame: &mut Frame, area: Rect) {
+        self.input.view(frame, area)
+    }
+
+    fn step_name(&self) -> &'static str {
+        "Top up amount"
     }
 
     fn step_index(&self) -> u8 {
@@ -201,6 +249,11 @@ impl ScreenController for WalletScreenController {
                 code: Key::Char('i'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::Form(Box::new(RegisterIdentityFormController::new())),
+
+            Event::Key(KeyEvent {
+                code: Key::Char('t'),
+                modifiers: KeyModifiers::NONE,
+            }) => ScreenFeedback::Form(Box::new(TopUpIdentityFormController::new())),
 
             Event::Key(KeyEvent {
                 code: Key::Char('c'),

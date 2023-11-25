@@ -9,6 +9,7 @@ use dapi_grpc::{
         GetIdentityBalanceRequest,
     },
 };
+use dash_platform_sdk::platform::transition::top_up_identity::TopUpIdentity;
 use dash_platform_sdk::{
     platform::{transition::put_identity::PutIdentity, Fetch},
     Sdk,
@@ -29,7 +30,6 @@ use rand::{rngs::StdRng, SeedableRng};
 use rs_dapi_client::{Dapi, DapiClientError, RequestSettings};
 use simple_signer::signer::SimpleSigner;
 use tokio::sync::{MappedMutexGuard, MutexGuard};
-use toml::to_string;
 use tuirealm::props::{PropValue, TextSpan};
 
 use super::AppStateUpdate;
@@ -62,6 +62,7 @@ pub(super) async fn fetch_identity_by_b58_id(
 #[derive(Clone, PartialEq)]
 pub(crate) enum IdentityTask {
     RegisterIdentity(u64),
+    TopUpIdentity(u64),
 }
 
 impl AppState {
@@ -82,6 +83,26 @@ impl AppState {
                     task: Task::Identity(task),
                     execution_result,
                     app_state_update,
+                }
+            }
+            IdentityTask::TopUpIdentity(amount) => {
+                let result = self.top_up_identity(sdk, amount).await;
+                let execution_result = result
+                    .as_ref()
+                    .map(|new_balance| {
+                        format!("New balance after adding {} is {}", amount, new_balance)
+                    })
+                    .map_err(|e| e.to_string());
+                match result {
+                    Ok(identity_balance) => BackendEvent::TaskCompletedStateChange {
+                        task: Task::Identity(task),
+                        execution_result,
+                        app_state_update: AppStateUpdate::UpdatedBalance(identity_balance),
+                    },
+                    Err(e) => BackendEvent::TaskCompleted {
+                        task: Task::Identity(task),
+                        execution_result: Err(e.to_string()),
+                    },
                 }
             }
         }
@@ -278,6 +299,87 @@ impl AppState {
         identity_private_keys.extend(keys);
 
         Ok(identity_result)
+    }
+
+    pub(crate) async fn top_up_identity<'s>(
+        &'s self,
+        sdk: &Sdk,
+        amount: u64,
+    ) -> Result<u64, Error> {
+        // First we need to make the transaction from the wallet
+        // We start by getting a lock on the wallet
+
+        let mut loaded_wallet = self.loaded_wallet.lock().await;
+        let Some(wallet) = loaded_wallet.as_mut() else {
+            return Err(Error::IdentityRegistrationError(
+                "No wallet loaded".to_string(),
+            ));
+        };
+
+        let mut loaded_identity = self.loaded_identity.lock().await;
+        let Some(identity) = loaded_identity.as_mut() else {
+            return Err(Error::IdentityTopUpError("No identity loaded".to_string()));
+        };
+
+        //// Core steps
+
+        let mut identity_asset_lock_private_key_in_top_up =
+            self.identity_asset_lock_private_key_in_top_up.lock().await;
+
+        // We create the wallet registration transaction, this locks funds that we
+        // can transfer from core to platform
+        let (asset_lock_transaction, asset_lock_proof_private_key, mut maybe_asset_lock_proof) =
+            if let Some((
+                asset_lock_transaction,
+                asset_lock_proof_private_key,
+                maybe_asset_lock_proof,
+            )) = identity_asset_lock_private_key_in_top_up.as_ref()
+            {
+                (
+                    asset_lock_transaction.clone(),
+                    asset_lock_proof_private_key.clone(),
+                    maybe_asset_lock_proof.clone(),
+                )
+            } else {
+                let (asset_lock_transaction, asset_lock_proof_private_key) =
+                    wallet.registration_transaction(None, amount)?;
+
+                identity_asset_lock_private_key_in_top_up.replace((
+                    asset_lock_transaction.clone(),
+                    asset_lock_proof_private_key.clone(),
+                    None,
+                ));
+
+                (asset_lock_transaction, asset_lock_proof_private_key, None)
+            };
+
+        let asset_lock_proof = if let Some(asset_lock_proof) = maybe_asset_lock_proof {
+            asset_lock_proof.clone()
+        } else {
+            let asset_lock = Self::broadcast_and_retrieve_asset_lock(sdk, &asset_lock_transaction)
+                .await
+                .map_err(|e| {
+                    Error::SdkExplainedError("error broadcasting transaction".to_string(), e.into())
+                })?;
+
+            identity_asset_lock_private_key_in_top_up.replace((
+                asset_lock_transaction.clone(),
+                asset_lock_proof_private_key.clone(),
+                Some(asset_lock.clone()),
+            ));
+
+            asset_lock
+        };
+
+        //// Platform steps
+
+        let updated_identity_balance = identity
+            .top_up_identity(sdk, asset_lock_proof.clone(), &asset_lock_proof_private_key)
+            .await?;
+
+        identity.set_balance(updated_identity_balance);
+
+        Ok(updated_identity_balance)
     }
 
     pub(crate) async fn broadcast_and_retrieve_asset_lock(

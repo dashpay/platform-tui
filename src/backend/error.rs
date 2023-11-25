@@ -22,6 +22,8 @@ pub(crate) enum Error {
     SdkError(#[from] dash_platform_sdk::Error),
     #[error("Identity registration error {0}")]
     IdentityRegistrationError(String),
+    #[error("Identity top up error {0}")]
+    IdentityTopUpError(String),
 }
 
 impl From<dpp::platform_value::Error> for Error {

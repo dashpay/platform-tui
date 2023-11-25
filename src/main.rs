@@ -9,6 +9,7 @@ use std::{fs::File, io::Write, panic, path::Path, sync::Mutex};
 
 use crossterm::event::{Event as TuiEvent, EventStream};
 use dash_platform_sdk::SdkBuilder;
+use dpp::identity::accessors::IdentityGettersV0;
 use dpp::version::PlatformVersion;
 use futures::{future::OptionFuture, select, FutureExt, StreamExt};
 use rs_dapi_client::AddressList;
@@ -62,8 +63,17 @@ async fn main() {
         .build()
         .expect("expected to build sdk");
 
-    let mut ui = Ui::new();
     let backend = Backend::new(sdk).await;
+
+    let initial_identity_balance = backend
+        .state()
+        .loaded_identity
+        .lock()
+        .await
+        .as_ref()
+        .map(|identity| identity.balance());
+
+    let mut ui = Ui::new(initial_identity_balance);
 
     let mut active = true;
 

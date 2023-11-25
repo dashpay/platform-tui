@@ -63,6 +63,8 @@ pub(crate) struct AppState {
             Option<(Identity, BTreeMap<IdentityPublicKey, Vec<u8>>)>,
         )>,
     >,
+    pub identity_asset_lock_private_key_in_top_up:
+        Mutex<Option<(Transaction, PrivateKey, Option<AssetLockProof>)>>,
 }
 
 // pub fn default_strategy_description(mut map: BTreeMap<String, String>) ->
@@ -170,6 +172,7 @@ impl Default for AppState {
             available_strategies: BTreeMap::new().into(),
             selected_strategy: None.into(),
             identity_asset_lock_private_key_in_creation: None.into(),
+            identity_asset_lock_private_key_in_top_up: None.into(),
             available_strategies_contract_names: BTreeMap::new().into(),
         }
     }
@@ -192,6 +195,8 @@ struct AppStateInSerializationFormat {
         Option<AssetLockProof>,
         Option<(Identity, BTreeMap<IdentityPublicKey, Vec<u8>>)>,
     )>,
+    pub identity_asset_lock_private_key_in_top_up:
+        Option<(Vec<u8>, [u8; 32], Option<AssetLockProof>)>,
 }
 
 impl PlatformSerializableWithPlatformVersion for AppState {
@@ -218,6 +223,7 @@ impl PlatformSerializableWithPlatformVersion for AppState {
             selected_strategy,
             identity_asset_lock_private_key_in_creation,
             available_strategies_contract_names,
+            identity_asset_lock_private_key_in_top_up,
         } = self;
 
         let known_contracts_in_serialization_format = known_contracts
@@ -261,6 +267,17 @@ impl PlatformSerializableWithPlatformVersion for AppState {
                     },
                 );
 
+        let identity_asset_lock_private_key_in_top_up = identity_asset_lock_private_key_in_top_up
+            .blocking_lock()
+            .as_ref()
+            .map(|(transaction, private_key, asset_lock_proof)| {
+                (
+                    transaction.serialize(),
+                    private_key.inner.secret_bytes(),
+                    asset_lock_proof.clone(),
+                )
+            });
+
         let app_state_in_serialization_format = AppStateInSerializationFormat {
             loaded_identity: loaded_identity.blocking_lock().clone(),
             identity_private_keys,
@@ -273,6 +290,7 @@ impl PlatformSerializableWithPlatformVersion for AppState {
                 .blocking_lock()
                 .clone(),
             identity_asset_lock_private_key_in_creation,
+            identity_asset_lock_private_key_in_top_up,
         };
 
         let config = bincode::config::standard()
@@ -314,6 +332,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
             selected_strategy,
             available_strategies_contract_names,
             identity_asset_lock_private_key_in_creation,
+            identity_asset_lock_private_key_in_top_up,
         } = app_state;
 
         let known_contracts = known_contracts
@@ -376,6 +395,17 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
                 },
             );
 
+        let identity_asset_lock_private_key_in_top_up = identity_asset_lock_private_key_in_top_up
+            .map(|(transaction, private_key, asset_lock_proof)| {
+                (
+                    Transaction::deserialize(&transaction)
+                        .expect("expected to deserialize transaction"),
+                    PrivateKey::from_slice(&private_key, Network::Testnet)
+                        .expect("expected private key"),
+                    asset_lock_proof,
+                )
+            });
+
         Ok(AppState {
             loaded_identity: loaded_identity.into(),
             identity_private_keys,
@@ -387,6 +417,8 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
             available_strategies_contract_names: available_strategies_contract_names.into(),
             identity_asset_lock_private_key_in_creation:
                 identity_asset_lock_private_key_in_creation.into(),
+            identity_asset_lock_private_key_in_top_up: identity_asset_lock_private_key_in_top_up
+                .into(),
         })
     }
 }

@@ -9,6 +9,7 @@ mod screen;
 mod status_bar;
 mod views;
 
+use dpp::identity::accessors::IdentityGettersV0;
 use std::ops::Deref;
 
 use tuirealm::{
@@ -65,7 +66,7 @@ impl Ui {
             .expect("unable to draw to terminal");
     }
 
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(loaded_identity_balance: Option<u64>) -> Self {
         let mut terminal = TerminalBridge::new().expect("cannot initialize terminal app");
         terminal
             .enter_alternate_screen()
@@ -75,6 +76,8 @@ impl Ui {
             .expect("cannot enable terminal raw mode");
 
         let mut status_bar_state = StatusBarState::default();
+        status_bar_state.identity_loaded_balance = loaded_identity_balance;
+
         let main_screen_controller = MainScreenController::new();
 
         status_bar_state.add_child(main_screen_controller.name());
@@ -113,18 +116,18 @@ impl Ui {
 
         // A special treatment for loaded identity app state update: status bar should
         // be updated as well
-        if matches!(
-            event,
+        match &event {
             Event::Backend(
-                BackendEvent::AppStateUpdated(AppStateUpdate::LoadedIdentity(_))
-                    | BackendEvent::TaskCompletedStateChange {
-                        app_state_update: AppStateUpdate::LoadedIdentity(_),
-                        ..
-                    }
-            )
-        ) {
-            self.status_bar_state.identity_loaded = true;
-            redraw = true;
+                BackendEvent::AppStateUpdated(AppStateUpdate::LoadedIdentity(identity))
+                | BackendEvent::TaskCompletedStateChange {
+                    app_state_update: AppStateUpdate::LoadedIdentity(identity),
+                    ..
+                },
+            ) => {
+                self.status_bar_state.identity_loaded_balance = Some(identity.balance());
+                redraw = true;
+            }
+            _ => {}
         }
 
         if self.blocked {
