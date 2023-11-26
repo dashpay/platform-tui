@@ -30,8 +30,7 @@ const WALLET_LOADED_COMMANDS: [ScreenCommandKey; 2] = [
     ScreenCommandKey::new("c", "Copy Address"),
 ];
 
-const IDENTITY_LOADED_COMMANDS: [ScreenCommandKey; 2] = [
-    ScreenCommandKey::new("t", "Identity top up"),
+const IDENTITY_LOADED_COMMANDS: [ScreenCommandKey; 1] = [
     ScreenCommandKey::new("r", "Identity refresh"),
 ];
 
@@ -39,7 +38,8 @@ const IDENTITY_LOADED_COMMANDS: [ScreenCommandKey; 2] = [
 fn join_commands(
     wallet_loaded: bool,
     identity_loaded: bool,
-    identity_in_progress: bool,
+    identity_registration_in_progress: bool,
+    identity_top_up_in_progress: bool,
 ) -> &'static [ScreenCommandKey] {
     let mut commands = vec![ScreenCommandKey::new("q", "Back to Main")];
 
@@ -51,8 +51,13 @@ fn join_commands(
 
     if identity_loaded {
         commands.extend_from_slice(&IDENTITY_LOADED_COMMANDS);
+        if identity_top_up_in_progress {
+            commands.push(ScreenCommandKey::new("t", "Continue identity top up"));
+        } else {
+            commands.push(ScreenCommandKey::new("t", "Identity top up"));
+        }
     } else {
-        if identity_in_progress {
+        if identity_registration_in_progress {
             commands.push(ScreenCommandKey::new("i", "Continue identity registration"));
         } else {
             commands.push(ScreenCommandKey::new("i", "Register identity"));
@@ -66,7 +71,8 @@ pub(crate) struct WalletScreenController {
     info: Info,
     wallet_loaded: bool,
     identity_loaded: bool,
-    identity_in_progress: bool,
+    identity_registration_in_progress: bool,
+    identity_top_up_in_progress: bool,
 }
 
 impl_builder!(WalletScreenController);
@@ -165,17 +171,23 @@ impl FormController for TopUpIdentityFormController {
 
 impl WalletScreenController {
     pub(crate) async fn new(app_state: &AppState) -> Self {
-        let (info, wallet_loaded, identity_loaded, identity_in_progress) =
+        let (info, wallet_loaded, identity_loaded, identity_registration_in_progress, identity_top_up_in_progress) =
             if let Some(wallet) = app_state.loaded_wallet.lock().await.as_ref() {
                 if let Some(identity) = app_state.loaded_identity.lock().await.as_ref() {
+                    let identity_top_up_in_progress = app_state
+                        .identity_asset_lock_private_key_in_top_up
+                        .lock()
+                        .await
+                        .is_some();
                     (
                         Info::new_fixed(&display_wallet_and_identity(wallet, identity)),
                         true,
                         true,
                         false,
+                        identity_top_up_in_progress,
                     )
                 } else {
-                    let identity_in_progress = app_state
+                    let identity_registration_in_progress = app_state
                         .identity_asset_lock_private_key_in_creation
                         .lock()
                         .await
@@ -184,12 +196,14 @@ impl WalletScreenController {
                         Info::new_fixed(&display_wallet(wallet)),
                         true,
                         false,
-                        identity_in_progress,
+                        identity_registration_in_progress,
+                        false,
                     )
                 }
             } else {
                 (
                     Info::new_fixed("Wallet management commands\n\nNo wallet loaded yet"),
+                    false,
                     false,
                     false,
                     false,
@@ -200,7 +214,8 @@ impl WalletScreenController {
             info,
             wallet_loaded,
             identity_loaded,
-            identity_in_progress,
+            identity_registration_in_progress,
+            identity_top_up_in_progress,
         }
     }
 }
@@ -218,7 +233,8 @@ impl ScreenController for WalletScreenController {
         join_commands(
             self.wallet_loaded,
             self.identity_loaded,
-            self.identity_in_progress,
+            self.identity_registration_in_progress,
+            self.identity_top_up_in_progress,
         )
     }
 
@@ -293,7 +309,7 @@ impl ScreenController for WalletScreenController {
             }) => {
                 self.info = Info::new_from_result(execution_result);
                 self.identity_loaded = true;
-                self.identity_in_progress = false;
+                self.identity_registration_in_progress = false;
                 ScreenFeedback::Redraw
             }
 
@@ -304,7 +320,7 @@ impl ScreenController for WalletScreenController {
             }) => {
                 self.info = Info::new_from_result(execution_result);
                 self.identity_loaded = false;
-                self.identity_in_progress = true;
+                self.identity_registration_in_progress = true;
                 ScreenFeedback::Redraw
             }
 

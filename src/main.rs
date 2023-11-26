@@ -111,6 +111,10 @@ async fn main() {
             }
             UiFeedback::Redraw => ui.redraw(), // TODO Debounce redraw?
             UiFeedback::None => (),
+            UiFeedback::Error(string) => {
+                //todo: show error somewhere
+                ui.redraw();
+            }
         }
     }
 }

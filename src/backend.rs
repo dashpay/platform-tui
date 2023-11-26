@@ -9,6 +9,7 @@ mod insight;
 mod state;
 mod strategies;
 mod wallet;
+pub(crate) mod documents;
 
 use std::{
     collections::BTreeMap,
@@ -22,6 +23,7 @@ use serde::Serialize;
 pub(crate) use state::AppState;
 use strategy_tests::Strategy;
 use tokio::sync::{MappedMutexGuard, Mutex, MutexGuard};
+use crate::backend::documents::DocumentTask;
 
 use self::state::{KnownContractsMap, StrategiesMap};
 pub(crate) use self::{
@@ -32,13 +34,14 @@ pub(crate) use self::{
 };
 use crate::backend::identities::IdentityTask;
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone)]
 pub(crate) enum Task {
     FetchIdentityById(String, bool),
     Strategy(StrategyTask),
     Wallet(WalletTask),
     Identity(IdentityTask),
     Contract(ContractTask),
+    Document(DocumentTask),
 }
 
 pub(crate) enum BackendEvent<'s> {
@@ -133,6 +136,10 @@ impl Backend {
             Task::Identity(identity_task) => {
                 self.app_state
                     .run_identity_task(self.sdk.lock().await.deref(), identity_task)
+                    .await
+            }
+            Task::Document(document_task) => {
+                documents::run_document_task(self.sdk.lock().await.deref_mut(), document_task)
                     .await
             }
         }
