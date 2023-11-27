@@ -1,16 +1,16 @@
-use std::collections::BTreeMap;
-use std::sync::Arc;
 use std::{
-    collections::HashSet,
+    collections::{BTreeMap, HashSet},
+    sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use dash_platform_sdk::platform::transition::put_document::PutDocument;
 use dash_platform_sdk::{
-    platform::{transition::broadcast::BroadcastStateTransition, DocumentQuery, FetchMany},
+    platform::{
+        transition::{broadcast::BroadcastStateTransition, put_document::PutDocument},
+        DocumentQuery, FetchMany,
+    },
     Sdk,
 };
-use dpp::prelude::DataContract;
 use dpp::{
     data_contract::document_type::{
         accessors::DocumentTypeV0Getters,
@@ -22,6 +22,7 @@ use dpp::{
         accessors::IdentityGettersV0,
         identity_public_key::accessors::v0::IdentityPublicKeyGettersV0, KeyType, Purpose,
     },
+    prelude::DataContract,
     state_transition::{
         documents_batch_transition::{
             methods::v0::DocumentsBatchTransitionMethodsV0, DocumentsBatchTransition,
@@ -100,8 +101,12 @@ impl AppState {
             loaded_identity_private_keys.get(&(identity.id(), identity_public_key.id()))
         else {
             return Err(Error::IdentityTopUpError(format!(
-                "expected private keys, but we only have private keys for {:?}, trying to get {:?} : {}",
-                loaded_identity_private_keys.keys().map(|(id, key_id)| (id, key_id)).collect::<BTreeMap<_,_>>(),
+                "expected private keys, but we only have private keys for {:?}, trying to get \
+                 {:?} : {}",
+                loaded_identity_private_keys
+                    .keys()
+                    .map(|(id, key_id)| (id, key_id))
+                    .collect::<BTreeMap<_, _>>(),
                 identity.id(),
                 identity_public_key.id(),
             )));

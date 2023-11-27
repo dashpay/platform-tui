@@ -154,7 +154,7 @@ impl AppState {
                     },
                 }
             }
-            IdentityTask::CopyIdentityId =>      {
+            IdentityTask::CopyIdentityId => {
                 if let Some(loaded_identity) = self.loaded_identity.lock().await.as_ref() {
                     let id = loaded_identity.id();
                     cli_clipboard::set_contents(id.to_string(Encoding::Base58)).unwrap();
