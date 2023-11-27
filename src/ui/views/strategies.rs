@@ -13,9 +13,14 @@ use std::collections::BTreeMap;
 
 use dash_platform_sdk::platform::DataContract;
 use dpp::{tests::json_document::json_document_to_created_contract, version::PlatformVersion};
-use strategy_tests::operations::DocumentAction;
-use strategy_tests::{Strategy, operations::OperationType};
-use strategy_tests::operations::DataContractUpdateOp::{DataContractNewDocumentTypes, DataContractNewOptionalFields};
+use strategy_tests::{
+    operations::{
+        DataContractUpdateOp::{DataContractNewDocumentTypes, DataContractNewOptionalFields},
+        OperationType,
+        DocumentAction,
+    },
+    Strategy,
+};
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
     tui::prelude::Rect,
@@ -356,14 +361,14 @@ fn display_strategy(
             OperationType::IdentityTopUp => "IdentityTopUp".to_string(),
             OperationType::IdentityUpdate(op) => format!("IdentityUpdate({:?})", op),
             OperationType::IdentityWithdrawal => "IdentityWithdrawal".to_string(),
-            OperationType::ContractCreate(_, _) => "ContractCreateRandom".to_string(),
+            OperationType::ContractCreate(..) => "ContractCreateRandom".to_string(),
             OperationType::ContractUpdate(op) => {
                 let op_type = match op {
                     DataContractNewDocumentTypes(_) => "NewDocTypesRandom".to_string(),
-                    DataContractNewOptionalFields(_, _) => "NewFieldsRandom".to_string(),
+                    DataContractNewOptionalFields(..) => "NewFieldsRandom".to_string(),
                 };
                 format!("ContractUpdate({})", op_type)
-            },
+            }
             OperationType::IdentityTransfer => "IdentityTransfer".to_string(),
         };
 

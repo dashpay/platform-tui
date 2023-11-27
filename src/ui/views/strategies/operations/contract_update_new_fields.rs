@@ -3,9 +3,8 @@
 use rand::Rng;
 use strategy_tests::{
     frequency::Frequency,
-    operations::{Operation, OperationType},
+    operations::{DataContractUpdateOp::DataContractNewOptionalFields, Operation, OperationType},
 };
-use strategy_tests::operations::DataContractUpdateOp::DataContractNewOptionalFields;
 use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
 use crate::{
@@ -38,13 +37,15 @@ impl StrategyOpContractUpdateNewFieldsFormController {
 
 impl FormController for StrategyOpContractUpdateNewFieldsFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
-
         match self.input.on_event(event) {
             InputStatus::Done((times_per_block, chance_per_block)) => FormStatus::Done {
                 task: Task::Strategy(StrategyTask::AddOperation {
                     strategy_name: self.selected_strategy.clone(),
                     operation: Operation {
-                        op_type: OperationType::ContractUpdate(DataContractNewOptionalFields(1..rand::thread_rng().gen::<u16>(), 1..rand::thread_rng().gen::<u16>())),
+                        op_type: OperationType::ContractUpdate(DataContractNewOptionalFields(
+                            1..rand::thread_rng().gen::<u16>(),
+                            1..rand::thread_rng().gen::<u16>(),
+                        )),
                         frequency: Frequency {
                             times_per_block_range: 1..times_per_block,
                             chance_per_block: Some(chance_per_block),

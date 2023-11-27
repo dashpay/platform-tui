@@ -7,12 +7,11 @@ use tuirealm::{
     Frame,
 };
 
-use crate::backend::info_display::InfoDisplay;
-
 use super::main::MainScreenController;
 use crate::{
     backend::{
-        identities::IdentityTask, AppState, AppStateUpdate, BackendEvent, Task, Wallet, WalletTask,
+        identities::IdentityTask, info_display::InfoDisplay, AppState, AppStateUpdate,
+        BackendEvent, Task, Wallet, WalletTask,
     },
     ui::{
         form::{FormController, FormStatus, Input, InputStatus, TextInput},
@@ -25,12 +24,13 @@ use crate::{
 };
 
 const WALLET_LOADED_COMMANDS: [ScreenCommandKey; 2] = [
-    ScreenCommandKey::new("w", "Refresh wallet utxos and balance"),
+    ScreenCommandKey::new("b", "Refresh wallet utxos and balance"),
     ScreenCommandKey::new("c", "Copy Address"),
 ];
 
-const IDENTITY_LOADED_COMMANDS: [ScreenCommandKey; 1] = [
+const IDENTITY_LOADED_COMMANDS: [ScreenCommandKey; 2] = [
     ScreenCommandKey::new("r", "Identity refresh"),
+    ScreenCommandKey::new("w", "Withdraw balance"),
 ];
 
 #[memoize::memoize]
@@ -168,46 +168,99 @@ impl FormController for TopUpIdentityFormController {
     }
 }
 
+struct WithdrawFromIdentityFormController {
+    input: TextInput<f64>,
+}
+
+impl WithdrawFromIdentityFormController {
+    fn new() -> Self {
+        WithdrawFromIdentityFormController {
+            input: TextInput::new("Quantity (in Dash)"),
+        }
+    }
+}
+
+impl FormController for WithdrawFromIdentityFormController {
+    fn on_event(&mut self, event: KeyEvent) -> FormStatus {
+        match self.input.on_event(event) {
+            InputStatus::Done(amount) => FormStatus::Done {
+                task: Task::Identity(IdentityTask::WithdrawFromIdentity(
+                    (amount * 100000000.0) as u64,
+                )),
+                block: true,
+            },
+            InputStatus::Redraw => FormStatus::Redraw,
+            InputStatus::None => FormStatus::None,
+            InputStatus::Exit => FormStatus::Exit,
+        }
+    }
+
+    fn form_name(&self) -> &'static str {
+        "Identity withdrawal"
+    }
+
+    fn step_view(&mut self, frame: &mut Frame, area: Rect) {
+        self.input.view(frame, area)
+    }
+
+    fn step_name(&self) -> &'static str {
+        "Withdrawal amount"
+    }
+
+    fn step_index(&self) -> u8 {
+        0
+    }
+
+    fn steps_number(&self) -> u8 {
+        1
+    }
+}
+
 impl WalletScreenController {
     pub(crate) async fn new(app_state: &AppState) -> Self {
-        let (info, wallet_loaded, identity_loaded, identity_registration_in_progress, identity_top_up_in_progress) =
-            if let Some(wallet) = app_state.loaded_wallet.lock().await.as_ref() {
-                if let Some(identity) = app_state.loaded_identity.lock().await.as_ref() {
-                    let identity_top_up_in_progress = app_state
-                        .identity_asset_lock_private_key_in_top_up
-                        .lock()
-                        .await
-                        .is_some();
-                    (
-                        Info::new_fixed(&display_wallet_and_identity(wallet, identity)),
-                        true,
-                        true,
-                        false,
-                        identity_top_up_in_progress,
-                    )
-                } else {
-                    let identity_registration_in_progress = app_state
-                        .identity_asset_lock_private_key_in_creation
-                        .lock()
-                        .await
-                        .is_some();
-                    (
-                        Info::new_fixed(&display_wallet(wallet)),
-                        true,
-                        false,
-                        identity_registration_in_progress,
-                        false,
-                    )
-                }
-            } else {
+        let (
+            info,
+            wallet_loaded,
+            identity_loaded,
+            identity_registration_in_progress,
+            identity_top_up_in_progress,
+        ) = if let Some(wallet) = app_state.loaded_wallet.lock().await.as_ref() {
+            if let Some(identity) = app_state.loaded_identity.lock().await.as_ref() {
+                let identity_top_up_in_progress = app_state
+                    .identity_asset_lock_private_key_in_top_up
+                    .lock()
+                    .await
+                    .is_some();
                 (
-                    Info::new_fixed("Wallet management commands\n\nNo wallet loaded yet"),
+                    Info::new_fixed(&display_wallet_and_identity(wallet, identity)),
+                    true,
+                    true,
                     false,
+                    identity_top_up_in_progress,
+                )
+            } else {
+                let identity_registration_in_progress = app_state
+                    .identity_asset_lock_private_key_in_creation
+                    .lock()
+                    .await
+                    .is_some();
+                (
+                    Info::new_fixed(&display_wallet(wallet)),
+                    true,
                     false,
-                    false,
+                    identity_registration_in_progress,
                     false,
                 )
-            };
+            }
+        } else {
+            (
+                Info::new_fixed("Wallet management commands\n\nNo wallet loaded yet"),
+                false,
+                false,
+                false,
+                false,
+            )
+        };
 
         WalletScreenController {
             info,
@@ -256,7 +309,7 @@ impl ScreenController for WalletScreenController {
             }
 
             Event::Key(KeyEvent {
-                code: Key::Char('w'),
+                code: Key::Char('b'),
                 modifiers: KeyModifiers::NONE,
             }) if self.wallet_loaded => ScreenFeedback::Task {
                 task: Task::Wallet(WalletTask::Refresh),
@@ -270,6 +323,13 @@ impl ScreenController for WalletScreenController {
                 task: Task::Identity(IdentityTask::Refresh),
                 block: true,
             },
+
+            Event::Key(KeyEvent {
+                code: Key::Char('w'),
+                modifiers: KeyModifiers::NONE,
+            }) if self.identity_loaded => {
+                ScreenFeedback::Form(Box::new(WithdrawFromIdentityFormController::new()))
+            }
 
             Event::Key(KeyEvent {
                 code: Key::Char('i'),
