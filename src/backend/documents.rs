@@ -1,12 +1,16 @@
+use std::collections::BTreeMap;
+use std::sync::Arc;
 use std::{
     collections::HashSet,
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use dash_platform_sdk::platform::transition::put_document::PutDocument;
 use dash_platform_sdk::{
     platform::{transition::broadcast::BroadcastStateTransition, DocumentQuery, FetchMany},
     Sdk,
 };
+use dpp::prelude::DataContract;
 use dpp::{
     data_contract::document_type::{
         accessors::DocumentTypeV0Getters,
@@ -33,7 +37,7 @@ use crate::backend::{error::Error, stringify_result, AppState, BackendEvent, Tas
 #[derive(Clone)]
 pub(crate) enum DocumentTask {
     QueryDocuments(DocumentQuery),
-    BroadcastRandomDocument(DocumentType),
+    BroadcastRandomDocument(DataContract, DocumentType),
 }
 
 impl AppState {
@@ -50,8 +54,10 @@ impl AppState {
                     execution_result: stringify_result(result),
                 }
             }
-            DocumentTask::BroadcastRandomDocument(document_type) => {
-                let result = self.broadcast_random_document(sdk, document_type).await;
+            DocumentTask::BroadcastRandomDocument(data_contract, document_type) => {
+                let result = self
+                    .broadcast_random_document(sdk, data_contract, document_type)
+                    .await;
                 BackendEvent::TaskCompleted {
                     task: Task::Document(task),
                     execution_result: stringify_result(result),
@@ -63,6 +69,7 @@ impl AppState {
     pub(crate) async fn broadcast_random_document<'s>(
         &'s self,
         sdk: &mut Sdk,
+        data_contract: &DataContract,
         document_type: &DocumentType,
     ) -> Result<Document, Error> {
         let mut std_rng = StdRng::from_entropy();
@@ -87,9 +94,10 @@ impl AppState {
             loaded_identity_private_keys.get(&(identity.id(), identity_public_key.id()))
         else {
             return Err(Error::IdentityTopUpError(format!(
-                "expected private keys, but we only have private keys for {:?}, trying to get {:?}",
-                loaded_identity_private_keys.keys(),
-                &(identity.id(), identity_public_key.id())
+                "expected private keys, but we only have private keys for {:?}, trying to get {:?} : {}",
+                loaded_identity_private_keys.keys().map(|(id, key_id)| (id, key_id)).collect::<BTreeMap<_,_>>(),
+                identity.id(),
+                identity_public_key.id(),
             )));
         };
 
@@ -113,33 +121,19 @@ impl AppState {
 
         signer.add_key(identity_public_key.clone(), private_key.clone().to_bytes());
 
-        let transition = DocumentsBatchTransition::new_document_creation_transition_from_document(
-            random_document.clone(),
-            document_type.as_ref(),
-            document_state_transition_entropy,
-            identity_public_key,
-            &signer,
-            sdk.version(),
-            None,
-            None,
-            None,
-        )
-        .expect("expected a document create transition");
+        let data_contract = data_contract.clone();
 
-        let mut result = transition.broadcast_and_wait(sdk, None).await?;
+        let document = random_document
+            .put_to_platform_and_wait_for_response(
+                sdk,
+                document_type.clone(),
+                document_state_transition_entropy,
+                identity_public_key.clone(),
+                Arc::new(data_contract),
+                &signer,
+            )
+            .await?;
 
-        match result {
-            StateTransitionProofResult::VerifiedDocuments(mut documents) => documents
-                .remove(random_document.id_ref())
-                .ok_or(Error::SdkUnexpectedResultError(
-                    "did not prove the sent document".to_string(),
-                ))?
-                .ok_or(Error::SdkUnexpectedResultError(
-                    "expected there to actually be a document".to_string(),
-                )),
-            _ => Err(Error::SdkUnexpectedResultError(
-                "proved a non document".to_string(),
-            )),
-        }
+        Ok(document)
     }
 }

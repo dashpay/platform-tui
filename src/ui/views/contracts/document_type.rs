@@ -177,6 +177,7 @@ impl ScreenController for DocumentTypeScreenController {
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::Task {
                 task: Task::Document(DocumentTask::BroadcastRandomDocument(
+                    self.data_contract.clone(),
                     self.document_type.clone(),
                 )),
                 block: true,
@@ -210,7 +211,7 @@ impl ScreenController for DocumentTypeScreenController {
             }
 
             Event::Backend(BackendEvent::TaskCompleted {
-                task: Task::Document(DocumentTask::BroadcastRandomDocument(_)),
+                task: Task::Document(DocumentTask::BroadcastRandomDocument(_, _)),
                 execution_result,
             }) => {
                 self.info = Info::new_from_result(execution_result);
