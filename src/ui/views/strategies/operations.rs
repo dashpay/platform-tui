@@ -1,6 +1,8 @@
 //! Forms for operations management in strategy.
 
 mod contract_create;
+mod contract_update_doc_types;
+mod contract_update_new_fields;
 mod identity_top_up;
 mod identity_transfer;
 mod identity_update;
@@ -11,6 +13,8 @@ use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
 use self::{
     contract_create::StrategyOpContractCreateFormController,
+    contract_update_doc_types::StrategyOpContractUpdateDocTypesFormController,
+    contract_update_new_fields::StrategyOpContractUpdateNewFieldsFormController,
     identity_top_up::StrategyOpIdentityTopUpFormController,
     identity_transfer::StrategyOpIdentityTransferFormController,
     identity_update::StrategyOpIdentityUpdateFormController,
@@ -25,8 +29,9 @@ enum OperationType {
     IdentityDisableKeys,
     IdentityWithdrawal,
     IdentityTransfer,
-    ContractCreate,
-    ContractUpdate,
+    ContractCreateRandom,
+    ContractUpdateDocTypesRandom,
+    ContractUpdateFieldsRandom,
     Document,
 }
 
@@ -68,10 +73,15 @@ impl StrategyAddOperationFormController {
             OperationType::IdentityTransfer => Box::new(
                 StrategyOpIdentityTransferFormController::new(self.strategy_name.clone()),
             ),
-            OperationType::ContractCreate => Box::new(StrategyOpContractCreateFormController::new(
+            OperationType::ContractCreateRandom => Box::new(StrategyOpContractCreateFormController::new(
                 self.strategy_name.clone(),
             )),
-            OperationType::ContractUpdate => todo!(),
+            OperationType::ContractUpdateDocTypesRandom => Box::new(StrategyOpContractUpdateDocTypesFormController::new(
+                self.strategy_name.clone(),
+            )),
+            OperationType::ContractUpdateFieldsRandom => Box::new(StrategyOpContractUpdateNewFieldsFormController::new(
+                self.strategy_name.clone(),
+            )),
             OperationType::Document => todo!(),
         });
     }
