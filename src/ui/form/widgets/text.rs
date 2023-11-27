@@ -57,15 +57,7 @@ impl<V: FromStr> Input for TextInput<V> {
                     InputStatus::Redraw
                 }
             },
-            KeyEvent {
-                code: Key::Char(c),
-                modifiers: KeyModifiers::NONE,
-            } => {
-                self.input
-                    .attr(Attribute::Foreground, AttrValue::Color(Color::Reset));
-                self.input.perform(Cmd::Type(c));
-                InputStatus::Redraw
-            }
+
             KeyEvent {
                 code: Key::Left,
                 modifiers: KeyModifiers::NONE,
@@ -73,6 +65,7 @@ impl<V: FromStr> Input for TextInput<V> {
                 self.input.perform(Cmd::Move(Direction::Left));
                 InputStatus::Redraw
             }
+
             KeyEvent {
                 code: Key::Right,
                 modifiers: KeyModifiers::NONE,
@@ -80,6 +73,7 @@ impl<V: FromStr> Input for TextInput<V> {
                 self.input.perform(Cmd::Move(Direction::Right));
                 InputStatus::Redraw
             }
+
             KeyEvent {
                 code: Key::Backspace,
                 modifiers: KeyModifiers::NONE,
@@ -89,10 +83,20 @@ impl<V: FromStr> Input for TextInput<V> {
                     .attr(Attribute::Foreground, AttrValue::Color(Color::Reset));
                 InputStatus::Redraw
             }
+
             KeyEvent {
                 code: Key::Char('q'),
                 modifiers: KeyModifiers::CONTROL,
             } => InputStatus::Exit,
+
+            KeyEvent {
+                code: Key::Char(c), ..
+            } => {
+                self.input
+                    .attr(Attribute::Foreground, AttrValue::Color(Color::Reset));
+                self.input.perform(Cmd::Type(c));
+                InputStatus::Redraw
+            }
             _ => InputStatus::None,
         }
     }

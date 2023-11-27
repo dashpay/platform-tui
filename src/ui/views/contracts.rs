@@ -19,7 +19,6 @@ use self::{
     document_type::SelectDocumentTypeFormController,
     fetch_contract::FetchSystemContractScreenController,
 };
-use super::main::MainScreenController;
 use crate::{
     backend::{AppState, AppStateUpdate, BackendEvent},
     ui::{

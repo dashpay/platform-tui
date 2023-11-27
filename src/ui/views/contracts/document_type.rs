@@ -225,7 +225,7 @@ impl ScreenController for DocumentTypeScreenController {
             }
 
             Event::Backend(BackendEvent::TaskCompleted {
-                task: Task::Document(DocumentTask::BroadcastRandomDocument(_, _)),
+                task: Task::Document(DocumentTask::BroadcastRandomDocument(..)),
                 execution_result,
             }) => {
                 self.info = Info::new_from_result(execution_result);

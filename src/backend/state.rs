@@ -92,13 +92,15 @@ impl Default for AppState {
         //     .filter(is_json)
         // {
         //     let path = entry.path();
-        //     let contract_name = path.file_stem().unwrap().to_str().unwrap().to_string();
+        //     let contract_name =
+        // path.file_stem().unwrap().to_str().unwrap().to_string();
         //
-        //     let contract = json_document_to_created_contract(&path, true, platform_version)
-        //         .expect("expected to get contract from a json document");
+        //     let contract = json_document_to_created_contract(&path, true,
+        // platform_version)         .expect("expected to get contract from a
+        // json document");
         //
-        //     known_contracts_raw.insert(contract_name, contract.data_contract_owned());
-        // }
+        //     known_contracts_raw.insert(contract_name,
+        // contract.data_contract_owned()); }
 
         let known_contracts = Mutex::from(known_contracts_raw);
         // let mut description1 = default_strategy_description(BTreeMap::new());

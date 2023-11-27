@@ -351,9 +351,9 @@ impl ScreenController for WalletScreenController {
             },
 
             Event::Key(KeyEvent {
-                           code: Key::Char('d'),
-                           modifiers: KeyModifiers::NONE,
-                       }) if self.identity_loaded => ScreenFeedback::Task {
+                code: Key::Char('d'),
+                modifiers: KeyModifiers::NONE,
+            }) if self.identity_loaded => ScreenFeedback::Task {
                 task: Task::Identity(IdentityTask::CopyIdentityId),
                 block: true,
             },
