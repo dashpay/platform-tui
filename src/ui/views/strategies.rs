@@ -13,6 +13,7 @@ use std::collections::BTreeMap;
 
 use dash_platform_sdk::platform::DataContract;
 use dpp::{tests::json_document::json_document_to_created_contract, version::PlatformVersion};
+use strategy_tests::operations::DocumentAction;
 use strategy_tests::{Strategy, operations::OperationType};
 use strategy_tests::operations::DataContractUpdateOp::{DataContractNewDocumentTypes, DataContractNewOptionalFields};
 use tuirealm::{
@@ -229,6 +230,7 @@ impl ScreenController for StrategiesScreenController {
                 if let Some(strategy_name) = &self.selected_strategy {
                     ScreenFeedback::Form(Box::new(StrategyAddOperationFormController::new(
                         strategy_name.clone(),
+                        self.known_contracts.clone(),
                     )))
                 } else {
                     ScreenFeedback::None
@@ -342,7 +344,15 @@ fn display_strategy(
     let mut operations_lines = String::new();
     for op in strategy.operations.iter() {
         let op_name = match op.op_type.clone() {
-            OperationType::Document(_) => "Document".to_string(),
+            OperationType::Document(op) => {
+                let op_type = match op.action {
+                    DocumentAction::DocumentActionInsertRandom(_, _) => "InsertRandom".to_string(),
+                    DocumentAction::DocumentActionDelete => "Delete".to_string(),
+                    DocumentAction::DocumentActionReplace => "Replace".to_string(),
+                    _ => panic!("invalid document action selected"),
+                };
+                format!("Document({})", op_type)
+            },
             OperationType::IdentityTopUp => "IdentityTopUp".to_string(),
             OperationType::IdentityUpdate(op) => format!("IdentityUpdate({:?})", op),
             OperationType::IdentityWithdrawal => "IdentityWithdrawal".to_string(),

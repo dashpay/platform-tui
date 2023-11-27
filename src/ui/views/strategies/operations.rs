@@ -3,10 +3,13 @@
 mod contract_create;
 mod contract_update_doc_types;
 mod contract_update_new_fields;
+mod document;
 mod identity_top_up;
 mod identity_transfer;
 mod identity_update;
 mod identity_withdrawal;
+
+use std::collections::BTreeMap;
 
 use strum::IntoEnumIterator;
 use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
@@ -15,12 +18,14 @@ use self::{
     contract_create::StrategyOpContractCreateFormController,
     contract_update_doc_types::StrategyOpContractUpdateDocTypesFormController,
     contract_update_new_fields::StrategyOpContractUpdateNewFieldsFormController,
+    document::StrategyOpDocumentFormController,
     identity_top_up::StrategyOpIdentityTopUpFormController,
     identity_transfer::StrategyOpIdentityTransferFormController,
     identity_update::StrategyOpIdentityUpdateFormController,
     identity_withdrawal::StrategyOpIdentityWithdrawalFormController,
 };
 use crate::ui::form::{FormController, FormStatus, Input, InputStatus, SelectInput};
+use dash_platform_sdk::platform::DataContract;
 
 #[derive(Debug, strum::Display, Clone, strum::EnumIter, Copy)]
 enum OperationType {
@@ -39,14 +44,16 @@ pub(super) struct StrategyAddOperationFormController {
     op_type_input: SelectInput<OperationType>,
     op_specific_form: Option<Box<dyn FormController>>,
     strategy_name: String,
+    known_contracts: BTreeMap<String, DataContract>,
 }
 
 impl StrategyAddOperationFormController {
-    pub(super) fn new(strategy_name: String) -> Self {
+    pub(super) fn new(strategy_name: String, known_contracts: BTreeMap<String, DataContract>) -> Self {
         StrategyAddOperationFormController {
             op_type_input: SelectInput::new(OperationType::iter().collect()),
             op_specific_form: None,
             strategy_name,
+            known_contracts,
         }
     }
 
@@ -82,7 +89,10 @@ impl StrategyAddOperationFormController {
             OperationType::ContractUpdateFieldsRandom => Box::new(StrategyOpContractUpdateNewFieldsFormController::new(
                 self.strategy_name.clone(),
             )),
-            OperationType::Document => todo!(),
+            OperationType::Document => Box::new(StrategyOpDocumentFormController::new(
+                self.strategy_name.clone(),
+                self.known_contracts.clone(),
+            )),
         });
     }
 }
