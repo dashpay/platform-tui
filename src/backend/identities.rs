@@ -69,6 +69,7 @@ pub(crate) enum IdentityTask {
     TopUpIdentity(u64),
     WithdrawFromIdentity(u64),
     Refresh,
+    CopyIdentityId,
 }
 
 impl AppState {
@@ -151,6 +152,18 @@ impl AppState {
                         task: Task::Identity(task),
                         execution_result: Err(e.to_string()),
                     },
+                }
+            }
+            IdentityTask::CopyIdentityId =>      {
+                if let Some(loaded_identity) = self.loaded_identity.lock().await.as_ref() {
+                    let id = loaded_identity.id();
+                    cli_clipboard::set_contents(id.to_string(Encoding::Base58)).unwrap();
+                    BackendEvent::TaskCompleted {
+                        task: Task::Identity(task),
+                        execution_result: Ok("Copied Identity Id".into()),
+                    }
+                } else {
+                    BackendEvent::None
                 }
             }
         }

@@ -25,12 +25,13 @@ use crate::{
 
 const WALLET_LOADED_COMMANDS: [ScreenCommandKey; 2] = [
     ScreenCommandKey::new("b", "Refresh wallet utxos and balance"),
-    ScreenCommandKey::new("c", "Copy Address"),
+    ScreenCommandKey::new("c", "Copy Receive Address"),
 ];
 
-const IDENTITY_LOADED_COMMANDS: [ScreenCommandKey; 2] = [
+const IDENTITY_LOADED_COMMANDS: [ScreenCommandKey; 3] = [
     ScreenCommandKey::new("r", "Identity refresh"),
     ScreenCommandKey::new("w", "Withdraw balance"),
+    ScreenCommandKey::new("d", "Copy Identity ID"),
 ];
 
 #[memoize::memoize]
@@ -346,6 +347,14 @@ impl ScreenController for WalletScreenController {
                 modifiers: KeyModifiers::NONE,
             }) if self.wallet_loaded => ScreenFeedback::Task {
                 task: Task::Wallet(WalletTask::CopyAddress),
+                block: true,
+            },
+
+            Event::Key(KeyEvent {
+                           code: Key::Char('d'),
+                           modifiers: KeyModifiers::NONE,
+                       }) if self.identity_loaded => ScreenFeedback::Task {
+                task: Task::Identity(IdentityTask::CopyIdentityId),
                 block: true,
             },
 
