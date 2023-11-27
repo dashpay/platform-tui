@@ -410,7 +410,7 @@ struct AddWalletPrivateKeyFormController {
 impl AddWalletPrivateKeyFormController {
     fn new() -> Self {
         AddWalletPrivateKeyFormController {
-            input: TextInput::new("SHA256 hex"),
+            input: TextInput::new("64 hex character or WIF private key"),
         }
     }
 }
