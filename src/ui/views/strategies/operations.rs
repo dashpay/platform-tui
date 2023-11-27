@@ -11,6 +11,7 @@ mod identity_withdrawal;
 
 use std::collections::BTreeMap;
 
+use dash_platform_sdk::platform::DataContract;
 use strum::IntoEnumIterator;
 use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
@@ -25,7 +26,6 @@ use self::{
     identity_withdrawal::StrategyOpIdentityWithdrawalFormController,
 };
 use crate::ui::form::{FormController, FormStatus, Input, InputStatus, SelectInput};
-use dash_platform_sdk::platform::DataContract;
 
 #[derive(Debug, strum::Display, Clone, strum::EnumIter, Copy)]
 enum OperationType {
@@ -48,7 +48,10 @@ pub(super) struct StrategyAddOperationFormController {
 }
 
 impl StrategyAddOperationFormController {
-    pub(super) fn new(strategy_name: String, known_contracts: BTreeMap<String, DataContract>) -> Self {
+    pub(super) fn new(
+        strategy_name: String,
+        known_contracts: BTreeMap<String, DataContract>,
+    ) -> Self {
         StrategyAddOperationFormController {
             op_type_input: SelectInput::new(OperationType::iter().collect()),
             op_specific_form: None,
@@ -80,9 +83,10 @@ impl StrategyAddOperationFormController {
             OperationType::IdentityTransfer => Box::new(
                 StrategyOpIdentityTransferFormController::new(self.strategy_name.clone()),
             ),
-            OperationType::Document => Box::new(
-                StrategyOpDocumentFormController::new(self.strategy_name.clone(), self.known_contracts.clone())
-            ),
+            OperationType::Document => Box::new(StrategyOpDocumentFormController::new(
+                self.strategy_name.clone(),
+                self.known_contracts.clone(),
+            )),
             OperationType::ContractCreateRandom => Box::new(
                 StrategyOpContractCreateFormController::new(self.strategy_name.clone()),
             ),

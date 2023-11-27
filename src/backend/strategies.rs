@@ -301,7 +301,7 @@ pub(crate) async fn run_strategy_task<'s>(
                 tokio::task::block_in_place(|| set_start_identities(strategy, count, key_count));
                 BackendEvent::TaskCompletedStateChange {
                     task: Task::Strategy(task.clone()),
-                    execution_result: Ok("Start identities set".to_owned()),
+                    execution_result: Ok("Start identities set".into()),
                     app_state_update: AppStateUpdate::SelectedStrategy(
                         strategy_name.clone(),
                         MutexGuard::map(strategies_lock, |strategies| {

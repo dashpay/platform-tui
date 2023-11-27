@@ -9,7 +9,7 @@ mod screen;
 mod status_bar;
 mod views;
 
-use std::ops::Deref;
+use std::{mem, ops::Deref};
 
 use dpp::identity::accessors::IdentityGettersV0;
 use tuirealm::{
@@ -36,6 +36,7 @@ pub(crate) struct Ui {
     screen: Screen<Box<dyn ScreenController>>,
     form: Option<Form<Box<dyn FormController>>>,
     blocked: bool,
+    screen_stack: Vec<Screen<Box<dyn ScreenController>>>,
 }
 
 /// UI updates delivered to the main application loop.
@@ -91,6 +92,7 @@ impl Ui {
             screen,
             form: None,
             blocked: false,
+            screen_stack: Vec::new(),
         };
 
         ui.redraw();
@@ -149,7 +151,8 @@ impl Ui {
                     self.form = None;
                     let controller = controller_builder(app_state.deref()).await;
                     self.status_bar_state.add_child(controller.name());
-                    self.screen = Screen::new(controller);
+                    let old_screen = mem::replace(&mut self.screen, Screen::new(controller));
+                    self.screen_stack.push(old_screen);
                     UiFeedback::Redraw
                 }
                 FormStatus::Redraw => UiFeedback::Redraw,
@@ -168,14 +171,18 @@ impl Ui {
                 ScreenFeedback::NextScreen(controller_builder) => {
                     let controller = controller_builder(app_state.deref()).await;
                     self.status_bar_state.add_child(controller.name());
-                    self.screen = Screen::new(controller);
+                    let old_screen = mem::replace(&mut self.screen, Screen::new(controller));
+                    self.screen_stack.push(old_screen);
                     UiFeedback::Redraw
                 }
-                ScreenFeedback::PreviousScreen(controller_builder) => {
-                    let controller = controller_builder(app_state.deref()).await;
+                ScreenFeedback::PreviousScreen => {
                     self.status_bar_state.to_parent();
-                    self.screen = Screen::new(controller);
-                    UiFeedback::Redraw
+                    if let Some(screen) = self.screen_stack.pop() {
+                        self.screen = screen;
+                        UiFeedback::Redraw
+                    } else {
+                        UiFeedback::Quit
+                    }
                 }
                 ScreenFeedback::Form(controller) => {
                     self.form = Some(Form::new(controller));

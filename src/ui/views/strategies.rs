@@ -16,8 +16,7 @@ use dpp::{tests::json_document::json_document_to_created_contract, version::Plat
 use strategy_tests::{
     operations::{
         DataContractUpdateOp::{DataContractNewDocumentTypes, DataContractNewOptionalFields},
-        OperationType,
-        DocumentAction,
+        DocumentAction, OperationType,
     },
     Strategy,
 };
@@ -167,27 +166,32 @@ impl ScreenController for StrategiesScreenController {
             Event::Key(KeyEvent {
                 code: Key::Char('q'),
                 modifiers: KeyModifiers::NONE,
-            }) => ScreenFeedback::PreviousScreen(MainScreenController::builder()),
+            }) => ScreenFeedback::PreviousScreen,
+
             Event::Key(KeyEvent {
                 code: Key::Char('n'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::Form(Box::new(NewStrategyFormController::new())),
+
             Event::Key(KeyEvent {
                 code: Key::Char('s'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::Form(Box::new(SelectStrategyFormController::new(
                 self.available_strategies.clone(),
             ))),
+
             Event::Key(KeyEvent {
                 code: Key::Char('d'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::Form(Box::new(DeleteStrategyFormController::new(
                 self.available_strategies.clone(),
             ))),
+
             Event::Key(KeyEvent {
                 code: Key::Char('l'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::Form(Box::new(CloneStrategyFormController::new())),
+
             Event::Key(KeyEvent {
                 code: Key::Char('c'),
                 modifiers: KeyModifiers::NONE,
@@ -204,6 +208,7 @@ impl ScreenController for StrategiesScreenController {
                     ScreenFeedback::None
                 }
             }
+
             Event::Key(KeyEvent {
                 code: Key::Char('i'),
                 modifiers: KeyModifiers::NONE,
@@ -216,6 +221,7 @@ impl ScreenController for StrategiesScreenController {
                     ScreenFeedback::None
                 }
             }
+
             Event::Key(KeyEvent {
                 code: Key::Char('b'),
                 modifiers: KeyModifiers::NONE,
@@ -228,6 +234,7 @@ impl ScreenController for StrategiesScreenController {
                     ScreenFeedback::None
                 }
             }
+
             Event::Key(KeyEvent {
                 code: Key::Char('o'),
                 modifiers: KeyModifiers::NONE,
@@ -241,6 +248,7 @@ impl ScreenController for StrategiesScreenController {
                     ScreenFeedback::None
                 }
             }
+
             Event::Key(KeyEvent {
                 code: Key::Char('w'),
                 modifiers: KeyModifiers::NONE,
@@ -250,6 +258,7 @@ impl ScreenController for StrategiesScreenController {
                 )),
                 block: false,
             },
+
             Event::Key(KeyEvent {
                 code: Key::Char('x'),
                 modifiers: KeyModifiers::NONE,
@@ -259,6 +268,7 @@ impl ScreenController for StrategiesScreenController {
                 )),
                 block: false,
             },
+
             Event::Key(KeyEvent {
                 code: Key::Char('y'),
                 modifiers: KeyModifiers::NONE,
@@ -268,6 +278,7 @@ impl ScreenController for StrategiesScreenController {
                 )),
                 block: false,
             },
+
             Event::Key(KeyEvent {
                 code: Key::Char('z'),
                 modifiers: KeyModifiers::NONE,
@@ -298,6 +309,7 @@ impl ScreenController for StrategiesScreenController {
                 self.selected_strategy = Some(strategy_name);
                 ScreenFeedback::Redraw
             }
+
             Event::Backend(
                 BackendEvent::AppStateUpdated(AppStateUpdate::Strategies(strategies, ..))
                 | BackendEvent::TaskCompletedStateChange {
@@ -351,13 +363,13 @@ fn display_strategy(
         let op_name = match op.op_type.clone() {
             OperationType::Document(op) => {
                 let op_type = match op.action {
-                    DocumentAction::DocumentActionInsertRandom(_, _) => "InsertRandom".to_string(),
+                    DocumentAction::DocumentActionInsertRandom(..) => "InsertRandom".to_string(),
                     DocumentAction::DocumentActionDelete => "Delete".to_string(),
                     DocumentAction::DocumentActionReplace => "Replace".to_string(),
                     _ => panic!("invalid document action selected"),
                 };
                 format!("Document({})", op_type)
-            },
+            }
             OperationType::IdentityTopUp => "IdentityTopUp".to_string(),
             OperationType::IdentityUpdate(op) => format!("IdentityUpdate({:?})", op),
             OperationType::IdentityWithdrawal => "IdentityWithdrawal".to_string(),

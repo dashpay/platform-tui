@@ -68,7 +68,7 @@ pub(super) async fn run_wallet_task(
 
             BackendEvent::TaskCompletedStateChange {
                 task: Task::Wallet(task),
-                execution_result: Ok("Added wallet".to_owned()),
+                execution_result: Ok("Added wallet".into()),
                 app_state_update: AppStateUpdate::LoadedWallet(loaded_wallet_update),
             }
         }
@@ -81,8 +81,8 @@ pub(super) async fn run_wallet_task(
                 });
                 BackendEvent::TaskCompletedStateChange {
                     task: Task::Wallet(task),
-                    execution_result: Ok("Refreshed wallet".to_owned()), /* TODO actually failure
-                                                                          * is not reported */
+                    execution_result: Ok("Refreshed wallet".into()), /* TODO actually failure
+                                                                      * is not reported */
                     app_state_update: AppStateUpdate::LoadedWallet(loaded_wallet_update),
                 }
             } else {
@@ -96,7 +96,7 @@ pub(super) async fn run_wallet_task(
                 cli_clipboard::set_contents(address.to_string()).unwrap();
                 BackendEvent::TaskCompleted {
                     task: Task::Wallet(task),
-                    execution_result: Ok("Copied Address".to_owned()),
+                    execution_result: Ok("Copied Address".into()),
                 }
             } else {
                 BackendEvent::None

@@ -58,11 +58,13 @@ impl ScreenController for IdentitiesScreenController {
             Event::Key(KeyEvent {
                 code: Key::Char('q'),
                 modifiers: KeyModifiers::NONE,
-            }) => ScreenFeedback::PreviousScreen(MainScreenController::builder()),
+            }) => ScreenFeedback::PreviousScreen,
+
             Event::Key(KeyEvent {
                 code: Key::Char('i'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::Form(Box::new(GetIdentityByIdFormController::new())),
+
             Event::Key(KeyEvent {
                 code: Key::Char('p'),
                 modifiers: KeyModifiers::NONE,
@@ -70,6 +72,7 @@ impl ScreenController for IdentitiesScreenController {
                 self.toggle_keys[0].toggle = !self.toggle_keys[0].toggle;
                 ScreenFeedback::Redraw
             }
+
             Event::Key(k) => {
                 let redraw_info = self.info.on_event(k);
                 if redraw_info {

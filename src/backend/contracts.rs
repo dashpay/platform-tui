@@ -37,13 +37,17 @@ pub(super) async fn run_contract_task<'s>(
 
                     BackendEvent::TaskCompletedStateChange {
                         task: Task::Contract(task),
-                        execution_result: Ok(contract_str),
+                        execution_result: Ok(contract_str.into()),
                         app_state_update: AppStateUpdate::KnownContracts(contracts_lock),
                     }
                 }
-                result => BackendEvent::TaskCompleted {
+                Ok(None) => BackendEvent::TaskCompleted {
                     task: Task::Contract(task),
-                    execution_result: stringify_result(result),
+                    execution_result: Ok("No contract".into()),
+                },
+                Err(e) => BackendEvent::TaskCompleted {
+                    task: Task::Contract(task),
+                    execution_result: Err(e.to_string()),
                 },
             }
         }
@@ -57,13 +61,17 @@ pub(super) async fn run_contract_task<'s>(
 
                     BackendEvent::TaskCompletedStateChange {
                         task: Task::Contract(task),
-                        execution_result: Ok(contract_str),
+                        execution_result: Ok(contract_str.into()),
                         app_state_update: AppStateUpdate::KnownContracts(contracts_lock),
                     }
                 }
-                result => BackendEvent::TaskCompleted {
+                Ok(None) => BackendEvent::TaskCompleted {
                     task: Task::Contract(task),
-                    execution_result: stringify_result(result),
+                    execution_result: Ok("No contract".into()),
+                },
+                Err(e) => BackendEvent::TaskCompleted {
+                    task: Task::Contract(task),
+                    execution_result: Err(e.to_string()),
                 },
             }
         }

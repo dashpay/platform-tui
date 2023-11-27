@@ -299,7 +299,7 @@ impl ScreenController for WalletScreenController {
             Event::Key(KeyEvent {
                 code: Key::Char('q'),
                 modifiers: KeyModifiers::NONE,
-            }) => ScreenFeedback::PreviousScreen(MainScreenController::builder()),
+            }) => ScreenFeedback::PreviousScreen,
 
             Event::Key(KeyEvent {
                 code: Key::Char('a'),

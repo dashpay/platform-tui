@@ -20,7 +20,9 @@ use tuirealm::{
 
 use super::ContractsScreenController;
 use crate::{
-    backend::{as_toml, documents::DocumentTask, AppState, BackendEvent, Task},
+    backend::{
+        as_toml, documents::DocumentTask, AppState, BackendEvent, CompletedTaskPayload, Task,
+    },
     ui::{
         form::{FormController, FormStatus, Input, InputStatus, SelectInput, TextInput},
         screen::{
@@ -161,7 +163,7 @@ impl ScreenController for DocumentTypeScreenController {
             Event::Key(KeyEvent {
                 code: Key::Char('q'),
                 modifiers: KeyModifiers::NONE,
-            }) => ScreenFeedback::PreviousScreen(ContractsScreenController::builder()),
+            }) => ScreenFeedback::PreviousScreen,
 
             Event::Key(KeyEvent {
                 code: Key::Char('f'),
@@ -203,9 +205,16 @@ impl ScreenController for DocumentTypeScreenController {
             // Backend events handling
             Event::Backend(BackendEvent::TaskCompleted {
                 task: Task::Document(DocumentTask::QueryDocuments(_)),
-                execution_result,
+                execution_result: Ok(CompletedTaskPayload::Documents(documents)),
             }) => {
-                self.info = Info::new_from_result(execution_result);
+                todo!()
+            }
+
+            Event::Backend(BackendEvent::TaskCompleted {
+                task: Task::Document(DocumentTask::QueryDocuments(_)),
+                execution_result: Err(e),
+            }) => {
+                self.info = Info::new_error(&e);
                 ScreenFeedback::Redraw
             }
 

@@ -13,12 +13,16 @@ mod wallet;
 
 use std::{
     collections::BTreeMap,
-    fmt::Display,
+    fmt::{self, Display},
     ops::{Deref, DerefMut},
 };
 
 use dash_platform_sdk::Sdk;
-use dpp::{identity::accessors::IdentityGettersV0, prelude::Identity};
+use dpp::{
+    document::Document,
+    identity::accessors::IdentityGettersV0,
+    prelude::{Identifier, Identity},
+};
 use serde::Serialize;
 pub(crate) use state::AppState;
 use strategy_tests::Strategy;
@@ -33,6 +37,10 @@ pub(crate) use self::{
 };
 use crate::backend::{documents::DocumentTask, identities::IdentityTask};
 
+/// Unit of work for the backend.
+/// UI shall not execute any actions unrelated to rendering directly, to keep
+/// things decoupled and for future UI/UX improvements it returns a [Task]
+/// instead.
 #[derive(Clone)]
 pub(crate) enum Task {
     FetchIdentityById(String, bool),
@@ -43,20 +51,54 @@ pub(crate) enum Task {
     Document(DocumentTask),
 }
 
+/// A positive task execution result.
+/// Occasionally it's desired to represent data on UI in a structured way, in
+/// that case specific variants are used.
+pub(crate) enum CompletedTaskPayload {
+    Documents(BTreeMap<Identifier, Option<Document>>),
+    Document(Document),
+    String(String),
+}
+
+impl From<String> for CompletedTaskPayload {
+    fn from(value: String) -> Self {
+        CompletedTaskPayload::String(value)
+    }
+}
+
+impl<'a> From<&str> for CompletedTaskPayload {
+    fn from(value: &str) -> Self {
+        CompletedTaskPayload::String(value.to_owned())
+    }
+}
+
+impl Display for CompletedTaskPayload {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CompletedTaskPayload::String(s) => write!(f, "{}", s),
+            _ => write!(f, "Executed successfully"),
+        }
+    }
+}
+
+/// Any update coming from backend that UI may or may not react to.
 pub(crate) enum BackendEvent<'s> {
     TaskCompleted {
         task: Task,
-        execution_result: Result<String, String>,
+        execution_result: Result<CompletedTaskPayload, String>,
     },
     TaskCompletedStateChange {
         task: Task,
-        execution_result: Result<String, String>,
+        execution_result: Result<CompletedTaskPayload, String>,
         app_state_update: AppStateUpdate<'s>,
     },
     AppStateUpdated(AppStateUpdate<'s>),
     None,
 }
 
+/// Backend state update data on a specific field.
+/// A screen implementation may handle specific updates to deliver a responsive
+/// UI.
 pub(crate) enum AppStateUpdate<'s> {
     KnownContracts(MutexGuard<'s, KnownContractsMap>),
     LoadedWallet(MappedMutexGuard<'s, Wallet>),
@@ -74,6 +116,7 @@ pub(crate) enum AppStateUpdate<'s> {
     UpdatedBalance(u64),
 }
 
+/// Application state, dependencies are task execution logic around it.
 pub(crate) struct Backend {
     sdk: Mutex<Sdk>,
     app_state: AppState,
@@ -104,7 +147,8 @@ impl Backend {
                     }
                 }
 
-                let execution_info_result = execution_result.map(|(_, result_info)| result_info);
+                let execution_info_result = execution_result
+                    .map(|(_, result_info)| CompletedTaskPayload::String(result_info));
 
                 BackendEvent::TaskCompleted {
                     task,

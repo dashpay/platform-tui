@@ -1,14 +1,20 @@
 //! Forms for strategy operations related to document operations.
 
 use std::collections::BTreeMap;
+
+use dash_platform_sdk::platform::DataContract;
+use dpp::data_contract::{
+    accessors::v0::DataContractV0Getters,
+    document_type::{
+        random_document::{DocumentFieldFillSize, DocumentFieldFillType},
+        DocumentType,
+    },
+};
 use strategy_tests::{
     frequency::Frequency,
-    operations::{DocumentOp, Operation, OperationType, DocumentAction},
+    operations::{DocumentAction, DocumentOp, Operation, OperationType},
 };
-use dpp::data_contract::{document_type::random_document::{DocumentFieldFillType, DocumentFieldFillSize}, accessors::v0::DataContractV0Getters};
-use dpp::data_contract::document_type::DocumentType;
 use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
-use dash_platform_sdk::platform::DataContract;
 
 use crate::{
     backend::{StrategyTask, Task},
@@ -29,18 +35,28 @@ pub(super) struct StrategyOpDocumentFormController {
 
 impl StrategyOpDocumentFormController {
     pub(super) fn new(
-        selected_strategy: String, 
-        known_contracts: BTreeMap<String, DataContract>
+        selected_strategy: String,
+        known_contracts: BTreeMap<String, DataContract>,
     ) -> Self {
         let contract_names: Vec<String> = known_contracts.keys().cloned().collect();
-        let action_types = vec!["Insert Random".to_string(), "Delete".to_string(), "Replace".to_string()];
+        let action_types = vec![
+            "Insert Random".to_string(),
+            "Delete".to_string(),
+            "Replace".to_string(),
+        ];
 
         StrategyOpDocumentFormController {
             input: ComposedInput::new((
                 Field::new("Select Contract", SelectInput::new(contract_names)),
                 Field::new("Select Action", SelectInput::new(action_types)),
-                Field::new("Times per block", SelectInput::new(vec![1, 2, 5, 10, 20, 40, 100, 1000])),
-                Field::new("Chance per block", SelectInput::new(vec![1.0, 0.9, 0.75, 0.5, 0.25, 0.1, 0.05, 0.01])),
+                Field::new(
+                    "Times per block",
+                    SelectInput::new(vec![1, 2, 5, 10, 20, 40, 100, 1000]),
+                ),
+                Field::new(
+                    "Chance per block",
+                    SelectInput::new(vec![1.0, 0.9, 0.75, 0.5, 0.25, 0.1, 0.05, 0.01]),
+                ),
             )),
             selected_strategy,
             known_contracts,
@@ -60,7 +76,10 @@ impl FormController for StrategyOpDocumentFormController {
                 let selected_document_type = self.document_types.values().next().unwrap().clone();
 
                 let action = match action_type.as_ref() {
-                    "Insert Random" => DocumentAction::DocumentActionInsertRandom(DocumentFieldFillType::FillIfNotRequired, DocumentFieldFillSize::AnyDocumentFillSize),
+                    "Insert Random" => DocumentAction::DocumentActionInsertRandom(
+                        DocumentFieldFillType::FillIfNotRequired,
+                        DocumentFieldFillSize::AnyDocumentFillSize,
+                    ),
                     "Delete" => DocumentAction::DocumentActionDelete,
                     "Replace" => DocumentAction::DocumentActionReplace,
                     _ => panic!("Invalid action type"),
@@ -83,7 +102,7 @@ impl FormController for StrategyOpDocumentFormController {
                     }),
                     block: false,
                 }
-            },
+            }
             InputStatus::Redraw => FormStatus::Redraw,
             InputStatus::None => FormStatus::None,
             InputStatus::Exit => FormStatus::Exit,

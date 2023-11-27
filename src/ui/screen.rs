@@ -123,7 +123,7 @@ impl ScreenToggleKey {
 
 pub(crate) enum ScreenFeedback {
     NextScreen(ScreenControllerBuilder),
-    PreviousScreen(ScreenControllerBuilder),
+    PreviousScreen,
     Form(Box<dyn FormController>),
     Task { task: Task, block: bool }, // TODO task should define whether it blocks or not
     Redraw,
