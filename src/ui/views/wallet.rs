@@ -168,7 +168,6 @@ impl FormController for TopUpIdentityFormController {
     }
 }
 
-
 struct WithdrawFromIdentityFormController {
     input: TextInput<f64>,
 }
@@ -185,7 +184,9 @@ impl FormController for WithdrawFromIdentityFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
         match self.input.on_event(event) {
             InputStatus::Done(amount) => FormStatus::Done {
-                task: Task::Identity(IdentityTask::WithdrawFromIdentity((amount * 100000000.0) as u64)),
+                task: Task::Identity(IdentityTask::WithdrawFromIdentity(
+                    (amount * 100000000.0) as u64,
+                )),
                 block: true,
             },
             InputStatus::Redraw => FormStatus::Redraw,
@@ -324,9 +325,11 @@ impl ScreenController for WalletScreenController {
             },
 
             Event::Key(KeyEvent {
-                           code: Key::Char('w'),
-                           modifiers: KeyModifiers::NONE,
-                       }) if self.identity_loaded => ScreenFeedback::Form(Box::new(WithdrawFromIdentityFormController::new())),
+                code: Key::Char('w'),
+                modifiers: KeyModifiers::NONE,
+            }) if self.identity_loaded => {
+                ScreenFeedback::Form(Box::new(WithdrawFromIdentityFormController::new()))
+            }
 
             Event::Key(KeyEvent {
                 code: Key::Char('i'),

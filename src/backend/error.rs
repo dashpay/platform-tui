@@ -16,6 +16,8 @@ pub(crate) enum Error {
     Base58IdEncoding(#[from] bs58::decode::Error),
     #[error("Wallet error {0}")]
     WalletError(#[from] wallet::WalletError),
+    #[error("SDK unexpected result {0}")]
+    SdkUnexpectedResultError(String),
     #[error("SDK error {0} {1}")]
     SdkExplainedError(String, dash_platform_sdk::Error),
     #[error("SDK error {0}")]
@@ -26,6 +28,8 @@ pub(crate) enum Error {
     IdentityTopUpError(String),
     #[error("Identity withdrawal error {0}")]
     IdentityWithdrawalError(String),
+    #[error("Document Signing error {0}")]
+    DocumentSigningError(String),
 }
 
 impl From<dpp::platform_value::Error> for Error {

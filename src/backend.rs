@@ -138,7 +138,9 @@ impl Backend {
                     .await
             }
             Task::Document(document_task) => {
-                documents::run_document_task(self.sdk.lock().await.deref_mut(), document_task).await
+                self.app_state
+                    .run_document_task(self.sdk.lock().await.deref_mut(), document_task)
+                    .await
             }
         }
     }

@@ -101,7 +101,7 @@ const COMMANDS: [ScreenCommandKey; 4] = [
     ScreenCommandKey::new("q", "Back to Contracts"),
     ScreenCommandKey::new("f", "Query"),
     ScreenCommandKey::new("o", "Query ours"),
-    ScreenCommandKey::new("r", "Broadcast Random Document"),
+    ScreenCommandKey::new("b", "Broadcast Random Document"),
 ];
 
 pub(super) struct DocumentTypeScreenController {
@@ -171,6 +171,16 @@ impl ScreenController for DocumentTypeScreenController {
                 self.document_type.clone(),
                 None,
             ))),
+
+            Event::Key(KeyEvent {
+                code: Key::Char('b'),
+                modifiers: KeyModifiers::NONE,
+            }) => ScreenFeedback::Task {
+                task: Task::Document(DocumentTask::BroadcastRandomDocument(
+                    self.document_type.clone(),
+                )),
+                block: true,
+            },
 
             Event::Key(KeyEvent {
                 code: Key::Char('o'),

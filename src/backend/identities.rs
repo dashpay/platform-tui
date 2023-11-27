@@ -11,23 +11,25 @@ use dapi_grpc::{
 };
 use dash_platform_sdk::{
     platform::{
-        transition::{put_identity::PutIdentity, top_up_identity::TopUpIdentity},
+        transition::{
+            put_identity::PutIdentity, top_up_identity::TopUpIdentity,
+            withdraw_from_identity::WithdrawFromIdentity,
+        },
         Fetch,
     },
     Sdk,
 };
-use dash_platform_sdk::platform::transition::withdraw_from_identity::WithdrawFromIdentity;
 use dpp::{
     dashcore::{psbt::serialize::Serialize, Network, OutPoint, PrivateKey, Transaction},
     identity::{
         accessors::{IdentityGettersV0, IdentitySettersV0},
         identity_public_key::accessors::v0::IdentityPublicKeyGettersV0,
         state_transition::asset_lock_proof::chain::ChainAssetLockProof,
+        KeyType, Purpose, SecurityLevel,
     },
     platform_value::{string_encoding::Encoding, Identifier},
     prelude::{AssetLockProof, Identity, IdentityPublicKey},
 };
-use dpp::identity::{KeyType, Purpose, SecurityLevel};
 use rand::{rngs::StdRng, SeedableRng};
 use rs_dapi_client::{Dapi, RequestSettings};
 use simple_signer::signer::SimpleSigner;
@@ -131,7 +133,11 @@ impl AppState {
                 let execution_result = result
                     .as_ref()
                     .map(|new_balance| {
-                        format!("New balance after withdrawal of {} Dash to Core is {} Dash on Platform", amount, new_balance)
+                        format!(
+                            "New balance after withdrawal of {} Dash to Core is {} Dash on \
+                             Platform",
+                            amount, new_balance
+                        )
                     })
                     .map_err(|e| e.to_string());
                 match result {
@@ -431,7 +437,7 @@ impl AppState {
 
         //// Platform steps
 
-        let updated_identity_balance : u64 = identity
+        let updated_identity_balance: u64 = identity
             .top_up_identity(sdk, asset_lock_proof.clone(), &asset_lock_proof_private_key)
             .await?;
 
@@ -439,7 +445,6 @@ impl AppState {
 
         Ok(updated_identity_balance)
     }
-
 
     pub(crate) async fn withdraw_from_identity<'s>(
         &'s self,
@@ -463,17 +468,31 @@ impl AppState {
             return Err(Error::IdentityTopUpError("No identity loaded".to_string()));
         };
 
-        let identity_public_key = identity.get_first_public_key_matching(Purpose::WITHDRAW, SecurityLevel::full_range().into(), KeyType::all_key_types().into()).ok_or(Error::IdentityWithdrawalError("no withdrawal public key".to_string()))?;
-
+        let identity_public_key = identity
+            .get_first_public_key_matching(
+                Purpose::WITHDRAW,
+                SecurityLevel::full_range().into(),
+                KeyType::all_key_types().into(),
+            )
+            .ok_or(Error::IdentityWithdrawalError(
+                "no withdrawal public key".to_string(),
+            ))?;
 
         let mut loaded_identity_private_keys = self.identity_private_keys.lock().await;
-        let Some(private_key) = loaded_identity_private_keys.get(&(identity.id(), identity_public_key.id())) else {
-            return Err(Error::IdentityTopUpError("No private key for withdrawal".to_string()));
+        let Some(private_key) =
+            loaded_identity_private_keys.get(&(identity.id(), identity_public_key.id()))
+        else {
+            return Err(Error::IdentityTopUpError(
+                "No private key for withdrawal".to_string(),
+            ));
         };
 
         let mut signer = SimpleSigner::default();
 
-        signer.add_key(identity_public_key.clone(), private_key.inner.secret_bytes().to_vec());
+        signer.add_key(
+            identity_public_key.clone(),
+            private_key.inner.secret_bytes().to_vec(),
+        );
 
         //// Platform steps
 
