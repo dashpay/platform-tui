@@ -128,7 +128,7 @@ impl AppState {
         signer.add_key(identity_public_key.clone(), private_key.clone().to_bytes());
 
         let data_contract = data_contract.clone();
-        
+
         let document = random_document
             .put_to_platform_and_wait_for_response(
                 sdk,
