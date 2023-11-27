@@ -1,4 +1,7 @@
-use std::collections::HashSet;
+use std::{
+    collections::HashSet,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use dash_platform_sdk::{
     platform::{transition::broadcast::BroadcastStateTransition, DocumentQuery, FetchMany},
@@ -6,7 +9,9 @@ use dash_platform_sdk::{
 };
 use dpp::{
     data_contract::document_type::{
-        accessors::DocumentTypeV0Getters, random_document::CreateRandomDocument, DocumentType,
+        accessors::DocumentTypeV0Getters,
+        random_document::{CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType},
+        DocumentType,
     },
     document::{Document, DocumentV0Getters},
     identity::{
@@ -62,10 +67,6 @@ impl AppState {
     ) -> Result<Document, Error> {
         let mut std_rng = StdRng::from_entropy();
 
-        let random_document = document_type
-            .random_document_with_rng(&mut std_rng, sdk.version())
-            .expect("expected a random document");
-
         let mut loaded_identity = self.loaded_identity.lock().await;
         let Some(identity) = loaded_identity.as_mut() else {
             return Err(Error::IdentityTopUpError("No identity loaded".to_string()));
@@ -92,6 +93,22 @@ impl AppState {
             )));
         };
 
+        let document_state_transition_entropy: [u8; 32] = std_rng.gen();
+
+        let time_ms = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis();
+
+        let mut random_document = document_type
+            .random_document_with_params(
+                identity.id(),
+                document_state_transition_entropy.into(),
+                time_ms as u64,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                &mut std_rng,
+                sdk.version(),
+            )
+            .expect("expected a random document");
+
         let mut signer = SimpleSigner::default();
 
         signer.add_key(identity_public_key.clone(), private_key.clone().to_bytes());
@@ -99,7 +116,7 @@ impl AppState {
         let transition = DocumentsBatchTransition::new_document_creation_transition_from_document(
             random_document.clone(),
             document_type.as_ref(),
-            std_rng.gen(),
+            document_state_transition_entropy,
             identity_public_key,
             &signer,
             sdk.version(),

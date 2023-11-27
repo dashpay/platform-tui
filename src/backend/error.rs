@@ -1,3 +1,5 @@
+use std::time::SystemTimeError;
+
 use dapi_grpc::tonic::Status;
 use dpp::ProtocolError;
 use rs_dapi_client::DapiClientError;
@@ -10,10 +12,12 @@ use crate::backend::{
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum Error {
-    #[error("error while parsing an identity")]
+    #[error("error while parsing an identity {0}")]
     ParsingError(#[from] ProtocolError),
-    #[error("ID encoding error")]
+    #[error("ID encoding error {0}")]
     Base58IdEncoding(#[from] bs58::decode::Error),
+    #[error("System time error {0}")]
+    SystemTimeError(#[from] SystemTimeError),
     #[error("Wallet error {0}")]
     WalletError(#[from] wallet::WalletError),
     #[error("SDK unexpected result {0}")]
