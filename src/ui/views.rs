@@ -3,6 +3,7 @@
 //! subdomain.
 
 pub(crate) mod contracts;
+pub(crate) mod documents;
 pub(crate) mod identities;
 pub(crate) mod main;
 pub(crate) mod strategies;

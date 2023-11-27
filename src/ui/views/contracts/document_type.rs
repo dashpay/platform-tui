@@ -20,13 +20,16 @@ use tuirealm::{
 
 use super::ContractsScreenController;
 use crate::{
-    backend::{as_toml, documents::DocumentTask, AppState, BackendEvent, Task},
+    backend::{
+        as_toml, documents::DocumentTask, AppState, BackendEvent, CompletedTaskPayload, Task,
+    },
     ui::{
         form::{FormController, FormStatus, Input, InputStatus, SelectInput, TextInput},
         screen::{
             widgets::info::Info, ScreenCommandKey, ScreenController, ScreenFeedback,
             ScreenToggleKey,
         },
+        views::documents::DocumentsQuerysetScreenController,
     },
     Event,
 };
@@ -161,7 +164,7 @@ impl ScreenController for DocumentTypeScreenController {
             Event::Key(KeyEvent {
                 code: Key::Char('q'),
                 modifiers: KeyModifiers::NONE,
-            }) => ScreenFeedback::PreviousScreen(ContractsScreenController::builder()),
+            }) => ScreenFeedback::PreviousScreen,
 
             Event::Key(KeyEvent {
                 code: Key::Char('f'),
@@ -204,9 +207,20 @@ impl ScreenController for DocumentTypeScreenController {
             // Backend events handling
             Event::Backend(BackendEvent::TaskCompleted {
                 task: Task::Document(DocumentTask::QueryDocuments(_)),
-                execution_result,
+                execution_result: Ok(CompletedTaskPayload::Documents(documents)),
+            }) => ScreenFeedback::NextScreen(Box::new(|_| {
+                async {
+                    Box::new(DocumentsQuerysetScreenController::new(documents))
+                        as Box<dyn ScreenController>
+                }
+                .boxed()
+            })),
+
+            Event::Backend(BackendEvent::TaskCompleted {
+                task: Task::Document(DocumentTask::QueryDocuments(_)),
+                execution_result: Err(e),
             }) => {
-                self.info = Info::new_from_result(execution_result);
+                self.info = Info::new_error(&e);
                 ScreenFeedback::Redraw
             }
 

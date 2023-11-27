@@ -9,6 +9,8 @@ use tuirealm::{
     Frame, MockComponent,
 };
 
+use crate::backend::CompletedTaskPayload;
+
 /// Textarea to represent relevant information for each screen.
 pub(crate) struct Info {
     component: Textarea,
@@ -53,9 +55,9 @@ impl Info {
         }
     }
 
-    pub(crate) fn new_from_result(result: Result<String, String>) -> Info {
+    pub(crate) fn new_from_result(result: Result<CompletedTaskPayload, String>) -> Info {
         match result {
-            Ok(x) => Info::new_scrollable(&x),
+            Ok(payload) => Info::new_scrollable(&payload.to_string()),
             Err(x) => Info::new_error(&x),
         }
     }

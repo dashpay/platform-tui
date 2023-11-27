@@ -32,6 +32,7 @@ use dpp::{
 use rand::{prelude::StdRng, Rng, SeedableRng};
 use simple_signer::signer::SimpleSigner;
 
+use super::CompletedTaskPayload;
 use crate::backend::{error::Error, stringify_result, AppState, BackendEvent, Task};
 
 #[derive(Clone)]
@@ -48,19 +49,24 @@ impl AppState {
     ) -> BackendEvent<'s> {
         match &task {
             DocumentTask::QueryDocuments(document_query) => {
-                let result = Document::fetch_many(sdk, document_query.clone()).await;
+                let execution_result = Document::fetch_many(sdk, document_query.clone())
+                    .await
+                    .map(|docs| CompletedTaskPayload::Documents(docs))
+                    .map_err(|e| e.to_string());
                 BackendEvent::TaskCompleted {
                     task: Task::Document(task),
-                    execution_result: stringify_result(result),
+                    execution_result,
                 }
             }
             DocumentTask::BroadcastRandomDocument(data_contract, document_type) => {
-                let result = self
+                let execution_result = self
                     .broadcast_random_document(sdk, data_contract, document_type)
-                    .await;
+                    .await
+                    .map(|doc| CompletedTaskPayload::Document(doc))
+                    .map_err(|e| e.to_string());
                 BackendEvent::TaskCompleted {
                     task: Task::Document(task),
-                    execution_result: stringify_result(result),
+                    execution_result,
                 }
             }
         }
@@ -89,7 +95,7 @@ impl AppState {
                 "No public key matching security level requirements".to_string(),
             ))?;
 
-        let mut loaded_identity_private_keys = self.identity_private_keys.lock().await;
+        let loaded_identity_private_keys = self.identity_private_keys.lock().await;
         let Some(private_key) =
             loaded_identity_private_keys.get(&(identity.id(), identity_public_key.id()))
         else {
@@ -122,7 +128,7 @@ impl AppState {
         signer.add_key(identity_public_key.clone(), private_key.clone().to_bytes());
 
         let data_contract = data_contract.clone();
-
+        
         let document = random_document
             .put_to_platform_and_wait_for_response(
                 sdk,

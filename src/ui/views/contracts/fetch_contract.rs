@@ -58,7 +58,8 @@ impl ScreenController for FetchSystemContractScreenController {
             Event::Key(KeyEvent {
                 code: Key::Char('q'),
                 modifiers: KeyModifiers::NONE,
-            }) => ScreenFeedback::PreviousScreen(ContractsScreenController::builder()),
+            }) => ScreenFeedback::PreviousScreen,
+
             Event::Key(KeyEvent {
                 code: Key::Char('p'),
                 modifiers: KeyModifiers::NONE,
@@ -66,6 +67,7 @@ impl ScreenController for FetchSystemContractScreenController {
                 task: Task::Contract(ContractTask::FetchDashpayContract),
                 block: true,
             },
+
             Event::Key(KeyEvent {
                 code: Key::Char('n'),
                 modifiers: KeyModifiers::NONE,
@@ -85,9 +87,7 @@ impl ScreenController for FetchSystemContractScreenController {
                     ..
                 },
             ) => {
-                self.info = Info::new_from_result(
-                    execution_result.map(|_| "Successfully fetched a contract".to_owned()),
-                );
+                self.info = Info::new_from_result(execution_result);
                 ScreenFeedback::Redraw
             }
             _ => ScreenFeedback::None,

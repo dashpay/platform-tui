@@ -78,7 +78,7 @@ impl AppState {
                 let result = self.register_new_identity(sdk, amount).await;
                 let execution_result = result
                     .as_ref()
-                    .map(|identity| identity.display_info(0))
+                    .map(|identity| identity.display_info(0).into())
                     .map_err(|e| e.to_string());
                 let app_state_update = match result {
                     Ok(identity) => AppStateUpdate::LoadedIdentity(identity),
@@ -95,7 +95,7 @@ impl AppState {
                 let result = self.refresh_identity(sdk).await;
                 let execution_result = result
                     .as_ref()
-                    .map(|identity| identity.display_info(0))
+                    .map(|identity| identity.display_info(0).into())
                     .map_err(|e| e.to_string());
                 let app_state_update = match result {
                     Ok(identity) => AppStateUpdate::LoadedIdentity(identity),
@@ -113,7 +113,7 @@ impl AppState {
                 let execution_result = result
                     .as_ref()
                     .map(|new_balance| {
-                        format!("New balance after adding {} is {}", amount, new_balance)
+                        format!("New balance after adding {} is {}", amount, new_balance).into()
                     })
                     .map_err(|e| e.to_string());
                 match result {
@@ -138,6 +138,7 @@ impl AppState {
                              Platform",
                             amount, new_balance
                         )
+                        .into()
                     })
                     .map_err(|e| e.to_string());
                 match result {
@@ -392,7 +393,7 @@ impl AppState {
 
         // We create the wallet registration transaction, this locks funds that we
         // can transfer from core to platform
-        let (asset_lock_transaction, asset_lock_proof_private_key, mut maybe_asset_lock_proof) =
+        let (asset_lock_transaction, asset_lock_proof_private_key, maybe_asset_lock_proof) =
             if let Some((
                 asset_lock_transaction,
                 asset_lock_proof_private_key,
@@ -478,7 +479,7 @@ impl AppState {
                 "no withdrawal public key".to_string(),
             ))?;
 
-        let mut loaded_identity_private_keys = self.identity_private_keys.lock().await;
+        let loaded_identity_private_keys = self.identity_private_keys.lock().await;
         let Some(private_key) =
             loaded_identity_private_keys.get(&(identity.id(), identity_public_key.id()))
         else {
