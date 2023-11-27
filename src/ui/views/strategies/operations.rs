@@ -73,15 +73,15 @@ impl StrategyAddOperationFormController {
             OperationType::IdentityTransfer => Box::new(
                 StrategyOpIdentityTransferFormController::new(self.strategy_name.clone()),
             ),
-            OperationType::ContractCreateRandom => Box::new(StrategyOpContractCreateFormController::new(
-                self.strategy_name.clone(),
-            )),
-            OperationType::ContractUpdateDocTypesRandom => Box::new(StrategyOpContractUpdateDocTypesFormController::new(
-                self.strategy_name.clone(),
-            )),
-            OperationType::ContractUpdateFieldsRandom => Box::new(StrategyOpContractUpdateNewFieldsFormController::new(
-                self.strategy_name.clone(),
-            )),
+            OperationType::ContractCreateRandom => Box::new(
+                StrategyOpContractCreateFormController::new(self.strategy_name.clone()),
+            ),
+            OperationType::ContractUpdateDocTypesRandom => Box::new(
+                StrategyOpContractUpdateDocTypesFormController::new(self.strategy_name.clone()),
+            ),
+            OperationType::ContractUpdateFieldsRandom => Box::new(
+                StrategyOpContractUpdateNewFieldsFormController::new(self.strategy_name.clone()),
+            ),
             OperationType::Document => todo!(),
         });
     }

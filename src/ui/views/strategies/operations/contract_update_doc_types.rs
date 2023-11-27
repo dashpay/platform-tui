@@ -2,13 +2,14 @@
 
 use std::cmp::min;
 
-use dpp::data_contract::document_type::v0::random_document_type::{RandomDocumentTypeParameters, FieldTypeWeights, FieldMinMaxBounds};
+use dpp::data_contract::document_type::v0::random_document_type::{
+    FieldMinMaxBounds, FieldTypeWeights, RandomDocumentTypeParameters,
+};
 use rand::Rng;
 use strategy_tests::{
     frequency::Frequency,
-    operations::{Operation, OperationType},
+    operations::{DataContractUpdateOp::DataContractNewDocumentTypes, Operation, OperationType},
 };
-use strategy_tests::operations::DataContractUpdateOp::DataContractNewDocumentTypes;
 use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
 use crate::{
@@ -41,15 +42,15 @@ impl StrategyOpContractUpdateDocTypesFormController {
 
 impl FormController for StrategyOpContractUpdateDocTypesFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
-
         let random_number1 = rand::thread_rng().gen_range(1..=50);
         let random_number2 = rand::thread_rng().gen_range(1..=50);
-        let random_number3 = rand::thread_rng().gen::<i64>()-1000000;
+        let random_number3 = rand::thread_rng().gen::<i64>() - 1000000;
 
-        let random_doc_type_parameters = RandomDocumentTypeParameters{
+        let random_doc_type_parameters = RandomDocumentTypeParameters {
             new_fields_optional_count_range: 1..random_number1,
             new_fields_required_count_range: 1..random_number2,
-            new_indexes_count_range: 1..rand::thread_rng().gen_range(1..=(min(random_number1+random_number2, 10))),
+            new_indexes_count_range: 1..rand::thread_rng()
+                .gen_range(1..=(min(random_number1 + random_number2, 10))),
             field_weights: FieldTypeWeights {
                 string_weight: rand::thread_rng().gen_range(1..=100),
                 float_weight: rand::thread_rng().gen_range(1..=100),
@@ -72,7 +73,7 @@ impl FormController for StrategyOpContractUpdateDocTypesFormController {
                 float_max: 10.0..1000.0,
                 float_has_max_chance: rand::thread_rng().gen_range(0.01..=1.0),
                 date_min: random_number3,
-                date_max: random_number3+1000000,
+                date_max: random_number3 + 1000000,
                 byte_array_min_len: 1..10,
                 byte_array_has_min_len_chance: rand::thread_rng().gen_range(0.01..=1.0),
                 byte_array_max_len: 10..255,
@@ -87,7 +88,9 @@ impl FormController for StrategyOpContractUpdateDocTypesFormController {
                 task: Task::Strategy(StrategyTask::AddOperation {
                     strategy_name: self.selected_strategy.clone(),
                     operation: Operation {
-                        op_type: OperationType::ContractUpdate(DataContractNewDocumentTypes(random_doc_type_parameters)),
+                        op_type: OperationType::ContractUpdate(DataContractNewDocumentTypes(
+                            random_doc_type_parameters,
+                        )),
                         frequency: Frequency {
                             times_per_block_range: 1..times_per_block,
                             chance_per_block: Some(chance_per_block),

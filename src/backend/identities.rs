@@ -9,15 +9,15 @@ use dapi_grpc::{
         GetIdentityBalanceRequest,
     },
 };
-use dash_platform_sdk::platform::transition::top_up_identity::TopUpIdentity;
 use dash_platform_sdk::{
-    platform::{transition::put_identity::PutIdentity, Fetch},
+    platform::{
+        transition::{put_identity::PutIdentity, top_up_identity::TopUpIdentity},
+        Fetch,
+    },
     Sdk,
 };
 use dpp::{
-    dashcore::{
-        psbt::serialize::Serialize, Network, OutPoint, PrivateKey, Transaction,
-    },
+    dashcore::{psbt::serialize::Serialize, Network, OutPoint, PrivateKey, Transaction},
     identity::{
         accessors::{IdentityGettersV0, IdentitySettersV0},
         identity_public_key::accessors::v0::IdentityPublicKeyGettersV0,
@@ -34,8 +34,8 @@ use tuirealm::props::{PropValue, TextSpan};
 
 use super::AppStateUpdate;
 use crate::backend::{
-    error::Error, info_display::InfoDisplay, stringify_result_keep_item,
-    AppState, BackendEvent, Task,
+    error::Error, info_display::InfoDisplay, stringify_result_keep_item, AppState, BackendEvent,
+    Task,
 };
 
 pub(super) fn identity_to_spans(identity: &Identity) -> Result<Vec<PropValue>, Error> {

@@ -2,6 +2,7 @@
 //! This includes all logic unrelated to UI.
 
 mod contracts;
+pub(crate) mod documents;
 mod error;
 pub(crate) mod identities;
 pub(crate) mod info_display;
@@ -9,7 +10,6 @@ mod insight;
 mod state;
 mod strategies;
 mod wallet;
-pub(crate) mod documents;
 
 use std::{
     collections::BTreeMap,
@@ -23,7 +23,6 @@ use serde::Serialize;
 pub(crate) use state::AppState;
 use strategy_tests::Strategy;
 use tokio::sync::{MappedMutexGuard, Mutex, MutexGuard};
-use crate::backend::documents::DocumentTask;
 
 use self::state::{KnownContractsMap, StrategiesMap};
 pub(crate) use self::{
@@ -32,7 +31,7 @@ pub(crate) use self::{
     strategies::StrategyTask,
     wallet::{Wallet, WalletTask},
 };
-use crate::backend::identities::IdentityTask;
+use crate::backend::{documents::DocumentTask, identities::IdentityTask};
 
 #[derive(Clone)]
 pub(crate) enum Task {
@@ -139,8 +138,7 @@ impl Backend {
                     .await
             }
             Task::Document(document_task) => {
-                documents::run_document_task(self.sdk.lock().await.deref_mut(), document_task)
-                    .await
+                documents::run_document_task(self.sdk.lock().await.deref_mut(), document_task).await
             }
         }
     }
