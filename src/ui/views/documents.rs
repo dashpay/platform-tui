@@ -4,6 +4,8 @@ use std::collections::BTreeMap;
 
 use dpp::{document::Document, platform_value::string_encoding::Encoding, prelude::Identifier};
 use tuirealm::{
+    command::{self, Cmd},
+    event::{Key, KeyEvent, KeyModifiers},
     props::{BorderSides, Borders, Color, TextSpan},
     tui::prelude::{Constraint, Direction, Layout, Rect},
     AttrValue, Attribute, Frame, MockComponent,
@@ -21,12 +23,12 @@ const COMMAND_KEYS: [ScreenCommandKey; 5] = [
     ScreenCommandKey::new("q", "Back to Contracts"),
     ScreenCommandKey::new("C-n", "Next document"),
     ScreenCommandKey::new("C-p", "Prev document"),
-    ScreenCommandKey::new("↓", "Scroll up down"),
+    ScreenCommandKey::new("↓", "Scroll doc down"),
     ScreenCommandKey::new("↑", "Scroll doc up"),
 ];
 
 pub(crate) struct DocumentsQuerysetScreenController {
-    current_batch: BTreeMap<Identifier, Option<Document>>,
+    current_batch: Vec<Option<Document>>,
     document_select: tui_realm_stdlib::List,
     document_view: Info,
 }
@@ -57,10 +59,20 @@ impl DocumentsQuerysetScreenController {
         );
 
         DocumentsQuerysetScreenController {
-            current_batch,
+            current_batch: current_batch.into_values().collect(),
             document_select,
             document_view,
         }
+    }
+
+    fn update_document_view(&mut self) {
+        self.document_view = Info::new_scrollable(
+            &self
+                .current_batch
+                .get(self.document_select.state().unwrap_one().unwrap_usize())
+                .map(|v| as_toml(&v))
+                .unwrap_or_else(String::new),
+        );
     }
 }
 
@@ -88,6 +100,43 @@ impl ScreenController for DocumentsQuerysetScreenController {
     }
 
     fn on_event(&mut self, event: Event) -> ScreenFeedback {
-        todo!()
+        match event {
+            Event::Key(KeyEvent {
+                code: Key::Char('q'),
+                modifiers: KeyModifiers::NONE,
+            }) => ScreenFeedback::PreviousScreen,
+
+            // Document view keys
+            Event::Key(
+                key_event @ KeyEvent {
+                    code: Key::Down | Key::Up,
+                    modifiers: KeyModifiers::NONE,
+                },
+            ) => {
+                self.document_view.on_event(key_event);
+                ScreenFeedback::Redraw
+            }
+
+            // Document selection keys
+            Event::Key(KeyEvent {
+                code: Key::Char('n'),
+                modifiers: KeyModifiers::CONTROL,
+            }) => {
+                self.document_select
+                    .perform(Cmd::Move(command::Direction::Down));
+                self.update_document_view();
+                ScreenFeedback::Redraw
+            }
+            Event::Key(KeyEvent {
+                code: Key::Char('p'),
+                modifiers: KeyModifiers::CONTROL,
+            }) => {
+                self.document_select
+                    .perform(Cmd::Move(command::Direction::Up));
+                self.update_document_view();
+                ScreenFeedback::Redraw
+            }
+            _ => ScreenFeedback::None,
+        }
     }
 }
