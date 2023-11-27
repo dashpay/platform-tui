@@ -1,4 +1,4 @@
-use dash_platform_sdk::platform::{DocumentQuery, Fetch, FetchMany};
+use dash_platform_sdk::platform::{DocumentQuery, FetchMany};
 use dash_platform_sdk::Sdk;
 use dpp::document::Document;
 use crate::backend::{as_toml, BackendEvent, stringify_result, Task};

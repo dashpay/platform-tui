@@ -16,7 +16,7 @@ pub(crate) use self::{
     utils::{ComposedInput, Field},
     widgets::{select::SelectInput, text::TextInput},
 };
-use super::screen::{ScreenController, ScreenControllerBuilder};
+use super::screen::ScreenControllerBuilder;
 use crate::backend::Task;
 
 /// Trait of every component suitable for processing user input.

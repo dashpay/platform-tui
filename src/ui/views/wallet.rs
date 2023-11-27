@@ -1,7 +1,6 @@
 //! Screens and forms related to wallet management.
 
 use dpp::prelude::Identity;
-use std::fmt::format;
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
     tui::prelude::Rect,

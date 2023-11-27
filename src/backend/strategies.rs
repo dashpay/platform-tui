@@ -6,7 +6,7 @@ use dpp::{
     data_contract::created_data_contract::CreatedDataContract, platform_value::Bytes32,
     version::PlatformVersion,
 };
-use rand::{rngs::StdRng, Rng, SeedableRng};
+use rand::{rngs::StdRng, SeedableRng};
 use simple_signer::signer::SimpleSigner;
 use strategy_tests::{
     frequency::Frequency, operations::Operation, transitions::create_identities_state_transitions,
