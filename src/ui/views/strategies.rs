@@ -13,7 +13,13 @@ use std::collections::BTreeMap;
 
 use dash_platform_sdk::platform::DataContract;
 use dpp::{tests::json_document::json_document_to_created_contract, version::PlatformVersion};
-use strategy_tests::Strategy;
+use strategy_tests::{
+    operations::{
+        DataContractUpdateOp::{DataContractNewDocumentTypes, DataContractNewOptionalFields},
+        OperationType,
+    },
+    Strategy,
+};
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
     tui::prelude::Rect,
@@ -340,10 +346,26 @@ fn display_strategy(
 
     let mut operations_lines = String::new();
     for op in strategy.operations.iter() {
+        let op_name = match op.op_type.clone() {
+            OperationType::Document(_) => "Document".to_string(),
+            OperationType::IdentityTopUp => "IdentityTopUp".to_string(),
+            OperationType::IdentityUpdate(op) => format!("IdentityUpdate({:?})", op),
+            OperationType::IdentityWithdrawal => "IdentityWithdrawal".to_string(),
+            OperationType::ContractCreate(..) => "ContractCreateRandom".to_string(),
+            OperationType::ContractUpdate(op) => {
+                let op_type = match op {
+                    DataContractNewDocumentTypes(_) => "NewDocTypesRandom".to_string(),
+                    DataContractNewOptionalFields(..) => "NewFieldsRandom".to_string(),
+                };
+                format!("ContractUpdate({})", op_type)
+            }
+            OperationType::IdentityTransfer => "IdentityTransfer".to_string(),
+        };
+
         operations_lines.push_str(&format!(
-            "{:indent$}{:?}; Times per block: {}, chance per block: {}\n",
+            "{:indent$}{}; Times per block: {}, chance per block: {}\n",
             "",
-            op.op_type,
+            op_name,
             op.frequency.times_per_block_range.end,
             op.frequency.chance_per_block.unwrap_or(1.0),
             indent = 8

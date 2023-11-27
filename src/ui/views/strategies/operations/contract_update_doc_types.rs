@@ -1,4 +1,4 @@
-//! Data contract create operations form for strategy.
+//! Data contract update doc types operation form for strategy.
 
 use std::cmp::min;
 
@@ -8,7 +8,7 @@ use dpp::data_contract::document_type::v0::random_document_type::{
 use rand::Rng;
 use strategy_tests::{
     frequency::Frequency,
-    operations::{Operation, OperationType},
+    operations::{DataContractUpdateOp::DataContractNewDocumentTypes, Operation, OperationType},
 };
 use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
@@ -17,14 +17,14 @@ use crate::{
     ui::form::{ComposedInput, Field, FormController, FormStatus, Input, InputStatus, SelectInput},
 };
 
-pub(super) struct StrategyOpContractCreateFormController {
+pub(super) struct StrategyOpContractUpdateDocTypesFormController {
     input: ComposedInput<(Field<SelectInput<u16>>, Field<SelectInput<f64>>)>,
     selected_strategy: String,
 }
 
-impl StrategyOpContractCreateFormController {
+impl StrategyOpContractUpdateDocTypesFormController {
     pub(super) fn new(selected_strategy: String) -> Self {
-        StrategyOpContractCreateFormController {
+        StrategyOpContractUpdateDocTypesFormController {
             input: ComposedInput::new((
                 Field::new(
                     "Times per block",
@@ -40,7 +40,7 @@ impl StrategyOpContractCreateFormController {
     }
 }
 
-impl FormController for StrategyOpContractCreateFormController {
+impl FormController for StrategyOpContractUpdateDocTypesFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
         let random_number1 = rand::thread_rng().gen_range(1..=50);
         let random_number2 = rand::thread_rng().gen_range(1..=50);
@@ -88,10 +88,9 @@ impl FormController for StrategyOpContractCreateFormController {
                 task: Task::Strategy(StrategyTask::AddOperation {
                     strategy_name: self.selected_strategy.clone(),
                     operation: Operation {
-                        op_type: OperationType::ContractCreate(
+                        op_type: OperationType::ContractUpdate(DataContractNewDocumentTypes(
                             random_doc_type_parameters,
-                            1..rand::thread_rng().gen::<u16>(),
-                        ),
+                        )),
                         frequency: Frequency {
                             times_per_block_range: 1..times_per_block,
                             chance_per_block: Some(chance_per_block),
@@ -105,7 +104,7 @@ impl FormController for StrategyOpContractCreateFormController {
     }
 
     fn form_name(&self) -> &'static str {
-        "Contract create operation"
+        "Contract update doc types operation"
     }
 
     fn step_view(&mut self, frame: &mut Frame, area: Rect) {

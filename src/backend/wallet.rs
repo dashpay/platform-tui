@@ -90,7 +90,7 @@ pub(super) async fn run_wallet_task(
             }
         }
         WalletTask::CopyAddress => {
-            let mut wallet_guard = wallet_state.lock().await;
+            let wallet_guard = wallet_state.lock().await;
             if let Some(wallet) = wallet_guard.deref() {
                 let address = wallet.receive_address();
                 cli_clipboard::set_contents(address.to_string()).unwrap();

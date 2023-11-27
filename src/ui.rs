@@ -9,9 +9,9 @@ mod screen;
 mod status_bar;
 mod views;
 
-use dpp::identity::accessors::IdentityGettersV0;
 use std::ops::Deref;
 
+use dpp::identity::accessors::IdentityGettersV0;
 use tuirealm::{
     terminal::TerminalBridge,
     tui::prelude::{Constraint, Direction, Layout},

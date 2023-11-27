@@ -1,6 +1,5 @@
 //! The view a user sees on application start.
 
-use futures::FutureExt;
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
     tui::prelude::Rect,

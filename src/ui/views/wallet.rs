@@ -1,19 +1,17 @@
 //! Screens and forms related to wallet management.
 
 use dpp::prelude::Identity;
-use std::fmt::format;
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
     tui::prelude::Rect,
     Frame,
 };
 
-use crate::backend::info_display::InfoDisplay;
-
 use super::main::MainScreenController;
 use crate::{
     backend::{
-        identities::IdentityTask, AppState, AppStateUpdate, BackendEvent, Task, Wallet, WalletTask,
+        identities::IdentityTask, info_display::InfoDisplay, AppState, AppStateUpdate,
+        BackendEvent, Task, Wallet, WalletTask,
     },
     ui::{
         form::{FormController, FormStatus, Input, InputStatus, TextInput},
@@ -219,44 +217,49 @@ impl FormController for WithdrawFromIdentityFormController {
 
 impl WalletScreenController {
     pub(crate) async fn new(app_state: &AppState) -> Self {
-        let (info, wallet_loaded, identity_loaded, identity_registration_in_progress, identity_top_up_in_progress) =
-            if let Some(wallet) = app_state.loaded_wallet.lock().await.as_ref() {
-                if let Some(identity) = app_state.loaded_identity.lock().await.as_ref() {
-                    let identity_top_up_in_progress = app_state
-                        .identity_asset_lock_private_key_in_top_up
-                        .lock()
-                        .await
-                        .is_some();
-                    (
-                        Info::new_fixed(&display_wallet_and_identity(wallet, identity)),
-                        true,
-                        true,
-                        false,
-                        identity_top_up_in_progress,
-                    )
-                } else {
-                    let identity_registration_in_progress = app_state
-                        .identity_asset_lock_private_key_in_creation
-                        .lock()
-                        .await
-                        .is_some();
-                    (
-                        Info::new_fixed(&display_wallet(wallet)),
-                        true,
-                        false,
-                        identity_registration_in_progress,
-                        false,
-                    )
-                }
-            } else {
+        let (
+            info,
+            wallet_loaded,
+            identity_loaded,
+            identity_registration_in_progress,
+            identity_top_up_in_progress,
+        ) = if let Some(wallet) = app_state.loaded_wallet.lock().await.as_ref() {
+            if let Some(identity) = app_state.loaded_identity.lock().await.as_ref() {
+                let identity_top_up_in_progress = app_state
+                    .identity_asset_lock_private_key_in_top_up
+                    .lock()
+                    .await
+                    .is_some();
                 (
-                    Info::new_fixed("Wallet management commands\n\nNo wallet loaded yet"),
+                    Info::new_fixed(&display_wallet_and_identity(wallet, identity)),
+                    true,
+                    true,
                     false,
+                    identity_top_up_in_progress,
+                )
+            } else {
+                let identity_registration_in_progress = app_state
+                    .identity_asset_lock_private_key_in_creation
+                    .lock()
+                    .await
+                    .is_some();
+                (
+                    Info::new_fixed(&display_wallet(wallet)),
+                    true,
                     false,
-                    false,
+                    identity_registration_in_progress,
                     false,
                 )
-            };
+            }
+        } else {
+            (
+                Info::new_fixed("Wallet management commands\n\nNo wallet loaded yet"),
+                false,
+                false,
+                false,
+                false,
+            )
+        };
 
         WalletScreenController {
             info,

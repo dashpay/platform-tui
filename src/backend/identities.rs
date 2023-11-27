@@ -2,25 +2,23 @@
 
 use std::collections::BTreeMap;
 
-use dapi_grpc::platform::v0::get_identity_request::GetIdentityRequestV0;
-use dapi_grpc::platform::v0::{get_identity_request, GetIdentityRequest};
 use dapi_grpc::{
-    core::v0::{BroadcastTransactionRequest, BroadcastTransactionResponse, GetTransactionRequest},
+    core::v0::{BroadcastTransactionRequest, GetTransactionRequest},
     platform::v0::{
         get_identity_balance_request, get_identity_balance_request::GetIdentityBalanceRequestV0,
         GetIdentityBalanceRequest,
     },
 };
-use dash_platform_sdk::platform::transition::top_up_identity::TopUpIdentity;
 use dash_platform_sdk::{
-    platform::{transition::put_identity::PutIdentity, Fetch},
+    platform::{
+        transition::{put_identity::PutIdentity, top_up_identity::TopUpIdentity},
+        Fetch,
+    },
     Sdk,
 };
 use dash_platform_sdk::platform::transition::withdraw_from_identity::WithdrawFromIdentity;
 use dpp::{
-    dashcore::{
-        psbt::serialize::Serialize, InstantLock, Network, OutPoint, PrivateKey, Transaction,
-    },
+    dashcore::{psbt::serialize::Serialize, Network, OutPoint, PrivateKey, Transaction},
     identity::{
         accessors::{IdentityGettersV0, IdentitySettersV0},
         identity_public_key::accessors::v0::IdentityPublicKeyGettersV0,
@@ -31,15 +29,15 @@ use dpp::{
 };
 use dpp::identity::{KeyType, Purpose, SecurityLevel};
 use rand::{rngs::StdRng, SeedableRng};
-use rs_dapi_client::{Dapi, DapiClientError, RequestSettings};
+use rs_dapi_client::{Dapi, RequestSettings};
 use simple_signer::signer::SimpleSigner;
 use tokio::sync::{MappedMutexGuard, MutexGuard};
 use tuirealm::props::{PropValue, TextSpan};
 
 use super::AppStateUpdate;
 use crate::backend::{
-    error::Error, info_display::InfoDisplay, stringify_result, stringify_result_keep_item,
-    AppState, BackendEvent, Task,
+    error::Error, info_display::InfoDisplay, stringify_result_keep_item, AppState, BackendEvent,
+    Task,
 };
 
 pub(super) fn identity_to_spans(identity: &Identity) -> Result<Vec<PropValue>, Error> {
@@ -216,8 +214,8 @@ impl AppState {
         let (
             asset_lock_transaction,
             asset_lock_proof_private_key,
-            mut maybe_asset_lock_proof,
-            mut maybe_identity_info,
+            maybe_asset_lock_proof,
+            maybe_identity_info,
         ) = if let Some((
             asset_lock_transaction,
             asset_lock_proof_private_key,

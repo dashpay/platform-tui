@@ -9,8 +9,7 @@ use std::{fs::File, io::Write, panic, path::Path, sync::Mutex};
 
 use crossterm::event::{Event as TuiEvent, EventStream};
 use dash_platform_sdk::SdkBuilder;
-use dpp::identity::accessors::IdentityGettersV0;
-use dpp::version::PlatformVersion;
+use dpp::{identity::accessors::IdentityGettersV0, version::PlatformVersion};
 use futures::{future::OptionFuture, select, FutureExt, StreamExt};
 use rs_dapi_client::AddressList;
 use tuirealm::event::KeyEvent;
@@ -112,7 +111,7 @@ async fn main() {
             UiFeedback::Redraw => ui.redraw(), // TODO Debounce redraw?
             UiFeedback::None => (),
             UiFeedback::Error(string) => {
-                //todo: show error somewhere
+                // todo: show error somewhere
                 ui.redraw();
             }
         }

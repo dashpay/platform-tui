@@ -1,16 +1,17 @@
 //! UI defenitions for selected data contract.
 
-use std::ops::Deref;
 use dash_platform_sdk::platform::DriveQuery;
-use dpp::data_contract::{
-    accessors::v0::DataContractV0Getters, document_type::accessors::DocumentTypeV0Getters,
+use dpp::{
+    data_contract::{
+        accessors::v0::DataContractV0Getters,
+        document_type::{accessors::DocumentTypeV0Getters, DocumentType},
+    },
+    identifier::Identifier,
+    identity::accessors::IdentityGettersV0,
+    platform_value::string_encoding::Encoding,
+    prelude::DataContract,
 };
-use dpp::data_contract::document_type::DocumentType;
-use dpp::identifier::Identifier;
-use dpp::identity::accessors::IdentityGettersV0;
-use dpp::platform_value::string_encoding::Encoding;
-use dpp::prelude::DataContract;
-use futures::{FutureExt, StreamExt};
+use futures::FutureExt;
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
     tui::prelude::Rect,
@@ -19,9 +20,9 @@ use tuirealm::{
 
 use super::ContractsScreenController;
 use crate::{
-    backend::{as_toml, AppState},
+    backend::{as_toml, documents::DocumentTask, AppState, BackendEvent, Task},
     ui::{
-        form::{FormController, FormStatus, Input, InputStatus, SelectInput},
+        form::{FormController, FormStatus, Input, InputStatus, SelectInput, TextInput},
         screen::{
             widgets::info::Info, ScreenCommandKey, ScreenController, ScreenFeedback,
             ScreenToggleKey,
@@ -29,9 +30,6 @@ use crate::{
     },
     Event,
 };
-use crate::backend::documents::DocumentTask;
-use crate::backend::Task;
-use crate::ui::form::TextInput;
 
 pub(super) struct SelectDocumentTypeFormController {
     input: SelectInput<String>,
@@ -58,7 +56,12 @@ impl FormController for SelectDocumentTypeFormController {
                     async {
                         Box::new(
                             DocumentTypeScreenController::new(
-                                app_state.loaded_identity.lock().await.as_ref().map(|identity| identity.id()),
+                                app_state
+                                    .loaded_identity
+                                    .lock()
+                                    .await
+                                    .as_ref()
+                                    .map(|identity| identity.id()),
                                 contract_name,
                                 document_type_name,
                                 app_state,
@@ -117,14 +120,22 @@ impl DocumentTypeScreenController {
     ) -> Self {
         let known_contracts_lock = app_state.known_contracts.lock().await;
         let data_contract = known_contracts_lock
-            .get(&contract_name).expect("expected a contract").clone();
+            .get(&contract_name)
+            .expect("expected a contract")
+            .clone();
         let document_type = data_contract
             .document_type_for_name(&document_type_name)
-            .expect("expected a document type").to_owned_document_type();
+            .expect("expected a document type")
+            .to_owned_document_type();
         let document_type_str = as_toml(document_type.properties());
         let info = Info::new_scrollable(&document_type_str);
 
-        DocumentTypeScreenController { identity_identifier, data_contract, document_type, info }
+        DocumentTypeScreenController {
+            identity_identifier,
+            data_contract,
+            document_type,
+            info,
+        }
     }
 }
 
@@ -153,19 +164,24 @@ impl ScreenController for DocumentTypeScreenController {
             }) => ScreenFeedback::PreviousScreen(ContractsScreenController::builder()),
 
             Event::Key(KeyEvent {
-                           code: Key::Char('f'),
-                           modifiers: KeyModifiers::NONE,
-                       }) => {
-                ScreenFeedback::Form(Box::new(QueryDocumentTypeFormController::new(self.data_contract.clone(), self.document_type.clone(), None)))
-            }
+                code: Key::Char('f'),
+                modifiers: KeyModifiers::NONE,
+            }) => ScreenFeedback::Form(Box::new(QueryDocumentTypeFormController::new(
+                self.data_contract.clone(),
+                self.document_type.clone(),
+                None,
+            ))),
 
             Event::Key(KeyEvent {
-                           code: Key::Char('o'),
-                           modifiers: KeyModifiers::NONE,
-                       }) => {
-                ScreenFeedback::Form(Box::new(QueryDocumentTypeFormController::new(self.data_contract.clone(), self.document_type.clone(), self.identity_identifier.clone())))
-            }
+                code: Key::Char('o'),
+                modifiers: KeyModifiers::NONE,
+            }) => ScreenFeedback::Form(Box::new(QueryDocumentTypeFormController::new(
+                self.data_contract.clone(),
+                self.document_type.clone(),
+                self.identity_identifier.clone(),
+            ))),
 
+            // Forward event to upper part of the screen for scrolls and stuff
             Event::Key(k) => {
                 if self.info.on_event(k) {
                     ScreenFeedback::Redraw
@@ -174,11 +190,19 @@ impl ScreenController for DocumentTypeScreenController {
                 }
             }
 
+            // Backend events handling
+            Event::Backend(BackendEvent::TaskCompleted {
+                task: Task::Document(DocumentTask::QueryDocuments(_)),
+                execution_result,
+            }) => {
+                self.info = Info::new_from_result(execution_result);
+                ScreenFeedback::Redraw
+            }
+
             _ => ScreenFeedback::None,
         }
     }
 }
-
 
 struct QueryDocumentTypeFormController {
     data_contract: DataContract,
@@ -187,9 +211,16 @@ struct QueryDocumentTypeFormController {
 }
 
 impl QueryDocumentTypeFormController {
-    fn new(data_contract: DataContract, document_type: DocumentType, ours_query: Option<Identifier>) -> Self {
+    fn new(
+        data_contract: DataContract,
+        document_type: DocumentType,
+        ours_query: Option<Identifier>,
+    ) -> Self {
         let ours_query_part = if let Some(ours_identifier) = ours_query {
-            format!("where ownerId = {} ", ours_identifier.to_string(Encoding::Base58))
+            format!(
+                "where ownerId = {} ",
+                ours_identifier.to_string(Encoding::Base58)
+            )
         } else {
             String::default()
         };
@@ -206,20 +237,17 @@ impl FormController for QueryDocumentTypeFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
         match self.input.on_event(event) {
             InputStatus::Done(query) => {
-                let drive_query_result = DriveQuery::from_sql_expr(query.as_str(), &self.data_contract, None);
+                let drive_query_result =
+                    DriveQuery::from_sql_expr(query.as_str(), &self.data_contract, None);
 
                 match drive_query_result {
-                    Ok(drive_query) => {
-                        FormStatus::Done {
-                            task: Task::Document(DocumentTask::QueryDocuments(drive_query.into())),
-                            block: false,
-                        }
-                    }
-                    Err(e) => {
-                        FormStatus::Error(e.to_string())
-                    }
+                    Ok(drive_query) => FormStatus::Done {
+                        task: Task::Document(DocumentTask::QueryDocuments(drive_query.into())),
+                        block: true,
+                    },
+                    Err(e) => FormStatus::Error(e.to_string()),
                 }
-            },
+            }
             status => status.into(),
         }
     }
