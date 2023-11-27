@@ -323,7 +323,7 @@ impl ScreenController for WalletScreenController {
             Event::Key(KeyEvent {
                            code: Key::Char('w'),
                            modifiers: KeyModifiers::NONE,
-                       }) if self.identity_loaded => ScreenFeedback::Form(Box::new(TopUpIdentityFormController::new())),
+                       }) if self.identity_loaded => ScreenFeedback::Form(Box::new(WithdrawFromIdentityFormController::new())),
 
             Event::Key(KeyEvent {
                 code: Key::Char('i'),
