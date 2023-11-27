@@ -1,5 +1,8 @@
 //! View for fetched documents navigation and inspection.
 
+use std::collections::BTreeMap;
+
+use dpp::{document::Document, prelude::Identifier};
 use tuirealm::{tui::prelude::Rect, Frame};
 
 use crate::{
@@ -7,7 +10,15 @@ use crate::{
     Event,
 };
 
-pub(crate) struct DocumentsQuerysetScreenController {}
+pub(crate) struct DocumentsQuerysetScreenController {
+    current_batch: BTreeMap<Identifier, Option<Document>>,
+}
+
+impl DocumentsQuerysetScreenController {
+    pub(crate) fn new(current_batch: BTreeMap<Identifier, Option<Document>>) -> Self {
+        DocumentsQuerysetScreenController { current_batch }
+    }
+}
 
 impl ScreenController for DocumentsQuerysetScreenController {
     fn view(&mut self, frame: &mut Frame, area: Rect) {

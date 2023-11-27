@@ -29,6 +29,7 @@ use crate::{
             widgets::info::Info, ScreenCommandKey, ScreenController, ScreenFeedback,
             ScreenToggleKey,
         },
+        views::documents::DocumentsQuerysetScreenController,
     },
     Event,
 };
@@ -206,9 +207,13 @@ impl ScreenController for DocumentTypeScreenController {
             Event::Backend(BackendEvent::TaskCompleted {
                 task: Task::Document(DocumentTask::QueryDocuments(_)),
                 execution_result: Ok(CompletedTaskPayload::Documents(documents)),
-            }) => {
-                todo!()
-            }
+            }) => ScreenFeedback::NextScreen(Box::new(|_| {
+                async {
+                    Box::new(DocumentsQuerysetScreenController::new(documents))
+                        as Box<dyn ScreenController>
+                }
+                .boxed()
+            })),
 
             Event::Backend(BackendEvent::TaskCompleted {
                 task: Task::Document(DocumentTask::QueryDocuments(_)),
