@@ -24,6 +24,8 @@ pub(crate) enum Error {
     IdentityRegistrationError(String),
     #[error("Identity top up error {0}")]
     IdentityTopUpError(String),
+    #[error("Identity withdrawal error {0}")]
+    IdentityWithdrawalError(String),
 }
 
 impl From<dpp::platform_value::Error> for Error {

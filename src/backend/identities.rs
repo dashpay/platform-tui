@@ -16,6 +16,7 @@ use dash_platform_sdk::{
     platform::{transition::put_identity::PutIdentity, Fetch},
     Sdk,
 };
+use dash_platform_sdk::platform::transition::withdraw_from_identity::WithdrawFromIdentity;
 use dpp::{
     dashcore::{
         psbt::serialize::Serialize, InstantLock, Network, OutPoint, PrivateKey, Transaction,
@@ -28,6 +29,7 @@ use dpp::{
     platform_value::{string_encoding::Encoding, Identifier},
     prelude::{AssetLockProof, Identity, IdentityPublicKey},
 };
+use dpp::identity::{KeyType, Purpose, SecurityLevel};
 use rand::{rngs::StdRng, SeedableRng};
 use rs_dapi_client::{Dapi, DapiClientError, RequestSettings};
 use simple_signer::signer::SimpleSigner;
@@ -61,10 +63,11 @@ pub(super) async fn fetch_identity_by_b58_id(
     stringify_result_keep_item(fetch_result)
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Copy, PartialEq)]
 pub(crate) enum IdentityTask {
     RegisterIdentity(u64),
     TopUpIdentity(u64),
+    WithdrawFromIdentity(u64),
     Refresh,
 }
 
@@ -111,6 +114,26 @@ impl AppState {
                     .as_ref()
                     .map(|new_balance| {
                         format!("New balance after adding {} is {}", amount, new_balance)
+                    })
+                    .map_err(|e| e.to_string());
+                match result {
+                    Ok(identity_balance) => BackendEvent::TaskCompletedStateChange {
+                        task: Task::Identity(task),
+                        execution_result,
+                        app_state_update: AppStateUpdate::UpdatedBalance(identity_balance),
+                    },
+                    Err(e) => BackendEvent::TaskCompleted {
+                        task: Task::Identity(task),
+                        execution_result: Err(e.to_string()),
+                    },
+                }
+            }
+            IdentityTask::WithdrawFromIdentity(amount) => {
+                let result = self.withdraw_from_identity(sdk, amount).await;
+                let execution_result = result
+                    .as_ref()
+                    .map(|new_balance| {
+                        format!("New balance after withdrawal of {} Dash to Core is {} Dash on Platform", amount, new_balance)
                     })
                     .map_err(|e| e.to_string());
                 match result {
@@ -410,8 +433,54 @@ impl AppState {
 
         //// Platform steps
 
-        let updated_identity_balance = identity
+        let updated_identity_balance : u64 = identity
             .top_up_identity(sdk, asset_lock_proof.clone(), &asset_lock_proof_private_key)
+            .await?;
+
+        identity.set_balance(updated_identity_balance);
+
+        Ok(updated_identity_balance)
+    }
+
+
+    pub(crate) async fn withdraw_from_identity<'s>(
+        &'s self,
+        sdk: &Sdk,
+        amount: u64,
+    ) -> Result<u64, Error> {
+        // First we need to make the transaction from the wallet
+        // We start by getting a lock on the wallet
+
+        let mut loaded_wallet = self.loaded_wallet.lock().await;
+        let Some(wallet) = loaded_wallet.as_mut() else {
+            return Err(Error::IdentityRegistrationError(
+                "No wallet loaded".to_string(),
+            ));
+        };
+
+        let new_receive_address = wallet.receive_address();
+
+        let mut loaded_identity = self.loaded_identity.lock().await;
+        let Some(identity) = loaded_identity.as_mut() else {
+            return Err(Error::IdentityTopUpError("No identity loaded".to_string()));
+        };
+
+        let identity_public_key = identity.get_first_public_key_matching(Purpose::WITHDRAW, SecurityLevel::full_range().into(), KeyType::all_key_types().into()).ok_or(Error::IdentityWithdrawalError("no withdrawal public key".to_string()))?;
+
+
+        let mut loaded_identity_private_keys = self.identity_private_keys.lock().await;
+        let Some(private_key) = loaded_identity_private_keys.get(&(identity.id(), identity_public_key.id())) else {
+            return Err(Error::IdentityTopUpError("No private key for withdrawal".to_string()));
+        };
+
+        let mut signer = SimpleSigner::default();
+
+        signer.add_key(identity_public_key.clone(), private_key.inner.secret_bytes().to_vec());
+
+        //// Platform steps
+
+        let updated_identity_balance = identity
+            .withdraw(sdk, new_receive_address, amount, None, signer)
             .await?;
 
         identity.set_balance(updated_identity_balance);
