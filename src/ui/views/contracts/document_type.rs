@@ -209,6 +209,14 @@ impl ScreenController for DocumentTypeScreenController {
                 ScreenFeedback::Redraw
             }
 
+            Event::Backend(BackendEvent::TaskCompleted {
+                task: Task::Document(DocumentTask::BroadcastRandomDocument(_)),
+                execution_result,
+            }) => {
+                self.info = Info::new_from_result(execution_result);
+                ScreenFeedback::Redraw
+            }
+
             _ => ScreenFeedback::None,
         }
     }
