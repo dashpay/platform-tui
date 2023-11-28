@@ -1,6 +1,6 @@
 //! UI defenitions for selected data contract.
 
-use dash_platform_sdk::platform::DriveQuery;
+use dash_sdk::platform::DriveQuery;
 use dpp::{
     data_contract::{
         accessors::v0::DataContractV0Getters,

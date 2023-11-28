@@ -9,7 +9,7 @@ use dapi_grpc::{
         GetIdentityBalanceRequest,
     },
 };
-use dash_platform_sdk::{
+use dash_sdk::{
     platform::{
         transition::{
             put_identity::PutIdentity, top_up_identity::TopUpIdentity,
@@ -20,7 +20,7 @@ use dash_platform_sdk::{
     Sdk,
 };
 use dpp::{
-    dashcore::{psbt::serialize::Serialize, Network, OutPoint, PrivateKey, Transaction},
+    dashcore::{psbt::serialize::Serialize, Address, Network, OutPoint, PrivateKey, Transaction},
     identity::{
         accessors::{IdentityGettersV0, IdentitySettersV0},
         identity_public_key::accessors::v0::IdentityPublicKeyGettersV0,
@@ -31,7 +31,7 @@ use dpp::{
     prelude::{AssetLockProof, Identity, IdentityPublicKey},
 };
 use rand::{rngs::StdRng, SeedableRng};
-use rs_dapi_client::{Dapi, RequestSettings};
+use rs_dapi_client::{RequestExecutor, RequestSettings};
 use simple_signer::signer::SimpleSigner;
 use tokio::sync::{MappedMutexGuard, MutexGuard};
 use tuirealm::props::{PropValue, TextSpan};
@@ -290,11 +290,15 @@ impl AppState {
         let asset_lock_proof = if let Some(asset_lock_proof) = maybe_asset_lock_proof {
             asset_lock_proof.clone()
         } else {
-            let asset_lock = Self::broadcast_and_retrieve_asset_lock(sdk, &asset_lock_transaction)
-                .await
-                .map_err(|e| {
-                    Error::SdkExplainedError("error broadcasting transaction".to_string(), e.into())
-                })?;
+            let asset_lock = Self::broadcast_and_retrieve_asset_lock(
+                sdk,
+                &asset_lock_transaction,
+                &wallet.receive_address(),
+            )
+            .await
+            .map_err(|e| {
+                Error::SdkExplainedError("error broadcasting transaction".to_string(), e.into())
+            })?;
 
             identity_asset_lock_private_key_in_creation.replace((
                 asset_lock_transaction.clone(),
@@ -434,11 +438,15 @@ impl AppState {
         let asset_lock_proof = if let Some(asset_lock_proof) = maybe_asset_lock_proof {
             asset_lock_proof.clone()
         } else {
-            let asset_lock = Self::broadcast_and_retrieve_asset_lock(sdk, &asset_lock_transaction)
-                .await
-                .map_err(|e| {
-                    Error::SdkExplainedError("error broadcasting transaction".to_string(), e.into())
-                })?;
+            let asset_lock = Self::broadcast_and_retrieve_asset_lock(
+                sdk,
+                &asset_lock_transaction,
+                &wallet.receive_address(),
+            )
+            .await
+            .map_err(|e| {
+                Error::SdkExplainedError("error broadcasting transaction".to_string(), e.into())
+            })?;
 
             identity_asset_lock_private_key_in_top_up.replace((
                 asset_lock_transaction.clone(),
@@ -522,10 +530,19 @@ impl AppState {
     pub(crate) async fn broadcast_and_retrieve_asset_lock(
         sdk: &Sdk,
         asset_lock_transaction: &Transaction,
-    ) -> Result<AssetLockProof, dash_platform_sdk::Error> {
-        let asset_lock_stream = sdk
-            .start_instant_send_lock_stream(asset_lock_transaction.txid())
-            .await?;
+        address: &Address,
+    ) -> Result<AssetLockProof, dash_sdk::Error> {
+        let _span = tracing::debug_span!(
+            "broadcast_and_retrieve_asset_lock",
+            transaction_id = asset_lock_transaction.txid().to_string(),
+        )
+        .entered();
+
+        tracing::debug!("starting the stream");
+
+        let asset_lock_stream = sdk.start_instant_send_lock_stream(address).await?;
+
+        tracing::debug!("stream is started");
 
         // we need to broadcast the transaction to core
         let request = BroadcastTransactionRequest {
@@ -535,10 +552,14 @@ impl AppState {
             bypass_limits: false,
         };
 
+        tracing::debug!("broadcast the transaction");
+
         let broadcast_result = sdk.execute(request, RequestSettings::default()).await;
 
         let asset_lock = if let Err(broadcast_error) = broadcast_result {
             if broadcast_error.to_string().contains("AlreadyExists") {
+                tracing::warn!("transaction is already exists");
+
                 let request = GetTransactionRequest {
                     id: asset_lock_transaction.txid().to_string(),
                 };
@@ -546,6 +567,8 @@ impl AppState {
                 let transaction_info = sdk.execute(request, RequestSettings::default()).await?;
 
                 if transaction_info.is_chain_locked {
+                    tracing::debug!("transaction is chainlocked, return chain asset lock proof");
+
                     // it already exists, just return an asset lock
                     AssetLockProof::Chain(ChainAssetLockProof {
                         core_chain_locked_height: transaction_info.height,
@@ -555,12 +578,16 @@ impl AppState {
                         },
                     })
                 } else {
+                    // TODO: We should wait until it's chain locked
+
                     return Err(broadcast_error.into());
                 }
             } else {
                 return Err(broadcast_error.into());
             }
         } else {
+            tracing::debug!("transaction is broadcasted, wait for asset lock proof");
+
             Sdk::wait_for_asset_lock_proof_for_transaction(
                 asset_lock_stream,
                 asset_lock_transaction,

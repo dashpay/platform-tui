@@ -27,6 +27,7 @@ use tokio::sync::Mutex;
 use walkdir::{DirEntry, WalkDir};
 
 use super::wallet::Wallet;
+use crate::backend::insight::InsightAPIClient;
 
 const CURRENT_PROTOCOL_VERSION: ProtocolVersion = 1;
 
@@ -426,7 +427,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
 }
 
 impl AppState {
-    pub async fn load() -> AppState {
+    pub async fn load(insight: &InsightAPIClient) -> AppState {
         let path = Path::new("explorer.state");
 
         let Ok(read_result) = fs::read(path) else {
@@ -442,7 +443,7 @@ impl AppState {
         };
 
         if let Some(wallet) = app_state.loaded_wallet.lock().await.as_mut() {
-            wallet.reload_utxos().await;
+            wallet.reload_utxos(insight).await;
         }
 
         app_state

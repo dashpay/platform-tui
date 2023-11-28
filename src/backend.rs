@@ -6,7 +6,7 @@ pub(crate) mod documents;
 mod error;
 pub(crate) mod identities;
 pub(crate) mod info_display;
-mod insight;
+pub mod insight;
 mod state;
 mod strategies;
 mod wallet;
@@ -17,7 +17,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use dash_platform_sdk::Sdk;
+use dash_sdk::Sdk;
 use dpp::{
     document::Document,
     identity::accessors::IdentityGettersV0,
@@ -35,7 +35,9 @@ pub(crate) use self::{
     strategies::StrategyTask,
     wallet::{Wallet, WalletTask},
 };
-use crate::backend::{documents::DocumentTask, identities::IdentityTask};
+use crate::backend::{
+    documents::DocumentTask, identities::IdentityTask, insight::InsightAPIClient,
+};
 
 /// Unit of work for the backend.
 /// UI shall not execute any actions unrelated to rendering directly, to keep
@@ -120,13 +122,15 @@ pub(crate) enum AppStateUpdate<'s> {
 pub(crate) struct Backend {
     sdk: Mutex<Sdk>,
     app_state: AppState,
+    insight: InsightAPIClient,
 }
 
 impl Backend {
-    pub(crate) async fn new(sdk: Sdk) -> Self {
+    pub(crate) async fn new(sdk: Sdk, insight: InsightAPIClient) -> Self {
         Backend {
             sdk: Mutex::new(sdk),
-            app_state: AppState::load().await,
+            app_state: AppState::load(&insight).await,
+            insight,
         }
     }
 
@@ -166,7 +170,8 @@ impl Backend {
                 .await
             }
             Task::Wallet(wallet_task) => {
-                wallet::run_wallet_task(&self.app_state.loaded_wallet, wallet_task).await
+                wallet::run_wallet_task(&self.app_state.loaded_wallet, wallet_task, &self.insight)
+                    .await
             }
             Task::Contract(contract_task) => {
                 contracts::run_contract_task(

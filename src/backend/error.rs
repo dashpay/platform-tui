@@ -2,7 +2,7 @@ use std::time::SystemTimeError;
 
 use dapi_grpc::tonic::Status;
 use dpp::ProtocolError;
-use rs_dapi_client::DapiClientError;
+use rs_dapi_client::DAPIClientError;
 
 use crate::backend::{
     error::Error::{ParsingError, SdkError, WalletError},
@@ -23,9 +23,9 @@ pub(crate) enum Error {
     #[error("SDK unexpected result {0}")]
     SdkUnexpectedResultError(String),
     #[error("SDK error {0} {1}")]
-    SdkExplainedError(String, dash_platform_sdk::Error),
+    SdkExplainedError(String, dash_sdk::Error),
     #[error("SDK error {0}")]
-    SdkError(#[from] dash_platform_sdk::Error),
+    SdkError(#[from] dash_sdk::Error),
     #[error("Identity registration error {0}")]
     IdentityRegistrationError(String),
     #[error("Identity top up error {0}")]
@@ -48,8 +48,8 @@ impl From<InsightError> for Error {
     }
 }
 
-impl From<DapiClientError<Status>> for Error {
-    fn from(value: DapiClientError<Status>) -> Self {
+impl From<DAPIClientError<Status>> for Error {
+    fn from(value: DAPIClientError<Status>) -> Self {
         SdkError(value.into())
     }
 }

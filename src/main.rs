@@ -3,21 +3,23 @@ mod backend;
 // mod components;
 // mod managers;
 // mod mock_components;
+mod config;
 mod ui;
 
-use std::{fs::File, io::Write, panic, path::Path, sync::Mutex};
+use std::{fs::File, panic};
 
 use crossterm::event::{Event as TuiEvent, EventStream};
-use dash_platform_sdk::SdkBuilder;
+use dash_sdk::SdkBuilder;
 use dpp::{identity::accessors::IdentityGettersV0, version::PlatformVersion};
 use futures::{future::OptionFuture, select, FutureExt, StreamExt};
-use rs_dapi_client::AddressList;
+use tracing_subscriber::EnvFilter;
 use tuirealm::event::KeyEvent;
 
 use self::{
     backend::{Backend, BackendEvent, Task},
     ui::{Ui, UiFeedback},
 };
+use crate::{backend::insight::InsightAPIClient, config::Config};
 
 pub(crate) enum Event<'s> {
     Key(KeyEvent),
@@ -26,43 +28,58 @@ pub(crate) enum Event<'s> {
 
 #[tokio::main]
 async fn main() {
-    // Error logs to file
-    // Initialize the log file
-    let log_file_path = Path::new("panic.log");
-    let log_file = File::create(log_file_path).expect("Failed to create log file");
+    // Initialize logger
+    let log_file = File::create("explorer.log").expect("create log file");
 
-    // Use a Mutex to allow the log file to be shared safely across threads
-    let log_file = Mutex::new(log_file);
+    let subscriber = tracing_subscriber::fmt::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .with_writer(log_file) // Write to the file
+        .finish();
 
-    // Set the custom panic hook
+    tracing::subscriber::set_global_default(subscriber).expect("can't initialize logging");
+
+    // Log panics
+    let default_panic_hook = panic::take_hook();
+
     panic::set_hook(Box::new(move |panic_info| {
-        let mut file = log_file.lock().unwrap();
-        let message = match panic_info.payload().downcast_ref::<&str>() {
-            Some(s) => *s,
-            None => "Panic occurred but can't get the message.",
-        };
-        writeln!(file, "Panic occurred: {}", message).expect("Failed to write to log file");
+        let message = panic_info
+            .payload()
+            .downcast_ref::<&str>()
+            .unwrap_or(&"unknown");
+
+        let location = panic_info
+            .location()
+            .unwrap_or_else(|| panic::Location::caller());
+
+        tracing::error!(
+            location = tracing::field::display(location),
+            "Panic occurred: {}",
+            message
+        );
+
+        default_panic_hook(panic_info);
     }));
 
+    // Load configuration
+    let config = Config::load();
+
     // Setup Platform SDK
-    let mut address_list = AddressList::new();
-    address_list.add_uri(rs_dapi_client::Uri::from_static(
-        "https://44.239.39.153:1443",
-    ));
-    // address_list.add_uri(rs_dapi_client::Uri::from_static(
-    //     "https://54.149.33.167:1443",
-    // ));
-    // address_list.add_uri(rs_dapi_client::Uri::from_static(
-    //     "https://35.164.23.245:1443",
-    // ));
-    // address_list.add_uri(rs_dapi_client::Uri::from_static("https://52.33.28.47:1443"));
+    let address_list = config.dapi_address_list();
+
     let sdk = SdkBuilder::new(address_list)
         .with_version(PlatformVersion::get(1).unwrap())
-        .with_core("127.0.0.1", 19998, "dashrpc", "password")
+        .with_core(
+            &config.core_host,
+            config.core_port,
+            &config.core_user,
+            &config.core_password,
+        )
         .build()
         .expect("expected to build sdk");
 
-    let backend = Backend::new(sdk).await;
+    let insight = InsightAPIClient::new(config.insight_api_uri());
+
+    let backend = Backend::new(sdk, insight).await;
 
     let initial_identity_balance = backend
         .state()
@@ -88,12 +105,7 @@ async fn main() {
                 Some(Ok(TuiEvent::Key(key_event))) => Some(Event::Key(key_event.into())),
                 _ => None
             },
-            backend_task_finished = backend_task => match backend_task_finished {
-                Some(backend_event) => Some(
-                    Event::Backend(backend_event)
-                ),
-                None => None
-            },
+            backend_task_finished = backend_task => backend_task_finished.map(Event::Backend),
         };
 
         let ui_feedback = if let Some(e) = event {
@@ -110,7 +122,7 @@ async fn main() {
             }
             UiFeedback::Redraw => ui.redraw(), // TODO Debounce redraw?
             UiFeedback::None => (),
-            UiFeedback::Error(string) => {
+            UiFeedback::Error(_message) => {
                 // todo: show error somewhere
                 ui.redraw();
             }

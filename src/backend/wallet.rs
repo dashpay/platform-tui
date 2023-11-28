@@ -21,10 +21,8 @@ use dpp::dashcore::{
 use rand::{prelude::StdRng, Rng, SeedableRng};
 use tokio::sync::{Mutex, MutexGuard};
 
-use super::{
-    insight::{utxos_with_amount_for_addresses, InsightError},
-    AppStateUpdate, BackendEvent, Task,
-};
+use super::{AppStateUpdate, BackendEvent, Task};
+use crate::backend::insight::{InsightAPIClient, InsightError};
 
 #[derive(Clone, PartialEq)]
 pub(crate) enum WalletTask {
@@ -33,10 +31,11 @@ pub(crate) enum WalletTask {
     CopyAddress,
 }
 
-pub(super) async fn run_wallet_task(
-    wallet_state: &Mutex<Option<Wallet>>,
+pub(super) async fn run_wallet_task<'s>(
+    wallet_state: &'s Mutex<Option<Wallet>>,
     task: WalletTask,
-) -> BackendEvent {
+    insight: &'s InsightAPIClient,
+) -> BackendEvent<'s> {
     match task {
         WalletTask::AddByPrivateKey(ref private_key) => {
             let private_key = if private_key.len() == 64 {
@@ -75,7 +74,7 @@ pub(super) async fn run_wallet_task(
         WalletTask::Refresh => {
             let mut wallet_guard = wallet_state.lock().await;
             if let Some(wallet) = wallet_guard.deref_mut() {
-                wallet.reload_utxos().await;
+                wallet.reload_utxos(&insight).await;
                 let loaded_wallet_update = MutexGuard::map(wallet_guard, |opt| {
                     opt.as_mut().expect("wallet was set above")
                 });
@@ -299,10 +298,12 @@ impl Wallet {
         }
     }
 
-    pub async fn reload_utxos(&mut self) {
+    pub async fn reload_utxos(&mut self, insight: &InsightAPIClient) {
         match self {
             Wallet::SingleKeyWallet(wallet) => {
-                let Ok(utxos) = utxos_with_amount_for_addresses(&[&wallet.address], false).await
+                let Ok(utxos) = insight
+                    .utxos_with_amount_for_addresses(&[&wallet.address])
+                    .await
                 else {
                     return;
                 };

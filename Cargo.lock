@@ -920,7 +920,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "dash-platform-sdk"
+name = "dash-sdk"
 version = "0.25.16-rc.4"
 dependencies = [
  "async-trait",
@@ -3502,8 +3502,10 @@ dependencies = [
  "cli-clipboard",
  "crossterm 0.27.0",
  "dapi-grpc",
- "dash-platform-sdk",
+ "dash-sdk",
+ "dotenvy",
  "dpp",
+ "envy",
  "futures",
  "hex",
  "itertools 0.11.0",
@@ -3519,6 +3521,8 @@ dependencies = [
  "thiserror",
  "tokio",
  "toml",
+ "tracing",
+ "tracing-subscriber",
  "tui-realm-stdlib",
  "tuirealm",
  "walkdir",
@@ -4675,6 +4679,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sharded-slab",
+ "smallvec",
  "thread_local",
  "tracing",
  "tracing-core",

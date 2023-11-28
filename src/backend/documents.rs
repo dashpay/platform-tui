@@ -4,7 +4,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use dash_platform_sdk::{
+use dash_sdk::{
     platform::{
         transition::{broadcast::BroadcastStateTransition, put_document::PutDocument},
         DocumentQuery, FetchMany,
