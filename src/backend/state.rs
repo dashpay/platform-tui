@@ -16,7 +16,6 @@ use dpp::{
         PlatformDeserializableWithPotentialValidationFromVersionedStructure,
         PlatformSerializableWithPlatformVersion,
     },
-    tests::json_document::json_document_to_created_contract,
     util::deserializer::ProtocolVersion,
     version::PlatformVersion,
     ProtocolError,
@@ -24,7 +23,7 @@ use dpp::{
 };
 use strategy_tests::Strategy;
 use tokio::sync::Mutex;
-use walkdir::{DirEntry, WalkDir};
+use walkdir::DirEntry;
 
 use super::wallet::Wallet;
 use crate::backend::insight::InsightAPIClient;

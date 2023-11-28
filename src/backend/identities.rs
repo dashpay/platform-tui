@@ -255,7 +255,7 @@ impl AppState {
 
             identity_asset_lock_private_key_in_creation.replace((
                 asset_lock_transaction.clone(),
-                asset_lock_proof_private_key.clone(),
+                asset_lock_proof_private_key,
                 None,
                 None,
             ));
@@ -297,12 +297,12 @@ impl AppState {
             )
             .await
             .map_err(|e| {
-                Error::SdkExplainedError("error broadcasting transaction".to_string(), e.into())
+                Error::SdkExplainedError("error broadcasting transaction".to_string(), e)
             })?;
 
             identity_asset_lock_private_key_in_creation.replace((
                 asset_lock_transaction.clone(),
-                asset_lock_proof_private_key.clone(),
+                asset_lock_proof_private_key,
                 Some(asset_lock.clone()),
                 None,
             ));
@@ -331,7 +331,7 @@ impl AppState {
 
                 identity_asset_lock_private_key_in_creation.replace((
                     asset_lock_transaction.clone(),
-                    asset_lock_proof_private_key.clone(),
+                    asset_lock_proof_private_key,
                     Some(asset_lock_proof.clone()),
                     Some((identity.clone(), keys.clone())),
                 ));
@@ -428,7 +428,7 @@ impl AppState {
 
                 identity_asset_lock_private_key_in_top_up.replace((
                     asset_lock_transaction.clone(),
-                    asset_lock_proof_private_key.clone(),
+                    asset_lock_proof_private_key,
                     None,
                 ));
 
@@ -445,12 +445,12 @@ impl AppState {
             )
             .await
             .map_err(|e| {
-                Error::SdkExplainedError("error broadcasting transaction".to_string(), e.into())
+                Error::SdkExplainedError("error broadcasting transaction".to_string(), e)
             })?;
 
             identity_asset_lock_private_key_in_top_up.replace((
                 asset_lock_transaction.clone(),
-                asset_lock_proof_private_key.clone(),
+                asset_lock_proof_private_key,
                 Some(asset_lock.clone()),
             ));
 

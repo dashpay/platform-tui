@@ -77,8 +77,10 @@ impl Ui {
             .enable_raw_mode()
             .expect("cannot enable terminal raw mode");
 
-        let mut status_bar_state = StatusBarState::default();
-        status_bar_state.identity_loaded_balance = loaded_identity_balance;
+        let mut status_bar_state = StatusBarState {
+            identity_loaded_balance: loaded_identity_balance,
+            ..Default::default()
+        };
 
         let main_screen_controller = MainScreenController::new();
 

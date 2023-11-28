@@ -68,7 +68,7 @@ impl From<String> for CompletedTaskPayload {
     }
 }
 
-impl<'a> From<&str> for CompletedTaskPayload {
+impl From<&str> for CompletedTaskPayload {
     fn from(value: &str) -> Self {
         CompletedTaskPayload::String(value.to_owned())
     }
@@ -143,7 +143,7 @@ impl Backend {
             Task::FetchIdentityById(ref base58_id, add_to_known_identities) => {
                 let mut sdk = self.sdk.lock().await;
                 let execution_result =
-                    identities::fetch_identity_by_b58_id(&mut sdk, &base58_id).await;
+                    identities::fetch_identity_by_b58_id(&mut sdk, base58_id).await;
                 if add_to_known_identities {
                     if let Ok((Some(identity), _)) = &execution_result {
                         let mut loaded_identities = self.app_state.known_identities.lock().await;
