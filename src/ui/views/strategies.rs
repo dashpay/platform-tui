@@ -161,7 +161,7 @@ impl ScreenController for StrategiesScreenController {
         &[]
     }
 
-    fn on_event(&mut self, event: Event) -> ScreenFeedback {
+    fn on_event(&mut self, event: &Event) -> ScreenFeedback {
         match event {
             Event::Key(KeyEvent {
                 code: Key::Char('q'),
@@ -306,7 +306,7 @@ impl ScreenController for StrategiesScreenController {
                     &strategy,
                     &contract_names,
                 ));
-                self.selected_strategy = Some(strategy_name);
+                self.selected_strategy = Some(strategy_name.clone());
                 ScreenFeedback::Redraw
             }
 

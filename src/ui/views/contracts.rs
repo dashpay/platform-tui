@@ -119,7 +119,7 @@ impl ScreenController for ContractsScreenController {
         &[]
     }
 
-    fn on_event(&mut self, event: Event) -> ScreenFeedback {
+    fn on_event(&mut self, event: &Event) -> ScreenFeedback {
         match event {
             Event::Key(KeyEvent {
                 code: Key::Char('q'),
@@ -133,7 +133,7 @@ impl ScreenController for ContractsScreenController {
 
             Event::Key(event) => {
                 if let Some(select) = &mut self.select {
-                    match select.on_event(event) {
+                    match select.on_event(*event) {
                         InputStatus::Done(DataContractEntry {
                             name,
                             document_type_names,

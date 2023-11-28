@@ -145,6 +145,16 @@ impl Ui {
             self.status_bar_state.set_balance_error();
         }
 
+        // Update all the stacked screens with the relevant state
+        if let Event::Backend(
+            BackendEvent::AppStateUpdated(_) | BackendEvent::TaskCompletedStateChange { .. },
+        ) = &event
+        {
+            for screen in self.screen_stack.iter_mut() {
+                screen.on_event(&event);
+            }
+        }
+
         if self.blocked {
             return UiFeedback::None;
         }
@@ -179,7 +189,7 @@ impl Ui {
                 }
             }
         } else {
-            match self.screen.on_event(event) {
+            match self.screen.on_event(&event) {
                 ScreenFeedback::NextScreen(controller_builder) => {
                     let controller = controller_builder(app_state.deref()).await;
                     self.status_bar_state.add_child(controller.name());
