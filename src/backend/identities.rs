@@ -36,10 +36,7 @@ use simple_signer::signer::SimpleSigner;
 use tokio::sync::{MappedMutexGuard, MutexGuard};
 
 use super::AppStateUpdate;
-use crate::backend::{
-    error::Error, info_display::InfoDisplay, stringify_result_keep_item, AppState, BackendEvent,
-    Task,
-};
+use crate::backend::{error::Error, stringify_result_keep_item, AppState, BackendEvent, Task};
 
 pub(super) async fn fetch_identity_by_b58_id(
     sdk: &mut Sdk,
@@ -70,7 +67,7 @@ impl AppState {
                 let result = self.register_new_identity(sdk, amount).await;
                 let execution_result = result
                     .as_ref()
-                    .map(|identity| identity.display_info(0).into())
+                    .map(|_| "Executed successfully".into())
                     .map_err(|e| e.to_string());
                 let app_state_update = match result {
                     Ok(identity) => AppStateUpdate::LoadedIdentity(identity),
@@ -87,7 +84,7 @@ impl AppState {
                 let result = self.refresh_identity(sdk).await;
                 let execution_result = result
                     .as_ref()
-                    .map(|identity| identity.display_info(0).into())
+                    .map(|_| "Executed successfully".into())
                     .map_err(|e| e.to_string());
                 let app_state_update = match result {
                     Ok(identity) => AppStateUpdate::LoadedIdentity(identity),

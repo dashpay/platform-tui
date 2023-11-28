@@ -1,5 +1,6 @@
 //! Screen module.
 
+pub(crate) mod info_display;
 pub(crate) mod utils;
 pub(crate) mod widgets;
 

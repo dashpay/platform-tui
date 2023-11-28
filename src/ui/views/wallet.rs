@@ -8,14 +8,13 @@ use tuirealm::{
 
 use crate::{
     backend::{
-        identities::IdentityTask, info_display::InfoDisplay, AppState, AppStateUpdate,
-        BackendEvent, Task, Wallet, WalletTask,
+        identities::IdentityTask, AppState, AppStateUpdate, BackendEvent, Task, Wallet, WalletTask,
     },
     ui::{
         form::{FormController, FormStatus, Input, InputStatus, TextInput},
         screen::{
-            utils::impl_builder, widgets::info::Info, ScreenCommandKey, ScreenController,
-            ScreenFeedback, ScreenToggleKey,
+            info_display::InfoDisplay, utils::impl_builder, widgets::info::Info, ScreenCommandKey,
+            ScreenController, ScreenFeedback, ScreenToggleKey,
         },
     },
     Event,
