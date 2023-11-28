@@ -39,7 +39,7 @@ use super::AppStateUpdate;
 use crate::backend::{error::Error, stringify_result_keep_item, AppState, BackendEvent, Task};
 
 pub(super) async fn fetch_identity_by_b58_id(
-    sdk: &mut Sdk,
+    sdk: &Sdk,
     base58_id: &str,
 ) -> Result<(Option<Identity>, String), String> {
     tokio::time::sleep(std::time::Duration::from_secs(3)).await;
@@ -224,7 +224,7 @@ impl AppState {
         {
             (
                 asset_lock_transaction.clone(),
-                asset_lock_proof_private_key.clone(),
+                *asset_lock_proof_private_key,
                 maybe_asset_lock_proof.clone(),
                 maybe_identity.clone(),
             )
@@ -399,7 +399,7 @@ impl AppState {
             {
                 (
                     asset_lock_transaction.clone(),
-                    asset_lock_proof_private_key.clone(),
+                    *asset_lock_proof_private_key,
                     maybe_asset_lock_proof.clone(),
                 )
             } else {

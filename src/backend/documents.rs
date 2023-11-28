@@ -36,7 +36,7 @@ pub(crate) enum DocumentTask {
 impl AppState {
     pub(super) async fn run_document_task<'s>(
         &'s self,
-        sdk: &mut Sdk,
+        sdk: &Sdk,
         task: DocumentTask,
     ) -> BackendEvent<'s> {
         match &task {
@@ -82,7 +82,7 @@ impl AppState {
 
     pub(crate) async fn broadcast_random_document<'s>(
         &'s self,
-        sdk: &mut Sdk,
+        sdk: &Sdk,
         data_contract: &DataContract,
         document_type: &DocumentType,
     ) -> Result<Document, Error> {
@@ -146,9 +146,9 @@ impl AppState {
                 sdk,
                 document_type.clone(),
                 document_state_transition_entropy,
-                identity_public_key.clone(),
-                Arc::new(data_contract),
-                &signer,
+                // identity_public_key.clone(),
+                // Arc::new(data_contract),
+                // &signer,
             )
             .await?;
 

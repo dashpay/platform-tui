@@ -7,10 +7,7 @@ use crate::backend::{as_toml, BackendEvent, Task};
 pub(crate) enum PlatformInfoTask {
     FetchCurrentEpochInfo,
 }
-pub(super) async fn run_platform_task<'s>(
-    sdk: &mut Sdk,
-    task: PlatformInfoTask,
-) -> BackendEvent<'s> {
+pub(super) async fn run_platform_task<'s>(sdk: &Sdk, task: PlatformInfoTask) -> BackendEvent<'s> {
     match task {
         PlatformInfoTask::FetchCurrentEpochInfo => match ExtendedEpochInfo::fetch(sdk, 5).await {
             Ok(Some(epoch_info)) => {

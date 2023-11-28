@@ -19,7 +19,7 @@ const DASHPAY_CONTRACT_NAME: &str = "dashpay";
 const DPNS_CONTRACT_NAME: &str = "dpns";
 
 pub(super) async fn run_contract_task<'s>(
-    sdk: &mut Sdk,
+    sdk: &Sdk,
     known_contracts: &'s Mutex<KnownContractsMap>,
     task: ContractTask,
 ) -> BackendEvent<'s> {
