@@ -113,7 +113,7 @@ pub(crate) enum AppStateUpdate<'s> {
     ),
     IdentityRegistrationProgressed, // TODO provide state update details
     LoadedIdentity(MappedMutexGuard<'s, Identity>),
-    UpdatedBalance(u64),
+    FailedToRefreshIdentity,
 }
 
 /// Application state, dependencies are task execution logic around it.
