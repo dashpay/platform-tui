@@ -12,6 +12,8 @@ use tuirealm::{
     Frame, MockComponent,
 };
 
+use super::IdentityBalance;
+
 #[derive(Default)]
 pub(crate) struct StatusBarState {
     breadcrumbs: Vec<&'static str>,
@@ -21,7 +23,7 @@ pub(crate) struct StatusBarState {
 
 enum IdentityBalanceStatus {
     NoIdentity,
-    Balance(u64),
+    Balance(IdentityBalance),
     RefreshError,
 }
 
@@ -35,21 +37,23 @@ impl Display for IdentityBalanceStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             IdentityBalanceStatus::NoIdentity => write!(f, "No identity"),
-            IdentityBalanceStatus::Balance(balance) => write!(f, "Platform balance: {}", balance),
+            IdentityBalanceStatus::Balance(balance) => {
+                write!(f, "Platform balance: {}", balance.dash_str())
+            }
             IdentityBalanceStatus::RefreshError => write!(f, "Balance refresh error"),
         }
     }
 }
 
 impl StatusBarState {
-    pub(crate) fn with_balance(balance: u64) -> Self {
+    pub(crate) fn with_balance(balance: IdentityBalance) -> Self {
         StatusBarState {
             identity_loaded_balance: IdentityBalanceStatus::Balance(balance),
             ..Default::default()
         }
     }
 
-    pub(crate) fn update_balance(&mut self, balance: u64) {
+    pub(crate) fn update_balance(&mut self, balance: IdentityBalance) {
         self.identity_loaded_balance = IdentityBalanceStatus::Balance(balance);
     }
 
@@ -79,7 +83,7 @@ impl StatusBarState {
         let layout = Layout::default()
             .horizontal_margin(1)
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Min(20), Constraint::Max(20)].as_ref())
+            .constraints([Constraint::Min(20), Constraint::Max(40)].as_ref())
             .split(block.inner(area));
 
         let breadcrumbs_str = self.breadcrumbs.join(" / ");

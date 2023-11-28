@@ -15,6 +15,7 @@ use dpp::{identity::accessors::IdentityGettersV0, version::PlatformVersion};
 use futures::{future::OptionFuture, select, FutureExt, StreamExt};
 use rs_dapi_client::AddressList;
 use tuirealm::event::KeyEvent;
+use ui::IdentityBalance;
 
 use self::{
     backend::{Backend, BackendEvent, Task},
@@ -72,7 +73,7 @@ async fn main() {
         .lock()
         .await
         .as_ref()
-        .map(|identity| identity.balance());
+        .map(|identity| IdentityBalance::from_credits(identity.balance()));
 
     let mut ui = Ui::new(initial_identity_balance);
 

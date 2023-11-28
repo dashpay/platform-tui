@@ -28,6 +28,21 @@ use crate::{
     BackendEvent, Event, Task,
 };
 
+pub(crate) struct IdentityBalance {
+    credits: u64,
+}
+
+impl IdentityBalance {
+    pub(crate) fn from_credits(credits: u64) -> Self {
+        IdentityBalance { credits }
+    }
+
+    pub(crate) fn dash_str(&self) -> String {
+        let dash_amount = self.credits as f64 * 10f64.powf(-11.0);
+        format!("{:.4} DASH", dash_amount)
+    }
+}
+
 /// TUI entry point that handles terminal events as well as terminal output,
 /// linking UI parts together.
 pub(crate) struct Ui {
@@ -68,7 +83,7 @@ impl Ui {
             .expect("unable to draw to terminal");
     }
 
-    pub(crate) fn new(loaded_identity_balance: Option<u64>) -> Self {
+    pub(crate) fn new(initial_identity_balance: Option<IdentityBalance>) -> Self {
         let mut terminal = TerminalBridge::new().expect("cannot initialize terminal app");
         terminal
             .enter_alternate_screen()
@@ -77,12 +92,11 @@ impl Ui {
             .enable_raw_mode()
             .expect("cannot enable terminal raw mode");
 
-        let mut status_bar_state = match loaded_identity_balance {
-            Some(balance) => StatusBarState::with_balance(balance),
-            None => StatusBarState::default(),
-        };
-
         let main_screen_controller = MainScreenController::new();
+
+        let mut status_bar_state = initial_identity_balance
+            .map(StatusBarState::with_balance)
+            .unwrap_or_default();
 
         status_bar_state.add_child(main_screen_controller.name());
 
@@ -129,7 +143,8 @@ impl Ui {
             },
         ) = &event
         {
-            self.status_bar_state.update_balance(identity.balance());
+            self.status_bar_state
+                .update_balance(IdentityBalance::from_credits(identity.balance()));
             redraw = true;
         }
 
@@ -143,6 +158,16 @@ impl Ui {
         ) = &event
         {
             self.status_bar_state.set_balance_error();
+        }
+
+        // Update all the stacked screens with the relevant state
+        if let Event::Backend(
+            BackendEvent::AppStateUpdated(_) | BackendEvent::TaskCompletedStateChange { .. },
+        ) = &event
+        {
+            for screen in self.screen_stack.iter_mut() {
+                screen.on_event(&event);
+            }
         }
 
         if self.blocked {
@@ -179,7 +204,7 @@ impl Ui {
                 }
             }
         } else {
-            match self.screen.on_event(event) {
+            match self.screen.on_event(&event) {
                 ScreenFeedback::NextScreen(controller_builder) => {
                     let controller = controller_builder(app_state.deref()).await;
                     self.status_bar_state.add_child(controller.name());

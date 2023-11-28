@@ -5,7 +5,6 @@ mod contracts;
 pub(crate) mod documents;
 mod error;
 pub(crate) mod identities;
-pub(crate) mod info_display;
 mod insight;
 mod state;
 mod strategies;
