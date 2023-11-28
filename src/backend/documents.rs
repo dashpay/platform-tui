@@ -24,7 +24,7 @@ use dpp::{
 use rand::{prelude::StdRng, Rng, SeedableRng};
 use simple_signer::signer::SimpleSigner;
 
-use super::CompletedTaskPayload;
+use super::{AppStateUpdate, CompletedTaskPayload};
 use crate::backend::{error::Error, AppState, BackendEvent, Task};
 
 #[derive(Clone)]
@@ -35,7 +35,7 @@ pub(crate) enum DocumentTask {
 
 impl AppState {
     pub(super) async fn run_document_task<'s>(
-        &self,
+        &'s self,
         sdk: &mut Sdk,
         task: DocumentTask,
     ) -> BackendEvent<'s> {
@@ -56,9 +56,25 @@ impl AppState {
                     .await
                     .map(CompletedTaskPayload::Document)
                     .map_err(|e| e.to_string());
-                BackendEvent::TaskCompleted {
-                    task: Task::Document(task),
-                    execution_result,
+
+                if execution_result.is_ok() {
+                    match self.refresh_identity(sdk).await {
+                        Ok(updated_identity) => BackendEvent::TaskCompletedStateChange {
+                            task: Task::Document(task),
+                            execution_result,
+                            app_state_update: AppStateUpdate::LoadedIdentity(updated_identity),
+                        },
+                        Err(_) => BackendEvent::TaskCompletedStateChange {
+                            task: Task::Document(task),
+                            execution_result,
+                            app_state_update: AppStateUpdate::FailedToRefreshIdentity,
+                        },
+                    }
+                } else {
+                    BackendEvent::TaskCompleted {
+                        task: Task::Document(task),
+                        execution_result,
+                    }
                 }
             }
         }

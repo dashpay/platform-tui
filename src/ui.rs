@@ -28,6 +28,21 @@ use crate::{
     BackendEvent, Event, Task,
 };
 
+pub(crate) struct IdentityBalance {
+    credits: u64,
+}
+
+impl IdentityBalance {
+    pub(crate) fn from_credits(credits: u64) -> Self {
+        IdentityBalance { credits }
+    }
+
+    pub(crate) fn dash_str(&self) -> String {
+        let dash_amount = self.credits as f64 * 10f64.powf(-11.0);
+        format!("{:.4} DASH", dash_amount)
+    }
+}
+
 /// TUI entry point that handles terminal events as well as terminal output,
 /// linking UI parts together.
 pub(crate) struct Ui {
@@ -63,12 +78,12 @@ impl Ui {
                 } else {
                     self.screen.view(frame, layout[0])
                 };
-                status_bar::view(frame, layout[1], &self.status_bar_state);
+                self.status_bar_state.view(frame, layout[1]);
             })
             .expect("unable to draw to terminal");
     }
 
-    pub(crate) fn new(loaded_identity_balance: Option<u64>) -> Self {
+    pub(crate) fn new(initial_identity_balance: Option<IdentityBalance>) -> Self {
         let mut terminal = TerminalBridge::new().expect("cannot initialize terminal app");
         terminal
             .enter_alternate_screen()
@@ -77,12 +92,11 @@ impl Ui {
             .enable_raw_mode()
             .expect("cannot enable terminal raw mode");
 
-        let mut status_bar_state = StatusBarState {
-            identity_loaded_balance: loaded_identity_balance,
-            ..Default::default()
-        };
-
         let main_screen_controller = MainScreenController::new();
+
+        let mut status_bar_state = initial_identity_balance
+            .map(StatusBarState::with_balance)
+            .unwrap_or_default();
 
         status_bar_state.add_child(main_screen_controller.name());
 
@@ -114,25 +128,46 @@ impl Ui {
             BackendEvent::TaskCompleted { .. } | BackendEvent::TaskCompletedStateChange { .. },
         ) = &event
         {
-            self.status_bar_state.blocked = false;
+            self.status_bar_state.unblock();
             self.blocked = false;
             redraw = true;
         }
 
         // A special treatment for loaded identity app state update: status bar should
         // be updated as well
-        match &event {
-            Event::Backend(
-                BackendEvent::AppStateUpdated(AppStateUpdate::LoadedIdentity(identity))
-                | BackendEvent::TaskCompletedStateChange {
-                    app_state_update: AppStateUpdate::LoadedIdentity(identity),
-                    ..
-                },
-            ) => {
-                self.status_bar_state.identity_loaded_balance = Some(identity.balance());
-                redraw = true;
+        if let Event::Backend(
+            BackendEvent::AppStateUpdated(AppStateUpdate::LoadedIdentity(identity))
+            | BackendEvent::TaskCompletedStateChange {
+                app_state_update: AppStateUpdate::LoadedIdentity(identity),
+                ..
+            },
+        ) = &event
+        {
+            self.status_bar_state
+                .update_balance(IdentityBalance::from_credits(identity.balance()));
+            redraw = true;
+        }
+
+        // On failed identity refresh we indicate that balance might be incorrect
+        if let Event::Backend(
+            BackendEvent::AppStateUpdated(AppStateUpdate::FailedToRefreshIdentity)
+            | BackendEvent::TaskCompletedStateChange {
+                app_state_update: AppStateUpdate::FailedToRefreshIdentity,
+                ..
+            },
+        ) = &event
+        {
+            self.status_bar_state.set_balance_error();
+        }
+
+        // Update all the stacked screens with the relevant state
+        if let Event::Backend(
+            BackendEvent::AppStateUpdated(_) | BackendEvent::TaskCompletedStateChange { .. },
+        ) = &event
+        {
+            for screen in self.screen_stack.iter_mut() {
+                screen.on_event(&event);
             }
-            _ => {}
         }
 
         if self.blocked {
@@ -144,7 +179,7 @@ impl Ui {
                 FormStatus::Done { task, block } => {
                     self.form = None;
                     if block {
-                        self.status_bar_state.blocked = true;
+                        self.status_bar_state.block();
                         self.blocked = true;
                     }
                     UiFeedback::ExecuteTask(task)
@@ -169,7 +204,7 @@ impl Ui {
                 }
             }
         } else {
-            match self.screen.on_event(event) {
+            match self.screen.on_event(&event) {
                 ScreenFeedback::NextScreen(controller_builder) => {
                     let controller = controller_builder(app_state.deref()).await;
                     self.status_bar_state.add_child(controller.name());
@@ -192,7 +227,7 @@ impl Ui {
                 }
                 ScreenFeedback::Task { task, block } => {
                     if block {
-                        self.status_bar_state.blocked = true;
+                        self.status_bar_state.block();
                         self.blocked = true;
                     }
                     UiFeedback::ExecuteTask(task)

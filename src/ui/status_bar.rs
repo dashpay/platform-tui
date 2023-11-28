@@ -1,5 +1,7 @@
 //! Status bar component definitions.
 
+use std::fmt::{self, Display};
+
 use tui_realm_stdlib::Label;
 use tuirealm::{
     props::BorderSides,
@@ -10,14 +12,63 @@ use tuirealm::{
     Frame, MockComponent,
 };
 
+use super::IdentityBalance;
+
 #[derive(Default)]
 pub(crate) struct StatusBarState {
-    pub breadcrumbs: Vec<&'static str>,
-    pub blocked: bool,
-    pub identity_loaded_balance: Option<u64>,
+    breadcrumbs: Vec<&'static str>,
+    blocked: bool,
+    identity_loaded_balance: IdentityBalanceStatus,
+}
+
+enum IdentityBalanceStatus {
+    NoIdentity,
+    Balance(IdentityBalance),
+    RefreshError,
+}
+
+impl Default for IdentityBalanceStatus {
+    fn default() -> Self {
+        IdentityBalanceStatus::NoIdentity
+    }
+}
+
+impl Display for IdentityBalanceStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            IdentityBalanceStatus::NoIdentity => write!(f, "No identity"),
+            IdentityBalanceStatus::Balance(balance) => {
+                write!(f, "Platform balance: {}", balance.dash_str())
+            }
+            IdentityBalanceStatus::RefreshError => write!(f, "Balance refresh error"),
+        }
+    }
 }
 
 impl StatusBarState {
+    pub(crate) fn with_balance(balance: IdentityBalance) -> Self {
+        StatusBarState {
+            identity_loaded_balance: IdentityBalanceStatus::Balance(balance),
+            ..Default::default()
+        }
+    }
+
+    pub(crate) fn update_balance(&mut self, balance: IdentityBalance) {
+        self.identity_loaded_balance = IdentityBalanceStatus::Balance(balance);
+    }
+
+    pub(crate) fn set_balance_error(&mut self) {
+        self.identity_loaded_balance = IdentityBalanceStatus::RefreshError;
+    }
+
+    pub(crate) fn block(&mut self) {
+        self.blocked = true;
+    }
+
+    pub(crate) fn unblock(&mut self) {
+        self.blocked = false;
+    }
+
     pub(crate) fn add_child(&mut self, name: &'static str) {
         self.breadcrumbs.push(name);
     }
@@ -25,37 +76,31 @@ impl StatusBarState {
     pub(crate) fn to_parent(&mut self) {
         self.breadcrumbs.pop();
     }
-}
 
-pub(crate) fn view(frame: &mut Frame, area: Rect, state: &StatusBarState) {
-    let block = Block::new().borders(BorderSides::ALL);
+    pub(crate) fn view(&self, frame: &mut Frame, area: Rect) {
+        let block = Block::new().borders(BorderSides::ALL);
 
-    let layout = Layout::default()
-        .horizontal_margin(1)
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Min(20), Constraint::Max(20)].as_ref())
-        .split(block.inner(area));
+        let layout = Layout::default()
+            .horizontal_margin(1)
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Min(20), Constraint::Max(40)].as_ref())
+            .split(block.inner(area));
 
-    let breadcrumbs_str = state.breadcrumbs.join(" / ");
-    let identity_private_keys_loaded_str =
-        if let Some(identity_balance) = state.identity_loaded_balance {
-            format!("Platform Balance: {}", identity_balance)
+        let breadcrumbs_str = self.breadcrumbs.join(" / ");
+
+        if self.blocked {
+            Label::default()
+                .text("Executing a task, please wait")
+                .modifiers(Modifier::RAPID_BLINK) // TODO: doesn't work lol
         } else {
-            "NO Identity".to_string()
-        };
+            Label::default().text(&breadcrumbs_str)
+        }
+        .view(frame, layout[0]);
 
-    if state.blocked {
         Label::default()
-            .text("Executing a task, please wait")
-            .modifiers(Modifier::RAPID_BLINK) // TODO: doesn't work lol
-    } else {
-        Label::default().text(&breadcrumbs_str)
+            .text(&self.identity_loaded_balance.to_string())
+            .view(frame, layout[1]);
+
+        frame.render_widget(block, area);
     }
-    .view(frame, layout[0]);
-
-    Label::default()
-        .text(identity_private_keys_loaded_str.as_str())
-        .view(frame, layout[1]);
-
-    frame.render_widget(block, area);
 }

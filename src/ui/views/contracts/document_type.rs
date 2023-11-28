@@ -18,7 +18,6 @@ use tuirealm::{
     Frame,
 };
 
-use super::ContractsScreenController;
 use crate::{
     backend::{
         as_toml, documents::DocumentTask, AppState, BackendEvent, CompletedTaskPayload, Task,
@@ -159,7 +158,7 @@ impl ScreenController for DocumentTypeScreenController {
         &[]
     }
 
-    fn on_event(&mut self, event: Event) -> ScreenFeedback {
+    fn on_event(&mut self, event: &Event) -> ScreenFeedback {
         match event {
             Event::Key(KeyEvent {
                 code: Key::Char('q'),
@@ -208,13 +207,16 @@ impl ScreenController for DocumentTypeScreenController {
             Event::Backend(BackendEvent::TaskCompleted {
                 task: Task::Document(DocumentTask::QueryDocuments(_)),
                 execution_result: Ok(CompletedTaskPayload::Documents(documents)),
-            }) => ScreenFeedback::NextScreen(Box::new(|_| {
-                async {
-                    Box::new(DocumentsQuerysetScreenController::new(documents))
-                        as Box<dyn ScreenController>
-                }
-                .boxed()
-            })),
+            }) => {
+                let documents = documents.clone();
+                ScreenFeedback::NextScreen(Box::new(move |_| {
+                    async move {
+                        Box::new(DocumentsQuerysetScreenController::new(documents))
+                            as Box<dyn ScreenController>
+                    }
+                    .boxed()
+                }))
+            }
 
             Event::Backend(BackendEvent::TaskCompleted {
                 task: Task::Document(DocumentTask::QueryDocuments(_)),
@@ -224,10 +226,17 @@ impl ScreenController for DocumentTypeScreenController {
                 ScreenFeedback::Redraw
             }
 
-            Event::Backend(BackendEvent::TaskCompleted {
-                task: Task::Document(DocumentTask::BroadcastRandomDocument(..)),
-                execution_result,
-            }) => {
+            Event::Backend(
+                BackendEvent::TaskCompleted {
+                    task: Task::Document(DocumentTask::BroadcastRandomDocument(..)),
+                    execution_result,
+                }
+                | BackendEvent::TaskCompletedStateChange {
+                    task: Task::Document(DocumentTask::BroadcastRandomDocument(..)),
+                    execution_result,
+                    ..
+                },
+            ) => {
                 self.info = Info::new_from_result(execution_result);
                 ScreenFeedback::Redraw
             }

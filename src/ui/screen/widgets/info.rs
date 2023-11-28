@@ -55,7 +55,7 @@ impl Info {
         }
     }
 
-    pub(crate) fn new_from_result(result: Result<CompletedTaskPayload, String>) -> Info {
+    pub(crate) fn new_from_result(result: &Result<CompletedTaskPayload, String>) -> Info {
         match result {
             Ok(payload) => Info::new_scrollable(&payload.to_string()),
             Err(x) => Info::new_error(&x),
@@ -64,7 +64,7 @@ impl Info {
 
     /// In case of scrollable [Info], it reacts on up/down keys or C-p / C-n
     /// shortcuts
-    pub(crate) fn on_event(&mut self, event: KeyEvent) -> DoRedraw {
+    pub(crate) fn on_event(&mut self, event: &KeyEvent) -> DoRedraw {
         if !self.scrollable {
             return false;
         };

@@ -53,7 +53,7 @@ impl ScreenController for IdentitiesScreenController {
         self.toggle_keys.as_ref()
     }
 
-    fn on_event(&mut self, event: Event) -> ScreenFeedback {
+    fn on_event(&mut self, event: &Event) -> ScreenFeedback {
         match event {
             Event::Key(KeyEvent {
                 code: Key::Char('q'),

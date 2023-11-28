@@ -1,5 +1,6 @@
 //! Screen module.
 
+pub(crate) mod info_display;
 pub(crate) mod utils;
 pub(crate) mod widgets;
 
@@ -43,7 +44,7 @@ impl<C: ScreenController> Screen<C> {
         command_pallet::view(frame, layout[1], &self.controller);
     }
 
-    pub(super) fn on_event(&mut self, event: Event) -> ScreenFeedback {
+    pub(super) fn on_event(&mut self, event: &Event) -> ScreenFeedback {
         self.controller.on_event(event)
     }
 }
@@ -62,7 +63,7 @@ pub(crate) trait ScreenController {
 
     /// Process key event, returning details on what's needed to be updated on
     /// UI.
-    fn on_event(&mut self, event: Event) -> ScreenFeedback;
+    fn on_event(&mut self, event: &Event) -> ScreenFeedback;
 }
 
 impl ScreenController for Box<dyn ScreenController> {
@@ -82,7 +83,7 @@ impl ScreenController for Box<dyn ScreenController> {
         self.deref().toggle_keys()
     }
 
-    fn on_event(&mut self, event: Event) -> ScreenFeedback {
+    fn on_event(&mut self, event: &Event) -> ScreenFeedback {
         self.deref_mut().on_event(event)
     }
 }

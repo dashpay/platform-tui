@@ -34,21 +34,9 @@ use rand::{rngs::StdRng, SeedableRng};
 use rs_dapi_client::{RequestExecutor, RequestSettings};
 use simple_signer::signer::SimpleSigner;
 use tokio::sync::{MappedMutexGuard, MutexGuard};
-use tuirealm::props::{PropValue, TextSpan};
 
 use super::AppStateUpdate;
-use crate::backend::{
-    error::Error, info_display::InfoDisplay, stringify_result_keep_item, AppState, BackendEvent,
-    Task,
-};
-
-pub(super) fn identity_to_spans(identity: &Identity) -> Result<Vec<PropValue>, Error> {
-    let textual = toml::to_string_pretty(identity).expect("identity is serializable");
-    Ok(textual
-        .lines()
-        .map(|line| PropValue::TextSpan(TextSpan::new(line)))
-        .collect())
-}
+use crate::backend::{error::Error, stringify_result_keep_item, AppState, BackendEvent, Task};
 
 pub(super) async fn fetch_identity_by_b58_id(
     sdk: &mut Sdk,
@@ -79,7 +67,7 @@ impl AppState {
                 let result = self.register_new_identity(sdk, amount).await;
                 let execution_result = result
                     .as_ref()
-                    .map(|identity| identity.display_info(0).into())
+                    .map(|_| "Executed successfully".into())
                     .map_err(|e| e.to_string());
                 let app_state_update = match result {
                     Ok(identity) => AppStateUpdate::LoadedIdentity(identity),
@@ -96,7 +84,7 @@ impl AppState {
                 let result = self.refresh_identity(sdk).await;
                 let execution_result = result
                     .as_ref()
-                    .map(|identity| identity.display_info(0).into())
+                    .map(|_| "Executed successfully".into())
                     .map_err(|e| e.to_string());
                 let app_state_update = match result {
                     Ok(identity) => AppStateUpdate::LoadedIdentity(identity),
@@ -113,15 +101,13 @@ impl AppState {
                 let result = self.top_up_identity(sdk, amount).await;
                 let execution_result = result
                     .as_ref()
-                    .map(|new_balance| {
-                        format!("New balance after adding {} is {}", amount, new_balance).into()
-                    })
+                    .map(|_| "Top up success".into())
                     .map_err(|e| e.to_string());
                 match result {
-                    Ok(identity_balance) => BackendEvent::TaskCompletedStateChange {
+                    Ok(identity) => BackendEvent::TaskCompletedStateChange {
                         task: Task::Identity(task),
                         execution_result,
-                        app_state_update: AppStateUpdate::UpdatedBalance(identity_balance),
+                        app_state_update: AppStateUpdate::LoadedIdentity(identity),
                     },
                     Err(e) => BackendEvent::TaskCompleted {
                         task: Task::Identity(task),
@@ -133,20 +119,13 @@ impl AppState {
                 let result = self.withdraw_from_identity(sdk, amount).await;
                 let execution_result = result
                     .as_ref()
-                    .map(|new_balance| {
-                        format!(
-                            "New balance after withdrawal of {} Dash to Core is {} Dash on \
-                             Platform",
-                            amount, new_balance
-                        )
-                        .into()
-                    })
+                    .map(|_| "Successful withdrawal".into())
                     .map_err(|e| e.to_string());
                 match result {
-                    Ok(identity_balance) => BackendEvent::TaskCompletedStateChange {
+                    Ok(identity) => BackendEvent::TaskCompletedStateChange {
                         task: Task::Identity(task),
                         execution_result,
-                        app_state_update: AppStateUpdate::UpdatedBalance(identity_balance),
+                        app_state_update: AppStateUpdate::LoadedIdentity(identity),
                     },
                     Err(e) => BackendEvent::TaskCompleted {
                         task: Task::Identity(task),
@@ -387,7 +366,7 @@ impl AppState {
         &'s self,
         sdk: &Sdk,
         amount: u64,
-    ) -> Result<u64, Error> {
+    ) -> Result<MappedMutexGuard<'s, Identity>, Error> {
         // First we need to make the transaction from the wallet
         // We start by getting a lock on the wallet
 
@@ -398,8 +377,9 @@ impl AppState {
             ));
         };
 
-        let mut loaded_identity = self.loaded_identity.lock().await;
-        let Some(identity) = loaded_identity.as_mut() else {
+        let mut identity_lock = self.loaded_identity.lock().await;
+
+        let Some(identity) = identity_lock.as_mut() else {
             return Err(Error::IdentityTopUpError("No identity loaded".to_string()));
         };
 
@@ -465,14 +445,16 @@ impl AppState {
 
         identity.set_balance(updated_identity_balance);
 
-        Ok(updated_identity_balance)
+        Ok(MutexGuard::map(identity_lock, |identity| {
+            identity.as_mut().expect("checked above")
+        })) // TODO too long above, better to refactor this one
     }
 
     pub(crate) async fn withdraw_from_identity<'s>(
         &'s self,
         sdk: &Sdk,
         amount: u64,
-    ) -> Result<u64, Error> {
+    ) -> Result<MappedMutexGuard<'s, Identity>, Error> {
         // First we need to make the transaction from the wallet
         // We start by getting a lock on the wallet
 
@@ -485,8 +467,8 @@ impl AppState {
 
         let new_receive_address = wallet.receive_address();
 
-        let mut loaded_identity = self.loaded_identity.lock().await;
-        let Some(identity) = loaded_identity.as_mut() else {
+        let mut identity_lock = self.loaded_identity.lock().await;
+        let Some(identity) = identity_lock.as_mut() else {
             return Err(Error::IdentityTopUpError("No identity loaded".to_string()));
         };
 
@@ -524,7 +506,9 @@ impl AppState {
 
         identity.set_balance(updated_identity_balance);
 
-        Ok(updated_identity_balance)
+        Ok(MutexGuard::map(identity_lock, |identity| {
+            identity.as_mut().expect("checked above")
+        })) // TODO
     }
 
     pub(crate) async fn broadcast_and_retrieve_asset_lock(

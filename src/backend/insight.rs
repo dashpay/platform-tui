@@ -7,10 +7,10 @@ const ADDRESS_UTXO_PATH: &str = "addrs/utxo";
 
 #[derive(Debug, thiserror::Error)]
 #[error("insight error: {0}")]
-pub(crate) struct InsightError(pub String);
+pub struct InsightError(pub String);
 
 #[derive(Debug, Clone)]
-pub(crate) struct InsightAPIClient(Uri);
+pub struct InsightAPIClient(Uri);
 
 impl InsightAPIClient {
     pub fn new(uri: Uri) -> Self {

@@ -6,6 +6,8 @@ use dpp::{
     prelude::{Identity, IdentityPublicKey},
 };
 
+use crate::ui::IdentityBalance;
+
 pub struct TabbedString {
     pub indent: usize,
     pub content: String,
@@ -95,7 +97,11 @@ impl InfoDisplay for Identity {
         vec![
             tabbed_string!(0, "Identity"),
             tabbed_key_value_string!(1, "Id", self.id()),
-            tabbed_key_value_string!(1, "Balance", self.balance()),
+            tabbed_key_value_string!(
+                1,
+                "Balance",
+                IdentityBalance::from_credits(self.balance()).dash_str()
+            ),
             tabbed_key_value_string!(1, "Revision", self.revision()),
             tabbed_key_value_iter_string!(1, "Public Keys", self.public_keys()),
         ]

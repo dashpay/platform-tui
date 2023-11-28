@@ -1,23 +1,20 @@
 //! Screens and forms related to wallet management.
 
-use dpp::prelude::Identity;
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
-    tui::prelude::Rect,
+    tui::prelude::{Constraint, Direction, Layout, Rect},
     Frame,
 };
 
-use super::main::MainScreenController;
 use crate::{
     backend::{
-        identities::IdentityTask, info_display::InfoDisplay, AppState, AppStateUpdate,
-        BackendEvent, Task, Wallet, WalletTask,
+        identities::IdentityTask, AppState, AppStateUpdate, BackendEvent, Task, Wallet, WalletTask,
     },
     ui::{
         form::{FormController, FormStatus, Input, InputStatus, TextInput},
         screen::{
-            utils::impl_builder, widgets::info::Info, ScreenCommandKey, ScreenController,
-            ScreenFeedback, ScreenToggleKey,
+            info_display::InfoDisplay, utils::impl_builder, widgets::info::Info, ScreenCommandKey,
+            ScreenController, ScreenFeedback, ScreenToggleKey,
         },
     },
     Event,
@@ -68,7 +65,8 @@ fn join_commands(
 }
 
 pub(crate) struct WalletScreenController {
-    info: Info,
+    wallet_info: Info,
+    identity_info: Info,
     wallet_loaded: bool,
     identity_loaded: bool,
     identity_registration_in_progress: bool,
@@ -220,7 +218,8 @@ impl FormController for WithdrawFromIdentityFormController {
 impl WalletScreenController {
     pub(crate) async fn new(app_state: &AppState) -> Self {
         let (
-            info,
+            wallet_info,
+            identity_info,
             wallet_loaded,
             identity_loaded,
             identity_registration_in_progress,
@@ -233,7 +232,8 @@ impl WalletScreenController {
                     .await
                     .is_some();
                 (
-                    Info::new_fixed(&display_wallet_and_identity(wallet, identity)),
+                    Info::new_fixed(&display_wallet(wallet)),
+                    Info::new_fixed(&identity.display_info(0)),
                     true,
                     true,
                     false,
@@ -247,6 +247,7 @@ impl WalletScreenController {
                     .is_some();
                 (
                     Info::new_fixed(&display_wallet(wallet)),
+                    Info::new_fixed(""),
                     true,
                     false,
                     identity_registration_in_progress,
@@ -256,6 +257,7 @@ impl WalletScreenController {
         } else {
             (
                 Info::new_fixed("Wallet management commands\n\nNo wallet loaded yet"),
+                Info::new_fixed(""),
                 false,
                 false,
                 false,
@@ -264,7 +266,8 @@ impl WalletScreenController {
         };
 
         WalletScreenController {
-            info,
+            wallet_info,
+            identity_info,
             wallet_loaded,
             identity_loaded,
             identity_registration_in_progress,
@@ -275,7 +278,12 @@ impl WalletScreenController {
 
 impl ScreenController for WalletScreenController {
     fn view(&mut self, frame: &mut Frame, area: Rect) {
-        self.info.view(frame, area)
+        let layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(20), Constraint::Min(20)].as_ref())
+            .split(area);
+        self.wallet_info.view(frame, layout[0]);
+        self.identity_info.view(frame, layout[1]);
     }
 
     fn name(&self) -> &'static str {
@@ -295,7 +303,7 @@ impl ScreenController for WalletScreenController {
         &[]
     }
 
-    fn on_event(&mut self, event: Event) -> ScreenFeedback {
+    fn on_event(&mut self, event: &Event) -> ScreenFeedback {
         match event {
             Event::Key(KeyEvent {
                 code: Key::Char('q'),
@@ -365,19 +373,8 @@ impl ScreenController for WalletScreenController {
                     ..
                 },
             ) => {
-                self.info = Info::new_fixed(&display_wallet(&wallet));
+                self.wallet_info = Info::new_fixed(&display_wallet(&wallet));
                 self.wallet_loaded = true;
-                ScreenFeedback::Redraw
-            }
-
-            Event::Backend(BackendEvent::TaskCompletedStateChange {
-                task: Task::Identity(IdentityTask::RegisterIdentity(_)),
-                execution_result,
-                app_state_update: AppStateUpdate::LoadedIdentity(_identity),
-            }) => {
-                self.info = Info::new_from_result(execution_result);
-                self.identity_loaded = true;
-                self.identity_registration_in_progress = false;
                 ScreenFeedback::Redraw
             }
 
@@ -386,16 +383,43 @@ impl ScreenController for WalletScreenController {
                 execution_result,
                 app_state_update: AppStateUpdate::IdentityRegistrationProgressed,
             }) => {
-                self.info = Info::new_from_result(execution_result);
+                self.identity_info = Info::new_from_result(execution_result);
                 self.identity_loaded = false;
                 self.identity_registration_in_progress = true;
                 ScreenFeedback::Redraw
             }
 
-            Event::Backend(BackendEvent::TaskCompleted {
-                execution_result, ..
+            Event::Backend(BackendEvent::TaskCompletedStateChange {
+                execution_result,
+                app_state_update: AppStateUpdate::LoadedIdentity(identity),
+                ..
             }) => {
-                self.info = Info::new_from_result(execution_result);
+                self.identity_loaded = true;
+                self.identity_registration_in_progress = false;
+                if execution_result.is_ok() {
+                    self.identity_info = Info::new_fixed(&identity.display_info(0));
+                } else {
+                    self.identity_info = Info::new_from_result(execution_result);
+                }
+                self.identity_info = Info::new_fixed(&identity.display_info(0));
+                ScreenFeedback::Redraw
+            }
+
+            Event::Backend(BackendEvent::TaskCompleted {
+                task: Task::Wallet(_),
+                execution_result: Err(e),
+                ..
+            }) => {
+                self.wallet_info = Info::new_error(&e);
+                ScreenFeedback::Redraw
+            }
+
+            Event::Backend(BackendEvent::TaskCompleted {
+                task: Task::Identity(_),
+                execution_result: Err(e),
+                ..
+            }) => {
+                self.identity_info = Info::new_error(&e);
                 ScreenFeedback::Redraw
             }
             _ => ScreenFeedback::None,
@@ -449,8 +473,4 @@ impl FormController for AddWalletPrivateKeyFormController {
 
 fn display_wallet(wallet: &Wallet) -> String {
     wallet.description()
-}
-
-fn display_wallet_and_identity(wallet: &Wallet, identity: &Identity) -> String {
-    format!("{} \n\n {}", wallet.description(), identity.display_info(0))
 }

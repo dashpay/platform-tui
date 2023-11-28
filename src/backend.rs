@@ -5,8 +5,7 @@ mod contracts;
 pub(crate) mod documents;
 mod error;
 pub(crate) mod identities;
-pub(crate) mod info_display;
-pub mod insight;
+pub(crate) mod insight;
 mod state;
 mod strategies;
 mod wallet;
@@ -115,7 +114,7 @@ pub(crate) enum AppStateUpdate<'s> {
     ),
     IdentityRegistrationProgressed, // TODO provide state update details
     LoadedIdentity(MappedMutexGuard<'s, Identity>),
-    UpdatedBalance(u64),
+    FailedToRefreshIdentity,
 }
 
 /// Application state, dependencies are task execution logic around it.
