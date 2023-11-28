@@ -10,6 +10,7 @@ mod insight;
 mod state;
 mod strategies;
 mod wallet;
+pub(crate) mod platform_info;
 
 use std::{
     collections::BTreeMap,
@@ -36,6 +37,7 @@ pub(crate) use self::{
     wallet::{Wallet, WalletTask},
 };
 use crate::backend::{documents::DocumentTask, identities::IdentityTask};
+use crate::backend::platform_info::PlatformInfoTask;
 
 /// Unit of work for the backend.
 /// UI shall not execute any actions unrelated to rendering directly, to keep
@@ -44,6 +46,7 @@ use crate::backend::{documents::DocumentTask, identities::IdentityTask};
 #[derive(Clone)]
 pub(crate) enum Task {
     FetchIdentityById(String, bool),
+    PlatformInfo(PlatformInfoTask),
     Strategy(StrategyTask),
     Wallet(WalletTask),
     Identity(IdentityTask),
@@ -184,6 +187,13 @@ impl Backend {
             Task::Document(document_task) => {
                 self.app_state
                     .run_document_task(self.sdk.lock().await.deref_mut(), document_task)
+                    .await
+            }
+            Task::PlatformInfo(platform_info_task) => {
+                platform_info::run_platform_task(
+                    self.sdk.lock().await.deref_mut(),
+                    platform_info_task,
+                )
                     .await
             }
         }

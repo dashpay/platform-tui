@@ -17,14 +17,16 @@ use crate::{
     },
     Event,
 };
+use crate::ui::views::platform_info::PlatformInfoScreenController;
 
-const COMMAND_KEYS: [ScreenCommandKey; 6] = [
+const COMMAND_KEYS: [ScreenCommandKey; 7] = [
     ScreenCommandKey::new("q", "Quit"),
     ScreenCommandKey::new("i", "Identities"),
     ScreenCommandKey::new("c", "Contracts"),
     ScreenCommandKey::new("s", "Strategies"),
     ScreenCommandKey::new("w", "Wallet"),
     ScreenCommandKey::new("v", "Version Upgrade"),
+    ScreenCommandKey::new("p", "Platform information"),
 ];
 
 pub(crate) struct MainScreenController {
@@ -92,6 +94,10 @@ impl ScreenController for MainScreenController {
                 code: Key::Char('v'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::None,
+            Event::Key(KeyEvent {
+               code: Key::Char('p'),
+               modifiers: KeyModifiers::NONE,
+           }) => ScreenFeedback::NextScreen(PlatformInfoScreenController::builder()),
             _ => ScreenFeedback::None,
         }
     }
