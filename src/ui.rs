@@ -63,7 +63,7 @@ impl Ui {
                 } else {
                     self.screen.view(frame, layout[0])
                 };
-                status_bar::view(frame, layout[1], &self.status_bar_state);
+                self.status_bar_state.view(frame, layout[1]);
             })
             .expect("unable to draw to terminal");
     }
@@ -77,8 +77,10 @@ impl Ui {
             .enable_raw_mode()
             .expect("cannot enable terminal raw mode");
 
-        let mut status_bar_state = StatusBarState::default();
-        status_bar_state.identity_loaded_balance = loaded_identity_balance;
+        let mut status_bar_state = match loaded_identity_balance {
+            Some(balance) => StatusBarState::with_balance(balance),
+            None => StatusBarState::default(),
+        };
 
         let main_screen_controller = MainScreenController::new();
 
@@ -112,25 +114,35 @@ impl Ui {
             BackendEvent::TaskCompleted { .. } | BackendEvent::TaskCompletedStateChange { .. },
         ) = &event
         {
-            self.status_bar_state.blocked = false;
+            self.status_bar_state.unblock();
             self.blocked = false;
             redraw = true;
         }
 
         // A special treatment for loaded identity app state update: status bar should
         // be updated as well
-        match &event {
-            Event::Backend(
-                BackendEvent::AppStateUpdated(AppStateUpdate::LoadedIdentity(identity))
-                | BackendEvent::TaskCompletedStateChange {
-                    app_state_update: AppStateUpdate::LoadedIdentity(identity),
-                    ..
-                },
-            ) => {
-                self.status_bar_state.identity_loaded_balance = Some(identity.balance());
-                redraw = true;
-            }
-            _ => {}
+        if let Event::Backend(
+            BackendEvent::AppStateUpdated(AppStateUpdate::LoadedIdentity(identity))
+            | BackendEvent::TaskCompletedStateChange {
+                app_state_update: AppStateUpdate::LoadedIdentity(identity),
+                ..
+            },
+        ) = &event
+        {
+            self.status_bar_state.update_balance(identity.balance());
+            redraw = true;
+        }
+
+        // On failed identity refresh we indicate that balance might be incorrect
+        if let Event::Backend(
+            BackendEvent::AppStateUpdated(AppStateUpdate::FailedToRefreshIdentity)
+            | BackendEvent::TaskCompletedStateChange {
+                app_state_update: AppStateUpdate::FailedToRefreshIdentity,
+                ..
+            },
+        ) = &event
+        {
+            self.status_bar_state.set_balance_error();
         }
 
         if self.blocked {
@@ -142,7 +154,7 @@ impl Ui {
                 FormStatus::Done { task, block } => {
                     self.form = None;
                     if block {
-                        self.status_bar_state.blocked = true;
+                        self.status_bar_state.block();
                         self.blocked = true;
                     }
                     UiFeedback::ExecuteTask(task)
@@ -190,7 +202,7 @@ impl Ui {
                 }
                 ScreenFeedback::Task { task, block } => {
                     if block {
-                        self.status_bar_state.blocked = true;
+                        self.status_bar_state.block();
                         self.blocked = true;
                     }
                     UiFeedback::ExecuteTask(task)
