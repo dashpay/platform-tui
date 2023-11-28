@@ -251,7 +251,7 @@ impl QueryDocumentTypeFormController {
     ) -> Self {
         let ours_query_part = if let Some(ours_identifier) = ours_query {
             format!(
-                "where ownerId = {} ",
+                "where `$ownerId` = '{}' ",
                 ours_identifier.to_string(Encoding::Base58)
             )
         } else {

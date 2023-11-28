@@ -6,6 +6,8 @@ mod backend;
 mod ui;
 
 use std::{fs::File, io::Write, panic, path::Path, sync::Mutex};
+use std::thread::sleep;
+use std::time::Duration;
 
 use crossterm::event::{Event as TuiEvent, EventStream};
 use dash_platform_sdk::SdkBuilder;
@@ -38,8 +40,8 @@ async fn main() {
     panic::set_hook(Box::new(move |panic_info| {
         let mut file = log_file.lock().unwrap();
         let message = match panic_info.payload().downcast_ref::<&str>() {
-            Some(s) => *s,
-            None => "Panic occurred but can't get the message.",
+            Some(s) => s.to_string(),
+            None => format!("{:?}", panic_info),
         };
         writeln!(file, "Panic occurred: {}", message).expect("Failed to write to log file");
     }));
@@ -112,6 +114,7 @@ async fn main() {
             UiFeedback::None => (),
             UiFeedback::Error(string) => {
                 // todo: show error somewhere
+                panic!("{}",string);
                 ui.redraw();
             }
         }
