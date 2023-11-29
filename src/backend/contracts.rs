@@ -1,6 +1,6 @@
 //! Contracts backend.
 
-use dash_sdk::{platform::Fetch, Sdk};
+use dash_platform_sdk::{platform::Fetch, Sdk};
 use dpp::{
     prelude::{DataContract, Identifier},
     system_data_contracts::{dashpay_contract, dpns_contract},

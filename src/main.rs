@@ -5,7 +5,7 @@ mod ui;
 use std::{fs::File, io::Write, panic, path::Path, sync::Mutex};
 
 use crossterm::event::{Event as TuiEvent, EventStream};
-use dash_sdk::SdkBuilder;
+use dash_platform_sdk::SdkBuilder;
 use dpp::{identity::accessors::IdentityGettersV0, version::PlatformVersion};
 use futures::{future::OptionFuture, select, FutureExt, StreamExt};
 use tracing_subscriber::EnvFilter;

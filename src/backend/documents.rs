@@ -4,7 +4,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use dash_sdk::{
+use dash_platform_sdk::{
     platform::{transition::put_document::PutDocument, DocumentQuery, FetchMany},
     Sdk,
 };

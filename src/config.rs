@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use dash_sdk::sdk::Uri;
+use dash_platform_sdk::sdk::Uri;
 use rs_dapi_client::AddressList;
 use serde::Deserialize;
 

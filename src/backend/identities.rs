@@ -9,7 +9,7 @@ use dapi_grpc::{
         GetIdentityBalanceRequest,
     },
 };
-use dash_sdk::{
+use dash_platform_sdk::{
     platform::{
         transition::{
             put_identity::PutIdentity, top_up_identity::TopUpIdentity,
@@ -31,7 +31,7 @@ use dpp::{
     prelude::{AssetLockProof, Identity, IdentityPublicKey},
 };
 use rand::{rngs::StdRng, SeedableRng};
-use rs_dapi_client::{RequestExecutor, RequestSettings};
+use rs_dapi_client::{Dapi, RequestSettings};
 use simple_signer::signer::SimpleSigner;
 use tokio::sync::{MappedMutexGuard, MutexGuard};
 
@@ -515,7 +515,7 @@ impl AppState {
         sdk: &Sdk,
         asset_lock_transaction: &Transaction,
         address: &Address,
-    ) -> Result<AssetLockProof, dash_sdk::Error> {
+    ) -> Result<AssetLockProof, dash_platform_sdk::Error> {
         let _span = tracing::debug_span!(
             "broadcast_and_retrieve_asset_lock",
             transaction_id = asset_lock_transaction.txid().to_string(),

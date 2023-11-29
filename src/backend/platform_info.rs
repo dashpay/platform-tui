@@ -1,4 +1,4 @@
-use dash_sdk::{platform::Fetch, Sdk};
+use dash_platform_sdk::{platform::Fetch, Sdk};
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 
 use crate::backend::{as_toml, BackendEvent, Task};
