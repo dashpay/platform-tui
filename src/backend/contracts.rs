@@ -1,15 +1,13 @@
 //! Contracts backend.
 
-use dash_platform_sdk::{platform::Fetch, Sdk};
+use dash_sdk::{platform::Fetch, Sdk};
 use dpp::{
     prelude::{DataContract, Identifier},
     system_data_contracts::{dashpay_contract, dpns_contract},
 };
 use tokio::sync::Mutex;
 
-use super::{
-    as_toml, state::KnownContractsMap, stringify_result, AppStateUpdate, BackendEvent, Task,
-};
+use super::{as_toml, state::KnownContractsMap, AppStateUpdate, BackendEvent, Task};
 
 #[derive(Clone, PartialEq)]
 pub(crate) enum ContractTask {

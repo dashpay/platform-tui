@@ -16,7 +16,6 @@ use dpp::{
         PlatformDeserializableWithPotentialValidationFromVersionedStructure,
         PlatformSerializableWithPlatformVersion,
     },
-    tests::json_document::json_document_to_created_contract,
     util::deserializer::ProtocolVersion,
     version::PlatformVersion,
     ProtocolError,
@@ -24,9 +23,10 @@ use dpp::{
 };
 use strategy_tests::Strategy;
 use tokio::sync::Mutex;
-use walkdir::{DirEntry, WalkDir};
+use walkdir::DirEntry;
 
 use super::wallet::Wallet;
+use crate::backend::insight::InsightAPIClient;
 
 const CURRENT_PROTOCOL_VERSION: ProtocolVersion = 1;
 
@@ -426,7 +426,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
 }
 
 impl AppState {
-    pub async fn load() -> AppState {
+    pub async fn load(insight: &InsightAPIClient) -> AppState {
         let path = Path::new("explorer.state");
 
         let Ok(read_result) = fs::read(path) else {
@@ -442,7 +442,7 @@ impl AppState {
         };
 
         if let Some(wallet) = app_state.loaded_wallet.lock().await.as_mut() {
-            wallet.reload_utxos().await;
+            wallet.reload_utxos(insight).await;
         }
 
         app_state

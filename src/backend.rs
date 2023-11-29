@@ -5,7 +5,7 @@ mod contracts;
 pub(crate) mod documents;
 mod error;
 pub(crate) mod identities;
-mod insight;
+pub(crate) mod insight;
 mod state;
 mod strategies;
 mod wallet;
@@ -16,7 +16,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use dash_platform_sdk::Sdk;
+use dash_sdk::Sdk;
 use dpp::{
     document::Document,
     identity::accessors::IdentityGettersV0,
@@ -34,7 +34,9 @@ pub(crate) use self::{
     strategies::StrategyTask,
     wallet::{Wallet, WalletTask},
 };
-use crate::backend::{documents::DocumentTask, identities::IdentityTask};
+use crate::backend::{
+    documents::DocumentTask, identities::IdentityTask, insight::InsightAPIClient,
+};
 
 /// Unit of work for the backend.
 /// UI shall not execute any actions unrelated to rendering directly, to keep
@@ -65,7 +67,7 @@ impl From<String> for CompletedTaskPayload {
     }
 }
 
-impl<'a> From<&str> for CompletedTaskPayload {
+impl From<&str> for CompletedTaskPayload {
     fn from(value: &str) -> Self {
         CompletedTaskPayload::String(value.to_owned())
     }
@@ -119,13 +121,15 @@ pub(crate) enum AppStateUpdate<'s> {
 pub(crate) struct Backend {
     sdk: Mutex<Sdk>,
     app_state: AppState,
+    insight: InsightAPIClient,
 }
 
 impl Backend {
-    pub(crate) async fn new(sdk: Sdk) -> Self {
+    pub(crate) async fn new(sdk: Sdk, insight: InsightAPIClient) -> Self {
         Backend {
             sdk: Mutex::new(sdk),
-            app_state: AppState::load().await,
+            app_state: AppState::load(&insight).await,
+            insight,
         }
     }
 
@@ -138,7 +142,7 @@ impl Backend {
             Task::FetchIdentityById(ref base58_id, add_to_known_identities) => {
                 let mut sdk = self.sdk.lock().await;
                 let execution_result =
-                    identities::fetch_identity_by_b58_id(&mut sdk, &base58_id).await;
+                    identities::fetch_identity_by_b58_id(&mut sdk, base58_id).await;
                 if add_to_known_identities {
                     if let Ok((Some(identity), _)) = &execution_result {
                         let mut loaded_identities = self.app_state.known_identities.lock().await;
@@ -165,7 +169,8 @@ impl Backend {
                 .await
             }
             Task::Wallet(wallet_task) => {
-                wallet::run_wallet_task(&self.app_state.loaded_wallet, wallet_task).await
+                wallet::run_wallet_task(&self.app_state.loaded_wallet, wallet_task, &self.insight)
+                    .await
             }
             Task::Contract(contract_task) => {
                 contracts::run_contract_task(

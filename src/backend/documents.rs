@@ -4,11 +4,8 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use dash_platform_sdk::{
-    platform::{
-        transition::{broadcast::BroadcastStateTransition, put_document::PutDocument},
-        DocumentQuery, FetchMany,
-    },
+use dash_sdk::{
+    platform::{transition::put_document::PutDocument, DocumentQuery, FetchMany},
     Sdk,
 };
 use dpp::{
@@ -17,24 +14,18 @@ use dpp::{
         random_document::{CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType},
         DocumentType,
     },
-    document::{Document, DocumentV0Getters},
+    document::Document,
     identity::{
         accessors::IdentityGettersV0,
         identity_public_key::accessors::v0::IdentityPublicKeyGettersV0, KeyType, Purpose,
     },
     prelude::DataContract,
-    state_transition::{
-        documents_batch_transition::{
-            methods::v0::DocumentsBatchTransitionMethodsV0, DocumentsBatchTransition,
-        },
-        proof_result::StateTransitionProofResult,
-    },
 };
 use rand::{prelude::StdRng, Rng, SeedableRng};
 use simple_signer::signer::SimpleSigner;
 
 use super::{AppStateUpdate, CompletedTaskPayload};
-use crate::backend::{error::Error, stringify_result, AppState, BackendEvent, Task};
+use crate::backend::{error::Error, AppState, BackendEvent, Task};
 
 #[derive(Clone)]
 pub(crate) enum DocumentTask {
@@ -52,7 +43,7 @@ impl AppState {
             DocumentTask::QueryDocuments(document_query) => {
                 let execution_result = Document::fetch_many(sdk, document_query.clone())
                     .await
-                    .map(|docs| CompletedTaskPayload::Documents(docs))
+                    .map(CompletedTaskPayload::Documents)
                     .map_err(|e| e.to_string());
                 BackendEvent::TaskCompleted {
                     task: Task::Document(task),
@@ -63,7 +54,7 @@ impl AppState {
                 let execution_result = self
                     .broadcast_random_document(sdk, data_contract, document_type)
                     .await
-                    .map(|doc| CompletedTaskPayload::Document(doc))
+                    .map(CompletedTaskPayload::Document)
                     .map_err(|e| e.to_string());
 
                 if execution_result.is_ok() {
@@ -132,7 +123,7 @@ impl AppState {
 
         let time_ms = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis();
 
-        let mut random_document = document_type
+        let random_document = document_type
             .random_document_with_params(
                 identity.id(),
                 document_state_transition_entropy.into(),
@@ -146,7 +137,7 @@ impl AppState {
 
         let mut signer = SimpleSigner::default();
 
-        signer.add_key(identity_public_key.clone(), private_key.clone().to_bytes());
+        signer.add_key(identity_public_key.clone(), private_key.to_bytes());
 
         let data_contract = data_contract.clone();
 
