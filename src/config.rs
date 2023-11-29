@@ -9,8 +9,9 @@ use serde::Deserialize;
 ///
 /// Content of this configuration is loaded from environment variables or `.env`
 /// file when the [Config::load()] is called.
-/// Variable names in the enviroment and `.env` file must be prefixed with
-/// [EXPLORER_](Config::CONFIG_PREFIX) and written as SCREAMING_SNAKE_CASE (e.g.
+/// Variable names in the enviroment and `.env` file must be prefixed with either
+/// [LOCAL_EXPLORER_](Config::CONFIG_PREFIX) or [TESTNET_EXPLORER_](Config::CONFIG_PREFIX)
+/// and written as SCREAMING_SNAKE_CASE (e.g.
 /// `EXPLORER_DAPI_ADDRESSES`).
 pub struct Config {
     /// Hostname of the Dash Platform node to connect to
@@ -30,22 +31,50 @@ pub struct Config {
 impl Config {
     /// Prefix of configuration options in the environment variables and `.env`
     /// file.
-    const CONFIG_PREFIX: &'static str = "EXPLORER_";
+    const LOCAL_CONFIG_PREFIX: &'static str = "LOCAL_EXPLORER_";
 
-    /// Load configuration from operating system environment variables and
+    /// Prefix of configuration options in the environment variables and `.env`
+    /// file.
+    const TESTNET_CONFIG_PREFIX: &'static str = "TESTNET_EXPLORER_";
+
+    /// Loads a local configuration from operating system environment variables and
     /// `.env` file.
     ///
     /// Create new [Config] with data from environment variables and
     /// `.env` file. Variable names in the
     /// environment and `.env` file must be converted to SCREAMING_SNAKE_CASE
-    /// and prefixed with [EXPLORER_](Config::CONFIG_PREFIX).
-    pub fn load() -> Self {
+    /// and prefixed with [LOCAL_EXPLORER_](Config::CONFIG_PREFIX).
+    pub fn load_local() -> Self {
         // load config from .env file
         if let Err(err) = dotenvy::from_path(".env") {
             tracing::warn!(?err, "failed to load config file");
         }
 
-        let config: Self = envy::prefixed(Self::CONFIG_PREFIX)
+        let config: Self = envy::prefixed(Self::LOCAL_CONFIG_PREFIX)
+            .from_env()
+            .expect("configuration error");
+
+        if !config.is_valid() {
+            panic!("invalid configuration: {:?}", config);
+        }
+
+        config
+    }
+
+    /// Loads a local configuration from operating system environment variables and
+    /// `.env` file.
+    ///
+    /// Create new [Config] with data from environment variables and
+    /// `.env` file. Variable names in the
+    /// environment and `.env` file must be converted to SCREAMING_SNAKE_CASE
+    /// and prefixed with [TESTNET_EXPLORER_](Config::CONFIG_PREFIX).
+    pub fn load_testnet() -> Self {
+        // load config from .env file
+        if let Err(err) = dotenvy::from_path(".env") {
+            tracing::warn!(?err, "failed to load config file");
+        }
+
+        let config: Self = envy::prefixed(Self::TESTNET_CONFIG_PREFIX)
             .from_env()
             .expect("configuration error");
 

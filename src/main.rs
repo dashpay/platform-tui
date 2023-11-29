@@ -62,7 +62,7 @@ async fn main() {
     }));
 
     // Load configuration
-    let config = Config::load();
+    let config = Config::load_testnet();
 
     // Setup Platform SDK
     let address_list = config.dapi_address_list();
