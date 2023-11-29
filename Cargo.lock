@@ -4744,8 +4744,7 @@ dependencies = [
 [[package]]
 name = "tui-realm-stdlib"
 version = "1.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "24d8dc6284ce10a3a3e0a969f0f929f582db65f28573c670f4dfbfdfbaf75c34"
+source = "git+https://github.com/fominok/tui-realm-stdlib?branch=input-cursor-fix#5e3dd2527d0dcb906bedeb247035e690a6c75391"
 dependencies = [
  "textwrap",
  "tuirealm",

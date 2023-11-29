@@ -70,7 +70,6 @@ impl<P: TextInputParser> TextInput<P> {
         placeholder: &'static str,
         value: &str,
     ) -> Self {
-        // TODO tui-realm bug, wrong cursor position if no borders
         let mut input = tui_realm_stdlib::Input::default()
             .borders(Borders::default().sides(BorderSides::NONE))
             .placeholder(placeholder, Style::default().fg(Color::Gray))
