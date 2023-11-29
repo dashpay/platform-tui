@@ -13,11 +13,13 @@ use crate::{
             utils::impl_builder_no_args, widgets::info::Info, ScreenCommandKey, ScreenController,
             ScreenFeedback, ScreenToggleKey,
         },
-        views::{identities::IdentitiesScreenController, strategies::StrategiesScreenController},
+        views::{
+            identities::IdentitiesScreenController, platform_info::PlatformInfoScreenController,
+            strategies::StrategiesScreenController,
+        },
     },
     Event,
 };
-use crate::ui::views::platform_info::PlatformInfoScreenController;
 
 const COMMAND_KEYS: [ScreenCommandKey; 7] = [
     ScreenCommandKey::new("q", "Quit"),
@@ -95,9 +97,9 @@ impl ScreenController for MainScreenController {
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::None,
             Event::Key(KeyEvent {
-               code: Key::Char('p'),
-               modifiers: KeyModifiers::NONE,
-           }) => ScreenFeedback::NextScreen(PlatformInfoScreenController::builder()),
+                code: Key::Char('p'),
+                modifiers: KeyModifiers::NONE,
+            }) => ScreenFeedback::NextScreen(PlatformInfoScreenController::builder()),
             _ => ScreenFeedback::None,
         }
     }

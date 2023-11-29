@@ -9,10 +9,10 @@ use serde::Deserialize;
 ///
 /// Content of this configuration is loaded from environment variables or `.env`
 /// file when the [Config::load()] is called.
-/// Variable names in the enviroment and `.env` file must be prefixed with either
-/// [LOCAL_EXPLORER_](Config::CONFIG_PREFIX) or [TESTNET_EXPLORER_](Config::CONFIG_PREFIX)
-/// and written as SCREAMING_SNAKE_CASE (e.g.
-/// `EXPLORER_DAPI_ADDRESSES`).
+/// Variable names in the enviroment and `.env` file must be prefixed with
+/// either [LOCAL_EXPLORER_](Config::CONFIG_PREFIX) or
+/// [TESTNET_EXPLORER_](Config::CONFIG_PREFIX) and written as
+/// SCREAMING_SNAKE_CASE (e.g. `EXPLORER_DAPI_ADDRESSES`).
 pub struct Config {
     /// Hostname of the Dash Platform node to connect to
     pub dapi_addresses: String,
@@ -32,13 +32,12 @@ impl Config {
     /// Prefix of configuration options in the environment variables and `.env`
     /// file.
     const LOCAL_CONFIG_PREFIX: &'static str = "LOCAL_EXPLORER_";
-
     /// Prefix of configuration options in the environment variables and `.env`
     /// file.
     const TESTNET_CONFIG_PREFIX: &'static str = "TESTNET_EXPLORER_";
 
-    /// Loads a local configuration from operating system environment variables and
-    /// `.env` file.
+    /// Loads a local configuration from operating system environment variables
+    /// and `.env` file.
     ///
     /// Create new [Config] with data from environment variables and
     /// `.env` file. Variable names in the
@@ -61,8 +60,8 @@ impl Config {
         config
     }
 
-    /// Loads a local configuration from operating system environment variables and
-    /// `.env` file.
+    /// Loads a local configuration from operating system environment variables
+    /// and `.env` file.
     ///
     /// Create new [Config] with data from environment variables and
     /// `.env` file. Variable names in the

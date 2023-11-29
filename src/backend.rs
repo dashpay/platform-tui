@@ -6,10 +6,10 @@ pub(crate) mod documents;
 mod error;
 pub(crate) mod identities;
 pub(crate) mod insight;
+pub(crate) mod platform_info;
 mod state;
 mod strategies;
 mod wallet;
-pub(crate) mod platform_info;
 
 use std::{
     collections::BTreeMap,
@@ -35,9 +35,9 @@ pub(crate) use self::{
     strategies::StrategyTask,
     wallet::{Wallet, WalletTask},
 };
-
 use crate::backend::{
-    documents::DocumentTask, identities::IdentityTask, insight::InsightAPIClient, platform_info::PlatformInfoTask,
+    documents::DocumentTask, identities::IdentityTask, insight::InsightAPIClient,
+    platform_info::PlatformInfoTask,
 };
 
 /// Unit of work for the backend.
@@ -198,7 +198,7 @@ impl Backend {
                     self.sdk.lock().await.deref_mut(),
                     platform_info_task,
                 )
-                    .await
+                .await
             }
         }
     }

@@ -9,12 +9,14 @@ use tuirealm::{
 use crate::{
     backend::{BackendEvent, Task},
     ui::{
-        form::{FormController, FormStatus, Input, InputStatus, TextInput},
+        form::{
+            parsers::DefaultTextInputParser, FormController, FormStatus, Input, InputStatus,
+            TextInput,
+        },
         screen::{
             utils::impl_builder_no_args, widgets::info::Info, ScreenCommandKey, ScreenController,
             ScreenFeedback, ScreenToggleKey,
         },
-        views::main::MainScreenController,
     },
     Event,
 };
@@ -99,7 +101,7 @@ impl ScreenController for IdentitiesScreenController {
 }
 
 pub(crate) struct GetIdentityByIdFormController {
-    input: TextInput<String>,
+    input: TextInput<DefaultTextInputParser<String>>, // TODO: b58 parser
 }
 
 impl GetIdentityByIdFormController {

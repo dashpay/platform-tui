@@ -11,7 +11,10 @@ use crate::{
         identities::IdentityTask, AppState, AppStateUpdate, BackendEvent, Task, Wallet, WalletTask,
     },
     ui::{
-        form::{FormController, FormStatus, Input, InputStatus, TextInput},
+        form::{
+            parsers::DefaultTextInputParser, FormController, FormStatus, Input, InputStatus,
+            TextInput,
+        },
         screen::{
             info_display::InfoDisplay, utils::impl_builder, widgets::info::Info, ScreenCommandKey,
             ScreenController, ScreenFeedback, ScreenToggleKey,
@@ -76,7 +79,7 @@ pub(crate) struct WalletScreenController {
 impl_builder!(WalletScreenController);
 
 struct RegisterIdentityFormController {
-    input: TextInput<f64>,
+    input: TextInput<DefaultTextInputParser<f64>>,
 }
 
 impl RegisterIdentityFormController {
@@ -122,7 +125,7 @@ impl FormController for RegisterIdentityFormController {
 }
 
 struct TopUpIdentityFormController {
-    input: TextInput<f64>,
+    input: TextInput<DefaultTextInputParser<f64>>,
 }
 
 impl TopUpIdentityFormController {
@@ -168,7 +171,7 @@ impl FormController for TopUpIdentityFormController {
 }
 
 struct WithdrawFromIdentityFormController {
-    input: TextInput<f64>,
+    input: TextInput<DefaultTextInputParser<f64>>,
 }
 
 impl WithdrawFromIdentityFormController {
@@ -428,7 +431,8 @@ impl ScreenController for WalletScreenController {
 }
 
 struct AddWalletPrivateKeyFormController {
-    input: TextInput<String>, // TODO: provide parser to always have a typesafe valid output
+    input: TextInput<DefaultTextInputParser<String>>, /* TODO: provide parser to always have a
+                                                       * typesafe valid output */
 }
 
 impl AddWalletPrivateKeyFormController {

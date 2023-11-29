@@ -1,8 +1,4 @@
-// mod app;
 mod backend;
-// mod components;
-// mod managers;
-// mod mock_components;
 mod config;
 mod ui;
 
@@ -34,7 +30,7 @@ async fn main() {
 
     let subscriber = tracing_subscriber::fmt::fmt()
         .with_env_filter(EnvFilter::from_default_env())
-        .with_writer(log_file) // Write to the file
+        .with_writer(log_file)
         .finish();
 
     tracing::subscriber::set_global_default(subscriber).expect("can't initialize logging");
@@ -123,11 +119,6 @@ async fn main() {
             }
             UiFeedback::Redraw => ui.redraw(), // TODO Debounce redraw?
             UiFeedback::None => (),
-            UiFeedback::Error(message) => {
-                // todo: show error somewhere
-                panic!("{}",message);
-                ui.redraw();
-            }
         }
     }
 }

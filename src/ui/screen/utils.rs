@@ -25,6 +25,7 @@ macro_rules! impl_builder {
 macro_rules! impl_builder_no_args {
     ($screen:ty) => {
         impl $screen {
+            #![allow(dead_code)]
             pub(crate) fn builder() -> crate::ui::screen::ScreenControllerBuilder {
                 use futures::FutureExt;
 

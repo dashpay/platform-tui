@@ -14,7 +14,10 @@ use tuirealm::{
 
 pub(crate) use self::{
     utils::{ComposedInput, Field},
-    widgets::{select::SelectInput, text::TextInput},
+    widgets::{
+        select::SelectInput,
+        text::{parsers, TextInput},
+    },
 };
 use super::screen::ScreenControllerBuilder;
 use crate::backend::Task;
@@ -94,7 +97,6 @@ impl<C: FormController> Form<C> {
 /// return, since a user's input precedes some action.
 pub(crate) enum FormStatus {
     Done { task: Task, block: bool },
-    Error(String),
     NextScreen(ScreenControllerBuilder),
     Redraw,
     None,

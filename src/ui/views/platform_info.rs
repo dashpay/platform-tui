@@ -1,6 +1,5 @@
 //! Platform invo views.
 
-
 use std::fmt::{self, Display};
 
 use tuirealm::{
@@ -10,7 +9,10 @@ use tuirealm::{
 };
 
 use crate::{
-    backend::{AppState, AppStateUpdate, BackendEvent},
+    backend::{
+        platform_info::PlatformInfoTask::FetchCurrentEpochInfo, AppState, AppStateUpdate,
+        BackendEvent, StrategyTask, Task,
+    },
     ui::{
         form::{Input, InputStatus, SelectInput},
         screen::{
@@ -20,19 +22,17 @@ use crate::{
     },
     Event,
 };
-use crate::backend::platform_info::PlatformInfoTask::FetchCurrentEpochInfo;
-use crate::backend::{StrategyTask, Task};
 
-const COMMAND_KEYS: [ScreenCommandKey; 1] = [
-    ScreenCommandKey::new("i", "Fetch recent Platform information"),
-];
+const COMMAND_KEYS: [ScreenCommandKey; 1] = [ScreenCommandKey::new(
+    "i",
+    "Fetch recent Platform information",
+)];
 
 pub(crate) struct PlatformInfoScreenController {
     info: Info,
 }
 
 impl_builder!(PlatformInfoScreenController);
-
 
 impl PlatformInfoScreenController {
     pub(crate) async fn new(_app_state: &AppState) -> Self {
@@ -58,22 +58,22 @@ impl ScreenController for PlatformInfoScreenController {
     fn on_event(&mut self, event: &Event) -> ScreenFeedback {
         match event {
             Event::Key(KeyEvent {
-                           code: Key::Char('q'),
-                           modifiers: KeyModifiers::NONE,
-                       }) => ScreenFeedback::PreviousScreen,
+                code: Key::Char('q'),
+                modifiers: KeyModifiers::NONE,
+            }) => ScreenFeedback::PreviousScreen,
 
             Event::Key(KeyEvent {
-                           code: Key::Char('i'),
-                           modifiers: KeyModifiers::NONE,
-                       }) => ScreenFeedback::Task {
+                code: Key::Char('i'),
+                modifiers: KeyModifiers::NONE,
+            }) => ScreenFeedback::Task {
                 task: Task::PlatformInfo(FetchCurrentEpochInfo),
                 block: true,
             },
 
             Event::Backend(BackendEvent::TaskCompleted {
-                               task: Task::PlatformInfo(_),
-                               execution_result,
-                           }) => {
+                task: Task::PlatformInfo(_),
+                execution_result,
+            }) => {
                 self.info = Info::new_from_result(execution_result);
                 ScreenFeedback::Redraw
             }

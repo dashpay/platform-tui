@@ -58,7 +58,6 @@ pub(crate) struct Ui {
 pub(crate) enum UiFeedback {
     Redraw,
     Quit,
-    Error(String),
     ExecuteTask(Task),
     None,
 }
@@ -197,10 +196,6 @@ impl Ui {
                 FormStatus::Exit => {
                     self.form = None;
                     UiFeedback::Redraw
-                }
-                FormStatus::Error(string) => {
-                    self.form = None;
-                    UiFeedback::Error(string)
                 }
             }
         } else {

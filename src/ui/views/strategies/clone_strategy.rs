@@ -4,11 +4,13 @@ use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
 use crate::{
     backend::{StrategyTask, Task},
-    ui::form::{FormController, FormStatus, Input, InputStatus, TextInput},
+    ui::form::{
+        parsers::DefaultTextInputParser, FormController, FormStatus, Input, InputStatus, TextInput,
+    },
 };
 
 pub(crate) struct CloneStrategyFormController {
-    input: TextInput<String>,
+    input: TextInput<DefaultTextInputParser<String>>,
 }
 
 impl CloneStrategyFormController {

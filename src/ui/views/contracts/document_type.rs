@@ -1,6 +1,5 @@
 //! UI defenitions for selected data contract.
 
-use dash_sdk::platform::DriveQuery;
 use dpp::{
     data_contract::{
         accessors::v0::DataContractV0Getters,
@@ -23,7 +22,10 @@ use crate::{
         as_toml, documents::DocumentTask, AppState, BackendEvent, CompletedTaskPayload, Task,
     },
     ui::{
-        form::{FormController, FormStatus, Input, InputStatus, SelectInput, TextInput},
+        form::{
+            parsers::DocumentQueryTextInputParser, FormController, FormStatus, Input, InputStatus,
+            SelectInput, TextInput,
+        },
         screen::{
             widgets::info::Info, ScreenCommandKey, ScreenController, ScreenFeedback,
             ScreenToggleKey,
@@ -247,9 +249,8 @@ impl ScreenController for DocumentTypeScreenController {
 }
 
 struct QueryDocumentTypeFormController {
-    data_contract: DataContract,
     document_type: DocumentType,
-    input: TextInput<String>, // TODO: provide parser to always have a typesafe valid output
+    input: TextInput<DocumentQueryTextInputParser>,
 }
 
 impl QueryDocumentTypeFormController {
@@ -267,10 +268,10 @@ impl QueryDocumentTypeFormController {
             String::default()
         };
         let query = format!("Select * from {} {}", document_type.name(), ours_query_part);
+        let parser = DocumentQueryTextInputParser::new(data_contract);
         QueryDocumentTypeFormController {
-            data_contract,
             document_type,
-            input: TextInput::new_init_value("Document Query", query),
+            input: TextInput::new_str_value_with_parser(parser, "Document Query", &query),
         }
     }
 }
@@ -278,18 +279,10 @@ impl QueryDocumentTypeFormController {
 impl FormController for QueryDocumentTypeFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
         match self.input.on_event(event) {
-            InputStatus::Done(query) => {
-                let drive_query_result =
-                    DriveQuery::from_sql_expr(query.as_str(), &self.data_contract, None);
-
-                match drive_query_result {
-                    Ok(drive_query) => FormStatus::Done {
-                        task: Task::Document(DocumentTask::QueryDocuments(drive_query.into())),
-                        block: true,
-                    },
-                    Err(e) => FormStatus::Error(e.to_string()),
-                }
-            }
+            InputStatus::Done(query) => FormStatus::Done {
+                task: Task::Document(DocumentTask::QueryDocuments(query)),
+                block: true,
+            },
             status => status.into(),
         }
     }
