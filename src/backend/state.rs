@@ -30,6 +30,8 @@ use crate::backend::insight::InsightAPIClient;
 
 const CURRENT_PROTOCOL_VERSION: ProtocolVersion = 1;
 
+const USE_LOCAL: bool = false;
+
 pub(crate) type ContractFileName = String;
 
 pub(super) type StrategiesMap = BTreeMap<String, Strategy>;
@@ -427,7 +429,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
 
 impl AppState {
     pub async fn load(insight: &InsightAPIClient) -> AppState {
-        let path = Path::new("explorer.state");
+        let path = Path::new("testnet_explorer.state");
 
         let Ok(read_result) = fs::read(path) else {
             return AppState::default();
@@ -451,7 +453,7 @@ impl AppState {
     /// Used in backend destructor, must not panic
     pub fn save(&self) {
         let platform_version = PlatformVersion::get(CURRENT_PROTOCOL_VERSION).unwrap();
-        let path = Path::new("explorer.state");
+        let path = Path::new("testnet_explorer.state");
 
         let serialized_state = tokio::task::block_in_place(|| {
             self.serialize_to_bytes_with_platform_version(platform_version)

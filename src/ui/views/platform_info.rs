@@ -22,10 +22,21 @@ use crate::{
     },
     Event,
 };
+use crate::backend::platform_info::PlatformInfoTask::{FetchCurrentVersionVotingState, FetchSpecificEpochInfo};
+use crate::ui::form::parsers::DefaultTextInputParser;
+use crate::ui::form::{FormController, FormStatus, TextInput};
 
-const COMMAND_KEYS: [ScreenCommandKey; 1] = [ScreenCommandKey::new(
-    "i",
-    "Fetch recent Platform information",
+const COMMAND_KEYS: [ScreenCommandKey; 4] = [
+    ScreenCommandKey::new(
+        "q", "Back to Main",
+    ),ScreenCommandKey::new(
+    "c", "Fetch current Platform epoch info",
+),
+    ScreenCommandKey::new(
+        "i", "Fetch previous Platform epoch info",
+    ),
+ScreenCommandKey::new(
+"v", "Current version voting",
 )];
 
 pub(crate) struct PlatformInfoScreenController {
@@ -63,12 +74,25 @@ impl ScreenController for PlatformInfoScreenController {
             }) => ScreenFeedback::PreviousScreen,
 
             Event::Key(KeyEvent {
-                code: Key::Char('i'),
+                code: Key::Char('c'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::Task {
                 task: Task::PlatformInfo(FetchCurrentEpochInfo),
                 block: true,
             },
+
+            Event::Key(KeyEvent {
+                           code: Key::Char('v'),
+                           modifiers: KeyModifiers::NONE,
+                       }) => ScreenFeedback::Task {
+                task: Task::PlatformInfo(FetchCurrentVersionVotingState),
+                block: true,
+            },
+
+            Event::Key(KeyEvent {
+                           code: Key::Char('i'),
+                           modifiers: KeyModifiers::NONE,
+                       }) => ScreenFeedback::Form(Box::new(EpochNumberChooserFormController::new())),
 
             Event::Backend(BackendEvent::TaskCompleted {
                 task: Task::PlatformInfo(_),
@@ -83,5 +107,52 @@ impl ScreenController for PlatformInfoScreenController {
 
     fn view(&mut self, frame: &mut Frame, area: Rect) {
         self.info.view(frame, area)
+    }
+}
+
+
+struct EpochNumberChooserFormController {
+    input: TextInput<DefaultTextInputParser<u16>>,
+}
+
+impl EpochNumberChooserFormController {
+    fn new() -> Self {
+        EpochNumberChooserFormController {
+            input: TextInput::new("Epoch number"),
+        }
+    }
+}
+
+impl FormController for EpochNumberChooserFormController {
+    fn on_event(&mut self, event: KeyEvent) -> FormStatus {
+        match self.input.on_event(event) {
+            InputStatus::Done(epoch) => FormStatus::Done {
+                task: Task::PlatformInfo(FetchSpecificEpochInfo(epoch)),
+                block: true,
+            },
+            InputStatus::Redraw => FormStatus::Redraw,
+            InputStatus::None => FormStatus::None,
+            InputStatus::Exit => FormStatus::Exit,
+        }
+    }
+
+    fn form_name(&self) -> &'static str {
+        "Epoch number"
+    }
+
+    fn step_view(&mut self, frame: &mut Frame, area: Rect) {
+        self.input.view(frame, area)
+    }
+
+    fn step_name(&self) -> &'static str {
+        "Input epoch number"
+    }
+
+    fn step_index(&self) -> u8 {
+        0
+    }
+
+    fn steps_number(&self) -> u8 {
+        1
     }
 }
