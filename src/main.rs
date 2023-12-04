@@ -2,12 +2,16 @@ mod backend;
 mod config;
 mod ui;
 
-use std::{fs::File, panic, sync::Arc};
+use std::{fs::File, panic, sync::Arc, time::Duration};
 
 use crossterm::event::{Event as TuiEvent, EventStream};
 use dash_platform_sdk::{mock::wallet::core_client::CoreClient, SdkBuilder};
 use dpp::{identity::accessors::IdentityGettersV0, version::PlatformVersion};
 use futures::{future::OptionFuture, select, FutureExt, StreamExt};
+use signal_hook::consts::{SIGINT, SIGQUIT, SIGTERM};
+use signal_hook_tokio::Signals;
+use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::EnvFilter;
 use tuirealm::event::KeyEvent;
@@ -19,12 +23,14 @@ use self::{
 };
 use crate::{backend::insight::InsightAPIClient, config::Config};
 
+const SHUTDOWN_TIMEOUT: Option<Duration> = Some(Duration::from_secs(5));
+
 pub(crate) enum Event<'s> {
     Key(KeyEvent),
     Backend(BackendEvent<'s>),
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "multi_thread", worker_threads = 2)]
 async fn main() {
     // Initialize logger
     let log_file = File::create("explorer.log").expect("create log file");
@@ -38,6 +44,10 @@ async fn main() {
         .finish();
 
     tracing::subscriber::set_global_default(subscriber).expect("can't initialize logging");
+
+    // Cancellation token that will be cancelled once SIGINT or SIGTERM is received.
+    let cancel = CancellationToken::new();
+    let _signal_handlers = install_signal_handlers(cancel.clone(), SHUTDOWN_TIMEOUT).await;
 
     // Log panics
     let default_panic_hook = panic::take_hook();
@@ -109,6 +119,7 @@ async fn main() {
     let mut terminal_event_stream = EventStream::new().fuse();
     let mut backend_task: OptionFuture<_> = None.into();
 
+    let mut cancellation = Box::pin(cancel.cancelled()).fuse();
     while active {
         let event = select! {
             terminal_event = terminal_event_stream.next() => match terminal_event {
@@ -119,6 +130,11 @@ async fn main() {
                 _ => None
             },
             backend_task_finished = backend_task => backend_task_finished.map(Event::Backend),
+           _= cancellation => {
+                active = false;
+                tracing::debug!("received shutdown signal");
+                None
+           },
         };
 
         let ui_feedback = if let Some(e) = event {
@@ -135,6 +151,55 @@ async fn main() {
             }
             UiFeedback::Redraw => ui.redraw(), // TODO Debounce redraw?
             UiFeedback::None => (),
+        }
+    }
+}
+
+/// Install signal handlers for SIGINT, SIGTERM and SIGQUIT.
+///
+/// Provided token will be cancelled once any of these signals is received.
+///
+/// Returns handler to manage signals and a task that will be spawned to handle
+/// signals. Returned values must be in the scope of the application, otherwise
+/// signals will not be handled.
+async fn install_signal_handlers(
+    token: CancellationToken,
+    shutdown_timeout: Option<Duration>,
+) -> (signal_hook_tokio::Handle, JoinHandle<()>) {
+    let signals =
+        Signals::new([SIGTERM, SIGINT, SIGQUIT]).expect("cannot initialize signal handler");
+
+    let handle = signals.handle();
+    let cancel = token.clone();
+
+    let signals_task: JoinHandle<()> =
+        tokio::spawn(handle_signals(signals, cancel, shutdown_timeout));
+
+    (handle, signals_task)
+}
+
+async fn handle_signals(
+    mut signals: Signals,
+    cancel: CancellationToken,
+    shutdown_timeout: Option<Duration>,
+) {
+    // we default to SIGINT exit code
+    let mut exit_code = 128 + SIGINT;
+    loop {
+        tokio::select! {
+            Some(signal) = signals.next() => {
+                    tracing::info!(signal, "received signal");
+                    exit_code = 128+signal;
+                    cancel.cancel();
+            },
+            _= cancel.cancelled() => {
+                tracing::info!(?shutdown_timeout, "shutdown requested");
+                if let Some(timeout) = shutdown_timeout {
+                    tokio::time::sleep(timeout).await;
+                    tracing::info!(?timeout, "shutdown timed out, forcing shutdown");
+                    signal_hook::low_level::exit(exit_code);
+                }
+            }
         }
     }
 }
