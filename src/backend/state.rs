@@ -2,9 +2,10 @@
 //! This kind of state does not include UI details and basically all about
 //! persistence required by backend.
 
-use std::{collections::BTreeMap, fs, path::Path};
+use std::{collections::BTreeMap, fs, path::Path, sync::Arc};
 
 use bincode::{Decode, Encode};
+use dash_platform_sdk::Sdk;
 use dpp::{
     dashcore::{
         psbt::serialize::{Deserialize, Serialize},

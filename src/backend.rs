@@ -7,6 +7,7 @@ mod error;
 pub(crate) mod identities;
 pub(crate) mod insight;
 pub(crate) mod platform_info;
+mod sdk_impl;
 mod state;
 mod strategies;
 mod wallet;
@@ -17,7 +18,7 @@ use std::{
     sync::Arc,
 };
 
-use dash_platform_sdk::Sdk;
+use dash_platform_sdk::{mock::wallet::core_client::CoreClient, Sdk};
 use dpp::{
     document::Document,
     identity::accessors::IdentityGettersV0,
@@ -123,14 +124,16 @@ pub(crate) enum AppStateUpdate<'s> {
 /// Application state, dependencies are task execution logic around it.
 pub(crate) struct Backend {
     sdk: Arc<Sdk>,
+    core: CoreClient,
     app_state: AppState,
     insight: InsightAPIClient,
 }
 
 impl Backend {
-    pub(crate) async fn new(sdk: Arc<Sdk>, insight: InsightAPIClient) -> Self {
+    pub(crate) async fn new(sdk: Arc<Sdk>, core: CoreClient, insight: InsightAPIClient) -> Self {
         Backend {
             sdk,
+            core,
             app_state: AppState::load(&insight).await,
             insight,
         }

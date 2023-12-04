@@ -2,6 +2,7 @@ use std::{
     collections::{BTreeMap, HashMap},
     ops::{Deref, DerefMut},
     str::FromStr,
+    sync::Arc,
 };
 
 use bincode::{
@@ -10,13 +11,19 @@ use bincode::{
     error::{DecodeError, EncodeError},
     BorrowDecode, Decode, Encode,
 };
-use dpp::dashcore::{
-    hashes::Hash,
-    psbt::serialize::Serialize,
-    secp256k1::{Message, Secp256k1},
-    sighash::SighashCache,
-    transaction::special_transaction::{asset_lock::AssetLockPayload, TransactionPayload},
-    Address, Network, OutPoint, PrivateKey, PublicKey, ScriptBuf, Transaction, TxIn, TxOut,
+use dash_platform_sdk::Sdk;
+use dpp::{
+    dashcore::{
+        hashes::Hash,
+        psbt::serialize::Serialize,
+        secp256k1::{Message, Secp256k1},
+        sighash::SighashCache,
+        transaction::special_transaction::{asset_lock::AssetLockPayload, TransactionPayload},
+        Address, Network, OutPoint, PrivateKey, PublicKey, ScriptBuf, Transaction, TxIn, TxOut,
+    },
+    identity::{signer::Signer, IdentityPublicKey},
+    platform_value::BinaryData,
+    ProtocolError,
 };
 use rand::{prelude::StdRng, Rng, SeedableRng};
 use tokio::sync::{Mutex, MutexGuard};
@@ -310,6 +317,23 @@ impl Wallet {
                 wallet.utxos = utxos;
             }
         }
+    }
+
+    /// Return default public key for the wallet
+    pub fn public_key(&self) -> PublicKey {
+        match self {
+            Wallet::SingleKeyWallet(single_wallet) => single_wallet.public_key,
+        }
+    }
+}
+
+impl Signer for Wallet {
+    fn sign(
+        &self,
+        identity_public_key: &IdentityPublicKey,
+        data: &[u8],
+    ) -> Result<BinaryData, ProtocolError> {
+        todo!("not implemented yet")
     }
 }
 

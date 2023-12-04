@@ -2,12 +2,13 @@ mod backend;
 mod config;
 mod ui;
 
-use std::{fs::File, io::Write, panic, path::Path, sync::Mutex};
+use std::{fs::File, panic, sync::Arc};
 
 use crossterm::event::{Event as TuiEvent, EventStream};
-use dash_platform_sdk::SdkBuilder;
+use dash_platform_sdk::{mock::wallet::core_client::CoreClient, SdkBuilder};
 use dpp::{identity::accessors::IdentityGettersV0, version::PlatformVersion};
 use futures::{future::OptionFuture, select, FutureExt, StreamExt};
+use tracing::level_filters::LevelFilter;
 use tracing_subscriber::EnvFilter;
 use tuirealm::event::KeyEvent;
 use ui::IdentityBalance;
@@ -28,8 +29,11 @@ async fn main() {
     // Initialize logger
     let log_file = File::create("explorer.log").expect("create log file");
 
+    let filter = EnvFilter::builder()
+        .with_default_directive(LevelFilter::INFO.into())
+        .from_env_lossy();
     let subscriber = tracing_subscriber::fmt::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
+        .with_env_filter(filter)
         .with_writer(log_file)
         .finish();
 
@@ -76,7 +80,19 @@ async fn main() {
 
     let insight = InsightAPIClient::new(config.insight_api_uri());
 
-    let backend = Backend::new(sdk, insight).await;
+    // We use core client to fetch quorum keys because we don't have SPV yet
+    let core = CoreClient::new(
+        &config.core_host,
+        config.core_port,
+        &config.core_user,
+        &config.core_password,
+    )
+    .expect("expected to create core client");
+
+    let backend = Arc::new(Backend::new(Arc::clone(&sdk), core, insight).await);
+    sdk.set_context_provider(Arc::clone(&backend));
+    let wallet = Arc::clone(&backend);
+    sdk.set_wallet(wallet).await;
 
     let initial_identity_balance = backend
         .state()
