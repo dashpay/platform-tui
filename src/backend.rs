@@ -163,6 +163,7 @@ impl Backend {
             }
             Task::Strategy(strategy_task) => {
                 strategies::run_strategy_task(
+                    self.sdk.lock().await.deref_mut(),
                     &self.app_state.available_strategies,
                     &self.app_state.available_strategies_contract_names,
                     &self.app_state.selected_strategy,
