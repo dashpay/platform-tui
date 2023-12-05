@@ -8,6 +8,7 @@ mod new_strategy;
 mod operations;
 mod select_strategy;
 mod start_identities;
+mod run_strategy;
 
 use std::collections::BTreeMap;
 
@@ -35,6 +36,7 @@ use self::{
     new_strategy::NewStrategyFormController, operations::StrategyAddOperationFormController,
     select_strategy::SelectStrategyFormController,
     start_identities::StrategyStartIdentitiesFormController,
+    run_strategy::RunStrategyFormController,
 };
 use crate::{
     backend::{AppState, AppStateUpdate, BackendEvent, StrategyTask, Task},
@@ -43,7 +45,6 @@ use crate::{
             utils::impl_builder, widgets::info::Info, ScreenCommandKey, ScreenController,
             ScreenFeedback, ScreenToggleKey,
         },
-        views::main::MainScreenController,
     },
     Event,
 };
@@ -54,7 +55,7 @@ const COMMAND_KEYS: [ScreenCommandKey; 3] = [
     ScreenCommandKey::new("s", "Select a strategy"),
 ];
 
-const COMMANDS_KEYS_ON_STRATEGY_SELECTED: [ScreenCommandKey; 13] = [
+const COMMANDS_KEYS_ON_STRATEGY_SELECTED: [ScreenCommandKey; 14] = [
     ScreenCommandKey::new("q", "Back to Main"),
     ScreenCommandKey::new("n", "New strategy"),
     ScreenCommandKey::new("s", "Select a strategy"),
@@ -64,6 +65,7 @@ const COMMANDS_KEYS_ON_STRATEGY_SELECTED: [ScreenCommandKey; 13] = [
     ScreenCommandKey::new("o", "Add operations"),
     ScreenCommandKey::new("i", "Set identity inserts"),
     ScreenCommandKey::new("b", "Set start identities"),
+    ScreenCommandKey::new("r", "Run strategy"),
     ScreenCommandKey::new("w", "Remove last contract"),
     ScreenCommandKey::new("x", "Remove identity inserts"),
     ScreenCommandKey::new("y", "Remove start identities"),
@@ -167,31 +169,26 @@ impl ScreenController for StrategiesScreenController {
                 code: Key::Char('q'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::PreviousScreen,
-
             Event::Key(KeyEvent {
                 code: Key::Char('n'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::Form(Box::new(NewStrategyFormController::new())),
-
             Event::Key(KeyEvent {
                 code: Key::Char('s'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::Form(Box::new(SelectStrategyFormController::new(
                 self.available_strategies.clone(),
             ))),
-
             Event::Key(KeyEvent {
                 code: Key::Char('d'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::Form(Box::new(DeleteStrategyFormController::new(
                 self.available_strategies.clone(),
             ))),
-
             Event::Key(KeyEvent {
                 code: Key::Char('l'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::Form(Box::new(CloneStrategyFormController::new())),
-
             Event::Key(KeyEvent {
                 code: Key::Char('c'),
                 modifiers: KeyModifiers::NONE,
@@ -208,7 +205,6 @@ impl ScreenController for StrategiesScreenController {
                     ScreenFeedback::None
                 }
             }
-
             Event::Key(KeyEvent {
                 code: Key::Char('i'),
                 modifiers: KeyModifiers::NONE,
@@ -221,7 +217,6 @@ impl ScreenController for StrategiesScreenController {
                     ScreenFeedback::None
                 }
             }
-
             Event::Key(KeyEvent {
                 code: Key::Char('b'),
                 modifiers: KeyModifiers::NONE,
@@ -234,7 +229,6 @@ impl ScreenController for StrategiesScreenController {
                     ScreenFeedback::None
                 }
             }
-
             Event::Key(KeyEvent {
                 code: Key::Char('o'),
                 modifiers: KeyModifiers::NONE,
@@ -248,7 +242,12 @@ impl ScreenController for StrategiesScreenController {
                     ScreenFeedback::None
                 }
             }
-
+            Event::Key(KeyEvent {
+                code: Key::Char('r'),
+                modifiers: KeyModifiers::NONE,
+            }) => ScreenFeedback::Form(Box::new(RunStrategyFormController::new(
+                self.selected_strategy.clone().unwrap(),
+            ))),
             Event::Key(KeyEvent {
                 code: Key::Char('w'),
                 modifiers: KeyModifiers::NONE,
@@ -258,7 +257,6 @@ impl ScreenController for StrategiesScreenController {
                 )),
                 block: false,
             },
-
             Event::Key(KeyEvent {
                 code: Key::Char('x'),
                 modifiers: KeyModifiers::NONE,
@@ -268,7 +266,6 @@ impl ScreenController for StrategiesScreenController {
                 )),
                 block: false,
             },
-
             Event::Key(KeyEvent {
                 code: Key::Char('y'),
                 modifiers: KeyModifiers::NONE,
@@ -278,7 +275,6 @@ impl ScreenController for StrategiesScreenController {
                 )),
                 block: false,
             },
-
             Event::Key(KeyEvent {
                 code: Key::Char('z'),
                 modifiers: KeyModifiers::NONE,
@@ -288,7 +284,6 @@ impl ScreenController for StrategiesScreenController {
                 )),
                 block: false,
             },
-
             Event::Backend(
                 BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
                     strategy_name,
@@ -309,7 +304,6 @@ impl ScreenController for StrategiesScreenController {
                 self.selected_strategy = Some(strategy_name.clone());
                 ScreenFeedback::Redraw
             }
-
             Event::Backend(
                 BackendEvent::AppStateUpdated(AppStateUpdate::Strategies(strategies, ..))
                 | BackendEvent::TaskCompletedStateChange {

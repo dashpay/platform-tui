@@ -11,6 +11,7 @@ tuirealm = "1.9.0"
 bs58 = "0.5.0"
 dpp = { path = "../platform/packages/rs-dpp", features = ["identity-serialization", "identity-serde-conversion", "random-documents", "random-identities", "random-document-types", "state-transition-signing"]}
 dash-platform-sdk = { path = "../platform/packages/rs-sdk"}
+drive = { path = "../platform/packages/rs-drive" }
 thiserror = "1"
 serde = "1.0.188"
 serde_json = "1.0.107"
