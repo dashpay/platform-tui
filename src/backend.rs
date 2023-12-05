@@ -23,6 +23,8 @@ use dpp::{
     identity::accessors::IdentityGettersV0,
     prelude::{Identifier, Identity},
 };
+use dpp::block::block_info::BlockInfo;
+use dpp::version::PlatformVersion;
 use serde::Serialize;
 pub(crate) use state::AppState;
 use strategy_tests::Strategy;
@@ -148,8 +150,13 @@ impl Backend {
                     identities::fetch_identity_by_b58_id(&mut sdk, base58_id).await;
                 if add_to_known_identities {
                     if let Ok((Some(identity), _)) = &execution_result {
-                        let mut loaded_identities = self.app_state.known_identities.lock().await;
-                        loaded_identities.insert(identity.id(), identity.clone());
+                        let mut drive = self.app_state.drive.lock().await;
+                        if let Err(e) = drive.add_new_identity(identity.clone(), false, &BlockInfo::default(), true, None, PlatformVersion::latest()) {
+                            return BackendEvent::TaskCompleted {
+                                task,
+                                execution_result: Err(e.to_string()),
+                            };
+                        }
                     }
                 }
 
@@ -167,7 +174,7 @@ impl Backend {
                     &self.app_state.available_strategies,
                     &self.app_state.available_strategies_contract_names,
                     &self.app_state.selected_strategy,
-                    &self.app_state.known_contracts,
+                    &self.app_state.drive,
                     strategy_task,
                 )
                 .await

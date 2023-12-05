@@ -22,6 +22,7 @@ use dpp::{
     ProtocolError,
     ProtocolError::{PlatformDeserializationError, PlatformSerializationError},
 };
+use drive::drive::Drive;
 use strategy_tests::Strategy;
 use tokio::sync::Mutex;
 use walkdir::{DirEntry, WalkDir};
@@ -49,8 +50,7 @@ pub(crate) struct AppState {
     pub loaded_identity: Mutex<Option<Identity>>,
     pub identity_private_keys: Mutex<BTreeMap<(Identifier, KeyID), PrivateKey>>,
     pub loaded_wallet: Mutex<Option<Wallet>>,
-    pub known_identities: Mutex<BTreeMap<Identifier, Identity>>,
-    pub known_contracts: Mutex<KnownContractsMap>,
+    pub drive: Mutex<Drive>,
     pub available_strategies: Mutex<StrategiesMap>,
     /// Because we don't store which contract support file was used exactly we
     /// cannot properly restore the state and display a strategy, so this
@@ -102,14 +102,19 @@ impl Default for AppState {
             known_contracts_raw.insert(contract_name, contract.data_contract_owned());
         }
 
-        let known_contracts = Mutex::from(known_contracts_raw);
+        let drive: Drive = Drive::open("explorer.drive", None, platform_version)
+            .expect("expected to open Drive successfully");
+
+        drive
+            .create_initial_state_structure(None, platform_version)
+            .expect("expected to create root tree successfully");
+
 
         AppState {
             loaded_identity: None.into(),
             identity_private_keys: Default::default(),
             loaded_wallet: None.into(),
-            known_identities: BTreeMap::new().into(),
-            known_contracts,
+            drive: Mutex::from(drive),
             available_strategies: BTreeMap::new().into(),
             selected_strategy: None.into(),
             identity_asset_lock_private_key_in_creation: None.into(),
@@ -124,8 +129,6 @@ struct AppStateInSerializationFormat {
     pub loaded_identity: Option<Identity>,
     pub identity_private_keys: BTreeMap<(Identifier, KeyID), [u8; 32]>,
     pub loaded_wallet: Option<Wallet>,
-    pub known_identities: BTreeMap<Identifier, Identity>,
-    pub known_contracts: BTreeMap<String, Vec<u8>>,
     pub available_strategies: BTreeMap<String, Vec<u8>>,
     pub available_strategies_contract_names:
         BTreeMap<String, Vec<(ContractFileName, Option<BTreeMap<u64, ContractFileName>>)>>,
@@ -158,24 +161,12 @@ impl PlatformSerializableWithPlatformVersion for AppState {
             loaded_identity,
             identity_private_keys,
             loaded_wallet,
-            known_identities,
-            known_contracts,
-            available_strategies,
+            drive, available_strategies,
             selected_strategy,
             identity_asset_lock_private_key_in_creation,
             available_strategies_contract_names,
             identity_asset_lock_private_key_in_top_up,
         } = self;
-
-        let known_contracts_in_serialization_format = known_contracts
-            .blocking_lock()
-            .iter()
-            .map(|(key, contract)| {
-                let serialized_contract =
-                    contract.serialize_to_bytes_with_platform_version(platform_version)?;
-                Ok((key.clone(), serialized_contract))
-            })
-            .collect::<Result<BTreeMap<String, Vec<u8>>, ProtocolError>>()?;
 
         let available_strategies_in_serialization_format = available_strategies
             .blocking_lock()
@@ -223,8 +214,6 @@ impl PlatformSerializableWithPlatformVersion for AppState {
             loaded_identity: loaded_identity.blocking_lock().clone(),
             identity_private_keys,
             loaded_wallet: loaded_wallet.blocking_lock().clone(),
-            known_identities: known_identities.blocking_lock().clone(),
-            known_contracts: known_contracts_in_serialization_format,
             available_strategies: available_strategies_in_serialization_format,
             selected_strategy: selected_strategy.blocking_lock().clone(),
             available_strategies_contract_names: available_strategies_contract_names
@@ -267,30 +256,12 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
             loaded_identity,
             identity_private_keys,
             loaded_wallet,
-            known_identities,
-            known_contracts,
             available_strategies,
             selected_strategy,
             available_strategies_contract_names,
             identity_asset_lock_private_key_in_creation,
             identity_asset_lock_private_key_in_top_up,
         } = app_state;
-
-        let known_contracts = known_contracts
-            .into_iter()
-            .map(|(key, contract)| {
-                let contract = DataContract::versioned_deserialize(
-                    contract.as_slice(),
-                    validate,
-                    platform_version,
-                )
-                .map_err(|e| {
-                    let msg = format!("Error deserializing known_contract for key {}: {}", key, e);
-                    PlatformDeserializationError(msg)
-                })?;
-                Ok((key, contract))
-            })
-            .collect::<Result<BTreeMap<String, DataContract>, ProtocolError>>()?;
 
         let available_strategies = available_strategies
             .into_iter()
@@ -347,12 +318,14 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
                 )
             });
 
+        let drive: Drive = Drive::open("explorer.drive", None, platform_version)
+            .expect("expected to open Drive successfully");
+
         Ok(AppState {
             loaded_identity: loaded_identity.into(),
             identity_private_keys,
             loaded_wallet: loaded_wallet.into(),
-            known_identities: known_identities.into(),
-            known_contracts: known_contracts.into(),
+            drive: drive.into(),
             available_strategies: available_strategies.into(),
             selected_strategy: selected_strategy.into(),
             available_strategies_contract_names: available_strategies_contract_names.into(),

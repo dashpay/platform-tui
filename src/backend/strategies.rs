@@ -8,6 +8,7 @@ use dpp::{
     data_contract::{created_data_contract::CreatedDataContract, document_type::accessors::DocumentTypeV0Getters}, platform_value::{Bytes32, Identifier, string_encoding::Encoding},
     version::PlatformVersion, block::{block_info::BlockInfo, epoch::Epoch}, identity::{Identity, PartialIdentity}, document::Document,
 };
+use drive::drive::Drive;
 use drive::drive::identity::key::fetch::IdentityKeysRequest;
 use rand::{rngs::StdRng, SeedableRng};
 use simple_signer::signer::SimpleSigner;
@@ -54,7 +55,7 @@ pub(crate) async fn run_strategy_task<'s>(
     available_strategies: &'s Mutex<StrategiesMap>,
     available_strategies_contract_names: &'s Mutex<BTreeMap<String, StrategyContractNames>>,
     selected_strategy: &'s Mutex<Option<String>>,
-    known_contracts: &'s Mutex<KnownContractsMap>,
+    drive: &'s Mutex<Drive>,
     task: StrategyTask,
 ) -> BackendEvent<'s> {
     match task {
@@ -155,7 +156,7 @@ pub(crate) async fn run_strategy_task<'s>(
         }
         StrategyTask::SetContractsWithUpdates(strategy_name, selected_contract_names) => {
             let mut strategies_lock = available_strategies.lock().await;
-            let known_contracts_lock = known_contracts.lock().await;
+            let mut drive = drive.lock().await;
             let mut contract_names_lock = available_strategies_contract_names.lock().await;
 
             if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
@@ -163,7 +164,7 @@ pub(crate) async fn run_strategy_task<'s>(
                 let platform_version = PlatformVersion::latest();
 
                 if let Some(first_contract_name) = selected_contract_names.first() {
-                    if let Some(data_contract) = known_contracts_lock.get(first_contract_name) {
+                    if let Some(data_contract) = drive.get_contract_with_fetch_info().get(first_contract_name) {
                         let entropy = Bytes32::random_with_rng(&mut rng);
                         match CreatedDataContract::from_contract_and_entropy(
                             data_contract.clone(),
