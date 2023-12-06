@@ -40,12 +40,10 @@ use self::{
 };
 use crate::{
     backend::{AppState, AppStateUpdate, BackendEvent, StrategyTask, Task},
-    ui::{
-        screen::{
+    ui::screen::{
             utils::impl_builder, widgets::info::Info, ScreenCommandKey, ScreenController,
             ScreenFeedback, ScreenToggleKey,
         },
-    },
     Event,
 };
 

@@ -22,6 +22,7 @@ use dpp::{
     ProtocolError,
     ProtocolError::{PlatformDeserializationError, PlatformSerializationError},
 };
+use drive::drive::Drive;
 use strategy_tests::Strategy;
 use tokio::sync::Mutex;
 use walkdir::{DirEntry, WalkDir};
@@ -42,11 +43,11 @@ pub(super) type KnownContractsMap = BTreeMap<String, DataContract>;
 // tasks are executed on different state parts,
 // moreover single mutex hold during rendering will block unrelated tasks from
 // finishing
-#[derive(Debug)]
 pub(crate) struct AppState {
     pub loaded_identity: Mutex<Option<Identity>>,
     pub identity_private_keys: Mutex<BTreeMap<(Identifier, KeyID), PrivateKey>>,
     pub loaded_wallet: Mutex<Option<Wallet>>,
+    pub drive: Mutex<Drive>,
     pub known_identities: Mutex<BTreeMap<Identifier, Identity>>,
     pub known_contracts: Mutex<KnownContractsMap>,
     pub available_strategies: Mutex<StrategiesMap>,
@@ -102,12 +103,20 @@ impl Default for AppState {
 
         let known_contracts = Mutex::from(known_contracts_raw);
 
+        let drive: Drive = Drive::open("explorer.drive", None, platform_version)
+            .expect("expected to open Drive successfully");
+
+        drive
+            .create_initial_state_structure(None, platform_version)
+            .expect("expected to create root tree successfully");
+
         AppState {
             loaded_identity: None.into(),
             identity_private_keys: Default::default(),
             loaded_wallet: None.into(),
+            drive: Mutex::from(drive),
+            known_contracts: BTreeMap::new().into(),
             known_identities: BTreeMap::new().into(),
-            known_contracts,
             available_strategies: BTreeMap::new().into(),
             selected_strategy: None.into(),
             identity_asset_lock_private_key_in_creation: None.into(),
@@ -156,6 +165,7 @@ impl PlatformSerializableWithPlatformVersion for AppState {
             loaded_identity,
             identity_private_keys,
             loaded_wallet,
+            drive,
             known_identities,
             known_contracts,
             available_strategies,
@@ -345,10 +355,14 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
                 )
             });
 
+        let drive: Drive = Drive::open("explorer.drive", None, platform_version)
+            .expect("expected to open Drive successfully");
+
         Ok(AppState {
             loaded_identity: loaded_identity.into(),
             identity_private_keys,
             loaded_wallet: loaded_wallet.into(),
+            drive: drive.into(),
             known_identities: known_identities.into(),
             known_contracts: known_contracts.into(),
             available_strategies: available_strategies.into(),

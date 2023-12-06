@@ -2,24 +2,25 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use dapi_grpc::platform::v0::{ResponseMetadata, GetDocumentsResponse};
-use dash_platform_sdk::{Sdk, Error, platform::{transition::broadcast::BroadcastStateTransition, DocumentQuery, FetchMany}};
+use dapi_grpc::platform::v0::{GetEpochsInfoRequest, self, get_epochs_info_request, get_epochs_info_response};
+use dash_platform_sdk::{Sdk, platform::transition::broadcast::BroadcastStateTransition};
 use dpp::{
-    data_contract::{created_data_contract::CreatedDataContract, document_type::accessors::DocumentTypeV0Getters}, platform_value::{Bytes32, Identifier, string_encoding::Encoding},
-    version::PlatformVersion, block::{block_info::BlockInfo, epoch::Epoch}, identity::{Identity, PartialIdentity}, document::Document,
+    data_contract::created_data_contract::CreatedDataContract, platform_value::{Bytes32, Identifier},
+    version::PlatformVersion, block::{block_info::BlockInfo, epoch::Epoch}, identity::{Identity, PartialIdentity},
 };
-use drive::drive::identity::key::fetch::IdentityKeysRequest;
+use drive::{drive::{identity::key::fetch::IdentityKeysRequest, Drive, document::query::{QueryDocumentsOutcome, QueryDocumentsOutcomeV0Methods}}, query::DriveQuery};
 use rand::{rngs::StdRng, SeedableRng};
+use rs_dapi_client::{Dapi, RequestSettings};
 use simple_signer::signer::SimpleSigner;
 use strategy_tests::{
     frequency::Frequency, operations::Operation, transitions::create_identities_state_transitions,
     Strategy, LocalDocumentQuery,
 };
-use tokio::{sync::{Mutex, MutexGuard}, runtime::Handle};
+use tokio::sync::{Mutex, MutexGuard};
 
 use super::{
     state::{KnownContractsMap, StrategiesMap},
-    AppStateUpdate, BackendEvent, StrategyContractNames, Task, identities::fetch_identity_by_b58_id,
+    AppStateUpdate, BackendEvent, StrategyContractNames, Task,
 };
 
 #[derive(Debug, PartialEq, Clone)]
@@ -54,6 +55,7 @@ pub(crate) async fn run_strategy_task<'s>(
     available_strategies: &'s Mutex<StrategiesMap>,
     available_strategies_contract_names: &'s Mutex<BTreeMap<String, StrategyContractNames>>,
     selected_strategy: &'s Mutex<Option<String>>,
+    drive: &'s Mutex<Drive>,
     known_contracts: &'s Mutex<KnownContractsMap>,
     task: StrategyTask,
 ) -> BackendEvent<'s> {
@@ -324,55 +326,99 @@ pub(crate) async fn run_strategy_task<'s>(
         }
         StrategyTask::RunStrategy(strategy_name) => {
             let mut strategies_lock = available_strategies.lock().await;
+            let drive_lock = drive.lock().await;
+        
             if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
-                let mut block_info = BlockInfo::default();
-
                 // 1. send initial state transitions
                 // a. get block info and call state_transitions_for_block_with_new_identities
                 let mut document_query_callback = |query: LocalDocumentQuery| {
-                    let handle = Handle::current();
-                    handle.block_on(async {
-                        match fetch_documents_with_block_info(sdk, query.clone()).await {
-                            Ok((documents, metadata)) => { 
-                                // Update block_info with the metadata
-                                block_info = BlockInfo {
-                                    time_ms: metadata.time_ms,
-                                    height: metadata.height as u64,
-                                    core_height: metadata.core_chain_locked_height,
-                                    epoch: Epoch::new(metadata.epoch as u16).unwrap_or_default(),
-                                };
-                                documents
-                            },
-                            Err(e) => {
-                                eprintln!("Error fetching documents or block info: {:?}", e);
-                                vec![]
-                            }
-                        }
-                    })
-                };
-                let mut identity_fetch_callback = |identifier: Identifier, _keys_request: Option<IdentityKeysRequest>| {
-                    let handle = Handle::current();
-                    handle.block_on(async {
-                        let base58_id = identifier.to_string(Encoding::Base58);
-                        match fetch_identity_by_b58_id(sdk, &base58_id).await {
-                            Ok((Some(identity), _)) => identity.into_partial_identity_info(),
-                            Ok((None, _)) | Err(_) => {
-                                eprintln!("Error fetching identity or identity not found for ID: {}", base58_id);
-                                PartialIdentity {
-                                    id: identifier,
-                                    loaded_public_keys: BTreeMap::new(),
-                                    balance: None,
-                                    revision: None,
-                                    not_found_public_keys: BTreeSet::new(),
+                    match query {
+                        LocalDocumentQuery::RandomDocumentQuery(random_query) => {
+                            let document_type = random_query.document_type;
+                            let data_contract = random_query.data_contract;
+                
+                            // Construct a DriveQuery based on the document_type and data_contract
+                            let drive_query = DriveQuery::any_item_query(data_contract, document_type.as_ref());
+                
+                            // Query the Drive for documents
+                            match drive_lock.query_documents(drive_query, None, false, None, None) {
+                                Ok(outcome) => {
+                                    // Extract the documents from the outcome
+                                    match outcome {
+                                        QueryDocumentsOutcome::V0(outcome_v0) => outcome_v0.documents_owned(),
+                                        _ => vec![]
+                                    }
+                                },
+                                Err(e) => {
+                                    eprintln!("Error fetching documents: {:?}", e);
+                                    vec![]
                                 }
                             }
                         }
-                    })
+                    }
                 };
-                // block info is apparently in metadata when you query Platform
-                let initial_block_info = BlockInfo::default(); // this is wrong, need to actually get info
-                let mut current_identities: Vec<Identity> = vec![];
-                let mut signer = SimpleSigner::default();
+                let mut identity_fetch_callback = |identifier: Identifier, _keys_request: Option<IdentityKeysRequest>| {
+                    // Convert Identifier to a byte array format expected by the Drive method
+                    let identity_id_bytes = identifier.into_buffer();
+                
+                    // Fetch identity information from the Drive
+                    match drive_lock.fetch_identity_with_balance(
+                        identity_id_bytes,
+                        None,
+                        PlatformVersion::latest()
+                    ) {
+                        Ok(maybe_partial_identity) => {
+                            maybe_partial_identity.unwrap_or_else(|| PartialIdentity {
+                                id: identifier,
+                                loaded_public_keys: BTreeMap::new(),
+                                balance: None,
+                                revision: None,
+                                not_found_public_keys: BTreeSet::new(),
+                            })
+                        },
+                        Err(e) => {
+                            eprintln!("Error fetching identity: {:?}", e);
+                            PartialIdentity {
+                                id: identifier,
+                                loaded_public_keys: BTreeMap::new(),
+                                balance: None,
+                                revision: None,
+                                not_found_public_keys: BTreeSet::new(),
+                            }
+                        }
+                    }
+                };
+
+                // get block info
+                let mut initial_block_info = BlockInfo::default();
+                let request = GetEpochsInfoRequest {
+                    version: Some(get_epochs_info_request::Version::V0(
+                        get_epochs_info_request::GetEpochsInfoRequestV0 {
+                            start_epoch:None,
+                            count: 1,
+                            ascending: false,
+                            prove: false,
+                        },
+                    )),
+                };
+                let response = sdk
+                    .execute(request, RequestSettings::default())
+                    .await
+                    .expect("get epoch");
+                // Match the response version to extract metadata
+                if let Some(get_epochs_info_response::Version::V0(response_v0)) = response.version {
+                    if let Some(metadata) = response_v0.metadata {
+                        initial_block_info = BlockInfo {
+                            time_ms: metadata.time_ms,
+                            height: metadata.height,
+                            core_height: metadata.core_chain_locked_height,
+                            epoch: Epoch::new(metadata.epoch as u16).unwrap(),
+                        }
+                    }
+                }
+
+                let mut current_identities: Vec<Identity> = vec![]; // what is this?
+                let mut signer = SimpleSigner::default(); // use loaded Identity?
                 let mut rng = StdRng::from_entropy();
                 // maybe don't need this add_strategy_contracts_into_drive part?
                 // strategy.add_strategy_contracts_into_drive(drive, PlatformVersion::latest());
@@ -516,27 +562,4 @@ fn set_start_identities(strategy: &mut Strategy, count: u16, key_count: u32) {
     );
 
     strategy.start_identities = identities;
-}
-
-async fn fetch_documents_with_block_info<'a>(
-    sdk: &mut Sdk,
-    query: LocalDocumentQuery<'a>
-) -> Result<(Vec<Document>, ResponseMetadata), Error> {
-    let document_query = match query {
-        LocalDocumentQuery::RandomDocumentQuery(random_query) => {
-            let data_contract = random_query.data_contract;
-            let document_type_name = random_query.document_type.name();
-            DocumentQuery::new(data_contract.clone(), document_type_name)?
-        },
-    };
-
-    let response: GetDocumentsResponse = Document::fetch_many(sdk, document_query).await?;
-
-    let documents = response.documents.into_iter()
-        .filter_map(|(_, doc)| doc)
-        .collect();
-
-    let metadata = response.metadata.unwrap_or_default();
-
-    Ok((documents, metadata))
 }
