@@ -1,9 +1,12 @@
 //! Identities backend logic.
 
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, time::Duration};
 
 use dapi_grpc::{
-    core::v0::{BroadcastTransactionRequest, GetTransactionRequest},
+    core::v0::{
+        BroadcastTransactionRequest, GetStatusRequest, GetTransactionRequest,
+        GetTransactionResponse,
+    },
     platform::v0::{
         get_identity_balance_request, get_identity_balance_request::GetIdentityBalanceRequestV0,
         GetIdentityBalanceRequest,
@@ -20,11 +23,10 @@ use dash_platform_sdk::{
     Sdk,
 };
 use dpp::{
-    dashcore::{psbt::serialize::Serialize, Address, Network, OutPoint, PrivateKey, Transaction},
+    dashcore::{psbt::serialize::Serialize, Address, Network, PrivateKey, Transaction},
     identity::{
         accessors::{IdentityGettersV0, IdentitySettersV0},
         identity_public_key::accessors::v0::IdentityPublicKeyGettersV0,
-        state_transition::asset_lock_proof::chain::ChainAssetLockProof,
         KeyType, Purpose, SecurityLevel,
     },
     platform_value::{string_encoding::Encoding, Identifier},
@@ -42,7 +44,7 @@ pub(super) async fn fetch_identity_by_b58_id(
     sdk: &mut Sdk,
     base58_id: &str,
 ) -> Result<(Option<Identity>, String), String> {
-    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+    tokio::time::sleep(Duration::from_secs(3)).await;
 
     let id_bytes = Identifier::from_string(base58_id, Encoding::Base58)
         .map_err(|_| "can't parse identifier as base58 string".to_owned())?;
@@ -247,25 +249,6 @@ impl AppState {
             )
         };
 
-        // let block_hash: Vec<u8> = (GetStatusRequest {})
-        //     .execute(dapi_client, RequestSettings::default())
-        //     .await
-        //     .map_err(|e| RegisterIdentityError(e.to_string()))?
-        //     .chain
-        //     .map(|chain| chain.best_block_hash)
-        //     .ok_or_else(|| RegisterIdentityError("missing `chain`
-        // field".to_owned()))?;
-
-        // let core_transactions_stream = TransactionsWithProofsRequest {
-        //     bloom_filter: Some(bloom_filter_proto),
-        //     count: 5,
-        //     send_transaction_hashes: false,
-        //     from_block: Some(FromBlock::FromBlockHash(block_hash)),
-        // }
-        //     .execute(dapi_client, RequestSettings::default())
-        //     .await
-        //     .map_err(|e| RegisterIdentityError(e.to_string()))?;
-
         let asset_lock_proof = if let Some(asset_lock_proof) = maybe_asset_lock_proof {
             asset_lock_proof.clone()
         } else {
@@ -276,7 +259,7 @@ impl AppState {
             )
             .await
             .map_err(|e| {
-                Error::SdkExplainedError("error broadcasting transaction".to_string(), e)
+                Error::SdkExplainedError("broadcasting transaction failed".to_string(), e)
             })?;
 
             identity_asset_lock_private_key_in_creation.replace((
@@ -522,9 +505,23 @@ impl AppState {
         )
         .entered();
 
-        tracing::debug!("starting the stream");
+        let block_hash = sdk
+            .execute(GetStatusRequest {}, RequestSettings::default())
+            .await?
+            .chain
+            .map(|chain| chain.best_block_hash)
+            .ok_or_else(|| {
+                dash_platform_sdk::Error::DapiClientError("missing `chain` field".to_owned())
+            })?;
 
-        let asset_lock_stream = sdk.start_instant_send_lock_stream(address).await?;
+        tracing::debug!(
+            "starting the stream from the tip block hash {}",
+            hex::encode(&block_hash)
+        );
+
+        let mut asset_lock_stream = sdk
+            .start_instant_send_lock_stream(block_hash, address)
+            .await?;
 
         tracing::debug!("stream is started");
 
@@ -538,48 +535,48 @@ impl AppState {
 
         tracing::debug!("broadcast the transaction");
 
-        let broadcast_result = sdk.execute(request, RequestSettings::default()).await;
+        match sdk.execute(request, RequestSettings::default()).await {
+            Ok(_) => tracing::debug!("transaction is successfully broadcasted"),
+            Err(error) if error.to_string().contains("AlreadyExists") => {
+                // Transaction is already broadcasted. We need to restart the stream from a
+                // block when it was mined
 
-        let asset_lock = if let Err(broadcast_error) = broadcast_result {
-            if broadcast_error.to_string().contains("AlreadyExists") {
-                tracing::warn!("transaction is already exists");
+                tracing::warn!("transaction is already broadcasted");
 
-                let request = GetTransactionRequest {
-                    id: asset_lock_transaction.txid().to_string(),
-                };
-
-                let transaction_info = sdk.execute(request, RequestSettings::default()).await?;
-
-                if transaction_info.is_chain_locked {
-                    tracing::debug!("transaction is chainlocked, return chain asset lock proof");
-
-                    // it already exists, just return an asset lock
-                    AssetLockProof::Chain(ChainAssetLockProof {
-                        core_chain_locked_height: transaction_info.height,
-                        out_point: OutPoint {
-                            txid: asset_lock_transaction.txid(),
-                            vout: 0,
+                let GetTransactionResponse { block_hash, .. } = sdk
+                    .execute(
+                        GetTransactionRequest {
+                            id: asset_lock_transaction.txid().to_string(),
                         },
-                    })
-                } else {
-                    // TODO: We should wait until it's chain locked
+                        RequestSettings::default(),
+                    )
+                    .await?;
 
-                    return Err(broadcast_error.into());
-                }
-            } else {
-                return Err(broadcast_error.into());
+                tracing::debug!(
+                    "restarting the stream from the transaction minded block hash {}",
+                    hex::encode(&block_hash)
+                );
+
+                asset_lock_stream = sdk
+                    .start_instant_send_lock_stream(block_hash, address)
+                    .await?;
+
+                tracing::debug!("stream is started");
             }
-        } else {
-            tracing::debug!("transaction is broadcasted, wait for asset lock proof");
+            Err(error) => {
+                tracing::error!("transaction broadcast failed: {error}");
 
-            Sdk::wait_for_asset_lock_proof_for_transaction(
-                asset_lock_stream,
-                asset_lock_transaction,
-                Some(5 * 60000),
-            )
-            .await?
+                return Err(error.into());
+            }
         };
 
-        Ok(asset_lock)
+        tracing::debug!("waiting for asset lock proof");
+
+        sdk.wait_for_asset_lock_proof_for_transaction(
+            asset_lock_stream,
+            asset_lock_transaction,
+            Some(Duration::from_secs(4 * 60)),
+        )
+        .await
     }
 }

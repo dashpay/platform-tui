@@ -58,7 +58,7 @@ async fn main() {
     }));
 
     // Load configuration
-    let config = Config::load_testnet();
+    let config = Config::load();
 
     // Setup Platform SDK
     let address_list = config.dapi_address_list();
@@ -67,16 +67,16 @@ async fn main() {
         .with_version(PlatformVersion::get(1).unwrap())
         .with_core(
             &config.core_host,
-            config.core_port,
-            &config.core_user,
-            &config.core_password,
+            config.core_rpc_port,
+            &config.core_rpc_user,
+            &config.core_rpc_password,
         )
         .build()
         .expect("expected to build sdk");
 
     let insight = InsightAPIClient::new(config.insight_api_uri());
 
-    let backend = Backend::new(sdk, insight).await;
+    let backend = Backend::new(sdk, insight, config).await;
 
     let initial_identity_balance = backend
         .state()

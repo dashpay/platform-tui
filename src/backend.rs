@@ -35,9 +35,12 @@ pub(crate) use self::{
     strategies::StrategyTask,
     wallet::{Wallet, WalletTask},
 };
-use crate::backend::{
-    documents::DocumentTask, identities::IdentityTask, insight::InsightAPIClient,
-    platform_info::PlatformInfoTask,
+use crate::{
+    backend::{
+        documents::DocumentTask, identities::IdentityTask, insight::InsightAPIClient,
+        platform_info::PlatformInfoTask,
+    },
+    config::Config,
 };
 
 /// Unit of work for the backend.
@@ -125,14 +128,16 @@ pub(crate) struct Backend {
     sdk: Mutex<Sdk>,
     app_state: AppState,
     insight: InsightAPIClient,
+    config: Config,
 }
 
 impl Backend {
-    pub(crate) async fn new(sdk: Sdk, insight: InsightAPIClient) -> Self {
+    pub(crate) async fn new(sdk: Sdk, insight: InsightAPIClient, config: Config) -> Self {
         Backend {
             sdk: Mutex::new(sdk),
-            app_state: AppState::load(&insight).await,
+            app_state: AppState::load(&insight, &config).await,
             insight,
+            config,
         }
     }
 
@@ -206,7 +211,7 @@ impl Backend {
 
 impl Drop for Backend {
     fn drop(&mut self) {
-        self.app_state.save()
+        self.app_state.save(&self.config)
     }
 }
 
