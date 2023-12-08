@@ -2,12 +2,13 @@ mod backend;
 mod config;
 mod ui;
 
-use std::{fs::File, io::Write, panic, path::Path, sync::Mutex};
+use std::{fs::File, panic, time::Duration};
 
 use crossterm::event::{Event as TuiEvent, EventStream};
 use dash_platform_sdk::SdkBuilder;
 use dpp::{identity::accessors::IdentityGettersV0, version::PlatformVersion};
 use futures::{future::OptionFuture, select, FutureExt, StreamExt};
+use rs_dapi_client::RequestSettings;
 use tracing_subscriber::EnvFilter;
 use tuirealm::event::KeyEvent;
 use ui::IdentityBalance;
@@ -49,7 +50,7 @@ async fn main() {
             .unwrap_or_else(|| panic::Location::caller());
 
         tracing::error!(
-            location = tracing::field::display(location),
+            %location,
             "Panic occurred: {}",
             message
         );
@@ -63,6 +64,13 @@ async fn main() {
     // Setup Platform SDK
     let address_list = config.dapi_address_list();
 
+    // Configure SDK for high throughput
+    let request_settings = RequestSettings {
+        connect_timeout: Some(Duration::from_secs(60)),
+        timeout: None,
+        retries: None,
+    };
+
     let sdk = SdkBuilder::new(address_list)
         .with_version(PlatformVersion::get(1).unwrap())
         .with_core(
@@ -71,6 +79,7 @@ async fn main() {
             &config.core_rpc_user,
             &config.core_rpc_password,
         )
+        .with_settings(request_settings)
         .build()
         .expect("expected to build sdk");
 

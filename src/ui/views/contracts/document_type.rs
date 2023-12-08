@@ -1,4 +1,6 @@
-//! UI defenitions for selected data contract.
+//! UI definitions for selected data contract.
+
+use std::sync::Arc;
 
 use dpp::{
     data_contract::{
@@ -19,7 +21,9 @@ use tuirealm::{
 
 use crate::{
     backend::{
-        as_toml, documents::DocumentTask, AppState, BackendEvent, CompletedTaskPayload, Task,
+        as_toml,
+        documents::{BroadcastRandomDocumentsTaskPayload, DocumentTask},
+        AppState, BackendEvent, CompletedTaskPayload, Task,
     },
     ui::{
         form::{
@@ -180,9 +184,12 @@ impl ScreenController for DocumentTypeScreenController {
                 code: Key::Char('b'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::Task {
-                task: Task::Document(DocumentTask::BroadcastRandomDocument(
-                    self.data_contract.clone(),
-                    self.document_type.clone(),
+                task: Task::Document(DocumentTask::BroadcastRandomDocuments(
+                    BroadcastRandomDocumentsTaskPayload {
+                        data_contract: Arc::new(self.data_contract.clone()),
+                        document_type: Arc::new(self.document_type.clone()),
+                        count: 1000,
+                    },
                 )),
                 block: true,
             },
@@ -193,7 +200,7 @@ impl ScreenController for DocumentTypeScreenController {
             }) => ScreenFeedback::Form(Box::new(QueryDocumentTypeFormController::new(
                 self.data_contract.clone(),
                 self.document_type.clone(),
-                self.identity_identifier.clone(),
+                self.identity_identifier,
             ))),
 
             // Forward event to upper part of the screen for scrolls and stuff
@@ -224,17 +231,17 @@ impl ScreenController for DocumentTypeScreenController {
                 task: Task::Document(DocumentTask::QueryDocuments(_)),
                 execution_result: Err(e),
             }) => {
-                self.info = Info::new_error(&e);
+                self.info = Info::new_error(e);
                 ScreenFeedback::Redraw
             }
 
             Event::Backend(
                 BackendEvent::TaskCompleted {
-                    task: Task::Document(DocumentTask::BroadcastRandomDocument(..)),
+                    task: Task::Document(DocumentTask::BroadcastRandomDocuments(..)),
                     execution_result,
                 }
                 | BackendEvent::TaskCompletedStateChange {
-                    task: Task::Document(DocumentTask::BroadcastRandomDocument(..)),
+                    task: Task::Document(DocumentTask::BroadcastRandomDocuments(..)),
                     execution_result,
                     ..
                 },

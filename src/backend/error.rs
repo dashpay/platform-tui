@@ -5,7 +5,7 @@ use dpp::ProtocolError;
 use rs_dapi_client::DapiClientError;
 
 use crate::backend::{
-    error::Error::{ParsingError, SdkError, WalletError},
+    error::Error::{Parsing, Sdk, Wallet},
     insight::InsightError,
     wallet,
 };
@@ -13,43 +13,41 @@ use crate::backend::{
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum Error {
     #[error("error while parsing an identity: {0}")]
-    ParsingError(#[from] ProtocolError),
+    Parsing(#[from] ProtocolError),
     #[error("ID encoding error: {0}")]
     Base58IdEncoding(#[from] bs58::decode::Error),
     #[error("System time error: {0}")]
-    SystemTimeError(#[from] SystemTimeError),
+    SystemTime(#[from] SystemTimeError),
     #[error("Wallet error: {0}")]
-    WalletError(#[from] wallet::WalletError),
-    #[error("SDK unexpected result: {0}")]
-    SdkUnexpectedResultError(String),
-    #[error("SDK error: {0} {1}")]
-    SdkExplainedError(String, dash_platform_sdk::Error),
+    Wallet(#[from] wallet::WalletError),
+    #[error("SDK error: {0}: {1}")]
+    SdkExplained(String, dash_platform_sdk::Error),
     #[error("SDK error: {0}")]
-    SdkError(#[from] dash_platform_sdk::Error),
+    Sdk(#[from] dash_platform_sdk::Error),
     #[error("Identity registration error: {0}")]
-    IdentityRegistrationError(String),
+    IdentityRegistration(String),
     #[error("Identity top up error: {0}")]
-    IdentityTopUpError(String),
+    IdentityTopUp(String),
     #[error("Identity withdrawal error: {0}")]
-    IdentityWithdrawalError(String),
+    IdentityWithdrawal(String),
     #[error("Document Signing error: {0}")]
-    DocumentSigningError(String),
+    DocumentSigning(String),
 }
 
 impl From<dpp::platform_value::Error> for Error {
     fn from(value: dpp::platform_value::Error) -> Self {
-        ParsingError(ProtocolError::ValueError(value))
+        Parsing(ProtocolError::ValueError(value))
     }
 }
 
 impl From<InsightError> for Error {
     fn from(value: InsightError) -> Self {
-        WalletError(wallet::WalletError::Insight(value))
+        Wallet(wallet::WalletError::Insight(value))
     }
 }
 
 impl From<DapiClientError<Status>> for Error {
     fn from(value: DapiClientError<Status>) -> Self {
-        SdkError(value.into())
+        Sdk(value.into())
     }
 }

@@ -1,5 +1,7 @@
 //! Contracts backend.
 
+use std::sync::Arc;
+
 use dash_platform_sdk::{platform::Fetch, Sdk};
 use dpp::{
     prelude::{DataContract, Identifier},
@@ -18,14 +20,14 @@ pub(crate) enum ContractTask {
 const DASHPAY_CONTRACT_NAME: &str = "dashpay";
 const DPNS_CONTRACT_NAME: &str = "dpns";
 
-pub(super) async fn run_contract_task<'s>(
-    sdk: &mut Sdk,
-    known_contracts: &'s Mutex<KnownContractsMap>,
+pub(super) async fn run_contract_task(
+    sdk: Arc<Sdk>,
+    known_contracts: &Mutex<KnownContractsMap>,
     task: ContractTask,
-) -> BackendEvent<'s> {
+) -> BackendEvent {
     match task {
         ContractTask::FetchDashpayContract => {
-            match DataContract::fetch(sdk, Into::<Identifier>::into(dashpay_contract::ID_BYTES))
+            match DataContract::fetch(&sdk, Into::<Identifier>::into(dashpay_contract::ID_BYTES))
                 .await
             {
                 Ok(Some(data_contract)) => {
@@ -50,7 +52,7 @@ pub(super) async fn run_contract_task<'s>(
             }
         }
         ContractTask::FetchDPNSContract => {
-            match DataContract::fetch(sdk, Into::<Identifier>::into(dpns_contract::ID_BYTES)).await
+            match DataContract::fetch(&sdk, Into::<Identifier>::into(dpns_contract::ID_BYTES)).await
             {
                 Ok(Some(data_contract)) => {
                     let contract_str = as_toml(&data_contract);

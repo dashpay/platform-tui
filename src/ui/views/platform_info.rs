@@ -1,6 +1,6 @@
 //! Platform invo views.
 
-use std::fmt::{self, Display};
+use std::fmt::Display;
 
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
@@ -10,11 +10,16 @@ use tuirealm::{
 
 use crate::{
     backend::{
-        platform_info::PlatformInfoTask::FetchCurrentEpochInfo, AppState, AppStateUpdate,
-        BackendEvent, StrategyTask, Task,
+        platform_info::PlatformInfoTask::{
+            FetchCurrentEpochInfo, FetchCurrentVersionVotingState, FetchSpecificEpochInfo,
+        },
+        AppState, BackendEvent, Task,
     },
     ui::{
-        form::{Input, InputStatus, SelectInput},
+        form::{
+            parsers::DefaultTextInputParser, FormController, FormStatus, Input, InputStatus,
+            TextInput,
+        },
         screen::{
             utils::impl_builder, widgets::info::Info, ScreenCommandKey, ScreenController,
             ScreenFeedback, ScreenToggleKey,
@@ -22,22 +27,13 @@ use crate::{
     },
     Event,
 };
-use crate::backend::platform_info::PlatformInfoTask::{FetchCurrentVersionVotingState, FetchSpecificEpochInfo};
-use crate::ui::form::parsers::DefaultTextInputParser;
-use crate::ui::form::{FormController, FormStatus, TextInput};
 
 const COMMAND_KEYS: [ScreenCommandKey; 4] = [
-    ScreenCommandKey::new(
-        "q", "Back to Main",
-    ),ScreenCommandKey::new(
-    "c", "Fetch current Platform epoch info",
-),
-    ScreenCommandKey::new(
-        "i", "Fetch previous Platform epoch info",
-    ),
-ScreenCommandKey::new(
-"v", "Current version voting",
-)];
+    ScreenCommandKey::new("q", "Back to Main"),
+    ScreenCommandKey::new("c", "Fetch current Platform epoch info"),
+    ScreenCommandKey::new("i", "Fetch previous Platform epoch info"),
+    ScreenCommandKey::new("v", "Current version voting"),
+];
 
 pub(crate) struct PlatformInfoScreenController {
     info: Info,
@@ -54,6 +50,10 @@ impl PlatformInfoScreenController {
 }
 
 impl ScreenController for PlatformInfoScreenController {
+    fn view(&mut self, frame: &mut Frame, area: Rect) {
+        self.info.view(frame, area)
+    }
+
     fn name(&self) -> &'static str {
         "Platform Information"
     }
@@ -82,17 +82,17 @@ impl ScreenController for PlatformInfoScreenController {
             },
 
             Event::Key(KeyEvent {
-                           code: Key::Char('v'),
-                           modifiers: KeyModifiers::NONE,
-                       }) => ScreenFeedback::Task {
+                code: Key::Char('v'),
+                modifiers: KeyModifiers::NONE,
+            }) => ScreenFeedback::Task {
                 task: Task::PlatformInfo(FetchCurrentVersionVotingState),
                 block: true,
             },
 
             Event::Key(KeyEvent {
-                           code: Key::Char('i'),
-                           modifiers: KeyModifiers::NONE,
-                       }) => ScreenFeedback::Form(Box::new(EpochNumberChooserFormController::new())),
+                code: Key::Char('i'),
+                modifiers: KeyModifiers::NONE,
+            }) => ScreenFeedback::Form(Box::new(EpochNumberChooserFormController::new())),
 
             Event::Backend(BackendEvent::TaskCompleted {
                 task: Task::PlatformInfo(_),
@@ -104,12 +104,7 @@ impl ScreenController for PlatformInfoScreenController {
             _ => ScreenFeedback::None,
         }
     }
-
-    fn view(&mut self, frame: &mut Frame, area: Rect) {
-        self.info.view(frame, area)
-    }
 }
-
 
 struct EpochNumberChooserFormController {
     input: TextInput<DefaultTextInputParser<u16>>,

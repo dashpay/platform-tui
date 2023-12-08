@@ -1,6 +1,6 @@
 //! Identities backend logic.
 
-use std::{collections::BTreeMap, time::Duration};
+use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
 use dapi_grpc::{
     core::v0::{
@@ -41,7 +41,7 @@ use super::AppStateUpdate;
 use crate::backend::{error::Error, stringify_result_keep_item, AppState, BackendEvent, Task};
 
 pub(super) async fn fetch_identity_by_b58_id(
-    sdk: &mut Sdk,
+    sdk: &Sdk,
     base58_id: &str,
 ) -> Result<(Option<Identity>, String), String> {
     tokio::time::sleep(Duration::from_secs(3)).await;
@@ -63,10 +63,14 @@ pub(crate) enum IdentityTask {
 }
 
 impl AppState {
-    pub(crate) async fn run_identity_task(&self, sdk: &Sdk, task: IdentityTask) -> BackendEvent {
+    pub(crate) async fn run_identity_task(
+        &self,
+        sdk: Arc<Sdk>,
+        task: IdentityTask,
+    ) -> BackendEvent {
         match task {
             IdentityTask::RegisterIdentity(amount) => {
-                let result = self.register_new_identity(sdk, amount).await;
+                let result = self.register_new_identity(&sdk, amount).await;
                 let execution_result = result
                     .as_ref()
                     .map(|_| "Executed successfully".into())
@@ -83,7 +87,7 @@ impl AppState {
                 }
             }
             IdentityTask::Refresh => {
-                let result = self.refresh_identity(sdk).await;
+                let result = self.refresh_identity(&sdk).await;
                 let execution_result = result
                     .as_ref()
                     .map(|_| "Executed successfully".into())
@@ -100,7 +104,7 @@ impl AppState {
                 }
             }
             IdentityTask::TopUpIdentity(amount) => {
-                let result = self.top_up_identity(sdk, amount).await;
+                let result = self.top_up_identity(&sdk, amount).await;
                 let execution_result = result
                     .as_ref()
                     .map(|_| "Top up success".into())
@@ -118,7 +122,7 @@ impl AppState {
                 }
             }
             IdentityTask::WithdrawFromIdentity(amount) => {
-                let result = self.withdraw_from_identity(sdk, amount).await;
+                let result = self.withdraw_from_identity(&sdk, amount).await;
                 let execution_result = result
                     .as_ref()
                     .map(|_| "Successful withdrawal".into())
@@ -198,9 +202,7 @@ impl AppState {
 
         let mut loaded_wallet = self.loaded_wallet.lock().await;
         let Some(wallet) = loaded_wallet.as_mut() else {
-            return Err(Error::IdentityRegistrationError(
-                "No wallet loaded".to_string(),
-            ));
+            return Err(Error::IdentityRegistration("No wallet loaded".to_string()));
         };
 
         //// Core steps
@@ -226,7 +228,7 @@ impl AppState {
         {
             (
                 asset_lock_transaction.clone(),
-                asset_lock_proof_private_key.clone(),
+                *asset_lock_proof_private_key,
                 maybe_asset_lock_proof.clone(),
                 maybe_identity.clone(),
             )
@@ -258,9 +260,7 @@ impl AppState {
                 &wallet.receive_address(),
             )
             .await
-            .map_err(|e| {
-                Error::SdkExplainedError("broadcasting transaction failed".to_string(), e)
-            })?;
+            .map_err(|e| Error::SdkExplained("broadcasting transaction failed".to_string(), e))?;
 
             identity_asset_lock_private_key_in_creation.replace((
                 asset_lock_transaction.clone(),
@@ -355,15 +355,13 @@ impl AppState {
 
         let mut loaded_wallet = self.loaded_wallet.lock().await;
         let Some(wallet) = loaded_wallet.as_mut() else {
-            return Err(Error::IdentityRegistrationError(
-                "No wallet loaded".to_string(),
-            ));
+            return Err(Error::IdentityRegistration("No wallet loaded".to_string()));
         };
 
         let mut identity_lock = self.loaded_identity.lock().await;
 
         let Some(identity) = identity_lock.as_mut() else {
-            return Err(Error::IdentityTopUpError("No identity loaded".to_string()));
+            return Err(Error::IdentityTopUp("No identity loaded".to_string()));
         };
 
         //// Core steps
@@ -382,7 +380,7 @@ impl AppState {
             {
                 (
                     asset_lock_transaction.clone(),
-                    asset_lock_proof_private_key.clone(),
+                    *asset_lock_proof_private_key,
                     maybe_asset_lock_proof.clone(),
                 )
             } else {
@@ -407,9 +405,7 @@ impl AppState {
                 &wallet.receive_address(),
             )
             .await
-            .map_err(|e| {
-                Error::SdkExplainedError("error broadcasting transaction".to_string(), e)
-            })?;
+            .map_err(|e| Error::SdkExplained("error broadcasting transaction".to_string(), e))?;
 
             identity_asset_lock_private_key_in_top_up.replace((
                 asset_lock_transaction.clone(),
@@ -443,16 +439,14 @@ impl AppState {
 
         let mut loaded_wallet = self.loaded_wallet.lock().await;
         let Some(wallet) = loaded_wallet.as_mut() else {
-            return Err(Error::IdentityRegistrationError(
-                "No wallet loaded".to_string(),
-            ));
+            return Err(Error::IdentityRegistration("No wallet loaded".to_string()));
         };
 
         let new_receive_address = wallet.receive_address();
 
         let mut identity_lock = self.loaded_identity.lock().await;
         let Some(identity) = identity_lock.as_mut() else {
-            return Err(Error::IdentityTopUpError("No identity loaded".to_string()));
+            return Err(Error::IdentityTopUp("No identity loaded".to_string()));
         };
 
         let identity_public_key = identity
@@ -461,7 +455,7 @@ impl AppState {
                 SecurityLevel::full_range().into(),
                 KeyType::all_key_types().into(),
             )
-            .ok_or(Error::IdentityWithdrawalError(
+            .ok_or(Error::IdentityWithdrawal(
                 "no withdrawal public key".to_string(),
             ))?;
 
@@ -469,7 +463,7 @@ impl AppState {
         let Some(private_key) =
             loaded_identity_private_keys.get(&(identity.id(), identity_public_key.id()))
         else {
-            return Err(Error::IdentityTopUpError(
+            return Err(Error::IdentityTopUp(
                 "No private key for withdrawal".to_string(),
             ));
         };
