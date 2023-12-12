@@ -862,7 +862,7 @@ dependencies = [
 
 [[package]]
 name = "dapi-grpc"
-version = "0.25.16-rc.4"
+version = "0.25.16-rc.5"
 dependencies = [
  "dapi-grpc-macros",
  "platform-version",
@@ -877,7 +877,7 @@ dependencies = [
 
 [[package]]
 name = "dapi-grpc-macros"
-version = "0.25.16-rc.4"
+version = "0.25.16-rc.5"
 dependencies = [
  "heck",
  "quote",
@@ -921,10 +921,11 @@ dependencies = [
 
 [[package]]
 name = "dash-platform-sdk"
-version = "0.25.16-rc.4"
+version = "0.25.16-rc.5"
 dependencies = [
  "async-trait",
  "bincode 2.0.0-rc.3",
+ "bincode_derive",
  "bip37-bloom-filter",
  "ciborium",
  "dapi-grpc",
@@ -934,7 +935,6 @@ dependencies = [
  "dotenvy",
  "dpp",
  "drive",
- "drive-abci",
  "drive-proof-verifier",
  "envy",
  "futures",
@@ -944,6 +944,7 @@ dependencies = [
  "rs-dapi-client",
  "serde",
  "serde_json",
+ "simple-signer",
  "thiserror",
  "tokio",
  "tokio-util",
@@ -997,7 +998,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_repr",
- "serde_with 2.3.3",
+ "serde_with",
 ]
 
 [[package]]
@@ -1013,7 +1014,7 @@ dependencies = [
 
 [[package]]
 name = "dashpay-contract"
-version = "0.25.16-rc.4"
+version = "0.25.16-rc.5"
 dependencies = [
  "platform-value",
  "serde_json",
@@ -1021,7 +1022,7 @@ dependencies = [
 
 [[package]]
 name = "data-contracts"
-version = "0.25.16-rc.4"
+version = "0.25.16-rc.5"
 dependencies = [
  "dashpay-contract",
  "dpns-contract",
@@ -1030,17 +1031,6 @@ dependencies = [
  "platform-value",
  "serde_json",
  "withdrawals-contract",
-]
-
-[[package]]
-name = "delegate"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d358e0ec5c59a5e1603b933def447096886121660fc680dc1e64a0753981fe3c"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 1.0.109",
 ]
 
 [[package]]
@@ -1111,7 +1101,7 @@ checksum = "9ea835d29036a4087793836fa931b08837ad5e957da9e23886b29586fb9b6650"
 
 [[package]]
 name = "dpns-contract"
-version = "0.25.16-rc.4"
+version = "0.25.16-rc.5"
 dependencies = [
  "platform-value",
  "serde_json",
@@ -1119,7 +1109,7 @@ dependencies = [
 
 [[package]]
 name = "dpp"
-version = "0.25.16-rc.4"
+version = "0.25.16-rc.5"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1166,7 +1156,7 @@ dependencies = [
 
 [[package]]
 name = "drive"
-version = "0.25.16-rc.4"
+version = "0.25.16-rc.5"
 dependencies = [
  "base64 0.21.5",
  "bs58 0.5.0",
@@ -1198,54 +1188,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "drive-abci"
-version = "0.25.16-rc.4"
-dependencies = [
- "atty",
- "bincode 2.0.0-rc.3",
- "bs58 0.4.0",
- "bytes",
- "chrono",
- "ciborium",
- "dapi-grpc",
- "dashcore-rpc",
- "delegate",
- "derive_more",
- "dpp",
- "drive",
- "envy",
- "file-rotate",
- "hex",
- "indexmap 1.9.3",
- "itertools 0.10.5",
- "lazy_static",
- "metrics",
- "metrics-exporter-prometheus",
- "prost",
- "rand",
- "regex",
- "reopen",
- "rust_decimal",
- "rust_decimal_macros",
- "serde",
- "serde_json",
- "serde_with 3.4.0",
- "sha2",
- "simple-signer",
- "tempfile",
- "tenderdash-abci",
- "thiserror",
- "tokio",
- "tokio-util",
- "tracing",
- "tracing-subscriber",
- "ureq",
- "url",
-]
-
-[[package]]
 name = "drive-proof-verifier"
-version = "0.25.16-rc.4"
+version = "0.25.16-rc.5"
 dependencies = [
  "dapi-grpc",
  "dpp",
@@ -1464,7 +1408,7 @@ checksum = "25cbce373ec4653f1a01a31e8a5e5ec0c622dc27ff9c4e6606eefef5cbbed4a5"
 
 [[package]]
 name = "feature-flags-contract"
-version = "0.25.16-rc.4"
+version = "0.25.16-rc.5"
 dependencies = [
  "platform-value",
  "serde_json",
@@ -1475,16 +1419,6 @@ name = "fiat-crypto"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "27573eac26f4dd11e2b1916c3fe1baa56407c83c71a773a8ba17ec0bca03b6b7"
-
-[[package]]
-name = "file-rotate"
-version = "0.7.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ddf221ceec4517f3cb764dae3541b2bd87666fc8832e51322fbb97250b468c71"
-dependencies = [
- "chrono",
- "flate2",
-]
 
 [[package]]
 name = "fixedbitset"
@@ -1833,15 +1767,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a9ee70c43aaf417c914396645a0fa852624801b24ebb7ae78fe8272889ac888"
 dependencies = [
  "ahash 0.7.7",
-]
-
-[[package]]
-name = "hashbrown"
-version = "0.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33ff8ae62cd3a9102e5637afc8452c55acf3844001bd5374e0b0bd7b6616c038"
-dependencies = [
- "ahash 0.8.6",
 ]
 
 [[package]]
@@ -2404,7 +2329,7 @@ dependencies = [
 
 [[package]]
 name = "masternode-reward-shares-contract"
-version = "0.25.16-rc.4"
+version = "0.25.16-rc.5"
 dependencies = [
  "platform-value",
  "serde_json",
@@ -2470,61 +2395,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
-]
-
-[[package]]
-name = "metrics"
-version = "0.21.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fde3af1a009ed76a778cb84fdef9e7dbbdf5775ae3e4cc1f434a6a307f6f76c5"
-dependencies = [
- "ahash 0.8.6",
- "metrics-macros",
- "portable-atomic",
-]
-
-[[package]]
-name = "metrics-exporter-prometheus"
-version = "0.12.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8a4964177ddfdab1e3a2b37aec7cf320e14169abb0ed73999f558136409178d5"
-dependencies = [
- "base64 0.21.5",
- "hyper",
- "indexmap 1.9.3",
- "ipnet",
- "metrics",
- "metrics-util",
- "quanta",
- "thiserror",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "metrics-macros"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ddece26afd34c31585c74a4db0630c376df271c285d682d1e55012197830b6df"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.39",
-]
-
-[[package]]
-name = "metrics-util"
-version = "0.15.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4de2ed6e491ed114b40b732e4d1659a9d53992ebd87490c44a6ffe23739d973e"
-dependencies = [
- "crossbeam-epoch",
- "crossbeam-utils",
- "hashbrown 0.13.1",
- "metrics",
- "num_cpus",
- "quanta",
- "sketches-ddsketch",
 ]
 
 [[package]]
@@ -2989,7 +2859,7 @@ checksum = "26072860ba924cbfa98ea39c8c19b4dd6a4a25423dbdf219c1eca91aa0cf6964"
 
 [[package]]
 name = "platform-serialization"
-version = "0.25.16-rc.4"
+version = "0.25.16-rc.5"
 dependencies = [
  "bincode 2.0.0-rc.3",
  "platform-version",
@@ -2997,7 +2867,7 @@ dependencies = [
 
 [[package]]
 name = "platform-serialization-derive"
-version = "0.25.16-rc.4"
+version = "0.25.16-rc.5"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3007,7 +2877,7 @@ dependencies = [
 
 [[package]]
 name = "platform-value"
-version = "0.25.16-rc.4"
+version = "0.25.16-rc.5"
 dependencies = [
  "base64 0.13.1",
  "bincode 2.0.0-rc.3",
@@ -3028,14 +2898,14 @@ dependencies = [
 
 [[package]]
 name = "platform-version"
-version = "0.25.16-rc.4"
+version = "0.25.16-rc.5"
 dependencies = [
  "thiserror",
 ]
 
 [[package]]
 name = "platform-versioning"
-version = "0.25.16-rc.4"
+version = "0.25.16-rc.5"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3063,12 +2933,6 @@ dependencies = [
  "pin-project-lite",
  "windows-sys 0.48.0",
 ]
-
-[[package]]
-name = "portable-atomic"
-version = "1.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3bccab0e7fd7cc19f820a1c8c91720af652d0c88dc9664dd72aef2614f04af3b"
 
 [[package]]
 name = "powerfmt"
@@ -3378,15 +3242,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "reopen"
-version = "1.0.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff42cec3acf85845f5b18b3cbb7fec619ccbd4a349f6ecbe1c62ab46d4d98293"
-dependencies = [
- "autocfg",
-]
-
-[[package]]
 name = "reqwest"
 version = "0.11.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3478,7 +3333,7 @@ dependencies = [
 
 [[package]]
 name = "rs-dapi-client"
-version = "0.25.16-rc.4"
+version = "0.25.16-rc.5"
 dependencies = [
  "backon",
  "chrono",
@@ -3856,22 +3711,7 @@ dependencies = [
  "indexmap 1.9.3",
  "serde",
  "serde_json",
- "serde_with_macros 2.3.3",
- "time",
-]
-
-[[package]]
-name = "serde_with"
-version = "3.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "64cd236ccc1b7a29e7e2739f27c0b2dd199804abc4290e32f59f3b68d6405c23"
-dependencies = [
- "base64 0.21.5",
- "chrono",
- "hex",
- "serde",
- "serde_json",
- "serde_with_macros 3.4.0",
+ "serde_with_macros",
  "time",
 ]
 
@@ -3880,18 +3720,6 @@ name = "serde_with_macros"
 version = "2.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "881b6f881b17d13214e5d494c939ebab463d01264ce1811e9d4ac3a882e7695f"
-dependencies = [
- "darling",
- "proc-macro2",
- "quote",
- "syn 2.0.39",
-]
-
-[[package]]
-name = "serde_with_macros"
-version = "3.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "93634eb5f75a2323b16de4748022ac4297f9e76b6dced2be287a099f41b5e788"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -3972,7 +3800,7 @@ checksum = "f27f6278552951f1f2b8cf9da965d10969b2efdea95a6ec47987ab46edfe263a"
 
 [[package]]
 name = "simple-signer"
-version = "0.25.16-rc.4"
+version = "0.25.16-rc.5"
 dependencies = [
  "anyhow",
  "bincode 2.0.0-rc.3",
@@ -3994,12 +3822,6 @@ dependencies = [
  "tempfile",
  "walkdir",
 ]
-
-[[package]]
-name = "sketches-ddsketch"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "68a406c1882ed7f29cd5e248c9848a80e7cb6ae0fea82346d2746f2f941c07e1"
 
 [[package]]
 name = "slab"
@@ -4075,7 +3897,7 @@ checksum = "9e08d8363704e6c71fc928674353e6b7c23dcea9d82d7012c8faf2a3a025f8d0"
 
 [[package]]
 name = "strategy-tests"
-version = "0.25.16-rc.4"
+version = "0.25.16-rc.5"
 dependencies = [
  "bincode 2.0.0-rc.3",
  "dpp",
@@ -4658,16 +4480,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tracing-serde"
-version = "0.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc6b213177105856957181934e4920de57730fc69bf42c37ee5bb664d406d9e1"
-dependencies = [
- "serde",
- "tracing-core",
-]
-
-[[package]]
 name = "tracing-subscriber"
 version = "0.3.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4677,15 +4489,12 @@ dependencies = [
  "nu-ansi-term",
  "once_cell",
  "regex",
- "serde",
- "serde_json",
  "sharded-slab",
  "smallvec",
  "thread_local",
  "tracing",
  "tracing-core",
  "tracing-log",
- "tracing-serde",
 ]
 
 [[package]]
@@ -5315,7 +5124,7 @@ dependencies = [
 
 [[package]]
 name = "withdrawals-contract"
-version = "0.25.16-rc.4"
+version = "0.25.16-rc.5"
 dependencies = [
  "num_enum",
  "platform-value",

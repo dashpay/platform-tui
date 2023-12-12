@@ -1,24 +1,24 @@
 //! Strategies management backend module.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::{collections::{BTreeMap, BTreeSet, HashMap, VecDeque}, sync::{Arc, atomic::{AtomicBool, Ordering}}, time::Duration};
 
-use dapi_grpc::platform::v0::{GetEpochsInfoRequest, get_epochs_info_request, get_epochs_info_response};
-use dash_platform_sdk::{Sdk, platform::transition::broadcast::BroadcastStateTransition};
+use dapi_grpc::platform::{v0::{GetEpochsInfoRequest, get_epochs_info_request, get_epochs_info_response}, VersionedGrpcResponse};
+use dash_platform_sdk::{Sdk, platform::transition::broadcast_request::BroadcastRequestForStateTransition};
 use dpp::{
     data_contract::created_data_contract::CreatedDataContract, platform_value::{Bytes32, Identifier},
     version::PlatformVersion, block::{block_info::BlockInfo, epoch::Epoch}, identity::{Identity, PartialIdentity},
 };
-use drive::{drive::{identity::key::fetch::IdentityKeysRequest, document::query::{QueryDocumentsOutcome, QueryDocumentsOutcomeV0Methods}}, query::DriveQuery};
+use drive::{drive::{identity::key::fetch::IdentityKeysRequest, document::query::{QueryDocumentsOutcome, QueryDocumentsOutcomeV0Methods}, Drive}, query::DriveQuery};
 use rand::{rngs::StdRng, SeedableRng};
-use rs_dapi_client::{Dapi, RequestSettings};
+use rs_dapi_client::{Dapi, RequestSettings, DapiRequest};
 use simple_signer::signer::SimpleSigner;
 use strategy_tests::{
     frequency::Frequency, operations::Operation, transitions::create_identities_state_transitions,
     Strategy, LocalDocumentQuery,
 };
-use tokio::sync::MutexGuard;
+use tokio::sync::{MutexGuard, Mutex};
 
-use super::{AppStateUpdate, BackendEvent, Task, AppState};
+use super::{AppStateUpdate, BackendEvent, Task, AppState, StrategyCompletionResult};
 
 #[derive(Debug, PartialEq, Clone)]
 pub(crate) enum StrategyTask {
@@ -323,20 +323,20 @@ pub(crate) async fn run_strategy_task<'s>(
             let known_identities_lock = app_state.known_identities.lock().await;
             let loaded_identity_lock = app_state.loaded_identity.lock().await;
             let identity_private_keys_lock = app_state.identity_private_keys.lock().await;
-        
+
+            // It's normal that we're asking for the mutable strategy because we need to modify
+            // some properties of a contract on update
             if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
-                // Define the number of blocks for which to compute state transitions
-                let num_blocks = 50; // Actually compute this
-
-                // Map state transitions to block heights
-                let mut state_transitions_map = HashMap::new();
-
-                // Get initial block info/height
+                // Define the number of blocks for which to compute state transitions.
+                let num_blocks = 50;
+            
+                // Get block_info 
+                // Get block info for the first block by sending a grpc request and looking at the metadata
                 let mut initial_block_info = BlockInfo::default();
                 let request = GetEpochsInfoRequest {
                     version: Some(get_epochs_info_request::Version::V0(
                         get_epochs_info_request::GetEpochsInfoRequestV0 {
-                            start_epoch:None,
+                            start_epoch: None,
                             count: 1,
                             ascending: false,
                             prove: false,
@@ -344,7 +344,7 @@ pub(crate) async fn run_strategy_task<'s>(
                     )),
                 };
                 let response = sdk
-                    .execute(request, RequestSettings::default())
+                    .execute(request.clone(), RequestSettings::default())
                     .await
                     .expect("get epoch");
                 if let Some(get_epochs_info_response::Version::V0(response_v0)) = response.version {
@@ -357,7 +357,8 @@ pub(crate) async fn run_strategy_task<'s>(
                         }
                     }
                 }
-                        
+                
+                // Get signer
                 // Convert loaded_identity to SimpleSigner
                 let mut signer = SimpleSigner::default();
                 if let Some(Identity::V0(identity_v0)) = &*loaded_identity_lock {
@@ -372,12 +373,16 @@ pub(crate) async fn run_strategy_task<'s>(
                     }
                 }
 
-                // Random number generator
+                // Get rng
                 let mut rng = StdRng::from_entropy();
+
+                // Create map of state transitions to block heights
+                let mut state_transitions_map = HashMap::new();
 
                 // Copy initial block info
                 let mut block_info = initial_block_info.clone();
 
+                // Fill out the state transitions map
                 // Loop through each block to precompute state transitions
                 for block_index in initial_block_info.height..(initial_block_info.height + num_blocks) {
                     let mut document_query_callback = |query: LocalDocumentQuery| {
@@ -440,41 +445,11 @@ pub(crate) async fn run_strategy_task<'s>(
                     // Get current identities
                     let mut current_identities: Vec<Identity> = known_identities_lock.values().cloned().collect();
 
-                    // Get/set block info
-                    // Not sure if we should be doing this in this loop
-                    let request = GetEpochsInfoRequest {
-                        version: Some(get_epochs_info_request::Version::V0(
-                            get_epochs_info_request::GetEpochsInfoRequestV0 {
-                                start_epoch:None,
-                                count: 1,
-                                ascending: false,
-                                prove: false,
-                            },
-                        )),
-                    };
-                    let response = sdk
-                        .execute(request, RequestSettings::default())
-                        .await
-                        .expect("get epoch");
-                    if let Some(get_epochs_info_response::Version::V0(response_v0)) = response.version {
-                        if let Some(metadata) = response_v0.metadata {
-                            block_info = BlockInfo {
-                                time_ms: metadata.time_ms,
-                                height: metadata.height,
-                                core_height: metadata.core_chain_locked_height,
-                                epoch: Epoch::new(metadata.epoch as u16).unwrap(),
-                            }
-                        }
-                    }
-
-                    // maybe don't need this add_strategy_contracts_into_drive part?
-                    // strategy.add_strategy_contracts_into_drive(drive, PlatformVersion::latest());
-
                     // Call the function to get STs for block
                     let state_transitions = strategy.state_transitions_for_block_with_new_identities(
                         &mut document_query_callback, 
                         &mut identity_fetch_callback,
-                        &initial_block_info, 
+                        &block_info, 
                         &mut current_identities, 
                         &mut signer, 
                         &mut rng, 
@@ -483,26 +458,79 @@ pub(crate) async fn run_strategy_task<'s>(
 
                     // Store the state transitions in the map if not empty
                     if !state_transitions.0.is_empty() {
-                        state_transitions_map.insert(block_index, state_transitions.0);
+                        let st_queue = VecDeque::from(state_transitions.0);
+                        state_transitions_map.insert(block_index, st_queue);
                     }
 
-                    // Update block_info height
+                    // Update block_info
                     block_info.height += 1;
+                    block_info.time_ms += 5000;
+                }
+            
+                let mut current_block_height = initial_block_info.height;
+            
+                while current_block_height < initial_block_info.height + num_blocks {
+                    if let Some(transitions) = state_transitions_map.get(&current_block_height) {
+                        for transition in transitions {
+                            // Broadcast the State Transition
+                            let broadcast_request = match transition.broadcast_request_for_state_transition() {
+                                Ok(request) => request,
+                                Err(e) => {
+                                    return BackendEvent::StrategyError {
+                                        strategy_name: strategy_name.clone(),
+                                        error: format!("Error creating broadcast request: {:?}", e),
+                                    };
+                                }
+                            };
+                            match broadcast_request.execute(sdk, RequestSettings::default()).await {
+                                Ok(_) => {
+                                    // Successfully broadcasted, now wait for the result
+                                    let wait_request = match transition.wait_for_state_transition_result_request() {
+                                        Ok(request) => request,
+                                        Err(e) => {
+                                            return BackendEvent::StrategyError {
+                                                strategy_name: strategy_name.clone(),
+                                                error: format!("Error creating wait request: {:?}", e),
+                                            };
+                                        }
+                                    };
+                                    let wait_response = match wait_request.execute(sdk, RequestSettings::default()).await {
+                                        Ok(response) => response,
+                                        Err(e) => {
+                                            return BackendEvent::StrategyError {
+                                                strategy_name: strategy_name.clone(),
+                                                error: format!("Error executing wait request: {:?}", e),
+                                            };
+                                        }
+                                    };
+                
+                                    // Extract Metadata for new block height
+                                    let metadata = wait_response.metadata().unwrap();
+                                    current_block_height = metadata.height;
+                                }
+                                Err(e) => {
+                                    // Handle broadcasting error, decide whether to retry, skip, or abort
+                                    eprintln!("Error broadcasting state transition: {:?}", e);
+                                    // For now, we'll simply return an error event
+                                    return BackendEvent::StrategyError {
+                                        strategy_name: strategy_name.clone(),
+                                        error: format!("Error broadcasting state transition: {:?}", e),
+                                    };
+                                }
+                            }
+                        }
+                    }
+                
+                    // Sleep for a short duration before checking again
+                    tokio::time::sleep(Duration::from_secs(5)).await;
                 }
 
-                // now monitor the blocks and send the state transitions 
-                // for each block height until finish
-
-                // after seeing that the block height has incremented...
-                let current_block_height: u64 = 1; // actually compute this
-                if state_transitions_map.contains_key(&current_block_height) {
-                    let state_transitions = state_transitions_map.get(&current_block_height).unwrap();
-                    for st in state_transitions {
-                        let result = st.broadcast(sdk);
+                BackendEvent::StrategyCompleted {
+                    strategy_name: strategy_name.clone(),
+                    result: StrategyCompletionResult::Success {
+                        final_block_height: current_block_height,
                     }
                 }
-
-                BackendEvent::None // probably want something else here
             } else {
                 BackendEvent::None
             }

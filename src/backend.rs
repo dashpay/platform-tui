@@ -97,6 +97,14 @@ pub(crate) enum BackendEvent<'s> {
         app_state_update: AppStateUpdate<'s>,
     },
     AppStateUpdated(AppStateUpdate<'s>),
+    StrategyCompleted {
+        strategy_name: String,
+        result: StrategyCompletionResult,
+    },
+    StrategyError {
+        strategy_name: String,
+        error: String,
+    },
     None,
 }
 
@@ -118,6 +126,17 @@ pub(crate) enum AppStateUpdate<'s> {
     IdentityRegistrationProgressed, // TODO provide state update details
     LoadedIdentity(MappedMutexGuard<'s, Identity>),
     FailedToRefreshIdentity,
+}
+
+/// Represents the result of completing a strategy.
+pub(crate) enum StrategyCompletionResult {
+    Success {
+        final_block_height: u64,
+    },
+    PartiallyCompleted {
+        reached_block_height: u64,
+        reason: String,
+    },
 }
 
 /// Application state, dependencies are task execution logic around it.
