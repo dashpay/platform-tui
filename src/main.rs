@@ -2,7 +2,7 @@ mod backend;
 mod config;
 mod ui;
 
-use std::{fs::File, io::Write, panic, path::Path, sync::Mutex};
+use std::{fs::File, panic};
 
 use crossterm::event::{Event as TuiEvent, EventStream};
 use dash_platform_sdk::SdkBuilder;
@@ -28,12 +28,16 @@ async fn main() {
     // Initialize logger
     let log_file = File::create("explorer.log").expect("create log file");
 
-    let subscriber = tracing_subscriber::fmt::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
+    let subscriber = tracing_subscriber::fmt()
+        .with_env_filter("info")
         .with_writer(log_file)
+        .with_ansi(false)
         .finish();
 
-    tracing::subscriber::set_global_default(subscriber).expect("can't initialize logging");
+    tracing::subscriber::set_global_default(subscriber).expect("Unable to set global default subscriber");
+
+    // Test log statement
+    tracing::info!("Logger initialized successfully");
 
     // Log panics
     let default_panic_hook = panic::take_hook();

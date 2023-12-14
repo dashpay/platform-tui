@@ -36,12 +36,12 @@ pub(crate) enum DocumentTask {
 impl AppState {
     pub(super) async fn run_document_task<'s>(
         &'s self,
-        sdk: &mut Sdk,
+        sdk: Arc<Sdk>,
         task: DocumentTask,
     ) -> BackendEvent<'s> {
         match &task {
             DocumentTask::QueryDocuments(document_query) => {
-                let execution_result = Document::fetch_many(sdk, document_query.clone())
+                let execution_result = Document::fetch_many(&sdk, document_query.clone())
                     .await
                     .map(CompletedTaskPayload::Documents)
                     .map_err(|e| e.to_string());
@@ -52,13 +52,13 @@ impl AppState {
             }
             DocumentTask::BroadcastRandomDocument(data_contract, document_type) => {
                 let execution_result = self
-                    .broadcast_random_document(sdk, data_contract, document_type)
+                    .broadcast_random_document(sdk.clone(), data_contract, document_type)
                     .await
                     .map(CompletedTaskPayload::Document)
                     .map_err(|e| e.to_string());
 
                 if execution_result.is_ok() {
-                    match self.refresh_identity(sdk).await {
+                    match self.refresh_identity(&sdk).await {
                         Ok(updated_identity) => BackendEvent::TaskCompletedStateChange {
                             task: Task::Document(task),
                             execution_result,
@@ -82,7 +82,7 @@ impl AppState {
 
     pub(crate) async fn broadcast_random_document<'s>(
         &'s self,
-        sdk: &mut Sdk,
+        sdk: Arc<Sdk>,
         data_contract: &DataContract,
         document_type: &DocumentType,
     ) -> Result<Document, Error> {
@@ -143,7 +143,7 @@ impl AppState {
 
         let document = random_document
             .put_to_platform_and_wait_for_response(
-                sdk,
+                &sdk,
                 document_type.clone(),
                 document_state_transition_entropy,
                 identity_public_key.clone(),

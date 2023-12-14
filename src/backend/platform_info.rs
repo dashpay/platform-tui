@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use dash_platform_sdk::{platform::Fetch, Sdk};
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 
@@ -8,11 +10,11 @@ pub(crate) enum PlatformInfoTask {
     FetchCurrentEpochInfo,
 }
 pub(super) async fn run_platform_task<'s>(
-    sdk: &mut Sdk,
+    sdk: Arc<Sdk>,
     task: PlatformInfoTask,
 ) -> BackendEvent<'s> {
     match task {
-        PlatformInfoTask::FetchCurrentEpochInfo => match ExtendedEpochInfo::fetch(sdk, 5).await {
+        PlatformInfoTask::FetchCurrentEpochInfo => match ExtendedEpochInfo::fetch(&sdk, 5).await {
             Ok(Some(epoch_info)) => {
                 let epoch_info = as_toml(&epoch_info);
 
