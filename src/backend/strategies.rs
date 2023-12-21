@@ -9,6 +9,7 @@ use dpp::{
     version::PlatformVersion, block::{block_info::BlockInfo, epoch::Epoch}, identity::{Identity, PartialIdentity},
 };
 use drive::{drive::{identity::key::fetch::IdentityKeysRequest, document::query::{QueryDocumentsOutcome, QueryDocumentsOutcomeV0Methods}}, query::DriveQuery};
+use futures::future::join_all;
 use rand::{rngs::StdRng, SeedableRng};
 use rs_dapi_client::{Dapi, RequestSettings, DapiRequest};
 use simple_signer::signer::SimpleSigner;
@@ -514,86 +515,55 @@ pub(crate) async fn run_strategy_task<'s>(
                     block_info.time_ms += 30 * 1000;
                 }
             
-                let mut current_block_height = initial_block_info.height;
+                let current_block_height = initial_block_info.height;
 
                 info!("Starting strategy execution loop");
             
-                while current_block_height < initial_block_info.height + num_blocks {
-                    info!("Processing block height {}", current_block_height);
-                    
-                    let mut process_block_height = current_block_height;
-                
-                    while let Some(transitions) = state_transitions_map.get(&process_block_height) {
+                // Create a vector to store futures for each state transition task
+                let mut state_transition_futures = Vec::new();
+
+                // Iterate over each block height
+                for block_height in initial_block_info.height..(initial_block_info.height + num_blocks) {
+                    if let Some(transitions) = state_transitions_map.get(&block_height) {
                         for transition in transitions {
-                            info!("Broadcasting state transition for block {}", process_block_height);
-                
-                            // Broadcast the State Transition
-                            let broadcast_request = match transition.broadcast_request_for_state_transition() {
-                                Ok(request) => request,
-                                Err(e) => {
-                                    return BackendEvent::StrategyError {
-                                        strategy_name: strategy_name.clone(),
-                                        error: format!("Error creating broadcast request: {:?}", e),
-                                    };
-                                }
-                            };
-                            match broadcast_request.execute(&*sdk, RequestSettings::default()).await {
-                                Ok(_) => {
-                                    // Successfully broadcasted, now wait for the result
-                                    let wait_request = match transition.wait_for_state_transition_result_request() {
-                                        Ok(request) => request,
-                                        Err(e) => {
-                                            return BackendEvent::StrategyError {
-                                                strategy_name: strategy_name.clone(),
-                                                error: format!("Error creating wait request: {:?}", e),
-                                            };
-                                        }
-                                    };
-                                    let wait_response = match wait_request.execute(&*sdk, RequestSettings::default()).await {
-                                        Ok(response) => response,
-                                        Err(e) => {
-                                            return BackendEvent::StrategyError {
-                                                strategy_name: strategy_name.clone(),
-                                                error: format!("Error executing wait request: {:?}", e),
-                                            };
-                                        }
-                                    };
-                
-                                    // Extract Metadata for new block height
-                                    let metadata = wait_response.metadata().unwrap();
-                
-                                    info!("State transition processed for block {}, new block height: {}", process_block_height, metadata.height);
-                                    
-                                    if metadata.height > process_block_height {
-                                        process_block_height = metadata.height;
-                                        break; // Breaks out to process the next block in the outer while loop
+                            let sdk_clone = Arc::clone(&sdk); // Efficiently clone the Arc
+                            let transition_clone = transition.clone(); // Clone the transition if necessary
+
+                            // Spawn a new task for broadcasting and waiting for each state transition
+                            let transition_future = tokio::spawn(async move {
+                                // Implement the logic for broadcasting the state transition
+                                let broadcast_request = match transition_clone.broadcast_request_for_state_transition() {
+                                    Ok(request) => request,
+                                    Err(e) => {
+                                        return Err(format!("Error creating broadcast request: {:?}", e));
                                     }
+                                };
+                                match broadcast_request.execute(&*sdk_clone, RequestSettings::default()).await {
+                                    Ok(_) => {
+                                        // Implement the logic for waiting for the transition result
+                                        let wait_request = match transition_clone.wait_for_state_transition_result_request() {
+                                            Ok(request) => request,
+                                            Err(e) => {
+                                                return Err(format!("Error creating wait request: {:?}", e));
+                                            }
+                                        };
+                                        match wait_request.execute(&*sdk_clone, RequestSettings::default()).await {
+                                            Ok(response) => Ok(response),
+                                            Err(e) => Err(format!("Error executing wait request: {:?}", e)),
+                                        }
+                                    }
+                                    Err(e) => Err(format!("Error broadcasting state transition: {:?}", e)),
                                 }
-                                Err(e) => {
-                                    return BackendEvent::StrategyError {
-                                        strategy_name: strategy_name.clone(),
-                                        error: format!("Error broadcasting state transition: {:?}", e),
-                                    };
-                                }
-                            }
-                        }
-                
-                        if process_block_height == current_block_height {
-                            // No new block height received, proceed to next block
-                            current_block_height += 1;
-                            process_block_height += 1;
+                            });
+
+                            // Store the future in the vector
+                            state_transition_futures.push(transition_future);
                         }
                     }
-                
-                    if process_block_height == current_block_height {
-                        // No state transitions for this block, proceed to next
-                        info!("No state transitions for block {}", current_block_height);
-                        current_block_height += 1;
-                    }
-                
-                    // Sleep for a short duration before checking again
-                    tokio::time::sleep(Duration::from_secs(5)).await;
                 }
+
+                // Await all futures to complete
+                let results = join_all(state_transition_futures).await;
                 
                 info!("Strategy '{}' completed successfully. Final block height: {}", strategy_name, current_block_height);
 
