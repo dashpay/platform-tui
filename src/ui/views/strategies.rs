@@ -231,7 +231,10 @@ impl ScreenController for StrategiesScreenController {
                 code: Key::Char('o'),
                 modifiers: KeyModifiers::NONE,
             }) => {
-                if let Some(strategy_name) = &self.selected_strategy {
+                if let Some(strategy_name) = self.selected_strategy.clone() {
+                    // Update known contracts before showing the form
+                    self.update_known_contracts_sync();
+
                     ScreenFeedback::Form(Box::new(StrategyAddOperationFormController::new(
                         strategy_name.clone(),
                         self.known_contracts.clone(),
@@ -346,7 +349,7 @@ fn display_strategy(
         "{:indent$}Times per block: {}; chance per block: {}\n",
         "",
         strategy.identities_inserts.times_per_block_range.end,
-        strategy.identities_inserts.chance_per_block.unwrap_or(1.0),
+        strategy.identities_inserts.chance_per_block.unwrap_or(0.0),
         indent = 8,
     );
 
@@ -380,8 +383,8 @@ fn display_strategy(
             "{:indent$}{}; Times per block: {}, chance per block: {}\n",
             "",
             op_name,
-            op.frequency.times_per_block_range.end,
-            op.frequency.chance_per_block.unwrap_or(1.0),
+            op.frequency.times_per_block_range.end-1,
+            op.frequency.chance_per_block.unwrap_or(0.0),
             indent = 8
         ));
     }

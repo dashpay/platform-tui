@@ -43,8 +43,8 @@ impl FormController for StrategyOpContractUpdateNewFieldsFormController {
                     strategy_name: self.selected_strategy.clone(),
                     operation: Operation {
                         op_type: OperationType::ContractUpdate(DataContractNewOptionalFields(
-                            1..rand::thread_rng().gen::<u16>(),
-                            1..rand::thread_rng().gen::<u16>(),
+                            1..rand::thread_rng().gen_range(1..=u16::MAX),
+                            1..rand::thread_rng().gen_range(1..=u16::MAX),
                         )),
                         frequency: Frequency {
                             times_per_block_range: 1..times_per_block,

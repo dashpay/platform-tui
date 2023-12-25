@@ -42,8 +42,8 @@ impl StrategyOpContractUpdateDocTypesFormController {
 
 impl FormController for StrategyOpContractUpdateDocTypesFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
-        let random_number1 = rand::thread_rng().gen_range(1..=50);
-        let random_number2 = rand::thread_rng().gen_range(1..=50);
+        let random_number1 = rand::thread_rng().gen_range(2..=50);
+        let random_number2 = rand::thread_rng().gen_range(2..=50);
         let random_number3 = rand::thread_rng().gen::<i64>() - 1000000;
 
         let random_doc_type_parameters = RandomDocumentTypeParameters {

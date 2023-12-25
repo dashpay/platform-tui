@@ -95,7 +95,7 @@ impl FormController for StrategyOpDocumentFormController {
                                 action: action.clone(),
                             }),
                             frequency: Frequency {
-                                times_per_block_range: 1..times_per_block,
+                                times_per_block_range: 1..times_per_block+1,
                                 chance_per_block: Some(chance_per_block),
                             },
                         },
