@@ -93,7 +93,7 @@ impl FormController for StrategyOpContractCreateFormController {
                             1..rand::thread_rng().gen_range(1..=u16::MAX),
                         ),
                         frequency: Frequency {
-                            times_per_block_range: 1..times_per_block,
+                            times_per_block_range: 1..times_per_block+1,
                             chance_per_block: Some(chance_per_block),
                         },
                     },

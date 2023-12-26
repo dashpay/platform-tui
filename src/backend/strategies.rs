@@ -1,8 +1,8 @@
 //! Strategies management backend module.
 
-use std::{collections::{BTreeMap, BTreeSet, HashMap, VecDeque}, time::Duration, sync::Arc};
+use std::{collections::{BTreeMap, BTreeSet, HashMap, VecDeque}, sync::Arc};
 
-use dapi_grpc::platform::{v0::{GetEpochsInfoRequest, get_epochs_info_request, get_epochs_info_response}, VersionedGrpcResponse};
+use dapi_grpc::platform::v0::{GetEpochsInfoRequest, get_epochs_info_request, get_epochs_info_response};
 use dash_platform_sdk::{Sdk, platform::transition::broadcast_request::BroadcastRequestForStateTransition};
 use dpp::{
     data_contract::created_data_contract::CreatedDataContract, platform_value::{Bytes32, Identifier},
@@ -15,7 +15,7 @@ use rs_dapi_client::{Dapi, RequestSettings, DapiRequest};
 use simple_signer::signer::SimpleSigner;
 use strategy_tests::{
     frequency::Frequency, operations::Operation, transitions::create_identities_state_transitions,
-    Strategy, LocalDocumentQuery,
+    Strategy, LocalDocumentQuery, StrategyConfig,
 };
 use tokio::sync::MutexGuard;
 use tracing::{info, error};
@@ -487,7 +487,6 @@ pub(crate) async fn run_strategy_task<'s>(
                 
                     // Get current identities
                     let mut current_identities: Vec<Identity> = known_identities_lock.values().cloned().collect();
-                    info!("Current identities count: {}", current_identities.len());
 
                     // Call the function to get STs for block
                     let state_transitions = strategy.state_transitions_for_block_with_new_identities(
@@ -497,7 +496,8 @@ pub(crate) async fn run_strategy_task<'s>(
                         &mut current_identities, 
                         &mut signer, 
                         &mut rng, 
-                        PlatformVersion::latest()
+                        PlatformVersion::latest(),
+                        &StrategyConfig { start_block_height: initial_block_info.height },
                     );
 
                     // Store the state transitions in the map if not empty
