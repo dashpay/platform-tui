@@ -82,6 +82,19 @@ async fn main() {
 
     let backend = Backend::new(sdk, insight).await;
 
+    // Add loaded identity to known identities if it's not already there
+    {
+        let state = backend.state();
+        let loaded_identity = state.loaded_identity.lock().await;
+        let mut known_identities = state.known_identities.lock().await;
+
+        if let Some(loaded_identity) = loaded_identity.as_ref() {
+            known_identities
+                .entry(loaded_identity.id())
+                .or_insert_with(|| loaded_identity.clone());
+        }
+    }    
+
     let initial_identity_balance = backend
         .state()
         .loaded_identity

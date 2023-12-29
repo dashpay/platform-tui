@@ -1152,6 +1152,7 @@ dependencies = [
  "serde_repr",
  "sha2",
  "thiserror",
+ "tracing",
 ]
 
 [[package]]

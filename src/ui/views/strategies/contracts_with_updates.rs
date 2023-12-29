@@ -63,6 +63,7 @@ impl FormController for StrategyContractsFormController {
                         task: Task::Strategy(StrategyTask::SetContractsWithUpdates(
                             self.selected_strategy.clone(),
                             self.selected_contracts.clone(),
+                            self.known_contracts.clone(),
                         )),
                         block: false,
                     }

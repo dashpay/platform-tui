@@ -5,7 +5,7 @@ use std::{collections::{BTreeMap, BTreeSet, HashMap, VecDeque}, sync::Arc};
 use dapi_grpc::platform::v0::{GetEpochsInfoRequest, get_epochs_info_request, get_epochs_info_response};
 use dash_platform_sdk::{Sdk, platform::transition::broadcast_request::BroadcastRequestForStateTransition};
 use dpp::{
-    data_contract::created_data_contract::CreatedDataContract, platform_value::{Bytes32, Identifier},
+    data_contract::{created_data_contract::CreatedDataContract, DataContract}, platform_value::{Bytes32, Identifier},
     version::PlatformVersion, block::{block_info::BlockInfo, epoch::Epoch}, identity::{Identity, PartialIdentity},
 };
 use drive::{drive::{identity::key::fetch::IdentityKeysRequest, document::query::{QueryDocumentsOutcome, QueryDocumentsOutcomeV0Methods}}, query::DriveQuery};
@@ -28,7 +28,7 @@ pub(crate) enum StrategyTask {
     SelectStrategy(String),
     DeleteStrategy(String),
     CloneStrategy(String),
-    SetContractsWithUpdates(String, Vec<String>),
+    SetContractsWithUpdates(String, Vec<String>, BTreeMap<String, DataContract>),
     SetIdentityInserts {
         strategy_name: String,
         identity_inserts_frequency: Frequency,
@@ -150,11 +150,16 @@ pub(crate) async fn run_strategy_task<'s>(
                 BackendEvent::None // No strategy selected to clone
             }
         }
-        StrategyTask::SetContractsWithUpdates(strategy_name, selected_contract_names) => {
+        StrategyTask::SetContractsWithUpdates(strategy_name, selected_contract_names, new_known_contracts) => {
             let mut strategies_lock = app_state.available_strategies.lock().await;
-            let known_contracts_lock = app_state.known_contracts.lock().await;
+            let mut known_contracts_lock = app_state.known_contracts.lock().await;
             let mut contract_names_lock = app_state.available_strategies_contract_names.lock().await;
-
+        
+            // Add the new contracts to the known contracts map
+            for (key, value) in new_known_contracts {
+                known_contracts_lock.insert(key, value);
+            }
+                    
             if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
                 let mut rng = StdRng::from_entropy();
                 let platform_version = PlatformVersion::latest();
@@ -189,7 +194,7 @@ pub(crate) async fn run_strategy_task<'s>(
                                                     .insert(order as u64, created_update_contract);
                                             }
                                             Err(e) => {
-                                                eprintln!(
+                                                error!(
                                                     "Error converting DataContract to \
                                                      CreatedDataContract for update: {:?}",
                                                     e
@@ -210,10 +215,7 @@ pub(crate) async fn run_strategy_task<'s>(
                                 ));
                             }
                             Err(e) => {
-                                eprintln!(
-                                    "Error converting DataContract to CreatedDataContract: {:?}",
-                                    e
-                                );
+                                error!("Error converting DataContract to CreatedDataContract: {:?}", e);
                             }
                         }
                     }
@@ -342,8 +344,9 @@ pub(crate) async fn run_strategy_task<'s>(
             // It's normal that we're asking for the mutable strategy because we need to modify
             // some properties of a contract on update
             if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
+
                 // Define the number of blocks for which to compute state transitions.
-                let num_blocks = 20;
+                let num_blocks = 10;
             
                 // Get block_info
                 // Get block info for the first block by sending a grpc request and looking at the metadata
@@ -416,12 +419,12 @@ pub(crate) async fn run_strategy_task<'s>(
                 let mut state_transitions_map = HashMap::new();
 
                 // Copy initial block info
-                let mut block_info = initial_block_info.clone();
+                let mut current_block_info = initial_block_info.clone();
 
                 // Fill out the state transitions map
                 // Loop through each block to precompute state transitions
-                for block_index in initial_block_info.height..(initial_block_info.height + num_blocks) {
-                    info!("Precomputing state transitions for block {}", block_index);
+                while current_block_info.height < (initial_block_info.height + num_blocks) {
+                    info!("Precomputing state transitions for block {}", current_block_info.height);
 
                     let mut document_query_callback = |query: LocalDocumentQuery| {
                         match query {
@@ -438,13 +441,13 @@ pub(crate) async fn run_strategy_task<'s>(
                                         match outcome {
                                             QueryDocumentsOutcome::V0(outcome_v0) => {
                                                 let documents = outcome_v0.documents_owned();
-                                                info!("Block {}: Fetched {} documents using DriveQuery", block_index, documents.len());
+                                                info!("Block {}: Fetched {} documents using DriveQuery", current_block_info.height, documents.len());
                                                 documents
                                             }
                                         }
                                     },
                                     Err(e) => {
-                                        error!("Block {}: Error fetching documents using DriveQuery: {:?}", block_index, e);
+                                        error!("Block {}: Error fetching documents using DriveQuery: {:?}", current_block_info.height, e);
                                         vec![]
                                     }
                                 }
@@ -489,10 +492,10 @@ pub(crate) async fn run_strategy_task<'s>(
                     let mut current_identities: Vec<Identity> = known_identities_lock.values().cloned().collect();
 
                     // Call the function to get STs for block
-                    let state_transitions = strategy.state_transitions_for_block_with_new_identities(
+                    let state_transitions_for_block = strategy.state_transitions_for_block_with_new_identities(
                         &mut document_query_callback, 
                         &mut identity_fetch_callback,
-                        &block_info, 
+                        &current_block_info, 
                         &mut current_identities, 
                         &mut signer, 
                         &mut rng, 
@@ -501,33 +504,32 @@ pub(crate) async fn run_strategy_task<'s>(
                     );
 
                     // Store the state transitions in the map if not empty
-                    if !state_transitions.0.is_empty() {
-                        let st_queue = VecDeque::from(state_transitions.0);
-                        state_transitions_map.insert(block_index, st_queue.clone());
-                        info!("Prepared {} state transitions for block {}", st_queue.len(), block_index);
+                    if !state_transitions_for_block.0.is_empty() {
+                        let st_queue = VecDeque::from(state_transitions_for_block.0);
+                        state_transitions_map.insert(current_block_info.height, st_queue.clone());
+                        info!("Prepared {} state transitions for block {}", st_queue.len(), current_block_info.height);
                     } else {
                         // Log when no state transitions are found for a block
-                        info!("No state transitions prepared for block {}", block_index);
+                        info!("No state transitions prepared for block {}", current_block_info.height);
                     }
 
                     // Update block_info
-                    block_info.height += 1;
-                    block_info.time_ms += 1 * 1000;
+                    current_block_info.height += 1;
+                    current_block_info.time_ms += 1 * 1000; // plus 1 second
                 }
             
                 let mut current_block_height = initial_block_info.height;
 
-                info!("Starting strategy execution loop");
+                info!("--- Starting strategy execution loop ---");
             
                 // Create a vector to store futures for each state transition task
                 let mut state_transition_futures = Vec::new();
 
                 // Iterate over each block height
-                for block_height in initial_block_info.height..(initial_block_info.height + num_blocks) {
-                    info!("Processing block height {}", block_height);
-                    current_block_height += 1;
+                while current_block_height < (initial_block_info.height + num_blocks) {
+                    info!("Processing block height {}", current_block_height);
 
-                    if let Some(transitions) = state_transitions_map.get(&block_height) {
+                    if let Some(transitions) = state_transitions_map.get(&current_block_height) {
                         for transition in transitions {
                             let sdk_clone = Arc::clone(&sdk); // Efficiently clone the Arc
                             let transition_clone = transition.clone(); // Clone the transition if necessary
@@ -538,34 +540,34 @@ pub(crate) async fn run_strategy_task<'s>(
                                 let broadcast_request = match transition_clone.broadcast_request_for_state_transition() {
                                     Ok(request) => request,
                                     Err(e) => {
-                                        error!("Error creating broadcast request for block {}: {:?}", block_height, e);
+                                        error!("Error creating broadcast request for block {}: {:?}", current_block_height, e);
                                         return Err(format!("Error creating broadcast request: {:?}", e));
                                     }
                                 };
                                 match broadcast_request.execute(&*sdk_clone, RequestSettings::default()).await {
                                     Ok(_) => {
-                                        info!("Successfully broadcasted state transition for block {}", block_height);
+                                        info!("Successfully broadcasted state transition for block {}", current_block_height);
                                         // Implement the logic for waiting for the transition result
                                         let wait_request = match transition_clone.wait_for_state_transition_result_request() {
                                             Ok(request) => request,
                                             Err(e) => {
-                                                error!("Error creating wait request for block {}: {:?}", block_height, e);
+                                                error!("Error creating wait request for block {}: {:?}", current_block_height, e);
                                                 return Err(format!("Error creating wait request: {:?}", e));
                                             }
                                         };
                                         match wait_request.execute(&*sdk_clone, RequestSettings::default()).await {
                                             Ok(response) => {
-                                                info!("Successfully received response for state transition for block {}", block_height);
+                                                info!("Successfully received response for state transition for block {}", current_block_height);
                                                 Ok(response)
                                             },
                                             Err(e) => {
-                                                error!("Error executing wait request for block {}: {:?}", block_height, e);
+                                                error!("Error executing wait request for block {}: {:?}", current_block_height, e);
                                                 Err(format!("Error executing wait request: {:?}", e))
                                             },
                                         }
                                     }
                                     Err(e) => {
-                                        error!("Error broadcasting state transition for block {}: {:?}", block_height, e);
+                                        error!("Error broadcasting state transition for block {}: {:?}", current_block_height, e);
                                         Err(format!("Error broadcasting state transition: {:?}", e))
                                     },
                                 }
@@ -575,10 +577,12 @@ pub(crate) async fn run_strategy_task<'s>(
                             state_transition_futures.push(transition_future);
                         }
                     } else {
-                        info!("No state transitions to process for block {}", block_height);
+                        info!("No state transitions to process for block {}", current_block_height);
                     }
 
-                    info!("Finished processing block height {}", block_height);
+                    info!("Finished processing block height {}", current_block_height);
+
+                    current_block_height += 1;
                 }
 
                 // Await all futures to complete
