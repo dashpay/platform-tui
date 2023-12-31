@@ -414,9 +414,6 @@ pub(crate) async fn run_strategy_task<'s>(
                 }
                 info!("Successfully created signer from loaded identity");
                                                                                 
-                // Get rng
-                let mut rng = StdRng::from_entropy();
-
                 // Create map of state transitions to block heights
                 let mut state_transitions_map = HashMap::new();
 
@@ -492,6 +489,9 @@ pub(crate) async fn run_strategy_task<'s>(
                 
                     // Get current identities
                     let mut current_identities: Vec<Identity> = known_identities_lock.values().cloned().collect();
+
+                    // Get rng
+                    let mut rng = StdRng::from_entropy();
 
                     // Call the function to get STs for block
                     let state_transitions_for_block = strategy.state_transitions_for_block_with_new_identities(
