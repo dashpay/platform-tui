@@ -862,7 +862,7 @@ dependencies = [
 
 [[package]]
 name = "dapi-grpc"
-version = "0.25.16-rc.5"
+version = "0.25.19"
 dependencies = [
  "dapi-grpc-macros",
  "platform-version",
@@ -877,7 +877,7 @@ dependencies = [
 
 [[package]]
 name = "dapi-grpc-macros"
-version = "0.25.16-rc.5"
+version = "0.25.19"
 dependencies = [
  "heck",
  "quote",
@@ -921,11 +921,10 @@ dependencies = [
 
 [[package]]
 name = "dash-platform-sdk"
-version = "0.25.16-rc.5"
+version = "0.25.19"
 dependencies = [
  "async-trait",
  "bincode 2.0.0-rc.3",
- "bincode_derive",
  "bip37-bloom-filter",
  "ciborium",
  "dapi-grpc",
@@ -944,7 +943,6 @@ dependencies = [
  "rs-dapi-client",
  "serde",
  "serde_json",
- "simple-signer",
  "thiserror",
  "tokio",
  "tokio-util",
@@ -1014,7 +1012,7 @@ dependencies = [
 
 [[package]]
 name = "dashpay-contract"
-version = "0.25.16-rc.5"
+version = "0.25.19"
 dependencies = [
  "platform-value",
  "serde_json",
@@ -1022,7 +1020,7 @@ dependencies = [
 
 [[package]]
 name = "data-contracts"
-version = "0.25.16-rc.5"
+version = "0.25.19"
 dependencies = [
  "dashpay-contract",
  "dpns-contract",
@@ -1101,7 +1099,7 @@ checksum = "9ea835d29036a4087793836fa931b08837ad5e957da9e23886b29586fb9b6650"
 
 [[package]]
 name = "dpns-contract"
-version = "0.25.16-rc.5"
+version = "0.25.19"
 dependencies = [
  "platform-value",
  "serde_json",
@@ -1109,7 +1107,7 @@ dependencies = [
 
 [[package]]
 name = "dpp"
-version = "0.25.16-rc.5"
+version = "0.25.19"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1152,12 +1150,11 @@ dependencies = [
  "serde_repr",
  "sha2",
  "thiserror",
- "tracing",
 ]
 
 [[package]]
 name = "drive"
-version = "0.25.16-rc.5"
+version = "0.25.19"
 dependencies = [
  "base64 0.21.5",
  "bs58 0.5.0",
@@ -1190,7 +1187,7 @@ dependencies = [
 
 [[package]]
 name = "drive-proof-verifier"
-version = "0.25.16-rc.5"
+version = "0.25.19"
 dependencies = [
  "dapi-grpc",
  "dpp",
@@ -1409,7 +1406,7 @@ checksum = "25cbce373ec4653f1a01a31e8a5e5ec0c622dc27ff9c4e6606eefef5cbbed4a5"
 
 [[package]]
 name = "feature-flags-contract"
-version = "0.25.16-rc.5"
+version = "0.25.19"
 dependencies = [
  "platform-value",
  "serde_json",
@@ -2330,7 +2327,7 @@ dependencies = [
 
 [[package]]
 name = "masternode-reward-shares-contract"
-version = "0.25.16-rc.5"
+version = "0.25.19"
 dependencies = [
  "platform-value",
  "serde_json",
@@ -2860,7 +2857,7 @@ checksum = "26072860ba924cbfa98ea39c8c19b4dd6a4a25423dbdf219c1eca91aa0cf6964"
 
 [[package]]
 name = "platform-serialization"
-version = "0.25.16-rc.5"
+version = "0.25.19"
 dependencies = [
  "bincode 2.0.0-rc.3",
  "platform-version",
@@ -2868,7 +2865,7 @@ dependencies = [
 
 [[package]]
 name = "platform-serialization-derive"
-version = "0.25.16-rc.5"
+version = "0.25.19"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2878,7 +2875,7 @@ dependencies = [
 
 [[package]]
 name = "platform-value"
-version = "0.25.16-rc.5"
+version = "0.25.19"
 dependencies = [
  "base64 0.13.1",
  "bincode 2.0.0-rc.3",
@@ -2899,14 +2896,14 @@ dependencies = [
 
 [[package]]
 name = "platform-version"
-version = "0.25.16-rc.5"
+version = "0.25.19"
 dependencies = [
  "thiserror",
 ]
 
 [[package]]
 name = "platform-versioning"
-version = "0.25.16-rc.5"
+version = "0.25.19"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3334,7 +3331,7 @@ dependencies = [
 
 [[package]]
 name = "rs-dapi-client"
-version = "0.25.16-rc.5"
+version = "0.25.19"
 dependencies = [
  "backon",
  "chrono",
@@ -3801,7 +3798,7 @@ checksum = "f27f6278552951f1f2b8cf9da965d10969b2efdea95a6ec47987ab46edfe263a"
 
 [[package]]
 name = "simple-signer"
-version = "0.25.16-rc.5"
+version = "0.25.19"
 dependencies = [
  "anyhow",
  "bincode 2.0.0-rc.3",
@@ -3898,7 +3895,7 @@ checksum = "9e08d8363704e6c71fc928674353e6b7c23dcea9d82d7012c8faf2a3a025f8d0"
 
 [[package]]
 name = "strategy-tests"
-version = "0.25.16-rc.5"
+version = "0.25.19"
 dependencies = [
  "bincode 2.0.0-rc.3",
  "dpp",
@@ -5125,7 +5122,7 @@ dependencies = [
 
 [[package]]
 name = "withdrawals-contract"
-version = "0.25.16-rc.5"
+version = "0.25.19"
 dependencies = [
  "num_enum",
  "platform-value",

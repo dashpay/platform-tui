@@ -11,7 +11,7 @@ use dpp::{
 use drive::{drive::{identity::key::fetch::IdentityKeysRequest, document::query::{QueryDocumentsOutcome, QueryDocumentsOutcomeV0Methods}}, query::DriveQuery};
 use futures::future::join_all;
 use rand::{rngs::StdRng, SeedableRng};
-use rs_dapi_client::{Dapi, RequestSettings, DapiRequest};
+use rs_dapi_client::{RequestSettings, DapiRequest};
 use simple_signer::signer::SimpleSigner;
 use strategy_tests::{
     frequency::Frequency, operations::Operation, transitions::create_identities_state_transitions,
@@ -19,6 +19,8 @@ use strategy_tests::{
 };
 use tokio::sync::MutexGuard;
 use tracing::{info, error};
+
+use rs_dapi_client::DapiRequestExecutor;
 
 use super::{AppStateUpdate, BackendEvent, Task, AppState, StrategyCompletionResult};
 

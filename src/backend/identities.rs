@@ -30,12 +30,14 @@ use dpp::{
     prelude::{AssetLockProof, Identity, IdentityPublicKey},
 };
 use rand::{rngs::StdRng, SeedableRng};
-use rs_dapi_client::{Dapi, RequestSettings};
+use rs_dapi_client::RequestSettings;
 use simple_signer::signer::SimpleSigner;
 use tokio::sync::{MappedMutexGuard, MutexGuard};
 
 use super::AppStateUpdate;
 use crate::backend::{error::Error, stringify_result_keep_item, AppState, BackendEvent, Task};
+
+use rs_dapi_client::DapiRequestExecutor;
 
 pub(super) async fn fetch_identity_by_b58_id(
     sdk: &Sdk,
@@ -295,12 +297,18 @@ impl AppState {
                 identity_info.clone()
             } else {
                 let mut std_rng = StdRng::from_entropy();
-                let (mut identity, keys): (Identity, BTreeMap<IdentityPublicKey, Vec<u8>>) =
+                let (mut identity, mut keys): (Identity, BTreeMap<IdentityPublicKey, Vec<u8>>) =
                     Identity::random_identity_with_main_keys_with_private_key(
                         2,
                         &mut std_rng,
                         sdk.version(),
                     )?;
+
+                let (critical_key, critical_private_key) = 
+                    IdentityPublicKey::random_ecdsa_critical_level_authentication_key(2, None, sdk.version())?;
+                identity.add_public_key(critical_key.clone());
+                keys.insert(critical_key, critical_private_key);
+
                 identity.set_id(
                     asset_lock_proof
                         .create_identifier()

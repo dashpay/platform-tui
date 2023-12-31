@@ -69,7 +69,7 @@ impl Config {
     /// and prefixed with [TESTNET_EXPLORER_](Config::CONFIG_PREFIX).
     pub fn load_testnet() -> Self {
         // load config from .env file
-        if let Err(err) = dotenvy::from_path(".env") {
+        if let Err(err) = dotenvy::from_path(".env.testnet") {
             tracing::warn!(?err, "failed to load config file");
         }
 
