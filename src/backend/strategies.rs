@@ -348,7 +348,7 @@ pub(crate) async fn run_strategy_task<'s>(
             if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
 
                 // Define the number of blocks for which to compute state transitions.
-                let num_blocks = 10;
+                let num_blocks = 20;
             
                 // Get block_info
                 // Get block info for the first block by sending a grpc request and looking at the metadata
