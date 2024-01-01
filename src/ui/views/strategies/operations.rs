@@ -34,9 +34,9 @@ enum OperationType {
     IdentityDisableKeys,
     IdentityWithdrawal,
     IdentityTransfer,
-    ContractCreateRandom,
-    ContractUpdateDocTypesRandom,
-    ContractUpdateFieldsRandom,
+    // ContractCreateRandom,
+    // ContractUpdateDocTypesRandom,
+    // ContractUpdateFieldsRandom,
     Document,
 }
 
@@ -87,15 +87,15 @@ impl StrategyAddOperationFormController {
                 self.strategy_name.clone(),
                 self.known_contracts.clone(),
             )),
-            OperationType::ContractCreateRandom => Box::new(
-                StrategyOpContractCreateFormController::new(self.strategy_name.clone()),
-            ),
-            OperationType::ContractUpdateDocTypesRandom => Box::new(
-                StrategyOpContractUpdateDocTypesFormController::new(self.strategy_name.clone()),
-            ),
-            OperationType::ContractUpdateFieldsRandom => Box::new(
-                StrategyOpContractUpdateNewFieldsFormController::new(self.strategy_name.clone()),
-            ),
+            // OperationType::ContractCreateRandom => Box::new(
+            //     StrategyOpContractCreateFormController::new(self.strategy_name.clone()),
+            // ),
+            // OperationType::ContractUpdateDocTypesRandom => Box::new(
+            //     StrategyOpContractUpdateDocTypesFormController::new(self.strategy_name.clone()),
+            // ),
+            // OperationType::ContractUpdateFieldsRandom => Box::new(
+            //     StrategyOpContractUpdateNewFieldsFormController::new(self.strategy_name.clone()),
+            // ),
         });
     }
 }

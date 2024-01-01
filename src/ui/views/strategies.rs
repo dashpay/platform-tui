@@ -337,6 +337,7 @@ fn display_strategy(
             indent = 8
         ));
         for (block, update) in updates.iter().flatten() {
+            let block = block + 1;
             contracts_with_updates_lines.push_str(&format!(
                 "{:indent$}On block {block} apply {update}\n",
                 "",
@@ -345,14 +346,20 @@ fn display_strategy(
         }
     }
 
+    let times_per_block_display = if strategy.identities_inserts.times_per_block_range.end > strategy.identities_inserts.times_per_block_range.start {
+        strategy.identities_inserts.times_per_block_range.end - 1
+    } else {
+        strategy.identities_inserts.times_per_block_range.end
+    };
+    
     let identity_inserts_line = format!(
         "{:indent$}Times per block: {}; chance per block: {}\n",
         "",
-        strategy.identities_inserts.times_per_block_range.end,
+        times_per_block_display,
         strategy.identities_inserts.chance_per_block.unwrap_or(0.0),
         indent = 8,
     );
-
+    
     let mut operations_lines = String::new();
     for op in strategy.operations.iter() {
         let op_name = match op.op_type.clone() {
@@ -379,11 +386,17 @@ fn display_strategy(
             OperationType::IdentityTransfer => "IdentityTransfer".to_string(),
         };
 
+        let times_per_block_display = if op.frequency.times_per_block_range.end > op.frequency.times_per_block_range.start {
+            op.frequency.times_per_block_range.end - 1
+        } else {
+            op.frequency.times_per_block_range.end
+        };
+    
         operations_lines.push_str(&format!(
             "{:indent$}{}; Times per block: {}, chance per block: {}\n",
             "",
             op_name,
-            op.frequency.times_per_block_range.end-1,
+            times_per_block_display,
             op.frequency.chance_per_block.unwrap_or(0.0),
             indent = 8
         ));

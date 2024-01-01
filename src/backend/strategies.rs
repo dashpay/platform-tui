@@ -1,8 +1,8 @@
 //! Strategies management backend module.
 
-use std::{collections::{BTreeMap, BTreeSet, HashMap, VecDeque}, sync::Arc};
+use std::{collections::{BTreeMap, BTreeSet, HashMap, VecDeque}, sync::Arc, time::Duration};
 
-use dapi_grpc::platform::v0::{GetEpochsInfoRequest, get_epochs_info_request, get_epochs_info_response};
+use dapi_grpc::{platform::v0::{GetEpochsInfoRequest, get_epochs_info_request, get_epochs_info_response, wait_for_state_transition_result_response}, tonic::Request};
 use dash_platform_sdk::{Sdk, platform::transition::broadcast_request::BroadcastRequestForStateTransition};
 use dpp::{
     data_contract::{created_data_contract::CreatedDataContract, DataContract}, platform_value::{Bytes32, Identifier},
@@ -523,75 +523,82 @@ pub(crate) async fn run_strategy_task<'s>(
                 let mut current_block_height = initial_block_info.height;
 
                 info!("--- Starting strategy execution loop ---");
-            
-                // Create a vector to store futures for each state transition task
-                let mut state_transition_futures = Vec::new();
 
                 // Iterate over each block height
                 while current_block_height < (initial_block_info.height + num_blocks) {
                     info!("Processing block height {}", current_block_height);
-
+                
                     if let Some(transitions) = state_transitions_map.get(&current_block_height) {
                         for transition in transitions {
                             let sdk_clone = Arc::clone(&sdk); // Efficiently clone the Arc
                             let transition_clone = transition.clone(); // Clone the transition if necessary
-
-                            // Spawn a new task for broadcasting and waiting for each state transition
-                            let transition_future = tokio::spawn(async move {
-                                // Implement the logic for broadcasting the state transition
-                                let broadcast_request = match transition_clone.broadcast_request_for_state_transition() {
-                                    Ok(request) => request,
-                                    Err(e) => {
-                                        error!("Error creating broadcast request for block {}: {:?}", current_block_height, e);
-                                        return Err(format!("Error creating broadcast request: {:?}", e));
-                                    }
-                                };
-                                match broadcast_request.execute(&*sdk_clone, RequestSettings::default()).await {
-                                    Ok(_) => {
-                                        info!("Successfully broadcasted state transition for block {}", current_block_height);
-                                        // Implement the logic for waiting for the transition result
-                                        let wait_request = match transition_clone.wait_for_state_transition_result_request() {
-                                            Ok(request) => request,
-                                            Err(e) => {
-                                                error!("Error creating wait request for block {}: {:?}", current_block_height, e);
-                                                return Err(format!("Error creating wait request: {:?}", e));
-                                            }
-                                        };
-                                        match wait_request.execute(&*sdk_clone, RequestSettings::default()).await {
-                                            Ok(response) => {
-                                                info!("Successfully received response for state transition for block {}", current_block_height);
-                                                Ok(response)
-                                            },
-                                            Err(e) => {
-                                                error!("Error executing wait request for block {}: {:?}", current_block_height, e);
-                                                Err(format!("Error executing wait request: {:?}", e))
-                                            },
-                                        }
-                                    }
-                                    Err(e) => {
-                                        error!("Error broadcasting state transition for block {}: {:?}", current_block_height, e);
-                                        Err(format!("Error broadcasting state transition: {:?}", e))
-                                    },
+                
+                            // Broadcast and wait for the state transition
+                            let broadcast_result = match transition_clone.broadcast_request_for_state_transition() {
+                                Ok(broadcast_request) => broadcast_request.execute(&*sdk_clone, RequestSettings::default()).await,
+                                Err(e) => {
+                                    error!("Error creating broadcast request: {:?}", e);
+                                    continue; // Skip this transition and continue with the next
                                 }
-                            });
-
-                            // Store the future in the vector
-                            state_transition_futures.push(transition_future);
+                            };
+                
+                            if let Err(e) = broadcast_result {
+                                error!("Error broadcasting state transition: {:?}", e);
+                                continue; // Skip this transition and continue with the next
+                            }
+                
+                            let request_settings = RequestSettings {
+                                connect_timeout: Some(Duration::from_secs(20)),
+                                timeout: Some(Duration::from_secs(20)),
+                                retries: Some(5),
+                                ban_failed_address: None,
+                            };
+                
+                            let wait_result = match transition_clone.wait_for_state_transition_result_request() {
+                                Ok(wait_request) => wait_request.execute(&*sdk_clone, request_settings).await,
+                                Err(e) => {
+                                    error!("Error creating wait request: {:?}", e);
+                                    continue; // Skip this transition and continue with the next
+                                }
+                            };
+                
+                            if let Err(e) = wait_result {
+                                error!("Error waiting for state transition result: {:?}", e);
+                                continue; // Skip this transition and continue with the next
+                            }
+                
+                            match &wait_result {
+                                Ok(response) => {
+                                    match &response.version {
+                                        Some(wait_for_state_transition_result_response::Version::V0(v0_response)) => {
+                                            if let Some(metadata) = &v0_response.metadata {
+                                                // Assuming the height is stored in the metadata
+                                                let height = metadata.height; // Adjust this according to the actual field name and type
+                                                info!("Successfully processed state transition for block {}: Actual block {:?}", current_block_height, height);
+                                            } else {
+                                                info!("Metadata not found for block {}", current_block_height);
+                                            }
+                                        }
+                                        _ => info!("Unexpected response version for block {}", current_block_height),
+                                    }
+                                }
+                                Err(e) => {
+                                    error!("Error executing wait request for block {}: {:?}", current_block_height, e);
+                                },
+                            }
                         }
                     } else {
                         info!("No state transitions to process for block {}", current_block_height);
                     }
-
+                
                     info!("Finished processing block height {}", current_block_height);
-
+                
+                    // Increment block height after processing each block
                     current_block_height += 1;
                 }
-
-                // Await all futures to complete
-                let results = join_all(state_transition_futures).await;
                 
                 info!("Strategy '{}' finished running. Final block height: {}", strategy_name, current_block_height);
-
+                                                                
                 BackendEvent::StrategyCompleted {
                     strategy_name: strategy_name.clone(),
                     result: StrategyCompletionResult::Success {
