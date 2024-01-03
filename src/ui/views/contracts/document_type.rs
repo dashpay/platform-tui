@@ -249,7 +249,7 @@ impl ScreenController for DocumentTypeScreenController {
 }
 
 struct QueryDocumentTypeFormController {
-    document_type: DocumentType,
+    _document_type: DocumentType,
     input: TextInput<DocumentQueryTextInputParser>,
 }
 
@@ -270,7 +270,7 @@ impl QueryDocumentTypeFormController {
         let query = format!("Select * from {} {}", document_type.name(), ours_query_part);
         let parser = DocumentQueryTextInputParser::new(data_contract);
         QueryDocumentTypeFormController {
-            document_type,
+            _document_type: document_type,
             input: TextInput::new_str_value_with_parser(parser, "Document Query", &query),
         }
     }

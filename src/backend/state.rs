@@ -26,8 +26,7 @@ use tokio::sync::Mutex;
 use walkdir::DirEntry;
 
 use super::wallet::Wallet;
-use crate::backend::insight::InsightAPIClient;
-use crate::config::Config;
+use crate::{backend::insight::InsightAPIClient, config::Config};
 
 const CURRENT_PROTOCOL_VERSION: ProtocolVersion = 1;
 
@@ -375,16 +374,19 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
             })
             .collect::<Result<BTreeMap<String, Strategy>, ProtocolError>>()?;
 
-        let identity_private_keys = identity_private_keys
-            .into_iter()
-            .map(|(key, value)| {
-                (
-                    key,
-                    PrivateKey::from_slice(&value, Network::Testnet).expect("expected private key"), // TODO: Should use network from config
-                )
-            })
-            .collect::<BTreeMap<(Identifier, u32), PrivateKey>>()
-            .into();
+        let identity_private_keys =
+            identity_private_keys
+                .into_iter()
+                .map(|(key, value)| {
+                    (
+                        key,
+                        PrivateKey::from_slice(&value, Network::Testnet)
+                            .expect("expected private key"), /* TODO: Should use network from
+                                                              * config */
+                    )
+                })
+                .collect::<BTreeMap<(Identifier, u32), PrivateKey>>()
+                .into();
 
         let identity_asset_lock_private_key_in_creation =
             identity_asset_lock_private_key_in_creation.map(
@@ -392,7 +394,8 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
                     (
                         Transaction::deserialize(&transaction)
                             .expect("expected to deserialize transaction"),
-                        PrivateKey::from_slice(&private_key, Network::Testnet)  // TODO: Should use network from config
+                        // TODO: Should use network from config
+                        PrivateKey::from_slice(&private_key, Network::Testnet)
                             .expect("expected private key"),
                         asset_lock_proof,
                         identity_info,
@@ -405,7 +408,8 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
                 (
                     Transaction::deserialize(&transaction)
                         .expect("expected to deserialize transaction"),
-                    PrivateKey::from_slice(&private_key, Network::Testnet)  // TODO: Should use network from config
+                    // TODO: Should use network from config
+                    PrivateKey::from_slice(&private_key, Network::Testnet)
                         .expect("expected private key"),
                     asset_lock_proof,
                 )

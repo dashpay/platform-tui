@@ -9,7 +9,7 @@ mod screen;
 mod status_bar;
 mod views;
 
-use std::{mem, ops::Deref};
+use std::{mem, ops::Deref, time::Instant};
 
 use dpp::identity::accessors::IdentityGettersV0;
 use tuirealm::{
@@ -46,6 +46,7 @@ impl IdentityBalance {
 /// TUI entry point that handles terminal events as well as terminal output,
 /// linking UI parts together.
 pub(crate) struct Ui {
+    redraw_ts: Instant,
     terminal: TerminalBridge,
     status_bar_state: StatusBarState,
     screen: Screen<Box<dyn ScreenController>>,
@@ -102,6 +103,7 @@ impl Ui {
         let screen = Screen::new(Box::new(main_screen_controller) as Box<dyn ScreenController>);
 
         let mut ui = Ui {
+            redraw_ts: Instant::now(),
             terminal,
             status_bar_state,
             screen,

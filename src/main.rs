@@ -2,7 +2,7 @@ mod backend;
 mod config;
 mod ui;
 
-use std::{fs::File, io::Write, panic, path::Path, sync::Mutex};
+use std::{fs::File, panic, time::Duration};
 
 use crossterm::event::{Event as TuiEvent, EventStream};
 use dash_platform_sdk::SdkBuilder;
@@ -21,6 +21,7 @@ use crate::{backend::insight::InsightAPIClient, config::Config};
 pub(crate) enum Event<'s> {
     Key(KeyEvent),
     Backend(BackendEvent<'s>),
+    RedrawDebounceTimeout,
 }
 
 #[tokio::main]
@@ -76,7 +77,7 @@ async fn main() {
 
     let insight = InsightAPIClient::new(config.insight_api_uri());
 
-    let backend = Backend::new(sdk, insight, config).await;
+    let backend = Backend::new(sdk.as_ref(), insight, config).await;
 
     let initial_identity_balance = backend
         .state()
@@ -92,6 +93,7 @@ async fn main() {
 
     let mut terminal_event_stream = EventStream::new().fuse();
     let mut backend_task: OptionFuture<_> = None.into();
+    let mut ui_debounced_redraw: OptionFuture<_> = None.into();
 
     while active {
         let event = select! {
@@ -103,12 +105,18 @@ async fn main() {
                 _ => None
             },
             backend_task_finished = backend_task => backend_task_finished.map(Event::Backend),
+            ui_redraw = ui_debounced_redraw => ui_redraw.map(|_| Event::RedrawDebounceTimeout),
         };
 
-        let ui_feedback = if let Some(e) = event {
-            ui.on_event(backend.state(), e).await
-        } else {
-            UiFeedback::None
+        let ui_feedback = match event {
+            Some(event @ (Event::Backend(_) | Event::Key(_))) => {
+                ui.on_event(backend.state(), event).await
+            }
+            Some(Event::RedrawDebounceTimeout) => {
+                ui.redraw();
+                UiFeedback::None
+            }
+            _ => UiFeedback::None,
         };
 
         match ui_feedback {
@@ -117,7 +125,14 @@ async fn main() {
                 backend_task = Some(backend.run_task(task.clone()).boxed_local().fuse()).into();
                 ui.redraw();
             }
-            UiFeedback::Redraw => ui.redraw(), // TODO Debounce redraw?
+            UiFeedback::Redraw => {
+                ui_debounced_redraw = Some(
+                    tokio::time::sleep(Duration::from_millis(10))
+                        .boxed_local()
+                        .fuse(),
+                )
+                .into();
+            }
             UiFeedback::None => (),
         }
     }

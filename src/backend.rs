@@ -124,17 +124,21 @@ pub(crate) enum AppStateUpdate<'s> {
 }
 
 /// Application state, dependencies are task execution logic around it.
-pub(crate) struct Backend {
-    sdk: Mutex<Sdk>,
+pub(crate) struct Backend<'a> {
+    sdk: &'a Sdk,
     app_state: AppState,
     insight: InsightAPIClient,
     config: Config,
 }
 
-impl Backend {
-    pub(crate) async fn new(sdk: Sdk, insight: InsightAPIClient, config: Config) -> Self {
+impl<'a> Backend<'a> {
+    pub(crate) async fn new(
+        sdk: &'a Sdk,
+        insight: InsightAPIClient,
+        config: Config,
+    ) -> Backend<'a> {
         Backend {
-            sdk: Mutex::new(sdk),
+            sdk,
             app_state: AppState::load(&insight, &config).await,
             insight,
             config,
@@ -148,9 +152,8 @@ impl Backend {
     pub(crate) async fn run_task(&self, task: Task) -> BackendEvent {
         match task {
             Task::FetchIdentityById(ref base58_id, add_to_known_identities) => {
-                let mut sdk = self.sdk.lock().await;
                 let execution_result =
-                    identities::fetch_identity_by_b58_id(&mut sdk, base58_id).await;
+                    identities::fetch_identity_by_b58_id(self.sdk, base58_id).await;
                 if add_to_known_identities {
                     if let Ok((Some(identity), _)) = &execution_result {
                         let mut loaded_identities = self.app_state.known_identities.lock().await;
@@ -182,7 +185,7 @@ impl Backend {
             }
             Task::Contract(contract_task) => {
                 contracts::run_contract_task(
-                    self.sdk.lock().await.deref_mut(),
+                    self.sdk,
                     &self.app_state.known_contracts,
                     contract_task,
                 )
@@ -190,26 +193,22 @@ impl Backend {
             }
             Task::Identity(identity_task) => {
                 self.app_state
-                    .run_identity_task(self.sdk.lock().await.deref(), identity_task)
+                    .run_identity_task(self.sdk, identity_task)
                     .await
             }
             Task::Document(document_task) => {
                 self.app_state
-                    .run_document_task(self.sdk.lock().await.deref_mut(), document_task)
+                    .run_document_task(self.sdk, document_task)
                     .await
             }
             Task::PlatformInfo(platform_info_task) => {
-                platform_info::run_platform_task(
-                    self.sdk.lock().await.deref_mut(),
-                    platform_info_task,
-                )
-                .await
+                platform_info::run_platform_task(self.sdk, platform_info_task).await
             }
         }
     }
 }
 
-impl Drop for Backend {
+impl Drop for Backend<'_> {
     fn drop(&mut self) {
         self.app_state.save(&self.config)
     }

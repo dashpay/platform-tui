@@ -33,7 +33,7 @@ use dpp::{
     prelude::{AssetLockProof, Identity, IdentityPublicKey},
 };
 use rand::{rngs::StdRng, SeedableRng};
-use rs_dapi_client::{Dapi, RequestSettings};
+use rs_dapi_client::{DapiRequestExecutor, RequestSettings};
 use simple_signer::signer::SimpleSigner;
 use tokio::sync::{MappedMutexGuard, MutexGuard};
 
@@ -41,11 +41,9 @@ use super::AppStateUpdate;
 use crate::backend::{error::Error, stringify_result_keep_item, AppState, BackendEvent, Task};
 
 pub(super) async fn fetch_identity_by_b58_id(
-    sdk: &mut Sdk,
+    sdk: &Sdk,
     base58_id: &str,
 ) -> Result<(Option<Identity>, String), String> {
-    tokio::time::sleep(Duration::from_secs(3)).await;
-
     let id_bytes = Identifier::from_string(base58_id, Encoding::Base58)
         .map_err(|_| "can't parse identifier as base58 string".to_owned())?;
 

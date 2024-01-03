@@ -1,11 +1,11 @@
-use std::collections::BTreeMap;
-use dash_platform_sdk::platform::LimitQuery;
-use dpp::block::epoch::EpochIndex;
-use dash_platform_sdk::{platform::Fetch, Sdk};
-use dpp::block::extended_epoch_info::ExtendedEpochInfo;
-use dash_platform_sdk::platform::types::epoch::ExtendedEpochInfoEx;
-use dash_platform_sdk::platform::FetchMany;
-use dpp::version::ProtocolVersionVoteCount;
+use dash_platform_sdk::{
+    platform::{types::epoch::ExtendedEpochInfoEx, Fetch, FetchMany, LimitQuery},
+    Sdk,
+};
+use dpp::{
+    block::{epoch::EpochIndex, extended_epoch_info::ExtendedEpochInfo},
+    version::ProtocolVersionVoteCount,
+};
 
 use crate::backend::{as_toml, BackendEvent, Task};
 
@@ -16,43 +16,44 @@ pub(crate) enum PlatformInfoTask {
     FetchSpecificEpochInfo(u16),
     FetchManyEpochInfo(u16, u32), // second is count
 }
-pub(super) async fn run_platform_task<'s>(
-    sdk: &mut Sdk,
-    task: PlatformInfoTask,
-) -> BackendEvent<'s> {
+pub(super) async fn run_platform_task<'s>(sdk: &Sdk, task: PlatformInfoTask) -> BackendEvent<'s> {
     match task {
-        PlatformInfoTask::FetchCurrentEpochInfo => match ExtendedEpochInfo::fetch_current(sdk).await {
-            Ok(epoch_info) => {
-                let epoch_info = as_toml(&epoch_info);
+        PlatformInfoTask::FetchCurrentEpochInfo => {
+            match ExtendedEpochInfo::fetch_current(sdk).await {
+                Ok(epoch_info) => {
+                    let epoch_info = as_toml(&epoch_info);
 
-                BackendEvent::TaskCompleted {
-                    task: Task::PlatformInfo(task),
-                    execution_result: Ok(epoch_info.into()),
+                    BackendEvent::TaskCompleted {
+                        task: Task::PlatformInfo(task),
+                        execution_result: Ok(epoch_info.into()),
+                    }
                 }
+                Err(e) => BackendEvent::TaskCompleted {
+                    task: Task::PlatformInfo(task),
+                    execution_result: Err(e.to_string()),
+                },
             }
-            Err(e) => BackendEvent::TaskCompleted {
-                task: Task::PlatformInfo(task),
-                execution_result: Err(e.to_string()),
-            },
-        },
-        PlatformInfoTask::FetchSpecificEpochInfo(epoch_num) => match ExtendedEpochInfo::fetch(sdk, epoch_num).await {
-            Ok(Some(epoch_info)) => {
-                let epoch_info = as_toml(&epoch_info);
+        }
+        PlatformInfoTask::FetchSpecificEpochInfo(epoch_num) => {
+            match ExtendedEpochInfo::fetch(sdk, epoch_num).await {
+                Ok(Some(epoch_info)) => {
+                    let epoch_info = as_toml(&epoch_info);
 
-                BackendEvent::TaskCompleted {
-                    task: Task::PlatformInfo(task),
-                    execution_result: Ok(epoch_info.into()),
+                    BackendEvent::TaskCompleted {
+                        task: Task::PlatformInfo(task),
+                        execution_result: Ok(epoch_info.into()),
+                    }
                 }
+                Ok(None) => BackendEvent::TaskCompleted {
+                    task: Task::PlatformInfo(task),
+                    execution_result: Ok("No epoch".into()),
+                },
+                Err(e) => BackendEvent::TaskCompleted {
+                    task: Task::PlatformInfo(task),
+                    execution_result: Err(e.to_string()),
+                },
             }
-            Ok(None) => BackendEvent::TaskCompleted {
-                task: Task::PlatformInfo(task),
-                execution_result: Ok("No epoch".into()),
-            },
-            Err(e) => BackendEvent::TaskCompleted {
-                task: Task::PlatformInfo(task),
-                execution_result: Err(e.to_string()),
-            },
-        },
+        }
         PlatformInfoTask::FetchManyEpochInfo(epoch_num, limit) => {
             let query: LimitQuery<EpochIndex> = LimitQuery {
                 query: epoch_num,
@@ -73,11 +74,23 @@ pub(super) async fn run_platform_task<'s>(
                     execution_result: Err(e.to_string()),
                 },
             }
-        },
+        }
         PlatformInfoTask::FetchCurrentVersionVotingState => {
             match ProtocolVersionVoteCount::fetch_many(sdk, ()).await {
                 Ok(votes) => {
-                    let votes_info = votes.into_iter().map(|(key, value)| format!("Version {} -> {}", key, value.map(|v| format!("{} votes", v) ).unwrap_or("No votes".to_string())) ).collect::<Vec<_>>().join("\n");
+                    let votes_info = votes
+                        .into_iter()
+                        .map(|(key, value)| {
+                            format!(
+                                "Version {} -> {}",
+                                key,
+                                value
+                                    .map(|v| format!("{} votes", v))
+                                    .unwrap_or("No votes".to_string())
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n");
 
                     BackendEvent::TaskCompleted {
                         task: Task::PlatformInfo(task),
