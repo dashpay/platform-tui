@@ -2,7 +2,7 @@
 //! This kind of state does not include UI details and basically all about
 //! persistence required by backend.
 
-use std::{collections::BTreeMap, fs, path::Path};
+use std::{collections::BTreeMap, fs};
 
 use bincode::{Decode, Encode};
 use dpp::{
@@ -29,8 +29,11 @@ use walkdir::{DirEntry, WalkDir};
 
 use super::wallet::Wallet;
 use crate::backend::insight::InsightAPIClient;
+use crate::config::Config;
 
 const CURRENT_PROTOCOL_VERSION: ProtocolVersion = 1;
+
+const USE_LOCAL: bool = false;
 
 pub(crate) type ContractFileName = String;
 
@@ -324,7 +327,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
             .map(|(key, value)| {
                 (
                     key,
-                    PrivateKey::from_slice(&value, Network::Testnet).expect("expected private key"),
+                    PrivateKey::from_slice(&value, Network::Testnet).expect("expected private key"), // TODO: Should use network from config
                 )
             })
             .collect::<BTreeMap<(Identifier, u32), PrivateKey>>()
@@ -336,7 +339,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
                     (
                         Transaction::deserialize(&transaction)
                             .expect("expected to deserialize transaction"),
-                        PrivateKey::from_slice(&private_key, Network::Testnet)
+                        PrivateKey::from_slice(&private_key, Network::Testnet)  // TODO: Should use network from config
                             .expect("expected private key"),
                         asset_lock_proof,
                         identity_info,
@@ -349,7 +352,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
                 (
                     Transaction::deserialize(&transaction)
                         .expect("expected to deserialize transaction"),
-                    PrivateKey::from_slice(&private_key, Network::Testnet)
+                    PrivateKey::from_slice(&private_key, Network::Testnet)  // TODO: Should use network from config
                         .expect("expected private key"),
                     asset_lock_proof,
                 )
@@ -377,8 +380,8 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
 }
 
 impl AppState {
-    pub async fn load(insight: &InsightAPIClient) -> AppState {
-        let path = Path::new("explorer.state");
+    pub async fn load(insight: &InsightAPIClient, config: &Config) -> AppState {
+        let path = config.state_file_path();
 
         let Ok(read_result) = fs::read(path) else {
             return AppState::default();
@@ -400,9 +403,9 @@ impl AppState {
     }
 
     /// Used in backend destructor, must not panic
-    pub fn save(&self) {
+    pub fn save(&self, config: &Config) {
         let platform_version = PlatformVersion::get(CURRENT_PROTOCOL_VERSION).unwrap();
-        let path = Path::new("explorer.state");
+        let path = config.state_file_path();
 
         let serialized_state = tokio::task::block_in_place(|| {
             self.serialize_to_bytes_with_platform_version(platform_version)

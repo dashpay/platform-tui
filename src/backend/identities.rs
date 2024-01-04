@@ -3,7 +3,10 @@
 use std::{collections::BTreeMap, time::Duration};
 
 use dapi_grpc::{
-    core::v0::{BroadcastTransactionRequest, GetTransactionRequest, GetStatusRequest, GetTransactionResponse},
+    core::v0::{
+        BroadcastTransactionRequest, GetStatusRequest, GetTransactionRequest,
+        GetTransactionResponse,
+    },
     platform::v0::{
         get_identity_balance_request, get_identity_balance_request::GetIdentityBalanceRequestV0,
         GetIdentityBalanceRequest,
@@ -43,7 +46,7 @@ pub(super) async fn fetch_identity_by_b58_id(
     sdk: &Sdk,
     base58_id: &str,
 ) -> Result<(Option<Identity>, String), String> {
-    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+    tokio::time::sleep(Duration::from_secs(3)).await;
 
     let id_bytes = Identifier::from_string(base58_id, Encoding::Base58)
         .map_err(|_| "can't parse identifier as base58 string".to_owned())?;
@@ -248,25 +251,6 @@ impl AppState {
             )
         };
 
-        // let block_hash: Vec<u8> = (GetStatusRequest {})
-        //     .execute(dapi_client, RequestSettings::default())
-        //     .await
-        //     .map_err(|e| RegisterIdentityError(e.to_string()))?
-        //     .chain
-        //     .map(|chain| chain.best_block_hash)
-        //     .ok_or_else(|| RegisterIdentityError("missing `chain`
-        // field".to_owned()))?;
-
-        // let core_transactions_stream = TransactionsWithProofsRequest {
-        //     bloom_filter: Some(bloom_filter_proto),
-        //     count: 5,
-        //     send_transaction_hashes: false,
-        //     from_block: Some(FromBlock::FromBlockHash(block_hash)),
-        // }
-        //     .execute(dapi_client, RequestSettings::default())
-        //     .await
-        //     .map_err(|e| RegisterIdentityError(e.to_string()))?;
-
         let asset_lock_proof = if let Some(asset_lock_proof) = maybe_asset_lock_proof {
             asset_lock_proof.clone()
         } else {
@@ -277,7 +261,7 @@ impl AppState {
             )
             .await
             .map_err(|e| {
-                Error::SdkExplainedError("error broadcasting transaction".to_string(), e)
+                Error::SdkExplainedError("broadcasting transaction failed".to_string(), e)
             })?;
 
             identity_asset_lock_private_key_in_creation.replace((

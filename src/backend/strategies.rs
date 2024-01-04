@@ -1,12 +1,12 @@
 //! Strategies management backend module.
 
-use std::{collections::{BTreeMap, BTreeSet, HashMap, VecDeque}, sync::Arc, time::Duration};
+use std::{collections::{BTreeMap, BTreeSet, HashMap, VecDeque}, sync::Arc};
 
-use dapi_grpc::{platform::v0::{GetEpochsInfoRequest, get_epochs_info_request, get_epochs_info_response, wait_for_state_transition_result_response}, tonic::Request};
+use dapi_grpc::platform::v0::{GetEpochsInfoRequest, get_epochs_info_request, get_epochs_info_response, wait_for_state_transition_result_response};
 use dash_platform_sdk::{Sdk, platform::transition::broadcast_request::BroadcastRequestForStateTransition};
 use dpp::{
     data_contract::{created_data_contract::CreatedDataContract, DataContract}, platform_value::{Bytes32, Identifier},
-    version::PlatformVersion, block::{block_info::BlockInfo, epoch::Epoch}, identity::{Identity, PartialIdentity},
+    version::PlatformVersion, block::{block_info::BlockInfo, epoch::Epoch}, identity::{Identity, PartialIdentity, signer::Signer}, serialization::Signable,
 };
 use drive::{drive::{identity::key::fetch::IdentityKeysRequest, document::query::{QueryDocumentsOutcome, QueryDocumentsOutcomeV0Methods}}, query::DriveQuery};
 use futures::future::join_all;
@@ -304,7 +304,7 @@ pub(crate) async fn run_strategy_task<'s>(
         } => {
             let mut strategies_lock = app_state.available_strategies.lock().await;
             if let Some(strategy) = strategies_lock.get_mut(strategy_name) {
-                tokio::task::block_in_place(|| set_start_identities(strategy, count, key_count));
+                tokio::task::block_in_place(|| set_start_identities(strategy, count, key_count, strategy.signer.clone().unwrap_or_default()));
                 BackendEvent::TaskCompletedStateChange {
                     task: Task::Strategy(task.clone()),
                     execution_result: Ok("Start identities set".into()),
@@ -395,6 +395,7 @@ pub(crate) async fn run_strategy_task<'s>(
                         }
                     }
                 }
+                initial_block_info.height += 1; // Add one because we'll be submitting to the next block
 
                 // Get signer from loaded_identity
                 // Convert loaded_identity to SimpleSigner
@@ -412,7 +413,6 @@ pub(crate) async fn run_strategy_task<'s>(
                         }
                     }
                 }
-                info!("Successfully created signer from loaded identity");
                                                                                 
                 // Create map of state transitions to block heights
                 let mut state_transitions_map = HashMap::new();
@@ -423,8 +423,6 @@ pub(crate) async fn run_strategy_task<'s>(
                 // Fill out the state transitions map
                 // Loop through each block to precompute state transitions
                 while current_block_info.height < (initial_block_info.height + num_blocks) {
-                    info!("Precomputing state transitions for block {}", current_block_info.height);
-
                     let mut document_query_callback = |query: LocalDocumentQuery| {
                         match query {
                             LocalDocumentQuery::RandomDocumentQuery(random_query) => {
@@ -488,7 +486,7 @@ pub(crate) async fn run_strategy_task<'s>(
                     };
                 
                     // Get current identities
-                    let mut current_identities: Vec<Identity> = known_identities_lock.values().cloned().collect();
+                    let mut current_identities: Vec<Identity> = vec![loaded_identity.clone()];
 
                     // Get rng
                     let mut rng = StdRng::from_entropy();
@@ -525,80 +523,96 @@ pub(crate) async fn run_strategy_task<'s>(
                 info!("--- Starting strategy execution loop ---");
 
                 // Iterate over each block height
-                while current_block_height < (initial_block_info.height + num_blocks) {
-                    info!("Processing block height {}", current_block_height);
-                
+                while current_block_height < (initial_block_info.height + num_blocks) {                
                     if let Some(transitions) = state_transitions_map.get(&current_block_height) {
+                        let mut broadcast_futures = Vec::new();
+                
                         for transition in transitions {
-                            let sdk_clone = Arc::clone(&sdk); // Efficiently clone the Arc
-                            let transition_clone = transition.clone(); // Clone the transition if necessary
+                            let sdk_clone = Arc::clone(&sdk);
+                            let transition_clone = transition.clone();
+
+                            info!("Transition: {:?}", transition_clone);
                 
-                            // Broadcast and wait for the state transition
-                            let broadcast_result = match transition_clone.broadcast_request_for_state_transition() {
-                                Ok(broadcast_request) => broadcast_request.execute(&*sdk_clone, RequestSettings::default()).await,
-                                Err(e) => {
-                                    error!("Error creating broadcast request: {:?}", e);
-                                    continue; // Skip this transition and continue with the next
+                            // Collect futures for broadcasting state transitions
+                            let future = async move {
+                                match transition_clone.broadcast_request_for_state_transition() {
+                                    Ok(broadcast_request) => {
+                                        let broadcast_result = broadcast_request.execute(&*sdk_clone, RequestSettings::default()).await;
+                                        Ok((transition_clone, broadcast_result))
+                                    },
+                                    Err(e) => Err(e)
                                 }
                             };
                 
-                            if let Err(e) = broadcast_result {
-                                error!("Error broadcasting state transition: {:?}", e);
-                                continue; // Skip this transition and continue with the next
-                            }
+                            broadcast_futures.push(future);
+                        }
                 
-                            let request_settings = RequestSettings {
-                                connect_timeout: Some(Duration::from_secs(20)),
-                                timeout: Some(Duration::from_secs(20)),
-                                retries: Some(5),
-                                ban_failed_address: None,
-                            };
+                        // Concurrently execute all broadcast requests
+                        let broadcast_results = join_all(broadcast_futures).await;
                 
-                            let wait_result = match transition_clone.wait_for_state_transition_result_request() {
-                                Ok(wait_request) => wait_request.execute(&*sdk_clone, request_settings).await,
-                                Err(e) => {
-                                    error!("Error creating wait request: {:?}", e);
-                                    continue; // Skip this transition and continue with the next
-                                }
-                            };
+                        // Create futures for waiting for state transition results
+                        let mut wait_futures = Vec::new();
+                        for (index, result) in broadcast_results.into_iter().enumerate() {
+                            match result {
+                                Ok((transition, broadcast_result)) => {
+                                    if broadcast_result.is_err() {
+                                        error!("Error broadcasting state transition {}: {:?}", index + 1, broadcast_result.err().unwrap());
+                                        continue;
+                                    }
                 
-                            if let Err(e) = wait_result {
-                                error!("Error waiting for state transition result: {:?}", e);
-                                continue; // Skip this transition and continue with the next
-                            }
+                                    let sdk_clone = Arc::clone(&sdk); // Clone the Arc for SDK
+                                    let wait_future = async move {
+                                        let wait_result = match transition.wait_for_state_transition_result_request() {
+                                            Ok(wait_request) => wait_request.execute(&*sdk_clone, RequestSettings::default()).await,
+                                            Err(e) => {
+                                                error!("Error creating wait request for state transition {}: {:?}", index + 1, e);
+                                                return None;
+                                            }
+                                        };
                 
-                            match &wait_result {
-                                Ok(response) => {
-                                    match &response.version {
-                                        Some(wait_for_state_transition_result_response::Version::V0(v0_response)) => {
-                                            if let Some(metadata) = &v0_response.metadata {
-                                                // Assuming the height is stored in the metadata
-                                                let height = metadata.height; // Adjust this according to the actual field name and type
-                                                info!("Successfully processed state transition for block {}: Actual block {:?}", current_block_height, height);
-                                            } else {
-                                                info!("Metadata not found for block {}", current_block_height);
+                                        match wait_result {
+                                            Ok(wait_response) => {
+                                                // Extract actual block height from the wait response
+                                                if let Some(wait_for_state_transition_result_response::Version::V0(v0_response)) = wait_response.version {
+                                                    v0_response.metadata.map(|metadata| metadata.height)
+                                                } else {
+                                                    None
+                                                }
+                                            }
+                                            Err(e) => {
+                                                error!("Error waiting for state transition result {}: {:?}", index + 1, e);
+                                                None
                                             }
                                         }
-                                        _ => info!("Unexpected response version for block {}", current_block_height),
-                                    }
-                                }
-                                Err(e) => {
-                                    error!("Error executing wait request for block {}: {:?}", current_block_height, e);
+                                    };
+                                    wait_futures.push(wait_future);
                                 },
+                                Err(e) => {
+                                    error!("Error preparing broadcast request for state transition {}: {:?}", index + 1, e);
+                                }
+                            }
+                        }
+                
+                        // Wait for all state transition result futures to complete
+                        let wait_results = join_all(wait_futures).await;
+                
+                        // Log the actual block height for each state transition
+                        for (index, actual_block_height) in wait_results.into_iter().enumerate() {
+                            match actual_block_height {
+                                Some(height) => info!("Successfully processed state transition {} for block {} (actual block height: {})", index + 1, current_block_height, height),
+                                None => error!("Failed to get actual block height for state transition {}", index + 1),
                             }
                         }
                     } else {
                         info!("No state transitions to process for block {}", current_block_height);
                     }
-                
-                    info!("Finished processing block height {}", current_block_height);
-                
+                                                
                     // Increment block height after processing each block
                     current_block_height += 1;
                 }
-                
+            
                 info!("Strategy '{}' finished running. Final block height: {}", strategy_name, current_block_height);
-                                                                
+                                                                            
                 BackendEvent::StrategyCompleted {
                     strategy_name: strategy_name.clone(),
                     result: StrategyCompletionResult::Success {
@@ -694,14 +708,19 @@ pub(crate) async fn run_strategy_task<'s>(
     }
 }
 
-fn set_start_identities(strategy: &mut Strategy, count: u16, key_count: u32) {
-    let identities = create_identities_state_transitions(
+fn set_start_identities(strategy: &mut Strategy, count: u16, key_count: u32, mut signer: SimpleSigner) {
+    
+    info!("signer before: {:?}", signer);
+
+    let identities_and_transitions = create_identities_state_transitions(
         count,
         key_count,
-        &mut SimpleSigner::default(),
+        &mut signer,
         &mut StdRng::seed_from_u64(567),
         PlatformVersion::latest(),
     );
 
-    strategy.start_identities = identities;
+    info!("signer after: {:?}", signer);
+
+    strategy.start_identities = identities_and_transitions;
 }

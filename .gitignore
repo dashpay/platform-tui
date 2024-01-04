@@ -17,7 +17,10 @@ Cargo.lock
 *.pdb
 .DS_Store
 .idea/
-explorer.state
 **/.DS_Store
 
+# Explorer state
+*_explorer.state
+
+# Logs
 explorer.log

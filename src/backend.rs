@@ -26,7 +26,7 @@ use dpp::{
 use serde::Serialize;
 pub(crate) use state::AppState;
 use strategy_tests::Strategy;
-use tokio::sync::{MappedMutexGuard, MutexGuard};
+use tokio::sync::{MappedMutexGuard, MutexGuard, Mutex};
 
 use self::state::{KnownContractsMap, StrategiesMap};
 pub(crate) use self::{
@@ -35,9 +35,12 @@ pub(crate) use self::{
     strategies::StrategyTask,
     wallet::{Wallet, WalletTask},
 };
-use crate::backend::{
-    documents::DocumentTask, identities::IdentityTask, insight::InsightAPIClient,
-    platform_info::PlatformInfoTask,
+use crate::{
+    backend::{
+        documents::DocumentTask, identities::IdentityTask, insight::InsightAPIClient,
+        platform_info::PlatformInfoTask,
+    },
+    config::Config,
 };
 
 /// Unit of work for the backend.
@@ -144,14 +147,16 @@ pub(crate) struct Backend {
     sdk: Arc<Sdk>,
     app_state: AppState,
     insight: InsightAPIClient,
+    config: Config,
 }
 
 impl Backend {
-    pub(crate) async fn new(sdk: Arc<Sdk>, insight: InsightAPIClient) -> Self {
+    pub(crate) async fn new(sdk: Arc<Sdk>, insight: InsightAPIClient, config: Config) -> Self {
         Backend {
-            sdk,
-            app_state: AppState::load(&insight).await,
+            sdk: sdk,
+            app_state: AppState::load(&insight, &config).await,
             insight,
+            config,
         }
     }
 
@@ -222,7 +227,7 @@ impl Backend {
 
 impl Drop for Backend {
     fn drop(&mut self) {
-        self.app_state.save()
+        self.app_state.save(&self.config)
     }
 }
 
