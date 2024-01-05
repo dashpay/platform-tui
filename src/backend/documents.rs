@@ -30,7 +30,11 @@ use crate::backend::{error::Error, AppState, BackendEvent, Task};
 #[derive(Clone)]
 pub(crate) enum DocumentTask {
     QueryDocuments(DocumentQuery),
-    BroadcastRandomDocument(DataContract, DocumentType),
+    BroadcastRandomDocuments {
+        data_contract: DataContract,
+        document_type: DocumentType,
+        count: u16,
+    },
 }
 
 impl AppState {
@@ -50,7 +54,11 @@ impl AppState {
                     execution_result,
                 }
             }
-            DocumentTask::BroadcastRandomDocument(data_contract, document_type) => {
+            DocumentTask::BroadcastRandomDocuments {
+                data_contract,
+                document_type,
+                count,
+            } => {
                 let execution_result = self
                     .broadcast_random_document(sdk, data_contract, document_type)
                     .await

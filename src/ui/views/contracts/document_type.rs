@@ -1,5 +1,7 @@
 //! UI defenitions for selected data contract.
 
+mod broadcast_random_documents;
+
 use dpp::{
     data_contract::{
         accessors::v0::DataContractV0Getters,
@@ -34,6 +36,8 @@ use crate::{
     },
     Event,
 };
+
+use self::broadcast_random_documents::BroadcastRandomDocumentsCountForm;
 
 pub(super) struct SelectDocumentTypeFormController {
     input: SelectInput<String>,
@@ -179,13 +183,7 @@ impl ScreenController for DocumentTypeScreenController {
             Event::Key(KeyEvent {
                 code: Key::Char('b'),
                 modifiers: KeyModifiers::NONE,
-            }) => ScreenFeedback::Task {
-                task: Task::Document(DocumentTask::BroadcastRandomDocument(
-                    self.data_contract.clone(),
-                    self.document_type.clone(),
-                )),
-                block: true,
-            },
+            }) => ScreenFeedback::Form(Box::new(BroadcastRandomDocumentsCountForm::new())),
 
             Event::Key(KeyEvent {
                 code: Key::Char('o'),
@@ -230,11 +228,11 @@ impl ScreenController for DocumentTypeScreenController {
 
             Event::Backend(
                 BackendEvent::TaskCompleted {
-                    task: Task::Document(DocumentTask::BroadcastRandomDocument(..)),
+                    task: Task::Document(DocumentTask::BroadcastRandomDocuments { .. }),
                     execution_result,
                 }
                 | BackendEvent::TaskCompletedStateChange {
-                    task: Task::Document(DocumentTask::BroadcastRandomDocument(..)),
+                    task: Task::Document(DocumentTask::BroadcastRandomDocuments { .. }),
                     execution_result,
                     ..
                 },
