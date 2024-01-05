@@ -27,7 +27,7 @@ use dpp::{
     identity::{
         accessors::{IdentityGettersV0, IdentitySettersV0},
         identity_public_key::accessors::v0::IdentityPublicKeyGettersV0,
-        KeyType, Purpose, SecurityLevel,
+        KeyType, Purpose as KeyPurpose, Purpose, SecurityLevel as KeySecurityLevel, SecurityLevel,
     },
     platform_value::{string_encoding::Encoding, Identifier},
     prelude::{AssetLockProof, Identity, IdentityPublicKey},
@@ -58,6 +58,11 @@ pub(crate) enum IdentityTask {
     WithdrawFromIdentity(u64),
     Refresh,
     CopyIdentityId,
+    AddIdentityKey {
+        key_type: KeyType,
+        security_level: KeySecurityLevel,
+        purpose: KeyPurpose,
+    },
 }
 
 impl AppState {
@@ -145,6 +150,11 @@ impl AppState {
                     BackendEvent::None
                 }
             }
+            IdentityTask::AddIdentityKey {
+                key_type,
+                security_level,
+                purpose,
+            } => todo!(),
         }
     }
 
