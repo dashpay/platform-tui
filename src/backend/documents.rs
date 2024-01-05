@@ -33,11 +33,7 @@ use futures::future::join_all;
 use rand::{prelude::StdRng, Rng, SeedableRng};
 use rs_dapi_client::RequestSettings;
 use simple_signer::signer::SimpleSigner;
-use tokio::{
-    sync::{mpsc, Semaphore},
-    time,
-    time::Instant,
-};
+use tokio::{sync::Semaphore, time::Instant};
 use tracing::Level;
 
 use super::{AppStateUpdate, CompletedTaskPayload};
@@ -565,7 +561,7 @@ impl AppState {
                  {:?} : {}",
                 loaded_identity_private_keys
                     .keys()
-                    .map(|(id, key_id)| (id, key_id))
+                    .map(|(id, key_id)| (*id, key_id))
                     .collect::<BTreeMap<_, _>>(),
                 identity.id(),
                 identity_public_key.id(),
@@ -595,6 +591,7 @@ impl AppState {
             connect_timeout: None,
             timeout: Some(Duration::from_secs(30)),
             retries: Some(0),
+            ban_failed_address: Some(false),
         };
 
         while start_time.elapsed() < duration {
