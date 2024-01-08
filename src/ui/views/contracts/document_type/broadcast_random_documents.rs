@@ -11,12 +11,16 @@ use crate::{
 
 pub(super) struct BroadcastRandomDocumentsCountForm {
     input: TextInput<DefaultTextInputParser<u16>>,
+    data_contract_name: String,
+    document_type_name: String,
 }
 
 impl BroadcastRandomDocumentsCountForm {
-    pub fn new() -> Self {
+    pub fn new(data_contract_name: String, document_type_name: String) -> Self {
         BroadcastRandomDocumentsCountForm {
             input: TextInput::new_init_value("Number of random documents", 1),
+            data_contract_name,
+            document_type_name,
         }
     }
 }
@@ -26,8 +30,8 @@ impl FormController for BroadcastRandomDocumentsCountForm {
         match self.input.on_event(event) {
             InputStatus::Done(count) => FormStatus::Done {
                 task: Task::Document(DocumentTask::BroadcastRandomDocuments {
-                    data_contract: todo!(),
-                    document_type: todo!(),
+                    data_contract_name: self.data_contract_name.clone(),
+                    document_type_name: self.document_type_name.clone(),
                     count,
                 }),
                 block: true,

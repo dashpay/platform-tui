@@ -19,6 +19,7 @@ use tuirealm::{
     Frame,
 };
 
+use self::broadcast_random_documents::BroadcastRandomDocumentsCountForm;
 use crate::{
     backend::{
         as_toml, documents::DocumentTask, AppState, BackendEvent, CompletedTaskPayload, Task,
@@ -36,8 +37,6 @@ use crate::{
     },
     Event,
 };
-
-use self::broadcast_random_documents::BroadcastRandomDocumentsCountForm;
 
 pub(super) struct SelectDocumentTypeFormController {
     input: SelectInput<String>,
@@ -109,26 +108,28 @@ const COMMANDS: [ScreenCommandKey; 4] = [
     ScreenCommandKey::new("q", "Back to Contracts"),
     ScreenCommandKey::new("f", "Query"),
     ScreenCommandKey::new("o", "Query ours"),
-    ScreenCommandKey::new("b", "Broadcast Random Document"),
+    ScreenCommandKey::new("b", "Broadcast Random Documents"),
 ];
 
 pub(super) struct DocumentTypeScreenController {
     identity_identifier: Option<Identifier>,
     data_contract: DataContract,
+    data_contract_name: String,
     document_type: DocumentType,
+    document_type_name: String,
     info: Info,
 }
 
 impl DocumentTypeScreenController {
     pub(super) async fn new(
         identity_identifier: Option<Identifier>,
-        contract_name: String,
+        data_contract_name: String,
         document_type_name: String,
         app_state: &AppState,
     ) -> Self {
         let known_contracts_lock = app_state.known_contracts.lock().await;
         let data_contract = known_contracts_lock
-            .get(&contract_name)
+            .get(&data_contract_name)
             .expect("expected a contract")
             .clone();
         let document_type = data_contract
@@ -141,7 +142,9 @@ impl DocumentTypeScreenController {
         DocumentTypeScreenController {
             identity_identifier,
             data_contract,
+            data_contract_name,
             document_type,
+            document_type_name,
             info,
         }
     }
@@ -183,7 +186,10 @@ impl ScreenController for DocumentTypeScreenController {
             Event::Key(KeyEvent {
                 code: Key::Char('b'),
                 modifiers: KeyModifiers::NONE,
-            }) => ScreenFeedback::Form(Box::new(BroadcastRandomDocumentsCountForm::new())),
+            }) => ScreenFeedback::Form(Box::new(BroadcastRandomDocumentsCountForm::new(
+                self.data_contract_name.clone(),
+                self.document_type_name.clone(),
+            ))),
 
             Event::Key(KeyEvent {
                 code: Key::Char('o'),
