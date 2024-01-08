@@ -38,6 +38,7 @@ pub(super) type StrategiesMap = BTreeMap<String, Strategy>;
 pub(crate) type StrategyContractNames =
     Vec<(ContractFileName, Option<BTreeMap<u64, ContractFileName>>)>;
 pub(super) type KnownContractsMap = BTreeMap<String, DataContract>;
+pub(crate) type IdentityPrivateKeysMap = BTreeMap<(Identifier, KeyID), PrivateKey>;
 
 // TODO: each state part should be in it's own mutex in case multiple backend
 // tasks are executed on different state parts,
@@ -46,7 +47,7 @@ pub(super) type KnownContractsMap = BTreeMap<String, DataContract>;
 #[derive(Debug)]
 pub(crate) struct AppState {
     pub loaded_identity: Mutex<Option<Identity>>,
-    pub identity_private_keys: Mutex<BTreeMap<(Identifier, KeyID), PrivateKey>>,
+    pub identity_private_keys: Mutex<IdentityPrivateKeysMap>,
     pub loaded_wallet: Mutex<Option<Wallet>>,
     pub known_identities: Mutex<BTreeMap<Identifier, Identity>>,
     pub known_contracts: Mutex<KnownContractsMap>,
