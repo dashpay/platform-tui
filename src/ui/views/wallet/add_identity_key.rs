@@ -4,7 +4,10 @@ use dpp::identity::{KeyType, Purpose as KeyPurpose, SecurityLevel as KeySecurity
 use strum::IntoEnumIterator;
 use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
-use crate::ui::form::{FormController, FormStatus, Input, InputStatus, SelectInput};
+use crate::{
+    backend::{identities::IdentityTask, Task},
+    ui::form::{FormController, FormStatus, Input, InputStatus, SelectInput},
+};
 
 enum AddIdentityKeyFormStep {
     Purpose(SelectInput<KeyPurpose>),
@@ -80,7 +83,18 @@ impl FormController for AddIdentityKeyFormController {
                 input => input.into(),
             },
             AddIdentityKeyFormStep::KeyType(input) => match input.on_event(event) {
-                InputStatus::Done(_) => todo!(),
+                InputStatus::Done(key_type) => FormStatus::Done {
+                    task: Task::Identity(IdentityTask::AddIdentityKey {
+                        key_type,
+                        security_level: self
+                            .security_result
+                            .expect("must be selected on previous steps"),
+                        purpose: self
+                            .purpose_result
+                            .expect("must be selected on previous steps"),
+                    }),
+                    block: true,
+                },
                 input => input.into(),
             },
         }
