@@ -33,7 +33,7 @@ use dpp::{
     prelude::{AssetLockProof, Identity, IdentityPublicKey},
 };
 use rand::{rngs::StdRng, SeedableRng};
-use rs_dapi_client::{Dapi, RequestSettings};
+use rs_dapi_client::{DapiRequestExecutor, RequestSettings};
 use simple_signer::signer::SimpleSigner;
 use tokio::sync::{MappedMutexGuard, MutexGuard};
 

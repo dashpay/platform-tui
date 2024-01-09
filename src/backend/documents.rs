@@ -595,6 +595,7 @@ impl AppState {
             connect_timeout: None,
             timeout: Some(Duration::from_secs(30)),
             retries: Some(0),
+            ban_failed_address: None,
         };
 
         while start_time.elapsed() < duration {
