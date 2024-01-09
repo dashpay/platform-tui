@@ -665,8 +665,11 @@ async fn add_identity_key<'a>(
     let mut signer = SimpleSigner::default();
     signer.add_key(master_public_key.clone(), master_private_key.to_vec());
 
+    let mut identity_updated = loaded_identity.clone();
+    identity_updated.bump_revision();
+
     let identity_update_transition = IdentityUpdateTransitionV0::try_from_identity_with_signer(
-        &loaded_identity,
+        &identity_updated,
         master_public_key_id,
         vec![Into::<IdentityPublicKeyInCreationV0>::into(identity_public_key.clone()).into()],
         Vec::new(),
