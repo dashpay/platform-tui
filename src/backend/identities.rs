@@ -1,6 +1,6 @@
 //! Identities backend logic.
 
-use std::{collections::BTreeMap, time::Duration};
+use std::{cmp, collections::BTreeMap, time::Duration};
 
 use dapi_grpc::{
     core::v0::{
@@ -26,18 +26,23 @@ use dpp::{
     dashcore::{psbt::serialize::Serialize, Address, Network, PrivateKey, Transaction},
     identity::{
         accessors::{IdentityGettersV0, IdentitySettersV0},
-        identity_public_key::accessors::v0::IdentityPublicKeyGettersV0,
+        identity_public_key::{accessors::v0::IdentityPublicKeyGettersV0, v0::IdentityPublicKeyV0},
         KeyType, Purpose as KeyPurpose, Purpose, SecurityLevel as KeySecurityLevel, SecurityLevel,
     },
     platform_value::{string_encoding::Encoding, Identifier},
     prelude::{AssetLockProof, Identity, IdentityPublicKey},
+    state_transition::{
+        identity_update_transition::v0::IdentityUpdateTransitionV0,
+        public_key_in_creation::v0::IdentityPublicKeyInCreationV0,
+    },
+    version::PlatformVersion,
 };
 use rand::{rngs::StdRng, SeedableRng};
 use rs_dapi_client::{DapiRequestExecutor, RequestSettings};
 use simple_signer::signer::SimpleSigner;
 use tokio::sync::{MappedMutexGuard, MutexGuard};
 
-use super::AppStateUpdate;
+use super::{state::IdentityPrivateKeysMap, AppStateUpdate};
 use crate::backend::{error::Error, stringify_result_keep_item, AppState, BackendEvent, Task};
 
 pub(super) async fn fetch_identity_by_b58_id(
@@ -154,7 +159,10 @@ impl AppState {
                 key_type,
                 security_level,
                 purpose,
-            } => todo!(),
+            } => {
+                add_identity_key(key_type, security_level, purpose).await;
+                todo!()
+            }
         }
     }
 
@@ -587,4 +595,48 @@ impl AppState {
         )
         .await
     }
+}
+
+async fn add_identity_key<'a>(
+    loaded_identity: &Identity,
+    identity_private_keys: MutexGuard<'a, IdentityPrivateKeysMap>,
+    key_type: KeyType,
+    security_level: KeySecurityLevel,
+    purpose: KeyPurpose,
+) -> Result<(), String> {
+    let mut rng = StdRng::from_entropy();
+    let platform_version = PlatformVersion::latest();
+
+    let (public_key, private_key) = key_type
+        .random_public_and_private_key_data(&mut rng, &platform_version)
+        .map_err(|e| format!("Cannot generate key pair: {e}"))?;
+    let last_key_id = identity_private_keys
+        .keys()
+        .filter(|(identifier, _)| identifier == &loaded_identity.id())
+        .fold(0, |acc, (_, key_id)| cmp::max(acc, *key_id));
+    let identity_public_key: IdentityPublicKey = IdentityPublicKeyV0 {
+        id: last_key_id + 1,
+        purpose,
+        security_level,
+        contract_bounds: None,
+        key_type,
+        read_only: false,
+        data: public_key.into(),
+        disabled_at: None,
+    }
+    .into();
+
+    let identity_update_transition = IdentityUpdateTransitionV0 {
+        identity_id: loaded_identity.id(),
+        revision: loaded_identity.revision() + 1,
+        add_public_keys: vec![
+            Into::<IdentityPublicKeyInCreationV0>::into(identity_public_key).into(),
+        ],
+        disable_public_keys: Vec::new(),
+        public_keys_disabled_at: None,
+        signature_public_key_id: todo!(),
+        signature: todo!(),
+    };
+
+    todo!()
 }
