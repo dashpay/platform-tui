@@ -6,7 +6,7 @@ use dapi_grpc::platform::v0::{GetEpochsInfoRequest, get_epochs_info_request, get
 use dash_platform_sdk::{Sdk, platform::transition::broadcast_request::BroadcastRequestForStateTransition};
 use dpp::{
     data_contract::{created_data_contract::CreatedDataContract, DataContract}, platform_value::{Bytes32, Identifier},
-    version::PlatformVersion, block::{block_info::BlockInfo, epoch::Epoch}, identity::{Identity, PartialIdentity, signer::Signer}, serialization::Signable,
+    version::PlatformVersion, block::{block_info::BlockInfo, epoch::Epoch}, identity::{Identity, PartialIdentity}, state_transition::StateTransition,
 };
 use drive::{drive::{identity::key::fetch::IdentityKeysRequest, document::query::{QueryDocumentsOutcome, QueryDocumentsOutcomeV0Methods}}, query::DriveQuery};
 use futures::future::join_all;
@@ -22,7 +22,7 @@ use tracing::{info, error};
 
 use rs_dapi_client::DapiRequestExecutor;
 
-use super::{AppStateUpdate, BackendEvent, Task, AppState, StrategyCompletionResult};
+use super::{AppStateUpdate, BackendEvent, Task, AppState, StrategyCompletionResult, error::Error, insight::InsightError};
 
 #[derive(Debug, PartialEq, Clone)]
 pub(crate) enum StrategyTask {
@@ -303,21 +303,62 @@ pub(crate) async fn run_strategy_task<'s>(
             key_count,
         } => {
             let mut strategies_lock = app_state.available_strategies.lock().await;
+            let loaded_identity_lock = app_state.loaded_identity.lock().await;
+            let identity_private_keys_lock = app_state.identity_private_keys.lock().await;
+        
             if let Some(strategy) = strategies_lock.get_mut(strategy_name) {
-                tokio::task::block_in_place(|| set_start_identities(strategy, count, key_count, strategy.signer.clone().unwrap_or_default()));
-                BackendEvent::TaskCompletedStateChange {
-                    task: Task::Strategy(task.clone()),
-                    execution_result: Ok("Start identities set".into()),
-                    app_state_update: AppStateUpdate::SelectedStrategy(
-                        strategy_name.clone(),
-                        MutexGuard::map(strategies_lock, |strategies| {
-                            strategies.get_mut(strategy_name).expect("strategy exists")
-                        }),
-                        MutexGuard::map(
-                            app_state.available_strategies_contract_names.lock().await,
-                            |names| names.get_mut(strategy_name).expect("inconsistent data"),
-                        ),
-                    ),
+                // Ensure a signer is present, creating a new one if necessary
+                let signer = if let Some(signer) = strategy.signer.as_mut() {
+                    // Use the existing signer
+                    signer
+                } else {
+                    // Create a new signer from loaded_identity if one doesn't exist, else default
+                    let new_signer = if let Some(loaded_identity) = &*loaded_identity_lock {
+                        let mut signer = SimpleSigner::default();
+                        match loaded_identity {
+                            Identity::V0(identity_v0) => {
+                                for (key_id, public_key) in &identity_v0.public_keys {
+                                    let identity_key_tuple = (identity_v0.id, *key_id);
+                                    if let Some(private_key_bytes) = identity_private_keys_lock.get(&identity_key_tuple) {
+                                        signer.private_keys.insert(public_key.clone(), private_key_bytes.to_bytes());
+                                    }
+                                }
+                            }
+                        }
+                        signer
+                    } else {
+                        SimpleSigner::default()
+                    };
+                    strategy.signer = Some(new_signer);
+                    strategy.signer.as_mut().unwrap()
+                };
+                                
+                // Call set_start_identities asynchronously
+                match set_start_identities(count, key_count, signer, app_state, &sdk).await {
+                    Ok(identities_and_transitions) => {
+                        strategy.start_identities = identities_and_transitions;
+                        BackendEvent::TaskCompletedStateChange {
+                            task: Task::Strategy(task.clone()),
+                            execution_result: Ok("Start identities set".into()),
+                            app_state_update: AppStateUpdate::SelectedStrategy(
+                                strategy_name.to_string(),
+                                MutexGuard::map(strategies_lock, |strategies| {
+                                    strategies.get_mut(strategy_name).expect("strategy exists")
+                                }),
+                                MutexGuard::map(
+                                    app_state.available_strategies_contract_names.lock().await,
+                                    |names| names.get_mut(strategy_name).expect("inconsistent data"),
+                                ),
+                            ),
+                        }
+                    },
+                    Err(e) => {
+                        eprintln!("Error setting start identities: {:?}", e);
+                        BackendEvent::StrategyError {
+                            strategy_name: strategy_name.clone(),
+                            error: format!("Error setting start identities: {}", e),
+                        }
+                    }
                 }
             } else {
                 BackendEvent::None
@@ -328,13 +369,13 @@ pub(crate) async fn run_strategy_task<'s>(
 
             let mut strategies_lock = app_state.available_strategies.lock().await;
             let drive_lock = app_state.drive.lock().await;
-            let known_identities_lock = app_state.known_identities.lock().await;
-            let loaded_identity_lock = app_state.loaded_identity.lock().await;
+            let mut loaded_identity_lock = app_state.loaded_identity.lock().await;
+            let mut loaded_wallet_lock = app_state.loaded_wallet.lock().await;
             let identity_private_keys_lock = app_state.identity_private_keys.lock().await;
 
-            // Check if a loaded identity is available
-            let loaded_identity = match &*loaded_identity_lock {
-                Some(identity) => identity,
+            // Check if a loaded identity is available and clone it for use in the loop
+            let mut loaded_identity_clone = match &*loaded_identity_lock {
+                Some(identity) => Some(identity.clone()),
                 None => {
                     return BackendEvent::StrategyError {
                         strategy_name: strategy_name.clone(),
@@ -342,11 +383,10 @@ pub(crate) async fn run_strategy_task<'s>(
                     };
                 }
             };
-
+                        
             // It's normal that we're asking for the mutable strategy because we need to modify
             // some properties of a contract on update
             if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
-
                 // Define the number of blocks for which to compute state transitions.
                 let num_blocks = 20;
             
@@ -379,7 +419,6 @@ pub(crate) async fn run_strategy_task<'s>(
                                     };
                                 }
                             }
-                            info!("Fetched initial block info successfully. Height {}", initial_block_info.height);
                             break;
                         },
                         Err(e) if retries < MAX_RETRIES => {
@@ -399,21 +438,47 @@ pub(crate) async fn run_strategy_task<'s>(
 
                 // Get signer from loaded_identity
                 // Convert loaded_identity to SimpleSigner
-                let mut signer = SimpleSigner::default();
-                match &*loaded_identity {
-                    Identity::V0(identity_v0) => {
-                        // Iterate over the public keys in the loaded identity
-                        for (key_id, public_key) in &identity_v0.public_keys {
-                            // Create a tuple of the identity ID and the key ID to match with the private keys
-                            let identity_key_tuple = (identity_v0.id, *key_id);
-                            if let Some(private_key_bytes) = identity_private_keys_lock.get(&identity_key_tuple) {
-                                // Add the public key and its corresponding private key to the SimpleSigner
-                                signer.private_keys.insert(public_key.clone(), private_key_bytes.to_bytes());
+                let mut signer = {
+                    let strategy_signer = strategy.signer.get_or_insert_with(|| {
+                        let mut new_signer = SimpleSigner::default();
+                        if let Some(identity_v0) = match &*loaded_identity_lock {
+                            Some(Identity::V0(identity)) => Some(identity),
+                            _ => None,
+                        } {
+                            for (key_id, public_key) in &identity_v0.public_keys {
+                                let identity_key_tuple = (identity_v0.id, *key_id);
+                                if let Some(private_key_bytes) = identity_private_keys_lock.get(&identity_key_tuple) {
+                                    new_signer.private_keys.insert(public_key.clone(), private_key_bytes.to_bytes());
+                                }
                             }
                         }
+                        new_signer
+                    });
+                    strategy_signer.clone()
+                };
+                
+                // Check if a loaded wallet is available and it is mutable
+                let wallet = match loaded_wallet_lock.as_mut() {
+                    Some(w) => w,
+                    None => {
+                        error!("No wallet loaded");
+                        return BackendEvent::StrategyError {
+                            strategy_name: strategy_name.clone(),
+                            error: "No wallet loaded".to_string(),
+                        };
                     }
-                }
-                                                                                
+                };
+
+                // Retrieve the asset lock proof
+                let asset_lock_proof_result = AppState::retrieve_asset_lock_proof(&sdk, wallet, 1000000).await;
+                let asset_lock_proof_and_private_key = match asset_lock_proof_result {
+                    Ok(proof) => proof,
+                    Err(e) => {
+                        error!("Error retrieving asset lock proof: {:?}", e);
+                        return BackendEvent::None;
+                    }
+                };
+        
                 // Create map of state transitions to block heights
                 let mut state_transitions_map = HashMap::new();
 
@@ -484,21 +549,25 @@ pub(crate) async fn run_strategy_task<'s>(
                             }
                         }
                     };
-                
+                                                                                                                                                        
                     // Get current identities
-                    let mut current_identities: Vec<Identity> = vec![loaded_identity.clone()];
-
+                    let mut current_identities: Vec<Identity> = match &loaded_identity_clone {
+                        Some(identity) => vec![identity.clone()],
+                        None => vec![],
+                    };
+                                    
                     // Get rng
                     let mut rng = StdRng::from_entropy();
 
                     // Call the function to get STs for block
                     let state_transitions_for_block = strategy.state_transitions_for_block_with_new_identities(
-                        &mut document_query_callback, 
+                        &mut document_query_callback,
                         &mut identity_fetch_callback,
-                        &current_block_info, 
-                        &mut current_identities, 
-                        &mut signer, 
-                        &mut rng, 
+                        Some(&asset_lock_proof_and_private_key),
+                        &current_block_info,
+                        &mut current_identities,
+                        &mut signer,
+                        &mut rng,
                         PlatformVersion::latest(),
                         &StrategyConfig { start_block_height: initial_block_info.height },
                     );
@@ -513,6 +582,12 @@ pub(crate) async fn run_strategy_task<'s>(
                         info!("No state transitions prepared for block {}", current_block_info.height);
                     }
 
+                    // After processing the block, update the loaded_identity with the modified clone
+                    if let Some(modified_identity) = current_identities.get(0) {
+                        loaded_identity_clone = Some(modified_identity.clone());
+                        *loaded_identity_lock = Some(modified_identity.clone());
+                    }
+                
                     // Update block_info
                     current_block_info.height += 1;
                     current_block_info.time_ms += 1 * 1000; // plus 1 second
@@ -530,8 +605,6 @@ pub(crate) async fn run_strategy_task<'s>(
                         for transition in transitions {
                             let sdk_clone = Arc::clone(&sdk);
                             let transition_clone = transition.clone();
-
-                            info!("Transition: {:?}", transition_clone);
                 
                             // Collect futures for broadcasting state transitions
                             let future = async move {
@@ -556,16 +629,16 @@ pub(crate) async fn run_strategy_task<'s>(
                             match result {
                                 Ok((transition, broadcast_result)) => {
                                     if broadcast_result.is_err() {
-                                        error!("Error broadcasting state transition {}: {:?}", index + 1, broadcast_result.err().unwrap());
+                                        error!("Error broadcasting state transition {} for block height {}: {:?}", index + 1, current_block_height, broadcast_result.err().unwrap());
                                         continue;
                                     }
                 
-                                    let sdk_clone = Arc::clone(&sdk); // Clone the Arc for SDK
+                                    let sdk_clone = Arc::clone(&sdk);
                                     let wait_future = async move {
                                         let wait_result = match transition.wait_for_state_transition_result_request() {
                                             Ok(wait_request) => wait_request.execute(&*sdk_clone, RequestSettings::default()).await,
                                             Err(e) => {
-                                                error!("Error creating wait request for state transition {}: {:?}", index + 1, e);
+                                                error!("Error creating wait request for state transition {} block height {}: {:?}", index + 1, current_block_height, e);
                                                 return None;
                                             }
                                         };
@@ -579,8 +652,7 @@ pub(crate) async fn run_strategy_task<'s>(
                                                     None
                                                 }
                                             }
-                                            Err(e) => {
-                                                error!("Error waiting for state transition result {}: {:?}", index + 1, e);
+                                            Err(_) => {
                                                 None
                                             }
                                         }
@@ -588,7 +660,7 @@ pub(crate) async fn run_strategy_task<'s>(
                                     wait_futures.push(wait_future);
                                 },
                                 Err(e) => {
-                                    error!("Error preparing broadcast request for state transition {}: {:?}", index + 1, e);
+                                    error!("Error preparing broadcast request for state transition {} block height {}: {:?}", index + 1, current_block_height, e);
                                 }
                             }
                         }
@@ -600,7 +672,7 @@ pub(crate) async fn run_strategy_task<'s>(
                         for (index, actual_block_height) in wait_results.into_iter().enumerate() {
                             match actual_block_height {
                                 Some(height) => info!("Successfully processed state transition {} for block {} (actual block height: {})", index + 1, current_block_height, height),
-                                None => error!("Failed to get actual block height for state transition {}", index + 1),
+                                None => continue,
                             }
                         }
                     } else {
@@ -611,7 +683,7 @@ pub(crate) async fn run_strategy_task<'s>(
                     current_block_height += 1;
                 }
             
-                info!("Strategy '{}' finished running. Final block height: {}", strategy_name, current_block_height);
+                info!("Strategy '{}' finished running", strategy_name);
                                                                             
                 BackendEvent::StrategyCompleted {
                     strategy_name: strategy_name.clone(),
@@ -708,19 +780,28 @@ pub(crate) async fn run_strategy_task<'s>(
     }
 }
 
-fn set_start_identities(strategy: &mut Strategy, count: u16, key_count: u32, mut signer: SimpleSigner) {
-    
-    info!("signer before: {:?}", signer);
+async fn set_start_identities(
+    count: u16,
+    key_count: u32,
+    signer: &mut SimpleSigner,
+    app_state: &AppState,
+    sdk: &Sdk,
+) -> Result<Vec<(Identity, StateTransition)>, Error> {
+    let mut loaded_wallet = app_state.loaded_wallet.lock().await;
+    let wallet = loaded_wallet
+        .as_mut()
+        .ok_or_else(|| Error::WalletError(super::wallet::WalletError::Insight(InsightError("No wallet loaded".to_string()))))?;
+
+    let asset_lock_proof_and_private_key = AppState::retrieve_asset_lock_proof(sdk, wallet, 1000000).await?;
 
     let identities_and_transitions = create_identities_state_transitions(
         count,
         key_count,
-        &mut signer,
+        signer,
         &mut StdRng::seed_from_u64(567),
         PlatformVersion::latest(),
+        Some(&asset_lock_proof_and_private_key),
     );
 
-    info!("signer after: {:?}", signer);
-
-    strategy.start_identities = identities_and_transitions;
+    Ok(identities_and_transitions)
 }

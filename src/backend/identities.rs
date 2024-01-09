@@ -37,7 +37,8 @@ use rs_dapi_client::RequestSettings;
 use simple_signer::signer::SimpleSigner;
 use tokio::sync::{MappedMutexGuard, MutexGuard};
 
-use super::AppStateUpdate;
+use super::{AppStateUpdate, Wallet, insight::InsightError, wallet::WalletError};
+use crate::backend::wallet::WalletError::Insight;
 use crate::backend::{error::Error, stringify_result_keep_item, AppState, BackendEvent, Task};
 
 use rs_dapi_client::DapiRequestExecutor;
@@ -587,4 +588,22 @@ impl AppState {
         )
         .await
     }
+
+    pub async fn retrieve_asset_lock_proof(
+        sdk: &Sdk,
+        wallet: &mut Wallet,
+        amount: u64,
+    ) -> Result<(AssetLockProof, PrivateKey), Error> {
+        // Create the wallet registration transaction
+        let (asset_lock_transaction, asset_lock_proof_private_key) = 
+            wallet.registration_transaction(None, amount)
+                .map_err(|e| Error::WalletError(WalletError::Insight(InsightError(format!("Wallet transaction error: {}", e)))))?;
+    
+        // Broadcast the transaction and retrieve the asset lock proof
+        match Self::broadcast_and_retrieve_asset_lock(sdk, &asset_lock_transaction, &wallet.receive_address()).await {
+            Ok(proof) => Ok((proof, asset_lock_proof_private_key)),
+            Err(e) => Err(Error::SdkError(e)),
+        }
+    }
+            
 }
