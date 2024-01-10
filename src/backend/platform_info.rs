@@ -9,6 +9,8 @@ use dpp::{
 
 use crate::backend::{as_toml, BackendEvent, Task};
 
+use super::TaskKind;
+
 #[derive(Clone, PartialEq)]
 pub(crate) enum PlatformInfoTask {
     FetchCurrentEpochInfo,
@@ -16,6 +18,13 @@ pub(crate) enum PlatformInfoTask {
     FetchSpecificEpochInfo(u16),
     FetchManyEpochInfo(u16, u32), // second is count
 }
+
+impl PlatformInfoTask {
+    pub(crate) fn to_task(self) -> Task {
+        Task::new(TaskKind::PlatformInfo(self))
+    }
+}
+
 pub(super) async fn run_platform_task<'s>(sdk: &Sdk, task: PlatformInfoTask) -> BackendEvent<'s> {
     match task {
         PlatformInfoTask::FetchCurrentEpochInfo => {

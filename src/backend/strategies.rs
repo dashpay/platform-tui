@@ -16,7 +16,7 @@ use tokio::sync::{Mutex, MutexGuard};
 
 use super::{
     state::{KnownContractsMap, StrategiesMap},
-    AppStateUpdate, BackendEvent, StrategyContractNames, Task,
+    AppStateUpdate, BackendEvent, BackendEventBuilder, StrategyContractNames, Task, TaskKind,
 };
 
 #[derive(Debug, PartialEq, Clone)]
@@ -45,13 +45,19 @@ pub(crate) enum StrategyTask {
     RemoveLastOperation(String),
 }
 
+impl StrategyTask {
+    pub(crate) fn to_task(self) -> Task {
+        Task::new(TaskKind::Strategy(self))
+    }
+}
+
 pub(crate) async fn run_strategy_task<'s>(
     available_strategies: &'s Mutex<StrategiesMap>,
     available_strategies_contract_names: &'s Mutex<BTreeMap<String, StrategyContractNames>>,
     selected_strategy: &'s Mutex<Option<String>>,
     known_contracts: &'s Mutex<KnownContractsMap>,
     task: StrategyTask,
-) -> BackendEvent<'s> {
+) -> BackendEventBuilder<'s> {
     match task {
         StrategyTask::CreateStrategy(strategy_name) => {
             let mut strategies_lock = available_strategies.lock().await;
@@ -68,7 +74,7 @@ pub(crate) async fn run_strategy_task<'s>(
                 },
             );
             contract_names_lock.insert(strategy_name, Default::default());
-            BackendEvent::AppStateUpdated(AppStateUpdate::Strategies(
+            BackendEventBuilder::default().with_state_update(AppStateUpdate::Strategies(
                 strategies_lock,
                 contract_names_lock,
             ))
@@ -79,7 +85,7 @@ pub(crate) async fn run_strategy_task<'s>(
 
             if strategies_lock.contains_key(strategy_name) {
                 *selected_strategy_lock = Some(strategy_name.clone());
-                BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
+                BackendEventBuilder::default().with_state_update(AppStateUpdate::SelectedStrategy(
                     strategy_name.clone(),
                     MutexGuard::map(strategies_lock, |strategies| {
                         strategies.get_mut(strategy_name).expect("strategy exists")
@@ -89,7 +95,7 @@ pub(crate) async fn run_strategy_task<'s>(
                     }),
                 ))
             } else {
-                BackendEvent::None
+                BackendEventBuilder::default()
             }
         }
         StrategyTask::DeleteStrategy(strategy_name) => {
@@ -109,12 +115,12 @@ pub(crate) async fn run_strategy_task<'s>(
                     }
                 }
 
-                BackendEvent::AppStateUpdated(AppStateUpdate::Strategies(
+                BackendEventBuilder::default().with_state_update(AppStateUpdate::Strategies(
                     strategies_lock,
                     contract_names_lock,
                 ))
             } else {
-                BackendEvent::None
+                BackendEventBuilder::default()
             }
         }
         StrategyTask::CloneStrategy(new_strategy_name) => {

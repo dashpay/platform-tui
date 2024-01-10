@@ -7,12 +7,18 @@ use dpp::{
 };
 use tokio::sync::Mutex;
 
-use super::{as_toml, state::KnownContractsMap, AppStateUpdate, BackendEvent, Task};
+use super::{as_toml, state::KnownContractsMap, AppStateUpdate, BackendEvent, Task, TaskKind};
 
 #[derive(Clone, PartialEq)]
 pub(crate) enum ContractTask {
     FetchDashpayContract,
     FetchDPNSContract,
+}
+
+impl ContractTask {
+    pub(crate) fn to_task(self) -> Task {
+        Task::new(TaskKind::Contract(self))
+    }
 }
 
 const DASHPAY_CONTRACT_NAME: &str = "dashpay";

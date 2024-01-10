@@ -9,7 +9,7 @@ mod screen;
 mod status_bar;
 mod views;
 
-use std::{mem, ops::Deref, time::Instant};
+use std::{mem, ops::Deref};
 
 use dpp::identity::accessors::IdentityGettersV0;
 use tuirealm::{
@@ -43,15 +43,16 @@ impl IdentityBalance {
     }
 }
 
+type TaskId = usize;
+
 /// TUI entry point that handles terminal events as well as terminal output,
 /// linking UI parts together.
 pub(crate) struct Ui {
-    redraw_ts: Instant,
     terminal: TerminalBridge,
     status_bar_state: StatusBarState,
     screen: Screen<Box<dyn ScreenController>>,
     form: Option<Form<Box<dyn FormController>>>,
-    blocked: bool,
+    blocked_on: Option<TaskId>,
     screen_stack: Vec<Screen<Box<dyn ScreenController>>>,
 }
 
@@ -103,12 +104,11 @@ impl Ui {
         let screen = Screen::new(Box::new(main_screen_controller) as Box<dyn ScreenController>);
 
         let mut ui = Ui {
-            redraw_ts: Instant::now(),
             terminal,
             status_bar_state,
             screen,
             form: None,
-            blocked: false,
+            blocked_on: None,
             screen_stack: Vec::new(),
         };
 
@@ -125,13 +125,19 @@ impl Ui {
 
         // On task completion we shall unfreeze the screen and update status bar
         // "blocked" message
-        if let Event::Backend(
-            BackendEvent::TaskCompleted { .. } | BackendEvent::TaskCompletedStateChange { .. },
-        ) = &event
+        if let (
+            Some(blocked_on),
+            Event::Backend(
+                BackendEvent::TaskCompleted { task_id, .. }
+                | BackendEvent::TaskCompletedStateChange { task_id, .. },
+            ),
+        ) = (self.blocked_on, &event)
         {
-            self.status_bar_state.unblock();
-            self.blocked = false;
-            redraw = true;
+            if blocked_on == *task_id {
+                self.status_bar_state.unblock();
+                self.blocked_on = None;
+                redraw = true;
+            }
         }
 
         // A special treatment for loaded identity app state update: status bar should

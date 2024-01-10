@@ -1,6 +1,6 @@
 //! Identities backend logic.
 
-use std::{cmp, collections::BTreeMap, time::Duration};
+use std::{collections::BTreeMap, time::Duration};
 
 use dapi_grpc::{
     core::v0::{
@@ -23,14 +23,13 @@ use dash_platform_sdk::{
     Sdk,
 };
 use dpp::{
-    bls_signatures::PrivateKey,
-    dashcore::{psbt::serialize::Serialize, Address, Network, Transaction},
+    dashcore::{psbt::serialize::Serialize, Address, Transaction},
     identity::{
         accessors::{IdentityGettersV0, IdentitySettersV0},
         identity_public_key::{accessors::v0::IdentityPublicKeyGettersV0, v0::IdentityPublicKeyV0},
         KeyType, Purpose as KeyPurpose, Purpose, SecurityLevel as KeySecurityLevel, SecurityLevel,
     },
-    platform_value::{string_encoding::Encoding, BinaryData, Identifier},
+    platform_value::{string_encoding::Encoding, Identifier},
     prelude::{AssetLockProof, Identity, IdentityPublicKey},
     state_transition::{
         identity_update_transition::{
@@ -38,7 +37,6 @@ use dpp::{
         },
         proof_result::StateTransitionProofResult,
         public_key_in_creation::v0::IdentityPublicKeyInCreationV0,
-        StateTransition,
     },
     version::PlatformVersion,
 };
@@ -47,7 +45,7 @@ use rs_dapi_client::{DapiRequestExecutor, RequestSettings};
 use simple_signer::signer::SimpleSigner;
 use tokio::sync::{MappedMutexGuard, MutexGuard};
 
-use super::{state::IdentityPrivateKeysMap, AppStateUpdate, CompletedTaskPayload};
+use super::{state::IdentityPrivateKeysMap, AppStateUpdate, CompletedTaskPayload, TaskKind};
 use crate::backend::{error::Error, stringify_result_keep_item, AppState, BackendEvent, Task};
 
 pub(super) async fn fetch_identity_by_b58_id(
@@ -73,6 +71,12 @@ pub(crate) enum IdentityTask {
         security_level: KeySecurityLevel,
         purpose: KeyPurpose,
     },
+}
+
+impl IdentityTask {
+    pub(crate) fn to_task(self) -> Task {
+        Task::new(TaskKind::Identity(self))
+    }
 }
 
 impl AppState {

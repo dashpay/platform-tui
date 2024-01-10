@@ -29,7 +29,7 @@ use futures::{stream::FuturesUnordered, Future, StreamExt};
 use rand::{prelude::StdRng, Rng, SeedableRng};
 use simple_signer::signer::SimpleSigner;
 
-use super::{state::IdentityPrivateKeysMap, AppStateUpdate, CompletedTaskPayload};
+use super::{state::IdentityPrivateKeysMap, AppStateUpdate, CompletedTaskPayload, TaskKind};
 use crate::backend::{error::Error, AppState, BackendEvent, Task};
 
 #[derive(Clone)]
@@ -40,6 +40,12 @@ pub(crate) enum DocumentTask {
         document_type_name: String,
         count: u16,
     },
+}
+
+impl DocumentTask {
+    pub(crate) fn to_task(self) -> Task {
+        Task::new(TaskKind::Document(self))
+    }
 }
 
 impl AppState {

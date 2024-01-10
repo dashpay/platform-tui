@@ -21,7 +21,7 @@ use dpp::dashcore::{
 use rand::{prelude::StdRng, Rng, SeedableRng};
 use tokio::sync::{Mutex, MutexGuard};
 
-use super::{AppStateUpdate, BackendEvent, Task};
+use super::{AppStateUpdate, BackendEvent, Task, TaskKind};
 use crate::backend::insight::{InsightAPIClient, InsightError};
 
 #[derive(Clone, PartialEq)]
@@ -29,6 +29,12 @@ pub(crate) enum WalletTask {
     AddByPrivateKey(String),
     Refresh,
     CopyAddress,
+}
+
+impl WalletTask {
+    pub(crate) fn to_task(self) -> Task {
+        Task::new(TaskKind::Wallet(self))
+    }
 }
 
 pub(super) async fn run_wallet_task<'s>(

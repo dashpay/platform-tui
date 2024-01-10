@@ -14,7 +14,7 @@ mod wallet;
 use std::{
     collections::BTreeMap,
     fmt::{self, Display},
-    ops::{Deref, DerefMut},
+    sync::atomic::{AtomicUsize, Ordering},
 };
 
 use dash_platform_sdk::Sdk;
@@ -26,7 +26,7 @@ use dpp::{
 use serde::Serialize;
 pub(crate) use state::AppState;
 use strategy_tests::Strategy;
-use tokio::sync::{MappedMutexGuard, Mutex, MutexGuard};
+use tokio::sync::{MappedMutexGuard, MutexGuard};
 
 use self::state::{KnownContractsMap, StrategiesMap};
 pub(crate) use self::{
@@ -43,12 +43,31 @@ use crate::{
     config::Config,
 };
 
+pub(crate) type TaskId = usize;
+
 /// Unit of work for the backend.
 /// UI shall not execute any actions unrelated to rendering directly, to keep
 /// things decoupled and for future UI/UX improvements it returns a [Task]
 /// instead.
-#[derive(Clone)]
-pub(crate) enum Task {
+pub(crate) struct Task {
+    kind: TaskKind,
+    id: TaskId,
+}
+
+impl Task {
+    pub(crate) fn new(kind: TaskKind) -> Self {
+        static TASK_ID: AtomicUsize = AtomicUsize::new(0);
+        let id = TASK_ID.fetch_add(1, Ordering::Relaxed);
+
+        Task { kind, id }
+    }
+
+    pub(crate) fn id(&self) -> usize {
+        self.id
+    }
+}
+
+pub(crate) enum TaskKind {
     FetchIdentityById(String, bool),
     PlatformInfo(PlatformInfoTask),
     Strategy(StrategyTask),
@@ -62,6 +81,7 @@ pub(crate) enum Task {
 /// Occasionally it's desired to represent data on UI in a structured way, in
 /// that case specific variants are used.
 pub(crate) enum CompletedTaskPayload {
+    None,
     Documents(BTreeMap<Identifier, Option<Document>>),
     Document(Document),
     String(String),
@@ -89,24 +109,57 @@ impl Display for CompletedTaskPayload {
 }
 
 /// Any update coming from backend that UI may or may not react to.
-pub(crate) enum BackendEvent<'s> {
-    TaskCompleted {
-        task: Task,
+pub(crate) struct BackendEvent<'s> {
+    pub task_execution_result: Result<CompletedTaskPayload, String>,
+    pub task_id: TaskId,
+    pub state_update: AppStateUpdate<'s>,
+}
+
+#[derive(Default)]
+pub(crate) struct BackendEventBuilder<'s> {
+    task_execution_result: Option<Result<CompletedTaskPayload, String>>,
+    state_update: Option<AppStateUpdate<'s>>,
+}
+
+impl<'s> BackendEventBuilder<'s> {
+    pub(crate) fn new() -> Self {
+        Default::default()
+    }
+
+    pub(crate) fn with_execution_result(
+        mut self,
         execution_result: Result<CompletedTaskPayload, String>,
-    },
-    TaskCompletedStateChange {
-        task: Task,
-        execution_result: Result<CompletedTaskPayload, String>,
-        app_state_update: AppStateUpdate<'s>,
-    },
-    AppStateUpdated(AppStateUpdate<'s>),
-    None,
+    ) -> Self {
+        self.task_execution_result = Some(execution_result);
+        self
+    }
+
+    pub(crate) fn with_state_update(mut self, state_update: AppStateUpdate<'s>) -> Self {
+        self.state_update = Some(state_update);
+        self
+    }
+
+    pub(crate) fn build(self, task_id: TaskId) -> BackendEvent<'s> {
+        BackendEvent {
+            task_execution_result: self
+                .task_execution_result
+                .unwrap_or(Ok(CompletedTaskPayload::None)),
+            task_id,
+            state_update: self.state_update.unwrap_or(AppStateUpdate::None),
+        }
+    }
+}
+
+pub(crate) struct TaskResult {
+    pub task_id: TaskId,
+    pub execution_result: Result<CompletedTaskPayload, String>,
 }
 
 /// Backend state update data on a specific field.
 /// A screen implementation may handle specific updates to deliver a responsive
 /// UI.
 pub(crate) enum AppStateUpdate<'s> {
+    None,
     KnownContracts(MutexGuard<'s, KnownContractsMap>),
     LoadedWallet(MappedMutexGuard<'s, Wallet>),
     Strategies(
@@ -149,9 +202,13 @@ impl<'a> Backend<'a> {
         &self.app_state
     }
 
-    pub(crate) async fn run_task(&self, task: Task) -> BackendEvent {
+    pub(crate) async fn run_task(&self, Task { kind, id }: Task) -> BackendEvent {
+        self.run_task_inner(kind).await.build(id)
+    }
+
+    async fn run_task_inner(&self, task: TaskKind) -> BackendEventBuilder {
         match task {
-            Task::FetchIdentityById(ref base58_id, add_to_known_identities) => {
+            TaskKind::FetchIdentityById(ref base58_id, add_to_known_identities) => {
                 let execution_result =
                     identities::fetch_identity_by_b58_id(self.sdk, base58_id).await;
                 if add_to_known_identities {
@@ -163,13 +220,9 @@ impl<'a> Backend<'a> {
 
                 let execution_info_result = execution_result
                     .map(|(_, result_info)| CompletedTaskPayload::String(result_info));
-
-                BackendEvent::TaskCompleted {
-                    task,
-                    execution_result: execution_info_result,
-                }
+                BackendEventBuilder::default().with_execution_result(execution_info_result)
             }
-            Task::Strategy(strategy_task) => {
+            TaskKind::Strategy(strategy_task) => {
                 strategies::run_strategy_task(
                     &self.app_state.available_strategies,
                     &self.app_state.available_strategies_contract_names,
@@ -179,11 +232,11 @@ impl<'a> Backend<'a> {
                 )
                 .await
             }
-            Task::Wallet(wallet_task) => {
+            TaskKind::Wallet(wallet_task) => {
                 wallet::run_wallet_task(&self.app_state.loaded_wallet, wallet_task, &self.insight)
                     .await
             }
-            Task::Contract(contract_task) => {
+            TaskKind::Contract(contract_task) => {
                 contracts::run_contract_task(
                     self.sdk,
                     &self.app_state.known_contracts,
@@ -191,17 +244,17 @@ impl<'a> Backend<'a> {
                 )
                 .await
             }
-            Task::Identity(identity_task) => {
+            TaskKind::Identity(identity_task) => {
                 self.app_state
                     .run_identity_task(self.sdk, identity_task)
                     .await
             }
-            Task::Document(document_task) => {
+            TaskKind::Document(document_task) => {
                 self.app_state
                     .run_document_task(self.sdk, document_task)
                     .await
             }
-            Task::PlatformInfo(platform_info_task) => {
+            TaskKind::PlatformInfo(platform_info_task) => {
                 platform_info::run_platform_task(self.sdk, platform_info_task).await
             }
         }
