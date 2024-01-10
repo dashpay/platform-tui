@@ -338,8 +338,9 @@ fn display_strategy(
         ));
         for (block, update) in updates.iter().flatten() {
             let block = block + 1;
+            let block_spacing = (block - 1) * 3;
             contracts_with_updates_lines.push_str(&format!(
-                "{:indent$}On block {block} apply {update}\n",
+                "{:indent$}On block {block_spacing} apply {update}\n",
                 "",
                 indent = 12
             ));

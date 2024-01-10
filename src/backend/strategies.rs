@@ -700,6 +700,23 @@ pub(crate) async fn run_strategy_task<'s>(
                         }
                     } else {
                         info!("No state transitions to process for block {}", current_block_height);
+
+                        // // Wait until the blockchain height aligns with the next block height for state transitions
+                        // loop {
+                        //     match fetch_current_blockchain_height(&sdk).await {
+                        //         Ok(blockchain_height) => {
+                        //             if blockchain_height >= current_block_height {
+                        //                 break;
+                        //             }
+                        //             info!("Waiting for blockchain to reach height {}. Current height: {}", current_block_height, blockchain_height);
+                        //             tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                        //         },
+                        //         Err(e) => {
+                        //             error!("Error fetching current blockchain height: {}", e);
+                        //             tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                        //         }
+                        //     }
+                        // }
                     }
                                                 
                     // Increment block height after processing each block
@@ -849,4 +866,33 @@ async fn set_start_identities(
     )?;
 
     Ok(identities_and_transitions)
+}
+
+// Function to fetch current blockchain height
+async fn fetch_current_blockchain_height(sdk: &Sdk) -> Result<u64, String> {
+    let request = GetEpochsInfoRequest {
+        version: Some(get_epochs_info_request::Version::V0(
+            get_epochs_info_request::GetEpochsInfoRequestV0 {
+                start_epoch: None,
+                count: 1,
+                ascending: false,
+                prove: false,
+            },
+        )),
+    };
+
+    match sdk.execute(request, RequestSettings::default()).await {
+        Ok(response) => {
+            if let Some(get_epochs_info_response::Version::V0(response_v0)) = response.version {
+                if let Some(metadata) = response_v0.metadata {
+                    Ok(metadata.height)
+                } else {
+                    Err("Failed to get blockchain height: No metadata available".to_string())
+                }
+            } else {
+                Err("Failed to get blockchain height: Incorrect response format".to_string())
+            }
+        },
+        Err(e) => Err(format!("Failed to get blockchain height: {:?}", e)),
+    }
 }
