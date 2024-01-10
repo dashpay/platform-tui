@@ -235,7 +235,7 @@ impl AppState {
             )
         } else {
             let (asset_lock_transaction, asset_lock_proof_private_key) =
-                wallet.registration_transaction(None, amount)?;
+                wallet.asset_lock_transaction(None, amount)?;
 
             identity_asset_lock_private_key_in_creation.replace((
                 asset_lock_transaction.clone(),
@@ -396,7 +396,7 @@ impl AppState {
                 )
             } else {
                 let (asset_lock_transaction, asset_lock_proof_private_key) =
-                    wallet.registration_transaction(None, amount)?;
+                    wallet.asset_lock_transaction(None, amount)?;
 
                 identity_asset_lock_private_key_in_top_up.replace((
                     asset_lock_transaction.clone(),
@@ -508,11 +508,11 @@ impl AppState {
         asset_lock_transaction: &Transaction,
         address: &Address,
     ) -> Result<AssetLockProof, dash_platform_sdk::Error> {
-        let _span = tracing::debug_span!(
-            "broadcast_and_retrieve_asset_lock",
-            transaction_id = asset_lock_transaction.txid().to_string(),
-        )
-        .entered();
+        // let _span = tracing::debug_span!(
+        //     "broadcast_and_retrieve_asset_lock",
+        //     transaction_id = asset_lock_transaction.txid().to_string(),
+        // )
+        // .entered();
 
         let block_hash = sdk
             .execute(GetStatusRequest {}, RequestSettings::default())
@@ -596,7 +596,7 @@ impl AppState {
     ) -> Result<(AssetLockProof, PrivateKey), Error> {
         // Create the wallet registration transaction
         let (asset_lock_transaction, asset_lock_proof_private_key) = 
-            wallet.registration_transaction(None, amount)
+            wallet.asset_lock_transaction(None, amount)
                 .map_err(|e| Error::WalletError(WalletError::Insight(InsightError(format!("Wallet transaction error: {}", e)))))?;
     
         // Broadcast the transaction and retrieve the asset lock proof
@@ -605,5 +605,4 @@ impl AppState {
             Err(e) => Err(Error::SdkError(e)),
         }
     }
-            
 }

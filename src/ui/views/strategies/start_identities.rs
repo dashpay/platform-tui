@@ -30,38 +30,38 @@ impl StrategyStartIdentitiesFormController {
     }
 }
 
-impl FormController for StrategyStartIdentitiesFormController {
-    fn on_event(&mut self, event: KeyEvent) -> FormStatus {
-        match self.input.on_event(event) {
-            InputStatus::Done((count, key_count)) => FormStatus::Done {
-                task: Task::Strategy(StrategyTask::SetStartIdentities {
-                    strategy_name: self.selected_strategy.clone(),
-                    count,
-                    key_count,
-                }),
-                block: true,
-            },
-            status => status.into(),
-        }
-    }
+// impl FormController for StrategyStartIdentitiesFormController {
+//     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
+//         match self.input.on_event(event) {
+//             InputStatus::Done((count, key_count)) => FormStatus::Done {
+//                 task: Task::Strategy(StrategyTask::SetStartIdentities {
+//                     strategy_name: self.selected_strategy.clone(),
+//                     count,
+//                     key_count,
+//                 }),
+//                 block: true,
+//             },
+//             status => status.into(),
+//         }
+//     }
 
-    fn form_name(&self) -> &'static str {
-        "Identity inserts for strategy"
-    }
+//     fn form_name(&self) -> &'static str {
+//         "Identity inserts for strategy"
+//     }
 
-    fn step_view(&mut self, frame: &mut Frame, area: Rect) {
-        self.input.view(frame, area)
-    }
+//     fn step_view(&mut self, frame: &mut Frame, area: Rect) {
+//         self.input.view(frame, area)
+//     }
 
-    fn step_name(&self) -> &'static str {
-        self.input.step_name()
-    }
+//     fn step_name(&self) -> &'static str {
+//         self.input.step_name()
+//     }
 
-    fn step_index(&self) -> u8 {
-        self.input.step_index()
-    }
+//     fn step_index(&self) -> u8 {
+//         self.input.step_index()
+//     }
 
-    fn steps_number(&self) -> u8 {
-        2
-    }
-}
+//     fn steps_number(&self) -> u8 {
+//         2
+//     }
+// }

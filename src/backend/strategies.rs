@@ -1,15 +1,17 @@
 //! Strategies management backend module.
 
 use std::{collections::{BTreeMap, BTreeSet, HashMap, VecDeque}, sync::Arc};
+use std::future::Future;
 
 use dapi_grpc::platform::v0::{GetEpochsInfoRequest, get_epochs_info_request, get_epochs_info_response, wait_for_state_transition_result_response};
 use dash_platform_sdk::{Sdk, platform::transition::broadcast_request::BroadcastRequestForStateTransition};
 use dpp::{
     data_contract::{created_data_contract::CreatedDataContract, DataContract}, platform_value::{Bytes32, Identifier},
-    version::PlatformVersion, block::{block_info::BlockInfo, epoch::Epoch}, identity::{Identity, PartialIdentity}, state_transition::StateTransition,
+    version::PlatformVersion, block::{block_info::BlockInfo, epoch::Epoch}, identity::{Identity, PartialIdentity, state_transition::asset_lock_proof::AssetLockProof}, state_transition::StateTransition, dashcore::PrivateKey,
 };
 use drive::{drive::{identity::key::fetch::IdentityKeysRequest, document::query::{QueryDocumentsOutcome, QueryDocumentsOutcomeV0Methods}}, query::DriveQuery};
 use futures::future::join_all;
+use futures::future::FutureExt;
 use rand::{rngs::StdRng, SeedableRng};
 use rs_dapi_client::{RequestSettings, DapiRequest};
 use simple_signer::signer::SimpleSigner;
@@ -17,12 +19,15 @@ use strategy_tests::{
     frequency::Frequency, operations::Operation, transitions::create_identities_state_transitions,
     Strategy, LocalDocumentQuery, StrategyConfig,
 };
-use tokio::sync::MutexGuard;
+use tokio::sync::{MutexGuard, Mutex};
 use tracing::{info, error};
 
 use rs_dapi_client::DapiRequestExecutor;
 
-use super::{AppStateUpdate, BackendEvent, Task, AppState, StrategyCompletionResult, error::Error, insight::InsightError};
+
+use crate::backend::wallet::WalletError;
+
+use super::{AppStateUpdate, BackendEvent, Task, AppState, StrategyCompletionResult, error::Error, insight::InsightError, Wallet};
 
 #[derive(Debug, PartialEq, Clone)]
 pub(crate) enum StrategyTask {
@@ -35,11 +40,11 @@ pub(crate) enum StrategyTask {
         strategy_name: String,
         identity_inserts_frequency: Frequency,
     },
-    SetStartIdentities {
-        strategy_name: String,
-        count: u16,
-        key_count: u32,
-    },
+    // SetStartIdentities {
+    //     strategy_name: String,
+    //     count: u16,
+    //     key_count: u32,
+    // },
     AddOperation {
         strategy_name: String,
         operation: Operation,
@@ -297,73 +302,73 @@ pub(crate) async fn run_strategy_task<'s>(
                 BackendEvent::None
             }
         }
-        StrategyTask::SetStartIdentities {
-            ref strategy_name,
-            count,
-            key_count,
-        } => {
-            let mut strategies_lock = app_state.available_strategies.lock().await;
-            let loaded_identity_lock = app_state.loaded_identity.lock().await;
-            let identity_private_keys_lock = app_state.identity_private_keys.lock().await;
+        // StrategyTask::SetStartIdentities {
+        //     ref strategy_name,
+        //     count,
+        //     key_count,
+        // } => {
+        //     let mut strategies_lock = app_state.available_strategies.lock().await;
+        //     let loaded_identity_lock = app_state.loaded_identity.lock().await;
+        //     let identity_private_keys_lock = app_state.identity_private_keys.lock().await;
         
-            if let Some(strategy) = strategies_lock.get_mut(strategy_name) {
-                // Ensure a signer is present, creating a new one if necessary
-                let signer = if let Some(signer) = strategy.signer.as_mut() {
-                    // Use the existing signer
-                    signer
-                } else {
-                    // Create a new signer from loaded_identity if one doesn't exist, else default
-                    let new_signer = if let Some(loaded_identity) = &*loaded_identity_lock {
-                        let mut signer = SimpleSigner::default();
-                        match loaded_identity {
-                            Identity::V0(identity_v0) => {
-                                for (key_id, public_key) in &identity_v0.public_keys {
-                                    let identity_key_tuple = (identity_v0.id, *key_id);
-                                    if let Some(private_key_bytes) = identity_private_keys_lock.get(&identity_key_tuple) {
-                                        signer.private_keys.insert(public_key.clone(), private_key_bytes.to_bytes());
-                                    }
-                                }
-                            }
-                        }
-                        signer
-                    } else {
-                        SimpleSigner::default()
-                    };
-                    strategy.signer = Some(new_signer);
-                    strategy.signer.as_mut().unwrap()
-                };
+        //     if let Some(strategy) = strategies_lock.get_mut(strategy_name) {
+        //         // Ensure a signer is present, creating a new one if necessary
+        //         let signer = if let Some(signer) = strategy.signer.as_mut() {
+        //             // Use the existing signer
+        //             signer
+        //         } else {
+        //             // Create a new signer from loaded_identity if one doesn't exist, else default
+        //             let new_signer = if let Some(loaded_identity) = &*loaded_identity_lock {
+        //                 let mut signer = SimpleSigner::default();
+        //                 match loaded_identity {
+        //                     Identity::V0(identity_v0) => {
+        //                         for (key_id, public_key) in &identity_v0.public_keys {
+        //                             let identity_key_tuple = (identity_v0.id, *key_id);
+        //                             if let Some(private_key_bytes) = identity_private_keys_lock.get(&identity_key_tuple) {
+        //                                 signer.private_keys.insert(public_key.clone(), private_key_bytes.to_bytes());
+        //                             }
+        //                         }
+        //                     }
+        //                 }
+        //                 signer
+        //             } else {
+        //                 SimpleSigner::default()
+        //             };
+        //             strategy.signer = Some(new_signer);
+        //             strategy.signer.as_mut().unwrap()
+        //         };
                                 
-                // Call set_start_identities asynchronously
-                match set_start_identities(count, key_count, signer, app_state, &sdk).await {
-                    Ok(identities_and_transitions) => {
-                        strategy.start_identities = identities_and_transitions;
-                        BackendEvent::TaskCompletedStateChange {
-                            task: Task::Strategy(task.clone()),
-                            execution_result: Ok("Start identities set".into()),
-                            app_state_update: AppStateUpdate::SelectedStrategy(
-                                strategy_name.to_string(),
-                                MutexGuard::map(strategies_lock, |strategies| {
-                                    strategies.get_mut(strategy_name).expect("strategy exists")
-                                }),
-                                MutexGuard::map(
-                                    app_state.available_strategies_contract_names.lock().await,
-                                    |names| names.get_mut(strategy_name).expect("inconsistent data"),
-                                ),
-                            ),
-                        }
-                    },
-                    Err(e) => {
-                        eprintln!("Error setting start identities: {:?}", e);
-                        BackendEvent::StrategyError {
-                            strategy_name: strategy_name.clone(),
-                            error: format!("Error setting start identities: {}", e),
-                        }
-                    }
-                }
-            } else {
-                BackendEvent::None
-            }
-        }
+        //         // Call set_start_identities asynchronously
+        //         match set_start_identities(count, key_count, signer, app_state, &sdk).await {
+        //             Ok(identities_and_transitions) => {
+        //                 strategy.start_identities = identities_and_transitions;
+        //                 BackendEvent::TaskCompletedStateChange {
+        //                     task: Task::Strategy(task.clone()),
+        //                     execution_result: Ok("Start identities set".into()),
+        //                     app_state_update: AppStateUpdate::SelectedStrategy(
+        //                         strategy_name.to_string(),
+        //                         MutexGuard::map(strategies_lock, |strategies| {
+        //                             strategies.get_mut(strategy_name).expect("strategy exists")
+        //                         }),
+        //                         MutexGuard::map(
+        //                             app_state.available_strategies_contract_names.lock().await,
+        //                             |names| names.get_mut(strategy_name).expect("inconsistent data"),
+        //                         ),
+        //                     ),
+        //                 }
+        //             },
+        //             Err(e) => {
+        //                 eprintln!("Error setting start identities: {:?}", e);
+        //                 BackendEvent::StrategyError {
+        //                     strategy_name: strategy_name.clone(),
+        //                     error: format!("Error setting start identities: {}", e),
+        //                 }
+        //             }
+        //         }
+        //     } else {
+        //         BackendEvent::None
+        //     }
+        // }
         StrategyTask::RunStrategy(strategy_name) => {
             info!("Starting strategy '{}'", strategy_name);
 
@@ -468,16 +473,6 @@ pub(crate) async fn run_strategy_task<'s>(
                         };
                     }
                 };
-
-                // Retrieve the asset lock proof
-                let asset_lock_proof_result = AppState::retrieve_asset_lock_proof(&sdk, wallet, 1000000).await;
-                let asset_lock_proof_and_private_key = match asset_lock_proof_result {
-                    Ok(proof) => proof,
-                    Err(e) => {
-                        error!("Error retrieving asset lock proof: {:?}", e);
-                        return BackendEvent::None;
-                    }
-                };
         
                 // Create map of state transitions to block heights
                 let mut state_transitions_map = HashMap::new();
@@ -549,7 +544,33 @@ pub(crate) async fn run_strategy_task<'s>(
                             }
                         }
                     };
-                                                                                                                                                        
+
+                    let sdk_ref = &sdk;
+                    // Assuming wallet is a variable in the outer scope and can be cloned
+                    let wallet_clone = wallet.clone();
+
+                    let mut create_asset_lock = move |amount: u64| -> Option<(AssetLockProof, PrivateKey)> {
+                        // Clone wallet for each invocation of the closure
+                        let mut wallet_clone = wallet_clone.clone();
+
+                        // Use tokio::runtime::Runtime for executing async code
+                        let rt = tokio::runtime::Runtime::new().unwrap();
+
+                        rt.block_on(async move {
+                            let (asset_lock_transaction, asset_lock_proof_private_key) = match 
+                                wallet_clone.asset_lock_transaction(None, amount) {
+                                    Ok(result) => result,
+                                    Err(_) => return None,
+                            };
+
+                            // Use the cloned wallet for async operation
+                            match AppState::broadcast_and_retrieve_asset_lock(sdk_ref, &asset_lock_transaction, &wallet_clone.receive_address()).await {
+                                Ok(proof) => Some((proof, asset_lock_proof_private_key)),
+                                Err(_) => None,
+                            }
+                        })
+                    };
+                                                                                                                                                                                                        
                     // Get current identities
                     let mut current_identities: Vec<Identity> = match &loaded_identity_clone {
                         Some(identity) => vec![identity.clone()],
@@ -560,28 +581,30 @@ pub(crate) async fn run_strategy_task<'s>(
                     let mut rng = StdRng::from_entropy();
 
                     // Call the function to get STs for block
-                    let state_transitions_for_block = strategy.state_transitions_for_block_with_new_identities(
-                        &mut document_query_callback,
-                        &mut identity_fetch_callback,
-                        Some(&asset_lock_proof_and_private_key),
-                        &current_block_info,
-                        &mut current_identities,
-                        &mut signer,
-                        &mut rng,
-                        PlatformVersion::latest(),
-                        &StrategyConfig { start_block_height: initial_block_info.height },
-                    );
-
+                    let (transitions, _) = strategy
+                        .state_transitions_for_block_with_new_identities(
+                            &mut document_query_callback,
+                            &mut identity_fetch_callback,
+                            &mut create_asset_lock,
+                            &current_block_info,
+                            &mut current_identities,
+                            &mut signer,
+                            &mut rng,
+                            &StrategyConfig { start_block_height: initial_block_info.height },
+                            PlatformVersion::latest(),
+                        )
+                        .await;
+                    
                     // Store the state transitions in the map if not empty
-                    if !state_transitions_for_block.0.is_empty() {
-                        let st_queue = VecDeque::from(state_transitions_for_block.0);
+                    if !transitions.is_empty() {
+                        let st_queue = VecDeque::from(transitions);
                         state_transitions_map.insert(current_block_info.height, st_queue.clone());
                         info!("Prepared {} state transitions for block {}", st_queue.len(), current_block_info.height);
                     } else {
                         // Log when no state transitions are found for a block
                         info!("No state transitions prepared for block {}", current_block_info.height);
                     }
-
+                
                     // After processing the block, update the loaded_identity with the modified clone
                     if let Some(modified_identity) = current_identities.get(0) {
                         loaded_identity_clone = Some(modified_identity.clone());
@@ -787,21 +810,43 @@ async fn set_start_identities(
     app_state: &AppState,
     sdk: &Sdk,
 ) -> Result<Vec<(Identity, StateTransition)>, Error> {
-    let mut loaded_wallet = app_state.loaded_wallet.lock().await;
-    let wallet = loaded_wallet
-        .as_mut()
+    let loaded_wallet = app_state.loaded_wallet.lock().await;
+    let wallet_clone = loaded_wallet
+        .clone()
         .ok_or_else(|| Error::WalletError(super::wallet::WalletError::Insight(InsightError("No wallet loaded".to_string()))))?;
 
-    let asset_lock_proof_and_private_key = AppState::retrieve_asset_lock_proof(sdk, wallet, 1000000).await?;
+    let wallet_ref = Arc::new(Mutex::new(wallet_clone)); // Use Arc<Mutex<Wallet>>
+
+    // Define the create_asset_lock closure
+    let mut create_asset_lock = move |amount: u64| -> Option<(AssetLockProof, PrivateKey)> {
+        let wallet_clone = wallet_ref.clone(); // Clone the Arc<Mutex<Wallet>>, not the wallet itself
+
+        // Use tokio::runtime::Runtime for executing async code
+        let mut rt = tokio::runtime::Runtime::new().unwrap();
+
+        rt.block_on(async move {
+            let mut wallet = wallet_clone.lock().await; // Lock the mutex to get mutable access
+            let (asset_lock_transaction, asset_lock_proof_private_key) = match 
+                wallet.asset_lock_transaction(None, amount) {
+                    Ok(result) => result,
+                    Err(_) => return None,
+            };
+
+            match AppState::broadcast_and_retrieve_asset_lock(sdk, &asset_lock_transaction, &wallet.receive_address()).await {
+                Ok(proof) => Some((proof, asset_lock_proof_private_key)),
+                Err(_) => None,
+            }
+        })
+    };
 
     let identities_and_transitions = create_identities_state_transitions(
         count,
         key_count,
         signer,
         &mut StdRng::seed_from_u64(567),
+        &mut create_asset_lock,
         PlatformVersion::latest(),
-        Some(&asset_lock_proof_and_private_key),
-    );
+    )?;
 
     Ok(identities_and_transitions)
 }

@@ -126,7 +126,7 @@ impl Wallet {
         }
     }
 
-    pub(crate) fn registration_transaction(
+    pub(crate) fn asset_lock_transaction(
         &mut self,
         seed: Option<u64>,
         amount: u64,
