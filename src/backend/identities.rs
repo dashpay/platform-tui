@@ -28,7 +28,8 @@ use dpp::{
     identity::{
         accessors::{IdentityGettersV0, IdentitySettersV0},
         identity_public_key::{accessors::v0::IdentityPublicKeyGettersV0, v0::IdentityPublicKeyV0},
-        KeyType, Purpose as KeyPurpose, Purpose, SecurityLevel as KeySecurityLevel, SecurityLevel,
+        KeyType, PartialIdentity, Purpose as KeyPurpose, Purpose,
+        SecurityLevel as KeySecurityLevel, SecurityLevel,
     },
     platform_value::{string_encoding::Encoding, BinaryData, Identifier},
     prelude::{AssetLockProof, Identity, IdentityPublicKey},
@@ -681,7 +682,12 @@ async fn add_identity_key<'a>(
     )
     .map_err(|e| format!("Unable to create state transition: {e}"))?;
 
-    let StateTransitionProofResult::VerifiedIdentity(new_identity) = identity_update_transition
+    let StateTransitionProofResult::VerifiedPartialIdentity(PartialIdentity {
+        loaded_public_keys,
+        balance: Some(balance),
+        revision: Some(revision),
+        ..
+    }) = identity_update_transition
         .broadcast_and_wait(sdk, None)
         .await
         .map_err(|e| format!("Error broadcasting identity update transition: {e}"))?
@@ -689,7 +695,10 @@ async fn add_identity_key<'a>(
         return Err(format!("Cannot verify identity update transition proof"));
     };
 
-    *loaded_identity = new_identity;
+    loaded_identity.set_balance(balance);
+    loaded_identity.set_revision(revision);
+    loaded_identity.set_public_keys(loaded_public_keys);
+
     identity_private_keys.insert(
         (loaded_identity.id(), identity_public_key.id()),
         private_key,
