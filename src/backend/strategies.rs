@@ -1,33 +1,31 @@
 //! Strategies management backend module.
 
 use std::{collections::{BTreeMap, BTreeSet, HashMap, VecDeque}, sync::Arc};
-use std::future::Future;
 
 use dapi_grpc::platform::v0::{GetEpochsInfoRequest, get_epochs_info_request, get_epochs_info_response, wait_for_state_transition_result_response};
 use dash_platform_sdk::{Sdk, platform::transition::broadcast_request::BroadcastRequestForStateTransition};
 use dpp::{
     data_contract::{created_data_contract::CreatedDataContract, DataContract}, platform_value::{Bytes32, Identifier},
-    version::PlatformVersion, block::{block_info::BlockInfo, epoch::Epoch}, identity::{Identity, PartialIdentity, state_transition::asset_lock_proof::AssetLockProof}, state_transition::StateTransition, dashcore::PrivateKey,
+    version::PlatformVersion, block::{block_info::BlockInfo, epoch::Epoch}, identity::{Identity, PartialIdentity, state_transition::asset_lock_proof::AssetLockProof, accessors::IdentityGettersV0}, state_transition::StateTransition, dashcore::PrivateKey,
 };
 use drive::{drive::{identity::key::fetch::IdentityKeysRequest, document::query::{QueryDocumentsOutcome, QueryDocumentsOutcomeV0Methods}}, query::DriveQuery};
 use futures::future::join_all;
-use futures::future::FutureExt;
 use rand::{rngs::StdRng, SeedableRng};
 use rs_dapi_client::{RequestSettings, DapiRequest};
 use simple_signer::signer::SimpleSigner;
 use strategy_tests::{
-    frequency::Frequency, operations::Operation, transitions::create_identities_state_transitions,
+    frequency::Frequency, operations::{Operation, FinalizeBlockOperation}, transitions::create_identities_state_transitions,
     Strategy, LocalDocumentQuery, StrategyConfig,
 };
 use tokio::sync::{MutexGuard, Mutex};
+
 use tracing::{info, error};
 
 use rs_dapi_client::DapiRequestExecutor;
 
 
-use crate::backend::wallet::WalletError;
 
-use super::{AppStateUpdate, BackendEvent, Task, AppState, StrategyCompletionResult, error::Error, insight::InsightError, Wallet};
+use super::{AppStateUpdate, BackendEvent, AppState, StrategyCompletionResult, error::Error, insight::InsightError};
 
 #[derive(Debug, PartialEq, Clone)]
 pub(crate) enum StrategyTask {
@@ -35,7 +33,7 @@ pub(crate) enum StrategyTask {
     SelectStrategy(String),
     DeleteStrategy(String),
     CloneStrategy(String),
-    SetContractsWithUpdates(String, Vec<String>, BTreeMap<String, DataContract>),
+    SetContractsWithUpdates(String, Vec<String>),
     SetIdentityInserts {
         strategy_name: String,
         identity_inserts_frequency: Frequency,
@@ -157,68 +155,56 @@ pub(crate) async fn run_strategy_task<'s>(
                 BackendEvent::None // No strategy selected to clone
             }
         }
-        StrategyTask::SetContractsWithUpdates(strategy_name, selected_contract_names, new_known_contracts) => {
+        StrategyTask::SetContractsWithUpdates(strategy_name, selected_contract_names) => {
             let mut strategies_lock = app_state.available_strategies.lock().await;
-            let mut known_contracts_lock = app_state.known_contracts.lock().await;
+            let known_contracts_lock = app_state.known_contracts.lock().await;
+            let supporting_contracts_lock = app_state.supporting_contracts.lock().await;
             let mut contract_names_lock = app_state.available_strategies_contract_names.lock().await;
-        
-            // Add the new contracts to the known contracts map
-            for (key, value) in new_known_contracts {
-                known_contracts_lock.insert(key, value);
-            }
-                    
+            
             if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
                 let mut rng = StdRng::from_entropy();
                 let platform_version = PlatformVersion::latest();
-
+        
+                // Function to retrieve the contract from either known_contracts or supporting_contracts
+                let get_contract = |contract_name: &String| {
+                    known_contracts_lock.get(contract_name)
+                        .or_else(|| supporting_contracts_lock.get(contract_name))
+                        .cloned()
+                };
+        
                 if let Some(first_contract_name) = selected_contract_names.first() {
-                    if let Some(data_contract) = known_contracts_lock.get(first_contract_name) {
+                    if let Some(data_contract) = get_contract(first_contract_name) {
+
                         let entropy = Bytes32::random_with_rng(&mut rng);
                         match CreatedDataContract::from_contract_and_entropy(
-                            data_contract.clone(),
+                            data_contract,
                             entropy,
                             platform_version,
                         ) {
                             Ok(initial_contract) => {
-                                // Create a map for updates
                                 let mut updates = BTreeMap::new();
-
-                                // Process the subsequent contracts as updates
-                                for (order, contract_name) in
-                                    selected_contract_names.iter().enumerate().skip(1)
-                                {
-                                    if let Some(update_contract) =
-                                        known_contracts_lock.get(contract_name)
-                                    {
+        
+                                for (order, contract_name) in selected_contract_names.iter().enumerate().skip(1) {
+                                    if let Some(update_contract) = get_contract(contract_name) {
                                         let update_entropy = Bytes32::random_with_rng(&mut rng);
                                         match CreatedDataContract::from_contract_and_entropy(
-                                            update_contract.clone(),
+                                            update_contract,
                                             update_entropy,
                                             platform_version,
                                         ) {
                                             Ok(created_update_contract) => {
-                                                updates
-                                                    .insert(order as u64, created_update_contract);
+                                                updates.insert(order as u64, created_update_contract);
                                             }
                                             Err(e) => {
-                                                error!(
-                                                    "Error converting DataContract to \
-                                                     CreatedDataContract for update: {:?}",
-                                                    e
-                                                );
+                                                error!("Error converting DataContract to CreatedDataContract for update: {:?}", e);
                                             }
                                         }
                                     }
                                 }
-
-                                // Add the initial contract and its updates as a new entry
+        
                                 strategy.contracts_with_updates.push((
                                     initial_contract,
-                                    if updates.is_empty() {
-                                        None
-                                    } else {
-                                        Some(updates)
-                                    },
+                                    if updates.is_empty() { None } else { Some(updates) },
                                 ));
                             }
                             Err(e) => {
@@ -227,28 +213,21 @@ pub(crate) async fn run_strategy_task<'s>(
                         }
                     }
                 }
-
-                // Transform the selected_contract_names into the expected format for display
+        
                 let mut transformed_contract_names = Vec::new();
                 if let Some(first_contract_name) = selected_contract_names.first() {
-                    let updates: BTreeMap<u64, String> = selected_contract_names
-                        .iter()
-                        .enumerate()
-                        .skip(1)
+                    let updates: BTreeMap<u64, String> = selected_contract_names.iter().enumerate().skip(1)
                         .map(|(order, name)| (order as u64, name.clone()))
                         .collect();
                     transformed_contract_names.push((first_contract_name.clone(), Some(updates)));
                 }
-
-                // Check if there is an existing entry for the strategy
+        
                 if let Some(existing_contracts) = contract_names_lock.get_mut(&strategy_name) {
-                    // Append the new transformed contracts to the existing list
                     existing_contracts.extend(transformed_contract_names);
                 } else {
-                    // If there is no existing entry, create a new one
                     contract_names_lock.insert(strategy_name.clone(), transformed_contract_names);
                 }
-
+        
                 BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
                     strategy_name.clone(),
                     MutexGuard::map(strategies_lock, |strategies| {
@@ -374,20 +353,22 @@ pub(crate) async fn run_strategy_task<'s>(
 
             let mut strategies_lock = app_state.available_strategies.lock().await;
             let drive_lock = app_state.drive.lock().await;
-            let mut loaded_identity_lock = app_state.loaded_identity.lock().await;
             let mut loaded_wallet_lock = app_state.loaded_wallet.lock().await;
             let identity_private_keys_lock = app_state.identity_private_keys.lock().await;
-
-            // Check if a loaded identity is available and clone it for use in the loop
-            let mut loaded_identity_clone = match &*loaded_identity_lock {
-                Some(identity) => Some(identity.clone()),
-                None => {
+            let mut loaded_identity_lock = match app_state.refresh_identity(&sdk).await {
+                Ok(lock) => lock,
+                Err(e) => {
+                    // Handle the error, for example, log it and return an error event
+                    error!("Failed to refresh identity: {:?}", e);
                     return BackendEvent::StrategyError {
                         strategy_name: strategy_name.clone(),
-                        error: "No loaded identity available for strategy execution".to_string(),
+                        error: format!("Failed to refresh identity: {:?}", e),
                     };
                 }
             };
+
+            // Check if a loaded identity is available and clone it for use in the loop
+            let mut loaded_identity_clone = loaded_identity_lock.clone();
                         
             // It's normal that we're asking for the mutable strategy because we need to modify
             // some properties of a contract on update
@@ -446,22 +427,18 @@ pub(crate) async fn run_strategy_task<'s>(
                 let mut signer = {
                     let strategy_signer = strategy.signer.get_or_insert_with(|| {
                         let mut new_signer = SimpleSigner::default();
-                        if let Some(identity_v0) = match &*loaded_identity_lock {
-                            Some(Identity::V0(identity)) => Some(identity),
-                            _ => None,
-                        } {
-                            for (key_id, public_key) in &identity_v0.public_keys {
-                                let identity_key_tuple = (identity_v0.id, *key_id);
-                                if let Some(private_key_bytes) = identity_private_keys_lock.get(&identity_key_tuple) {
-                                    new_signer.private_keys.insert(public_key.clone(), private_key_bytes.to_bytes());
-                                }
+                        let Identity::V0(identity_v0) = &*loaded_identity_lock;
+                        for (key_id, public_key) in &identity_v0.public_keys {
+                            let identity_key_tuple = (identity_v0.id, *key_id);
+                            if let Some(private_key_bytes) = identity_private_keys_lock.get(&identity_key_tuple) {
+                                new_signer.private_keys.insert(public_key.clone(), private_key_bytes.to_bytes());
                             }
                         }
                         new_signer
                     });
                     strategy_signer.clone()
                 };
-                
+                                
                 // Check if a loaded wallet is available and it is mutable
                 let wallet = match loaded_wallet_lock.as_mut() {
                     Some(w) => w,
@@ -498,7 +475,7 @@ pub(crate) async fn run_strategy_task<'s>(
                                         match outcome {
                                             QueryDocumentsOutcome::V0(outcome_v0) => {
                                                 let documents = outcome_v0.documents_owned();
-                                                info!("Block {}: Fetched {} documents using DriveQuery", current_block_info.height, documents.len());
+                                                info!("Fetched {} documents using DriveQuery", documents.len());
                                                 documents
                                             }
                                         }
@@ -572,16 +549,13 @@ pub(crate) async fn run_strategy_task<'s>(
                     };
                                                                                                                                                                                                         
                     // Get current identities
-                    let mut current_identities: Vec<Identity> = match &loaded_identity_clone {
-                        Some(identity) => vec![identity.clone()],
-                        None => vec![],
-                    };
+                    let mut current_identities: Vec<Identity> = vec![loaded_identity_clone.clone()];
                                     
                     // Get rng
                     let mut rng = StdRng::from_entropy();
 
                     // Call the function to get STs for block
-                    let (transitions, _) = strategy
+                    let (transitions, finalize_operations) = strategy
                         .state_transitions_for_block_with_new_identities(
                             &mut document_query_callback,
                             &mut identity_fetch_callback,
@@ -594,7 +568,29 @@ pub(crate) async fn run_strategy_task<'s>(
                             PlatformVersion::latest(),
                         )
                         .await;
-                    
+
+                    // TO-DO: add documents from state transitions to explorer.drive here
+                    // this is required for DocumentDelete and DocumentReplace strategy operations
+                                                
+                    // Process each FinalizeBlockOperation
+                    for operation in finalize_operations {
+                        match operation {
+                            FinalizeBlockOperation::IdentityAddKeys(identifier, keys) => {
+                                if let Some(identity) = current_identities.iter_mut().find(|id| id.id() == identifier) {
+                                    for key in keys {
+                                        identity.add_public_key(key);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                
+                    // Update the loaded_identity_clone and loaded_identity_lock with the latest state of the identity
+                    if let Some(modified_identity) = current_identities.get(0) {
+                        loaded_identity_clone = modified_identity.clone();
+                        *loaded_identity_lock = modified_identity.clone();
+                    }
+                                                        
                     // Store the state transitions in the map if not empty
                     if !transitions.is_empty() {
                         let st_queue = VecDeque::from(transitions);
@@ -604,13 +600,7 @@ pub(crate) async fn run_strategy_task<'s>(
                         // Log when no state transitions are found for a block
                         info!("No state transitions prepared for block {}", current_block_info.height);
                     }
-                
-                    // After processing the block, update the loaded_identity with the modified clone
-                    if let Some(modified_identity) = current_identities.get(0) {
-                        loaded_identity_clone = Some(modified_identity.clone());
-                        *loaded_identity_lock = Some(modified_identity.clone());
-                    }
-                
+                                                    
                     // Update block_info
                     current_block_info.height += 1;
                     current_block_info.time_ms += 1 * 1000; // plus 1 second
@@ -624,10 +614,22 @@ pub(crate) async fn run_strategy_task<'s>(
                 while current_block_height < (initial_block_info.height + num_blocks) {                
                     if let Some(transitions) = state_transitions_map.get(&current_block_height) {
                         let mut broadcast_futures = Vec::new();
-                
+                        let mut transition_type = String::new();
+
                         for transition in transitions {
                             let sdk_clone = Arc::clone(&sdk);
                             let transition_clone = transition.clone();
+
+                            transition_type = match transition_clone {
+                                StateTransition::DataContractCreate(_) => "DataContractCreate".to_string(),
+                                StateTransition::DataContractUpdate(_) => "DataContractUpdate".to_string(),
+                                StateTransition::DocumentsBatch(_) =>  "DocumentsBatch".to_string(),
+                                StateTransition::IdentityCreate(_) => "IdentityCreate".to_string(),
+                                StateTransition::IdentityTopUp(_) => "IdentityTopUp".to_string(),
+                                StateTransition::IdentityCreditWithdrawal(_) => "IdentityCreditWithdrawal".to_string(),
+                                StateTransition::IdentityUpdate(_) => "IdentityUpdate".to_string(),
+                                StateTransition::IdentityCreditTransfer(_) => "IdentityCreditTransfer".to_string(),
+                            };
                 
                             // Collect futures for broadcasting state transitions
                             let future = async move {
@@ -694,7 +696,7 @@ pub(crate) async fn run_strategy_task<'s>(
                         // Log the actual block height for each state transition
                         for (index, actual_block_height) in wait_results.into_iter().enumerate() {
                             match actual_block_height {
-                                Some(height) => info!("Successfully processed state transition {} for block {} (actual block height: {})", index + 1, current_block_height, height),
+                                Some(height) => info!("Successfully processed state transition {} ({}) for block {} (actual block height: {})", index + 1, transition_type, current_block_height, height),
                                 None => continue,
                             }
                         }
@@ -839,7 +841,7 @@ async fn set_start_identities(
         let wallet_clone = wallet_ref.clone(); // Clone the Arc<Mutex<Wallet>>, not the wallet itself
 
         // Use tokio::runtime::Runtime for executing async code
-        let mut rt = tokio::runtime::Runtime::new().unwrap();
+        let rt = tokio::runtime::Runtime::new().unwrap();
 
         rt.block_on(async move {
             let mut wallet = wallet_clone.lock().await; // Lock the mutex to get mutable access

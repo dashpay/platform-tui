@@ -53,6 +53,7 @@ pub(crate) struct AppState {
     pub drive: Mutex<Drive>,
     pub known_identities: Mutex<BTreeMap<Identifier, Identity>>,
     pub known_contracts: Mutex<KnownContractsMap>,
+    pub supporting_contracts: Mutex<BTreeMap<String, DataContract>>,
     pub available_strategies: Mutex<StrategiesMap>,
     /// Because we don't store which contract support file was used exactly we
     /// cannot properly restore the state and display a strategy, so this
@@ -82,14 +83,17 @@ pub(crate) struct AppState {
 
 impl Default for AppState {
     fn default() -> Self {
-        let mut known_contracts_raw = BTreeMap::new();
-
         let platform_version = PlatformVersion::get(CURRENT_PROTOCOL_VERSION).unwrap();
 
+        // Helper function to check if a file is a JSON file
         fn is_json(entry: &DirEntry) -> bool {
             entry.path().extension().and_then(|s| s.to_str()) == Some("json")
         }
 
+        // Initialize supporting_contracts
+        let mut supporting_contracts_raw = BTreeMap::new();
+
+        // Iterate over JSON files in the supporting_files/contract directory
         for entry in WalkDir::new("supporting_files/contract")
             .into_iter()
             .filter_map(|e| e.ok())
@@ -98,13 +102,11 @@ impl Default for AppState {
             let path = entry.path();
             let contract_name = path.file_stem().unwrap().to_str().unwrap().to_string();
 
-            let contract = json_document_to_created_contract(&path, true, platform_version)
-                .expect("expected to get contract from a json document");
-
-            known_contracts_raw.insert(contract_name, contract.data_contract_owned());
+            if let Ok(contract) = json_document_to_created_contract(&path, true, platform_version) {
+                // Insert the contract into supporting_contracts_raw
+                supporting_contracts_raw.insert(contract_name, contract.data_contract_owned());
+            }
         }
-
-        let known_contracts = Mutex::from(known_contracts_raw);
 
         let drive: Drive = Drive::open("explorer.drive", None, platform_version)
             .expect("expected to open Drive successfully");
@@ -119,6 +121,7 @@ impl Default for AppState {
             loaded_wallet: None.into(),
             drive: Mutex::from(drive),
             known_contracts: BTreeMap::new().into(),
+            supporting_contracts: BTreeMap::new().into(),
             known_identities: BTreeMap::new().into(),
             available_strategies: BTreeMap::new().into(),
             selected_strategy: None.into(),
@@ -136,6 +139,7 @@ struct AppStateInSerializationFormat {
     pub loaded_wallet: Option<Wallet>,
     pub known_identities: BTreeMap<Identifier, Identity>,
     pub known_contracts: BTreeMap<String, Vec<u8>>,
+    pub supporting_contracts: BTreeMap<String, Vec<u8>>,
     pub available_strategies: BTreeMap<String, Vec<u8>>,
     pub available_strategies_contract_names:
         BTreeMap<String, Vec<(ContractFileName, Option<BTreeMap<u64, ContractFileName>>)>>,
@@ -171,6 +175,7 @@ impl PlatformSerializableWithPlatformVersion for AppState {
             drive,
             known_identities,
             known_contracts,
+            supporting_contracts,
             available_strategies,
             selected_strategy,
             identity_asset_lock_private_key_in_creation,
@@ -179,6 +184,16 @@ impl PlatformSerializableWithPlatformVersion for AppState {
         } = self;
 
         let known_contracts_in_serialization_format = known_contracts
+            .blocking_lock()
+            .iter()
+            .map(|(key, contract)| {
+                let serialized_contract =
+                    contract.serialize_to_bytes_with_platform_version(platform_version)?;
+                Ok((key.clone(), serialized_contract))
+            })
+            .collect::<Result<BTreeMap<String, Vec<u8>>, ProtocolError>>()?;
+
+        let supporting_contracts_in_serialization_format = supporting_contracts
             .blocking_lock()
             .iter()
             .map(|(key, contract)| {
@@ -236,6 +251,7 @@ impl PlatformSerializableWithPlatformVersion for AppState {
             loaded_wallet: loaded_wallet.blocking_lock().clone(),
             known_identities: known_identities.blocking_lock().clone(),
             known_contracts: known_contracts_in_serialization_format,
+            supporting_contracts: supporting_contracts_in_serialization_format,
             available_strategies: available_strategies_in_serialization_format,
             selected_strategy: selected_strategy.blocking_lock().clone(),
             available_strategies_contract_names: available_strategies_contract_names
@@ -280,6 +296,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
             loaded_wallet,
             known_identities,
             known_contracts,
+            supporting_contracts,
             available_strategies,
             selected_strategy,
             available_strategies_contract_names,
@@ -297,6 +314,22 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
                 )
                 .map_err(|e| {
                     let msg = format!("Error deserializing known_contract for key {}: {}", key, e);
+                    PlatformDeserializationError(msg)
+                })?;
+                Ok((key, contract))
+            })
+            .collect::<Result<BTreeMap<String, DataContract>, ProtocolError>>()?;
+
+        let supporting_contracts = supporting_contracts
+            .into_iter()
+            .map(|(key, contract)| {
+                let contract = DataContract::versioned_deserialize(
+                    contract.as_slice(),
+                    validate,
+                    platform_version,
+                )
+                .map_err(|e| {
+                    let msg = format!("Error deserializing supporting_contract for key {}: {}", key, e);
                     PlatformDeserializationError(msg)
                 })?;
                 Ok((key, contract))
@@ -368,6 +401,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
             drive: drive.into(),
             known_identities: known_identities.into(),
             known_contracts: known_contracts.into(),
+            supporting_contracts: supporting_contracts.into(),
             available_strategies: available_strategies.into(),
             selected_strategy: selected_strategy.into(),
             available_strategies_contract_names: available_strategies_contract_names.into(),
@@ -394,6 +428,27 @@ impl AppState {
         ) else {
             return AppState::default();
         };
+
+        // Load supporting contracts
+        let platform_version = PlatformVersion::get(CURRENT_PROTOCOL_VERSION).unwrap();
+        let mut supporting_contracts = BTreeMap::new();
+        for entry in WalkDir::new("supporting_files/contract")
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("json"))
+        {
+            let path = entry.path();
+            let contract_name = path.file_stem().unwrap().to_str().unwrap().to_string();
+
+            if let Ok(contract) = json_document_to_created_contract(&path, true, platform_version) {
+                supporting_contracts.insert(contract_name, contract.data_contract_owned());
+            }
+        }
+
+        {
+            let mut app_state_supporting_contracts = app_state.supporting_contracts.lock().await;
+            *app_state_supporting_contracts = supporting_contracts;
+        }
 
         if let Some(wallet) = app_state.loaded_wallet.lock().await.as_mut() {
             wallet.reload_utxos(insight).await;

@@ -41,8 +41,8 @@ impl StrategyOpDocumentFormController {
         let contract_names: Vec<String> = known_contracts.keys().cloned().collect();
         let action_types = vec![
             "Insert Random".to_string(),
-            "Delete".to_string(),
-            "Replace".to_string(),
+            // "Delete".to_string(),
+            // "Replace".to_string(),
         ];
 
         StrategyOpDocumentFormController {
@@ -80,8 +80,8 @@ impl FormController for StrategyOpDocumentFormController {
                         DocumentFieldFillType::FillIfNotRequired,
                         DocumentFieldFillSize::AnyDocumentFillSize,
                     ),
-                    "Delete" => DocumentAction::DocumentActionDelete,
-                    "Replace" => DocumentAction::DocumentActionReplace,
+                    // "Delete" => DocumentAction::DocumentActionDelete,
+                    // "Replace" => DocumentAction::DocumentActionReplace,
                     _ => panic!("Invalid action type"),
                 };
 

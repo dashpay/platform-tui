@@ -38,7 +38,6 @@ use simple_signer::signer::SimpleSigner;
 use tokio::sync::{MappedMutexGuard, MutexGuard};
 
 use super::{AppStateUpdate, Wallet, insight::InsightError, wallet::WalletError};
-use crate::backend::wallet::WalletError::Insight;
 use crate::backend::{error::Error, stringify_result_keep_item, AppState, BackendEvent, Task};
 
 use rs_dapi_client::DapiRequestExecutor;

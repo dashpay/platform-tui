@@ -13,6 +13,7 @@ use crate::{
 pub(super) struct StrategyContractsFormController {
     selected_strategy: String,
     known_contracts: BTreeMap<String, DataContract>,
+    supporting_contracts: BTreeMap<String, DataContract>,
     selected_contracts: Vec<String>,
     input: ComposedInput<(Field<SelectInput<String>>, Field<SelectInput<String>>)>,
 }
@@ -21,11 +22,27 @@ impl StrategyContractsFormController {
     pub(super) fn new(
         selected_strategy: String,
         known_contracts: BTreeMap<String, DataContract>,
+        supporting_contracts: BTreeMap<String, DataContract>,
     ) -> Self {
-        let contract_names: Vec<String> = known_contracts.keys().cloned().collect();
+        // Collect contract names from known_contracts
+        let mut contract_names: Vec<String> = known_contracts.keys().cloned().collect();
+
+        // Collect and add names from supporting_contracts, avoiding duplicates
+        let additional_names: Vec<String> = supporting_contracts
+            .keys()
+            .filter(|name| !contract_names.contains(name))
+            .cloned()
+            .collect();
+        contract_names.extend(additional_names);
+
+        // Remove duplicates
+        contract_names.sort();
+        contract_names.dedup();
+
         StrategyContractsFormController {
             selected_strategy,
             known_contracts,
+            supporting_contracts,
             selected_contracts: Vec::new(),
             input: ComposedInput::new((
                 Field::new("Select Contract", SelectInput::new(contract_names)),
@@ -46,9 +63,21 @@ impl FormController for StrategyContractsFormController {
                 self.selected_contracts.push(selected_contract);
 
                 if add_another_answer == "Yes" {
-                    // Reset the input fields for another contract selection
-                    let contract_names: Vec<String> =
-                        self.known_contracts.keys().cloned().collect();
+                    // Collect contract names from known_contracts
+                    let mut contract_names: Vec<String> = self.known_contracts.keys().cloned().collect();
+            
+                    // Collect and add names from supporting_contracts, avoiding duplicates
+                    let additional_names: Vec<String> = self.supporting_contracts
+                        .keys()
+                        .filter(|name| !contract_names.contains(name))
+                        .cloned()
+                        .collect();
+                    contract_names.extend(additional_names);
+            
+                    // Remove duplicates
+                    contract_names.sort();
+                    contract_names.dedup();
+            
                     self.input = ComposedInput::new((
                         Field::new("Select Contract", SelectInput::new(contract_names)),
                         Field::new(
@@ -63,7 +92,6 @@ impl FormController for StrategyContractsFormController {
                         task: Task::Strategy(StrategyTask::SetContractsWithUpdates(
                             self.selected_strategy.clone(),
                             self.selected_contracts.clone(),
-                            self.known_contracts.clone(),
                         )),
                         block: false,
                     }

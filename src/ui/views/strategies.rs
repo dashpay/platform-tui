@@ -75,6 +75,7 @@ pub(crate) struct StrategiesScreenController {
     available_strategies: Vec<String>,
     selected_strategy: Option<String>,
     known_contracts: BTreeMap<String, DataContract>,
+    supporting_contracts: BTreeMap<String, DataContract>,
 }
 
 impl_builder!(StrategiesScreenController);
@@ -84,6 +85,7 @@ impl StrategiesScreenController {
         let available_strategies_lock = app_state.available_strategies.lock().await;
         let selected_strategy_lock = app_state.selected_strategy.lock().await;
         let known_contracts_lock = app_state.known_contracts.lock().await;
+        let supporting_contracts_lock = app_state.supporting_contracts.lock().await;
 
         let info = if let Some(name) = selected_strategy_lock.as_ref() {
             let strategy = available_strategies_lock
@@ -106,11 +108,12 @@ impl StrategiesScreenController {
             info,
             available_strategies: available_strategies_lock.keys().cloned().collect(),
             selected_strategy: selected_strategy_lock.clone(),
-            known_contracts: known_contracts_lock.clone(), // Clone the underlying BTreeMap
+            known_contracts: known_contracts_lock.clone(),
+            supporting_contracts: supporting_contracts_lock.clone(),
         }
     }
 
-    async fn update_known_contracts(&mut self) {
+    async fn update_supporting_contracts(&mut self, ) {
         let platform_version = PlatformVersion::latest();
 
         for entry in WalkDir::new("supporting_files/contract")
@@ -121,24 +124,25 @@ impl StrategiesScreenController {
             let path = entry.path();
             let contract_name = path.file_stem().unwrap().to_str().unwrap().to_string();
 
-            if !self.known_contracts.contains_key(&contract_name) {
+            // Change here: Add to supporting_contracts instead of known_contracts
+            if !self.supporting_contracts.contains_key(&contract_name) {
                 if let Ok(contract) =
                     json_document_to_created_contract(&path, true, platform_version)
                 {
-                    self.known_contracts
+                    self.supporting_contracts
                         .insert(contract_name, contract.data_contract_owned());
                 }
             }
         }
     }
 
-    fn update_known_contracts_sync(&mut self) {
+    fn update_supporting_contracts_sync(&mut self) {
         // Use block_in_place to wait for the async operation to complete
         tokio::task::block_in_place(|| {
             // Create a new Tokio runtime for the async operation
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(async {
-                self.update_known_contracts().await;
+                self.update_supporting_contracts().await;
             })
         });
     }
@@ -193,11 +197,12 @@ impl ScreenController for StrategiesScreenController {
             }) => {
                 if self.selected_strategy.is_some() {
                     // Update known contracts before showing the form
-                    self.update_known_contracts_sync();
+                    self.update_supporting_contracts_sync();
 
                     ScreenFeedback::Form(Box::new(StrategyContractsFormController::new(
                         self.selected_strategy.clone().unwrap(),
                         self.known_contracts.clone(),
+                        self.supporting_contracts.clone(),
                     )))
                 } else {
                     ScreenFeedback::None
@@ -233,7 +238,7 @@ impl ScreenController for StrategiesScreenController {
             }) => {
                 if let Some(strategy_name) = self.selected_strategy.clone() {
                     // Update known contracts before showing the form
-                    self.update_known_contracts_sync();
+                    self.update_supporting_contracts_sync();
 
                     ScreenFeedback::Form(Box::new(StrategyAddOperationFormController::new(
                         strategy_name.clone(),
