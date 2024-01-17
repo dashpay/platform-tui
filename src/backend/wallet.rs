@@ -20,6 +20,7 @@ use dpp::dashcore::{
 };
 use rand::{prelude::StdRng, Rng, SeedableRng};
 use tokio::sync::{Mutex, MutexGuard};
+use tracing::info;
 
 use super::{AppStateUpdate, BackendEvent, Task};
 use crate::backend::insight::{InsightAPIClient, InsightError};
@@ -148,6 +149,8 @@ impl Wallet {
         let (mut utxos, change) = self
             .take_unspent_utxos_for(amount)
             .ok_or(WalletError::Balance)?;
+
+        info!("utxos: {:?}", utxos);
 
         let change_address = self.change_address();
 

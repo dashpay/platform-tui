@@ -52,8 +52,8 @@ pub(crate) struct AppState {
     pub loaded_wallet: Mutex<Option<Wallet>>,
     pub drive: Mutex<Drive>,
     pub known_identities: Mutex<BTreeMap<Identifier, Identity>>,
-    pub known_contracts: Mutex<KnownContractsMap>,
-    pub supporting_contracts: Mutex<BTreeMap<String, DataContract>>,
+    pub known_contracts: Mutex<KnownContractsMap>, // Contracts fetched from Platform
+    pub supporting_contracts: Mutex<BTreeMap<String, DataContract>>, // Contracts from supporting_files
     pub available_strategies: Mutex<StrategiesMap>,
     /// Because we don't store which contract support file was used exactly we
     /// cannot properly restore the state and display a strategy, so this

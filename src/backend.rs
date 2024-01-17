@@ -189,6 +189,7 @@ impl Backend {
                     Arc::clone(&self.sdk),
                     &self.app_state,
                     strategy_task,
+                    &self.insight,
                 )
                 .await
             }

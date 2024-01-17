@@ -5,7 +5,7 @@ use std::{collections::{BTreeMap, BTreeSet, HashMap, VecDeque}, sync::Arc};
 use dapi_grpc::platform::v0::{GetEpochsInfoRequest, get_epochs_info_request, get_epochs_info_response, wait_for_state_transition_result_response};
 use dash_platform_sdk::{Sdk, platform::transition::broadcast_request::BroadcastRequestForStateTransition};
 use dpp::{
-    data_contract::{created_data_contract::CreatedDataContract, DataContract}, platform_value::{Bytes32, Identifier},
+    data_contract::created_data_contract::CreatedDataContract, platform_value::{Bytes32, Identifier},
     version::PlatformVersion, block::{block_info::BlockInfo, epoch::Epoch}, identity::{Identity, PartialIdentity, state_transition::asset_lock_proof::AssetLockProof, accessors::IdentityGettersV0}, state_transition::StateTransition, dashcore::PrivateKey,
 };
 use drive::{drive::{identity::key::fetch::IdentityKeysRequest, document::query::{QueryDocumentsOutcome, QueryDocumentsOutcomeV0Methods}}, query::DriveQuery};
@@ -25,7 +25,9 @@ use rs_dapi_client::DapiRequestExecutor;
 
 
 
-use super::{AppStateUpdate, BackendEvent, AppState, StrategyCompletionResult, error::Error, insight::InsightError};
+use crate::backend::Wallet;
+
+use super::{AppStateUpdate, BackendEvent, AppState, StrategyCompletionResult, error::Error, insight::{InsightError, InsightAPIClient}};
 
 #[derive(Debug, PartialEq, Clone)]
 pub(crate) enum StrategyTask {
@@ -58,6 +60,7 @@ pub(crate) async fn run_strategy_task<'s>(
     sdk: Arc<Sdk>,
     app_state: &'s AppState,
     task: StrategyTask,
+    insight: &'s InsightAPIClient,
 ) -> BackendEvent<'s> {
     match task {
         StrategyTask::CreateStrategy(strategy_name) => {
@@ -523,31 +526,29 @@ pub(crate) async fn run_strategy_task<'s>(
                     };
 
                     let sdk_ref = &sdk;
-                    // Assuming wallet is a variable in the outer scope and can be cloned
                     let wallet_clone = wallet.clone();
 
                     let mut create_asset_lock = move |amount: u64| -> Option<(AssetLockProof, PrivateKey)> {
-                        // Clone wallet for each invocation of the closure
                         let mut wallet_clone = wallet_clone.clone();
-
-                        // Use tokio::runtime::Runtime for executing async code
-                        let rt = tokio::runtime::Runtime::new().unwrap();
-
-                        rt.block_on(async move {
-                            let (asset_lock_transaction, asset_lock_proof_private_key) = match 
-                                wallet_clone.asset_lock_transaction(None, amount) {
-                                    Ok(result) => result,
-                                    Err(_) => return None,
+                    
+                        let future = async move {
+                            let (asset_lock_transaction, asset_lock_proof_private_key) = match wallet_clone.asset_lock_transaction(None, amount) {
+                                Ok(result) => result,
+                                Err(_) => return None,
                             };
-
-                            // Use the cloned wallet for async operation
+                    
                             match AppState::broadcast_and_retrieve_asset_lock(sdk_ref, &asset_lock_transaction, &wallet_clone.receive_address()).await {
                                 Ok(proof) => Some((proof, asset_lock_proof_private_key)),
                                 Err(_) => None,
                             }
+                        };
+                    
+                        tokio::task::block_in_place(|| {
+                            let rt = tokio::runtime::Handle::current();
+                            rt.block_on(future)
                         })
                     };
-                                                                                                                                                                                                        
+                                                                                                                                                                                                                            
                     // Get current identities
                     let mut current_identities: Vec<Identity> = vec![loaded_identity_clone.clone()];
                                     
@@ -593,14 +594,60 @@ pub(crate) async fn run_strategy_task<'s>(
                                                         
                     // Store the state transitions in the map if not empty
                     if !transitions.is_empty() {
-                        let st_queue = VecDeque::from(transitions);
+                        let st_queue = VecDeque::from(transitions.clone());
                         state_transitions_map.insert(current_block_info.height, st_queue.clone());
                         info!("Prepared {} state transitions for block {}", st_queue.len(), current_block_info.height);
                     } else {
                         // Log when no state transitions are found for a block
                         info!("No state transitions prepared for block {}", current_block_info.height);
                     }
-                                                    
+
+                    // Reload wallet UTXOs if an IdentityCreate transition was created
+                    let mut identity_created = false;
+                    for transition in &transitions {
+                        if let StateTransition::IdentityCreate(_) = transition {
+                            identity_created = true;
+                            break;
+                        }
+                    }
+                    if identity_created {
+                        let max_retries = 5; // Maximum number of retries
+                        let mut retries = 0;
+                    
+                        // Initialize old_utxos outside the loop
+                        let old_utxos = match wallet {
+                            Wallet::SingleKeyWallet(ref wallet) => wallet.utxos.clone(),
+                            // Add handling for other wallet types if needed
+                        };
+                    
+                        while retries < max_retries {
+                            wallet.reload_utxos(&insight).await;
+                    
+                            // Check if new UTXOs are available
+                            let found_new_utxos = match wallet {
+                                Wallet::SingleKeyWallet(ref wallet) => wallet.utxos != old_utxos,
+                                // Add handling for other wallet types if needed
+                            };
+                    
+                            if found_new_utxos {
+                                info!("New UTXOs found, proceeding with transactions.");
+                                break;
+                            } else {
+                                tracing::warn!("No new UTXOs found, retrying reload (attempt {}/{})", retries + 1, max_retries);
+                                retries += 1;
+                                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await; // Sleep before retrying
+                            }
+                        }
+                    
+                        if retries == max_retries {
+                            error!("Failed to find new UTXOs after reloading, aborting operation.");
+                            return BackendEvent::StrategyError { 
+                                strategy_name: strategy_name.clone(), 
+                                error: "Failed to find new UTXOs after maximum retries".to_string(),
+                            };
+                        }
+                    }
+                                                                                                                                                                                            
                     // Update block_info
                     current_block_info.height += 1;
                     current_block_info.time_ms += 1 * 1000; // plus 1 second

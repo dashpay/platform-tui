@@ -36,6 +36,7 @@ use rand::{rngs::StdRng, SeedableRng};
 use rs_dapi_client::RequestSettings;
 use simple_signer::signer::SimpleSigner;
 use tokio::sync::{MappedMutexGuard, MutexGuard};
+use tracing::info;
 
 use super::{AppStateUpdate, Wallet, insight::InsightError, wallet::WalletError};
 use crate::backend::{error::Error, stringify_result_keep_item, AppState, BackendEvent, Task};
