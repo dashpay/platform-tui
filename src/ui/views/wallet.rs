@@ -2,6 +2,8 @@
 
 mod add_identity_key;
 
+use std::ops::Deref;
+
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
     tui::prelude::{Constraint, Direction, Layout, Rect},
@@ -19,8 +21,10 @@ use crate::{
             TextInput,
         },
         screen::{
-            info_display::InfoDisplay, utils::impl_builder, widgets::info::Info, ScreenCommandKey,
-            ScreenController, ScreenFeedback, ScreenToggleKey,
+            info_display::{display_info, InfoDisplay},
+            utils::impl_builder,
+            widgets::info::Info,
+            ScreenCommandKey, ScreenController, ScreenFeedback, ScreenToggleKey,
         },
     },
     Event,
@@ -238,7 +242,7 @@ impl WalletScreenController {
                     .is_some();
                 (
                     Info::new_fixed(&display_wallet(wallet)),
-                    Info::new_fixed(&identity.display_info(0)),
+                    Info::new_fixed(&display_info(identity)),
                     true,
                     true,
                     false,
@@ -409,11 +413,10 @@ impl ScreenController for WalletScreenController {
                 self.identity_loaded = true;
                 self.identity_registration_in_progress = false;
                 if execution_result.is_ok() {
-                    self.identity_info = Info::new_fixed(&identity.display_info(0));
+                    self.identity_info = Info::new_fixed(&display_info(identity.deref()));
                 } else {
                     self.identity_info = Info::new_from_result(execution_result);
                 }
-                self.identity_info = Info::new_fixed(&identity.display_info(0));
                 ScreenFeedback::Redraw
             }
 
