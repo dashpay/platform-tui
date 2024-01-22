@@ -23,8 +23,6 @@ use tracing::{info, error};
 
 use rs_dapi_client::DapiRequestExecutor;
 
-
-
 use crate::backend::Wallet;
 
 use super::{AppStateUpdate, BackendEvent, AppState, StrategyCompletionResult, error::Error, insight::{InsightError, InsightAPIClient}, Task};
@@ -66,21 +64,23 @@ pub(crate) async fn run_strategy_task<'s>(
         StrategyTask::CreateStrategy(strategy_name) => {
             let mut strategies_lock = app_state.available_strategies.lock().await;
             let mut contract_names_lock = app_state.available_strategies_contract_names.lock().await;
+            let mut selected_strategy_lock = app_state.selected_strategy.lock().await;
 
             strategies_lock.insert(
                 strategy_name.clone(),
-                Strategy {
-                    contracts_with_updates: Default::default(),
-                    operations: Default::default(),
-                    start_identities: Default::default(),
-                    identities_inserts: Default::default(),
-                    signer: Default::default(),
-                },
+                Strategy::default(),
             );
-            contract_names_lock.insert(strategy_name, Default::default());
-            BackendEvent::AppStateUpdated(AppStateUpdate::Strategies(
-                strategies_lock,
-                contract_names_lock,
+            *selected_strategy_lock = Some(strategy_name.clone());
+            contract_names_lock.insert(strategy_name.clone(), Default::default());
+
+            BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
+                strategy_name.clone(),
+                MutexGuard::map(strategies_lock, |strategies| {
+                    strategies.get_mut(&strategy_name).expect("strategy exists")
+                }),
+                MutexGuard::map(contract_names_lock, |names| {
+                    names.get_mut(&strategy_name).expect("inconsistent data")
+                }),
             ))
         }
         StrategyTask::SelectStrategy(ref strategy_name) => {
@@ -128,34 +128,37 @@ pub(crate) async fn run_strategy_task<'s>(
             }
         }
         StrategyTask::CloneStrategy(new_strategy_name) => {
-            let strategies_lock = app_state.available_strategies.lock().await;
+            let mut strategies_lock = app_state.available_strategies.lock().await;
             let mut contract_names_lock = app_state.available_strategies_contract_names.lock().await;
-            let selected_strategy_lock = app_state.selected_strategy.lock().await;
-
+            let mut selected_strategy_lock = app_state.selected_strategy.lock().await;
+        
             if let Some(selected_strategy_name) = &*selected_strategy_lock {
                 if let Some(strategy_to_clone) = strategies_lock.get(selected_strategy_name) {
-                    let cloned_strategy = strategy_to_clone.clone();
-                    drop(strategies_lock); // Release the lock before re-acquiring it as mutable
-
-                    // Clone the display data for the new strategy
+                    let cloned_strategy = strategy_to_clone.clone();        
                     let cloned_display_data = contract_names_lock
                         .get(selected_strategy_name)
                         .cloned()
                         .unwrap_or_default();
-
-                    let mut strategies_lock = app_state.available_strategies.lock().await;
+        
                     strategies_lock.insert(new_strategy_name.clone(), cloned_strategy);
                     contract_names_lock.insert(new_strategy_name.clone(), cloned_display_data);
-
-                    BackendEvent::AppStateUpdated(AppStateUpdate::Strategies(
-                        strategies_lock,
-                        contract_names_lock,
+                
+                    *selected_strategy_lock = Some(new_strategy_name.clone());
+                            
+                    BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
+                        new_strategy_name.clone(),
+                        MutexGuard::map(strategies_lock, |strategies| {
+                            strategies.get_mut(&new_strategy_name).expect("strategy exists")
+                        }),
+                        MutexGuard::map(contract_names_lock, |names| {
+                            names.get_mut(&new_strategy_name).expect("inconsistent data")
+                        }),
                     ))
                 } else {
-                    BackendEvent::None // Selected strategy does not exist
+                    BackendEvent::None
                 }
             } else {
-                BackendEvent::None // No strategy selected to clone
+                BackendEvent::None
             }
         }
         StrategyTask::SetContractsWithUpdates(strategy_name, selected_contract_names) => {

@@ -7,7 +7,7 @@
 mod form;
 mod screen;
 mod status_bar;
-mod views;
+pub(crate) mod views;
 
 use std::{mem, ops::Deref};
 
@@ -21,7 +21,7 @@ use self::{
     form::{Form, FormController, FormStatus},
     screen::{Screen, ScreenController, ScreenFeedback},
     status_bar::StatusBarState,
-    views::main::MainScreenController,
+    views::{main::MainScreenController, strategies::StrategiesScreenController},
 };
 use crate::{
     backend::{AppState, AppStateUpdate},
@@ -209,17 +209,41 @@ impl Ui {
                 }
                 ScreenFeedback::PreviousScreen => {
                     self.status_bar_state.to_parent();
-                    if let Some(screen) = self.screen_stack.pop() {
-                        self.screen = screen;
-                        UiFeedback::Redraw
+            
+                    let current_screen_name = self.screen.controller.name();
+                    let previous_screen_name = self.screen_stack.last().map(|s| s.controller.name());
+            
+                    if current_screen_name == "Strategy" && previous_screen_name == Some("Strategies") {
+                        // Rebuild the StrategiesScreenController when navigating back from SelectedStrategyScreenController
+                        let new_controller = StrategiesScreenController::new(app_state.deref()).await;
+                        self.screen_stack.pop(); // Remove the old StrategiesScreenController from the stack
+                        self.screen = Screen::new(Box::new(new_controller));
                     } else {
-                        UiFeedback::Quit
+                        // Regular back navigation
+                        if let Some(previous_screen) = self.screen_stack.pop() {
+                            self.screen = previous_screen;
+                        } else {
+                            // Exit if no previous screen
+                            return UiFeedback::Quit;
+                        }
                     }
+            
+                    UiFeedback::Redraw
                 }
                 ScreenFeedback::Form(controller) => {
                     self.form = Some(Form::new(controller));
                     UiFeedback::Redraw
                 }
+                ScreenFeedback::FormThenNextScreen { form, screen } => {
+                    self.form = Some(Form::new(form));
+            
+                    let controller = screen(app_state.deref()).await;
+                    self.status_bar_state.add_child(controller.name());
+                    let old_screen = mem::replace(&mut self.screen, Screen::new(controller));
+                    self.screen_stack.push(old_screen);
+                    
+                    UiFeedback::Redraw
+                },
                 ScreenFeedback::Task { task, block } => {
                     if block {
                         self.status_bar_state.block();

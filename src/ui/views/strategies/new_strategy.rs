@@ -24,10 +24,12 @@ impl NewStrategyFormController {
 impl FormController for NewStrategyFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
         match self.input.on_event(event) {
-            InputStatus::Done(strategy_name) => FormStatus::Done {
-                task: Task::Strategy(StrategyTask::CreateStrategy(strategy_name)),
-                block: false,
-            },
+            InputStatus::Done(strategy_name) => {
+                FormStatus::Done {
+                    task: Task::Strategy(StrategyTask::CreateStrategy(strategy_name)),
+                    block: false,
+                }
+            }
             status => status.into(),
         }
     }
