@@ -8,7 +8,6 @@ use crossterm::event::{Event as TuiEvent, EventStream};
 use dash_platform_sdk::SdkBuilder;
 use dpp::{identity::accessors::IdentityGettersV0, version::PlatformVersion};
 use futures::{future::OptionFuture, select, FutureExt, StreamExt};
-use tracing_subscriber::EnvFilter;
 use tuirealm::event::KeyEvent;
 use ui::IdentityBalance;
 

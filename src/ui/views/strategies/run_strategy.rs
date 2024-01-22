@@ -28,7 +28,7 @@ impl FormController for RunStrategyFormController {
                 match selection.as_str() {
                     "Yes" => FormStatus::Done {
                         task: Task::Strategy(StrategyTask::RunStrategy(self.selected_strategy.clone())),
-                        block: false,
+                        block: true,
                     },
                     "No" => FormStatus::Exit,
                     _ => FormStatus::Exit,

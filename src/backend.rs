@@ -14,7 +14,7 @@ mod wallet;
 use std::{
     collections::BTreeMap,
     fmt::{self, Display},
-    sync::Arc,
+    sync::Arc, time::Duration,
 };
 
 use dash_platform_sdk::Sdk;
@@ -135,6 +135,10 @@ pub(crate) enum AppStateUpdate<'s> {
 pub(crate) enum StrategyCompletionResult {
     Success {
         final_block_height: u64,
+        success_count: u64,
+        transition_count: u64,
+        run_time: Duration,
+        prep_time: Duration,
     },
     PartiallyCompleted {
         reached_block_height: u64,

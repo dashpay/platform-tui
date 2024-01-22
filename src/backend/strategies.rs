@@ -1,6 +1,6 @@
 //! Strategies management backend module.
 
-use std::{collections::{BTreeMap, BTreeSet, HashMap, VecDeque}, sync::Arc};
+use std::{collections::{BTreeMap, BTreeSet, HashMap, VecDeque}, sync::Arc, time::Instant};
 
 use dapi_grpc::platform::v0::{GetEpochsInfoRequest, get_epochs_info_request, get_epochs_info_response, wait_for_state_transition_result_response};
 use dash_platform_sdk::{Sdk, platform::transition::broadcast_request::BroadcastRequestForStateTransition};
@@ -468,6 +468,7 @@ pub(crate) async fn run_strategy_task<'s>(
 
                 // Fill out the state transitions map
                 // Loop through each block to precompute state transitions
+                let prep_start_time = Instant::now();
                 while current_block_info.height < (initial_block_info.height + num_blocks) {
                     let mut document_query_callback = |query: LocalDocumentQuery| {
                         match query {
@@ -656,10 +657,16 @@ pub(crate) async fn run_strategy_task<'s>(
                     current_block_info.height += 1;
                     current_block_info.time_ms += 1 * 1000; // plus 1 second
                 }
+
+                let prep_time = prep_start_time.elapsed();
             
                 let mut current_block_height = initial_block_info.height;
 
                 info!("--- Starting strategy execution loop ---");
+                let run_start_time = Instant::now();
+
+                let mut transition_count = 0;
+                let mut success_count = 0;
 
                 // Iterate over each block height
                 while current_block_height < (initial_block_info.height + num_blocks) {                
@@ -668,6 +675,8 @@ pub(crate) async fn run_strategy_task<'s>(
                         let mut transition_type = String::new();
 
                         for transition in transitions {
+                            transition_count += 1;
+
                             let sdk_clone = Arc::clone(&sdk);
                             let transition_clone = transition.clone();
 
@@ -770,7 +779,10 @@ pub(crate) async fn run_strategy_task<'s>(
                         // Log the actual block height for each state transition
                         for (index, actual_block_height) in wait_results.into_iter().enumerate() {
                             match actual_block_height {
-                                Some(height) => info!("Successfully processed state transition {} ({}) for block {} (actual block height: {})", index + 1, transition_type, current_block_height, height),
+                                Some(height) => {
+                                    success_count += 1;
+                                    info!("Successfully processed state transition {} ({}) for block {} (actual block height: {})", index + 1, transition_type, current_block_height, height)
+                                },
                                 None => continue,
                             }
                         }
@@ -806,11 +818,16 @@ pub(crate) async fn run_strategy_task<'s>(
                 }
             
                 info!("Strategy '{}' finished running", strategy_name);
+                let run_time = run_start_time.elapsed();
                                                                             
                 BackendEvent::StrategyCompleted {
                     strategy_name: strategy_name.clone(),
                     result: StrategyCompletionResult::Success {
                         final_block_height: current_block_height,
+                        success_count,
+                        transition_count,
+                        prep_time,
+                        run_time,
                     }
                 }
             } else {
@@ -952,31 +969,31 @@ async fn set_start_identities(
     Ok(identities_and_transitions)
 }
 
-// Function to fetch current blockchain height
-async fn fetch_current_blockchain_height(sdk: &Sdk) -> Result<u64, String> {
-    let request = GetEpochsInfoRequest {
-        version: Some(get_epochs_info_request::Version::V0(
-            get_epochs_info_request::GetEpochsInfoRequestV0 {
-                start_epoch: None,
-                count: 1,
-                ascending: false,
-                prove: false,
-            },
-        )),
-    };
+// // Function to fetch current blockchain height
+// async fn fetch_current_blockchain_height(sdk: &Sdk) -> Result<u64, String> {
+//     let request = GetEpochsInfoRequest {
+//         version: Some(get_epochs_info_request::Version::V0(
+//             get_epochs_info_request::GetEpochsInfoRequestV0 {
+//                 start_epoch: None,
+//                 count: 1,
+//                 ascending: false,
+//                 prove: false,
+//             },
+//         )),
+//     };
 
-    match sdk.execute(request, RequestSettings::default()).await {
-        Ok(response) => {
-            if let Some(get_epochs_info_response::Version::V0(response_v0)) = response.version {
-                if let Some(metadata) = response_v0.metadata {
-                    Ok(metadata.height)
-                } else {
-                    Err("Failed to get blockchain height: No metadata available".to_string())
-                }
-            } else {
-                Err("Failed to get blockchain height: Incorrect response format".to_string())
-            }
-        },
-        Err(e) => Err(format!("Failed to get blockchain height: {:?}", e)),
-    }
-}
+//     match sdk.execute(request, RequestSettings::default()).await {
+//         Ok(response) => {
+//             if let Some(get_epochs_info_response::Version::V0(response_v0)) = response.version {
+//                 if let Some(metadata) = response_v0.metadata {
+//                     Ok(metadata.height)
+//                 } else {
+//                     Err("Failed to get blockchain height: No metadata available".to_string())
+//                 }
+//             } else {
+//                 Err("Failed to get blockchain height: Incorrect response format".to_string())
+//             }
+//         },
+//         Err(e) => Err(format!("Failed to get blockchain height: {:?}", e)),
+//     }
+// }

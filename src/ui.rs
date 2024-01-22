@@ -124,7 +124,7 @@ impl Ui {
         // On task completion we shall unfreeze the screen and update status bar
         // "blocked" message
         if let Event::Backend(
-            BackendEvent::TaskCompleted { .. } | BackendEvent::TaskCompletedStateChange { .. },
+            BackendEvent::TaskCompleted { .. } | BackendEvent::TaskCompletedStateChange { .. } | BackendEvent::StrategyCompleted { .. },
         ) = &event
         {
             self.status_bar_state.unblock();

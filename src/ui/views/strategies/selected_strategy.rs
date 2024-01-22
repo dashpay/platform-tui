@@ -19,7 +19,7 @@ use tuirealm::{
 use walkdir::WalkDir;
 
 use crate::{
-    backend::{AppState, AppStateUpdate, BackendEvent, StrategyTask, Task},
+    backend::{AppState, AppStateUpdate, BackendEvent, StrategyTask, Task, StrategyCompletionResult},
     ui::screen::{
             utils::impl_builder, widgets::info::Info, ScreenCommandKey, ScreenController,
             ScreenFeedback, ScreenToggleKey,
@@ -281,6 +281,38 @@ impl ScreenController for SelectedStrategyScreenController {
                 self.available_strategies = strategies.keys().cloned().collect();
                 ScreenFeedback::Redraw
             }
+            Event::Backend(BackendEvent::StrategyCompleted {
+                strategy_name,
+                result,
+            }) => {
+                let display_text = match result {
+                    StrategyCompletionResult::Success {
+                        final_block_height,
+                        success_count,
+                        transition_count,
+                        prep_time,
+                        run_time,
+                    } => {
+                        format!(
+                            "Strategy '{}' completed:\nState transitions attempted: {}\nState transitions succeeded: {}\nRun time: {:?}",
+                            strategy_name,
+                            transition_count,
+                            success_count,
+                            run_time
+                        )
+                    }
+                    StrategyCompletionResult::PartiallyCompleted {
+                        reached_block_height,
+                        reason
+                    } => {
+                        // Handle failure case
+                        format!("Strategy '{}' failed to complete. Reached block height {}. Reason: {}", strategy_name, reached_block_height, reason)
+                    }
+                };
+    
+                self.info = Info::new_fixed(&display_text);
+                ScreenFeedback::Redraw
+            }    
             _ => ScreenFeedback::None,
         }
     }
