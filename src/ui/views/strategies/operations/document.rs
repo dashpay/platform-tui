@@ -14,6 +14,7 @@ use strategy_tests::{
     frequency::Frequency,
     operations::{DocumentAction, DocumentOp, Operation, OperationType},
 };
+use tracing::info;
 use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
 use crate::{

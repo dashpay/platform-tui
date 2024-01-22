@@ -150,8 +150,6 @@ impl Wallet {
             .take_unspent_utxos_for(amount)
             .ok_or(WalletError::Balance)?;
 
-        info!("utxos: {:?}", utxos);
-
         let change_address = self.change_address();
 
         let payload_output = TxOut {

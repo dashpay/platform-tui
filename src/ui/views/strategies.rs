@@ -220,18 +220,18 @@ impl ScreenController for StrategiesScreenController {
                     ScreenFeedback::None
                 }
             }
-            // Event::Key(KeyEvent {
-            //     code: Key::Char('b'),
-            //     modifiers: KeyModifiers::NONE,
-            // }) => {
-            //     if let Some(strategy_name) = &self.selected_strategy {
-            //         ScreenFeedback::Form(Box::new(StrategyStartIdentitiesFormController::new(
-            //             strategy_name.clone(),
-            //         )))
-            //     } else {
-            //         ScreenFeedback::None
-            //     }
-            // }
+            Event::Key(KeyEvent {
+                code: Key::Char('b'),
+                modifiers: KeyModifiers::NONE,
+            }) => {
+                if let Some(strategy_name) = &self.selected_strategy {
+                    ScreenFeedback::Form(Box::new(StrategyStartIdentitiesFormController::new(
+                        strategy_name.clone(),
+                    )))
+                } else {
+                    ScreenFeedback::None
+                }
+            }
             Event::Key(KeyEvent {
                 code: Key::Char('o'),
                 modifiers: KeyModifiers::NONE,
