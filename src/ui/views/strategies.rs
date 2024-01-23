@@ -60,7 +60,7 @@ impl StrategiesScreenController {
         } else {
             let strategy_list = strategies
                 .iter()
-                .map(|strategy_name| format!(" - {}", strategy_name))
+                .map(|strategy_name| format!(" > {}", strategy_name))
                 .collect::<Vec<_>>()
                 .join("\n");
 

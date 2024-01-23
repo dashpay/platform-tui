@@ -20,7 +20,7 @@ use super::start_identities::StrategyStartIdentitiesFormController;
 
 const COMMAND_KEYS: [ScreenCommandKey; 3] = [
     ScreenCommandKey::new("q", "Back to Strategy"),
-    ScreenCommandKey::new("a", "Edit"),
+    ScreenCommandKey::new("a", "Add/edit"),
     ScreenCommandKey::new("r", "Remove"),
 ];
 
@@ -60,7 +60,7 @@ impl StartIdentitiesScreenController {
 
 impl ScreenController for StartIdentitiesScreenController {
     fn name(&self) -> &'static str {
-        "start_identities"
+        "Start identities"
     }
 
     fn command_keys(&self) -> &[ScreenCommandKey] {
@@ -78,7 +78,7 @@ impl ScreenController for StartIdentitiesScreenController {
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::PreviousScreen,
             Event::Key(KeyEvent {
-                code: Key::Char('e'),
+                code: Key::Char('a'),
                 modifiers: KeyModifiers::NONE,
             }) => {
                 if let Some(strategy_name) = &self.strategy_name {
@@ -124,7 +124,7 @@ impl ScreenController for StartIdentitiesScreenController {
         let display_text = if let Some(strategy) = &self.selected_strategy {
             // Construct the text to display start identities
             let start_identities_text = format!(
-                "Start Identities: {}",
+                "Start identities: {}",
                 strategy.start_identities.len()
             );
 

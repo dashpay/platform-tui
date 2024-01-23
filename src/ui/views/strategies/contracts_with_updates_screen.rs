@@ -24,8 +24,8 @@ use super::contracts_with_updates::ContractsWithUpdatesFormController;
 
 const COMMAND_KEYS: [ScreenCommandKey; 3] = [
     ScreenCommandKey::new("q", "Back to Strategy"),
-    ScreenCommandKey::new("a", "Add contract_with_updates"),
-    ScreenCommandKey::new("r", "Remove last contract_with_updates"),
+    ScreenCommandKey::new("a", "Add"),
+    ScreenCommandKey::new("r", "Remove last"),
 ];
 
 pub(crate) struct ContractsWithUpdatesScreenController {
@@ -112,7 +112,7 @@ impl ContractsWithUpdatesScreenController {
 
 impl ScreenController for ContractsWithUpdatesScreenController {
     fn name(&self) -> &'static str {
-        "contracts_with_updates"
+        "Contracts with updates"
     }
 
     fn command_keys(&self) -> &[ScreenCommandKey] {
@@ -194,7 +194,7 @@ impl ScreenController for ContractsWithUpdatesScreenController {
                 } else {
                     let mut contracts_with_updates_lines = String::new();
                     contracts_with_updates_lines.push_str(&format!("Strategy: {}\n", strategy_name));
-                    contracts_with_updates_lines.push_str("Contracts with Updates:\n");
+                    contracts_with_updates_lines.push_str("Contracts with updates:\n");
                     for (contract_name, updates) in contracts_with_updates {
                         contracts_with_updates_lines.push_str(&format!(
                             "{:indent$}Contract: {}\n",

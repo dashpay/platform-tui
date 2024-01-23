@@ -20,8 +20,8 @@ use super::identity_inserts::StrategyIdentityInsertsFormController;
 
 const COMMAND_KEYS: [ScreenCommandKey; 3] = [
     ScreenCommandKey::new("q", "Back to Strategy"),
-    ScreenCommandKey::new("a", "Edit identity_inserts"),
-    ScreenCommandKey::new("r", "Remove identity_inserts"),
+    ScreenCommandKey::new("a", "Add/edit"),
+    ScreenCommandKey::new("r", "Remove"),
 ];
 
 pub(crate) struct IdentityInsertsScreenController {
@@ -60,7 +60,7 @@ impl IdentityInsertsScreenController {
 
 impl ScreenController for IdentityInsertsScreenController {
     fn name(&self) -> &'static str {
-        "identity_inserts"
+        "Identity inserts"
     }
 
     fn command_keys(&self) -> &[ScreenCommandKey] {
@@ -78,7 +78,7 @@ impl ScreenController for IdentityInsertsScreenController {
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::PreviousScreen,
             Event::Key(KeyEvent {
-                code: Key::Char('e'),
+                code: Key::Char('a'),
                 modifiers: KeyModifiers::NONE,
             }) => {
                 if let Some(strategy_name) = &self.strategy_name {
@@ -130,7 +130,7 @@ impl ScreenController for IdentityInsertsScreenController {
             };
 
             let identity_inserts_text = format!(
-                "Identity Inserts:\nTimes per block: {}; Chance per block: {}",
+                "Identity inserts:\nTimes per block: {}; Chance per block: {}",
                 times_per_block_display,
                 strategy.identities_inserts.chance_per_block.unwrap_or(0.0),
             );

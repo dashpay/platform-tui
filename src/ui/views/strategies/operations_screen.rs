@@ -26,8 +26,8 @@ use super::operations::StrategyAddOperationFormController;
 
 const COMMAND_KEYS: [ScreenCommandKey; 3] = [
     ScreenCommandKey::new("q", "Back to Strategy"),
-    ScreenCommandKey::new("a", "Add operation"),
-    ScreenCommandKey::new("r", "Remove last operation"),
+    ScreenCommandKey::new("a", "Add"),
+    ScreenCommandKey::new("r", "Remove last"),
 ];
 
 pub struct OperationsScreenController {
@@ -114,7 +114,7 @@ impl OperationsScreenController {
 
 impl ScreenController for OperationsScreenController {
     fn name(&self) -> &'static str {
-        "operations"
+        "Operations"
     }
 
     fn command_keys(&self) -> &[ScreenCommandKey] {
