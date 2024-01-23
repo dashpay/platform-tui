@@ -10,7 +10,7 @@ use crate::{
     ui::form::{ComposedInput, Field, FormController, FormStatus, Input, InputStatus, SelectInput},
 };
 
-pub(super) struct StrategyContractsFormController {
+pub(super) struct ContractsWithUpdatesFormController {
     selected_strategy: String,
     known_contracts: BTreeMap<String, DataContract>,
     supporting_contracts: BTreeMap<String, DataContract>,
@@ -18,7 +18,7 @@ pub(super) struct StrategyContractsFormController {
     input: ComposedInput<(Field<SelectInput<String>>, Field<SelectInput<String>>)>,
 }
 
-impl StrategyContractsFormController {
+impl ContractsWithUpdatesFormController {
     pub(super) fn new(
         selected_strategy: String,
         known_contracts: BTreeMap<String, DataContract>,
@@ -39,7 +39,7 @@ impl StrategyContractsFormController {
         contract_names.sort();
         contract_names.dedup();
 
-        StrategyContractsFormController {
+        Self {
             selected_strategy,
             known_contracts,
             supporting_contracts,
@@ -56,7 +56,7 @@ impl StrategyContractsFormController {
     }
 }
 
-impl FormController for StrategyContractsFormController {
+impl FormController for ContractsWithUpdatesFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
         match self.input.on_event(event) {
             InputStatus::Done((selected_contract, add_another_answer)) => {

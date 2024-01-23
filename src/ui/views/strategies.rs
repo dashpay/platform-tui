@@ -2,6 +2,7 @@
 
 mod clone_strategy;
 mod contracts_with_updates;
+mod contracts_with_updates_screen;
 mod delete_strategy;
 mod identity_inserts;
 mod new_strategy;
@@ -9,6 +10,7 @@ mod operations;
 mod select_strategy;
 mod start_identities;
 mod run_strategy;
+mod run_strategy_screen;
 pub mod selected_strategy;
 
 use tuirealm::{

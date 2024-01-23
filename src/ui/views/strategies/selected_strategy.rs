@@ -19,7 +19,7 @@ use tuirealm::{
 use walkdir::WalkDir;
 
 use crate::{
-    backend::{AppState, AppStateUpdate, BackendEvent, StrategyTask, Task, StrategyCompletionResult},
+    backend::{AppState, AppStateUpdate, BackendEvent, StrategyTask, Task},
     ui::screen::{
             utils::impl_builder, widgets::info::Info, ScreenCommandKey, ScreenController,
             ScreenFeedback, ScreenToggleKey,
@@ -27,14 +27,21 @@ use crate::{
     Event,
 };
 
-use super::{contracts_with_updates::StrategyContractsFormController, identity_inserts::StrategyIdentityInsertsFormController, start_identities::StrategyStartIdentitiesFormController, operations::StrategyAddOperationFormController, run_strategy::RunStrategyFormController, clone_strategy::CloneStrategyFormController};
+use super::{
+    identity_inserts::StrategyIdentityInsertsFormController, 
+    start_identities::StrategyStartIdentitiesFormController, 
+    operations::StrategyAddOperationFormController, 
+    run_strategy::RunStrategyFormController, 
+    run_strategy_screen::RunStrategyScreenController,
+    contracts_with_updates_screen::ContractsWithUpdatesScreenController,
+    clone_strategy::CloneStrategyFormController,
+};
 
-const COMMAND_KEYS: [ScreenCommandKey; 11] = [
+const COMMAND_KEYS: [ScreenCommandKey; 10] = [
     ScreenCommandKey::new("q", "Back to Strategies"),
     ScreenCommandKey::new("r", "Run strategy"),
     ScreenCommandKey::new("l", "Clone this strategy"),
-    ScreenCommandKey::new("c", "Add contract with updates"),
-    ScreenCommandKey::new("w", "Remove last contract"),
+    ScreenCommandKey::new("c", "Edit contract with updates"),
     ScreenCommandKey::new("o", "Add operations"),
     ScreenCommandKey::new("z", "Remove last operation"),
     ScreenCommandKey::new("i", "Set identity inserts"),
@@ -151,20 +158,7 @@ impl ScreenController for SelectedStrategyScreenController {
             Event::Key(KeyEvent {
                 code: Key::Char('c'),
                 modifiers: KeyModifiers::NONE,
-            }) => {
-                if self.selected_strategy.is_some() {
-                    // Update known contracts before showing the form
-                    self.update_supporting_contracts_sync();
-
-                    ScreenFeedback::Form(Box::new(StrategyContractsFormController::new(
-                        self.selected_strategy.clone().unwrap(),
-                        self.known_contracts.clone(),
-                        self.supporting_contracts.clone(),
-                    )))
-                } else {
-                    ScreenFeedback::None
-                }
-            }
+            }) => { ScreenFeedback::NextScreen(ContractsWithUpdatesScreenController::builder())}
             Event::Key(KeyEvent {
                 code: Key::Char('i'),
                 modifiers: KeyModifiers::NONE,
@@ -208,17 +202,9 @@ impl ScreenController for SelectedStrategyScreenController {
             Event::Key(KeyEvent {
                 code: Key::Char('r'),
                 modifiers: KeyModifiers::NONE,
-            }) => ScreenFeedback::Form(Box::new(RunStrategyFormController::new(
-                self.selected_strategy.clone().unwrap(),
-            ))),
-            Event::Key(KeyEvent {
-                code: Key::Char('w'),
-                modifiers: KeyModifiers::NONE,
-            }) => ScreenFeedback::Task {
-                task: Task::Strategy(StrategyTask::RemoveLastContract(
-                    self.selected_strategy.clone().unwrap(),
-                )),
-                block: false,
+            }) => ScreenFeedback::FormThenNextScreen {
+                form: Box::new(RunStrategyFormController::new(self.selected_strategy.clone().unwrap())),
+                screen: RunStrategyScreenController::builder()
             },
             Event::Key(KeyEvent {
                 code: Key::Char('x'),
@@ -281,38 +267,6 @@ impl ScreenController for SelectedStrategyScreenController {
                 self.available_strategies = strategies.keys().cloned().collect();
                 ScreenFeedback::Redraw
             }
-            Event::Backend(BackendEvent::StrategyCompleted {
-                strategy_name,
-                result,
-            }) => {
-                let display_text = match result {
-                    StrategyCompletionResult::Success {
-                        final_block_height,
-                        success_count,
-                        transition_count,
-                        prep_time,
-                        run_time,
-                    } => {
-                        format!(
-                            "Strategy '{}' completed:\nState transitions attempted: {}\nState transitions succeeded: {}\nRun time: {:?}",
-                            strategy_name,
-                            transition_count,
-                            success_count,
-                            run_time
-                        )
-                    }
-                    StrategyCompletionResult::PartiallyCompleted {
-                        reached_block_height,
-                        reason
-                    } => {
-                        // Handle failure case
-                        format!("Strategy '{}' failed to complete. Reached block height {}. Reason: {}", strategy_name, reached_block_height, reason)
-                    }
-                };
-    
-                self.info = Info::new_fixed(&display_text);
-                ScreenFeedback::Redraw
-            }    
             _ => ScreenFeedback::None,
         }
     }

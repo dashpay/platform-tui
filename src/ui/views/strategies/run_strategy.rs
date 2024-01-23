@@ -1,4 +1,4 @@
-//! Run strategy confirmation.
+//! Run strategy confirmation form.
 
 use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
