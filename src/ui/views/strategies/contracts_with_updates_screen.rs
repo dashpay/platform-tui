@@ -193,13 +193,14 @@ impl ScreenController for ContractsWithUpdatesScreenController {
                     "No contracts_with_updates".to_string()
                 } else {
                     let mut contracts_with_updates_lines = String::new();
-                    contracts_with_updates_lines.push_str("contracts_with_updates:\n");
+                    contracts_with_updates_lines.push_str(&format!("Strategy: {}\n", strategy_name));
+                    contracts_with_updates_lines.push_str("Contracts with Updates:\n");
                     for (contract_name, updates) in contracts_with_updates {
                         contracts_with_updates_lines.push_str(&format!(
                             "{:indent$}Contract: {}\n",
                             "",
                             contract_name,
-                            indent = 4
+                            indent = 0
                         ));
                         if let Some(updates_map) = updates {
                             for (block, update) in updates_map {
@@ -208,7 +209,7 @@ impl ScreenController for ContractsWithUpdatesScreenController {
                                     "",
                                     block * 3,
                                     update,
-                                    indent = 8
+                                    indent = 4
                                 ));
                             }
                         }

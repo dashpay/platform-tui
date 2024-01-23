@@ -2,8 +2,6 @@
 
 use std::collections::BTreeMap;
 
-use dash_platform_sdk::platform::DataContract;
-use dpp::{tests::json_document::json_document_to_created_contract, version::PlatformVersion};
 use strategy_tests::{
     operations::{
         DataContractUpdateOp::{DataContractNewDocumentTypes, DataContractNewOptionalFields},
@@ -16,10 +14,9 @@ use tuirealm::{
     tui::prelude::Rect,
     Frame,
 };
-use walkdir::WalkDir;
 
 use crate::{
-    backend::{AppState, AppStateUpdate, BackendEvent, StrategyTask, Task},
+    backend::{AppState, AppStateUpdate, BackendEvent},
     ui::screen::{
             utils::impl_builder, widgets::info::Info, ScreenCommandKey, ScreenController,
             ScreenFeedback, ScreenToggleKey,
@@ -28,26 +25,23 @@ use crate::{
 };
 
 use super::{
-    identity_inserts::StrategyIdentityInsertsFormController, 
-    start_identities::StrategyStartIdentitiesFormController, 
-    operations::StrategyAddOperationFormController, 
+    identity_inserts_screen::IdentityInsertsScreenController, 
+    start_identities_screen::StartIdentitiesScreenController, 
+    operations_screen::OperationsScreenController, 
     run_strategy::RunStrategyFormController, 
     run_strategy_screen::RunStrategyScreenController,
     contracts_with_updates_screen::ContractsWithUpdatesScreenController,
     clone_strategy::CloneStrategyFormController,
 };
 
-const COMMAND_KEYS: [ScreenCommandKey; 10] = [
+const COMMAND_KEYS: [ScreenCommandKey; 7] = [
     ScreenCommandKey::new("q", "Back to Strategies"),
     ScreenCommandKey::new("r", "Run strategy"),
     ScreenCommandKey::new("l", "Clone this strategy"),
-    ScreenCommandKey::new("c", "Edit contract with updates"),
-    ScreenCommandKey::new("o", "Add operations"),
-    ScreenCommandKey::new("z", "Remove last operation"),
-    ScreenCommandKey::new("i", "Set identity inserts"),
-    ScreenCommandKey::new("x", "Remove identity inserts"),
-    ScreenCommandKey::new("b", "Set start identities"),
-    ScreenCommandKey::new("y", "Remove start identities"),
+    ScreenCommandKey::new("c", "Contracts with updates"),
+    ScreenCommandKey::new("i", "Identity inserts"),
+    ScreenCommandKey::new("o", "Operations"),
+    ScreenCommandKey::new("s", "Start identities"),
 ];
 
 const COMMAND_KEYS_NO_SELECTION: [ScreenCommandKey; 1] = [
@@ -58,8 +52,6 @@ pub struct SelectedStrategyScreenController {
     info: Info,
     available_strategies: Vec<String>,
     selected_strategy: Option<String>,
-    known_contracts: BTreeMap<String, DataContract>,
-    supporting_contracts: BTreeMap<String, DataContract>,
 }
 
 impl_builder!(SelectedStrategyScreenController);
@@ -68,8 +60,6 @@ impl SelectedStrategyScreenController {
     pub(crate) async fn new(app_state: &AppState) -> Self {
         let available_strategies_lock = app_state.available_strategies.lock().await;
         let selected_strategy_lock = app_state.selected_strategy.lock().await;
-        let known_contracts_lock = app_state.known_contracts.lock().await;
-        let supporting_contracts_lock = app_state.supporting_contracts.lock().await;
 
         let info = if let Some(name) = selected_strategy_lock.as_ref() {
             let strategy = available_strategies_lock
@@ -92,43 +82,7 @@ impl SelectedStrategyScreenController {
             info,
             available_strategies: available_strategies_lock.keys().cloned().collect(),
             selected_strategy: None,
-            known_contracts: known_contracts_lock.clone(),
-            supporting_contracts: supporting_contracts_lock.clone(),
         }
-    }
-
-    async fn update_supporting_contracts(&mut self, ) {
-        let platform_version = PlatformVersion::latest();
-
-        for entry in WalkDir::new("supporting_files/contract")
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("json"))
-        {
-            let path = entry.path();
-            let contract_name = path.file_stem().unwrap().to_str().unwrap().to_string();
-
-            // Change here: Add to supporting_contracts instead of known_contracts
-            if !self.supporting_contracts.contains_key(&contract_name) {
-                if let Ok(contract) =
-                    json_document_to_created_contract(&path, true, platform_version)
-                {
-                    self.supporting_contracts
-                        .insert(contract_name, contract.data_contract_owned());
-                }
-            }
-        }
-    }
-
-    fn update_supporting_contracts_sync(&mut self) {
-        // Use block_in_place to wait for the async operation to complete
-        tokio::task::block_in_place(|| {
-            // Create a new Tokio runtime for the async operation
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            rt.block_on(async {
-                self.update_supporting_contracts().await;
-            })
-        });
     }
 }
 
@@ -158,80 +112,25 @@ impl ScreenController for SelectedStrategyScreenController {
             Event::Key(KeyEvent {
                 code: Key::Char('c'),
                 modifiers: KeyModifiers::NONE,
-            }) => { ScreenFeedback::NextScreen(ContractsWithUpdatesScreenController::builder())}
+            }) => ScreenFeedback::NextScreen(ContractsWithUpdatesScreenController::builder()),
             Event::Key(KeyEvent {
                 code: Key::Char('i'),
                 modifiers: KeyModifiers::NONE,
-            }) => {
-                if let Some(strategy_name) = &self.selected_strategy {
-                    ScreenFeedback::Form(Box::new(StrategyIdentityInsertsFormController::new(
-                        strategy_name.clone(),
-                    )))
-                } else {
-                    ScreenFeedback::None
-                }
-            }
+            }) => ScreenFeedback::NextScreen(IdentityInsertsScreenController::builder()),
             Event::Key(KeyEvent {
-                code: Key::Char('b'),
+                code: Key::Char('s'),
                 modifiers: KeyModifiers::NONE,
-            }) => {
-                if let Some(strategy_name) = &self.selected_strategy {
-                    ScreenFeedback::Form(Box::new(StrategyStartIdentitiesFormController::new(
-                        strategy_name.clone(),
-                    )))
-                } else {
-                    ScreenFeedback::None
-                }
-            }
+            }) => ScreenFeedback::NextScreen(StartIdentitiesScreenController::builder()),
             Event::Key(KeyEvent {
                 code: Key::Char('o'),
                 modifiers: KeyModifiers::NONE,
-            }) => {
-                if let Some(strategy_name) = self.selected_strategy.clone() {
-                    // Update known contracts before showing the form
-                    self.update_supporting_contracts_sync();
-
-                    ScreenFeedback::Form(Box::new(StrategyAddOperationFormController::new(
-                        strategy_name.clone(),
-                        self.known_contracts.clone(),
-                    )))
-                } else {
-                    ScreenFeedback::None
-                }
-            }
+            }) => ScreenFeedback::NextScreen(OperationsScreenController::builder()),
             Event::Key(KeyEvent {
                 code: Key::Char('r'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::FormThenNextScreen {
                 form: Box::new(RunStrategyFormController::new(self.selected_strategy.clone().unwrap())),
                 screen: RunStrategyScreenController::builder()
-            },
-            Event::Key(KeyEvent {
-                code: Key::Char('x'),
-                modifiers: KeyModifiers::NONE,
-            }) => ScreenFeedback::Task {
-                task: Task::Strategy(StrategyTask::RemoveIdentityInserts(
-                    self.selected_strategy.clone().unwrap(),
-                )),
-                block: false,
-            },
-            Event::Key(KeyEvent {
-                code: Key::Char('y'),
-                modifiers: KeyModifiers::NONE,
-            }) => ScreenFeedback::Task {
-                task: Task::Strategy(StrategyTask::RemoveStartIdentities(
-                    self.selected_strategy.clone().unwrap(),
-                )),
-                block: false,
-            },
-            Event::Key(KeyEvent {
-                code: Key::Char('z'),
-                modifiers: KeyModifiers::NONE,
-            }) => ScreenFeedback::Task {
-                task: Task::Strategy(StrategyTask::RemoveLastOperation(
-                    self.selected_strategy.clone().unwrap(),
-                )),
-                block: false,
             },
             Event::Key(KeyEvent {
                 code: Key::Char('l'),
