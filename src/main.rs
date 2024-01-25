@@ -70,9 +70,7 @@ async fn main() {
     // Configure SDK for high throughput
     let request_settings = RequestSettings {
         connect_timeout: Some(Duration::from_secs(60)),
-        timeout: None,
-        retries: None,
-        ban_failed_address: Some(false),
+        ..Default::default()
     };
 
     let sdk = SdkBuilder::new(address_list)
