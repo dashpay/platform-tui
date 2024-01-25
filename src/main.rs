@@ -67,12 +67,6 @@ async fn main() {
     // Setup Platform SDK
     let address_list = config.dapi_address_list();
 
-    // Configure SDK for high throughput
-    let request_settings = RequestSettings {
-        connect_timeout: Some(Duration::from_secs(60)),
-        ..Default::default()
-    };
-
     let sdk = SdkBuilder::new(address_list)
         .with_version(PlatformVersion::get(1).unwrap())
         .with_core(
@@ -81,7 +75,6 @@ async fn main() {
             &config.core_rpc_user,
             &config.core_rpc_password,
         )
-        .with_settings(request_settings)
         .build()
         .expect("expected to build sdk");
 

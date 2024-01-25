@@ -588,7 +588,7 @@ impl AppState {
         let mut tasks = Vec::new();
 
         let settings = RequestSettings {
-            connect_timeout: None,
+            connect_timeout: Some(Duration::from_secs(60)),
             timeout: Some(Duration::from_secs(30)),
             retries: Some(0),
             ban_failed_address: Some(false),
