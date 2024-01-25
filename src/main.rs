@@ -72,6 +72,7 @@ async fn main() {
         connect_timeout: Some(Duration::from_secs(60)),
         timeout: None,
         retries: None,
+        ban_failed_address: Some(false),
     };
 
     let sdk = SdkBuilder::new(address_list)
