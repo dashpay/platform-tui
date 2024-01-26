@@ -23,7 +23,7 @@ use tracing::{info, error};
 
 use rs_dapi_client::DapiRequestExecutor;
 
-use crate::backend::Wallet;
+use crate::backend::{Wallet, wallet::WalletError};
 
 use super::{AppStateUpdate, BackendEvent, AppState, StrategyCompletionResult, error::Error, insight::{InsightError, InsightAPIClient}, Task};
 
@@ -323,7 +323,7 @@ pub(crate) async fn run_strategy_task<'s>(
                     strategy.signer.as_mut().unwrap()
                 };
                                 
-                match set_start_identities(count, key_count, signer, app_state, &sdk).await {
+                match set_start_identities(count, key_count, signer, app_state, &sdk, insight).await {
                     Ok(identities_and_transitions) => {
                         strategy.start_identities = identities_and_transitions;
                         BackendEvent::TaskCompletedStateChange {
@@ -342,7 +342,7 @@ pub(crate) async fn run_strategy_task<'s>(
                         }
                     },
                     Err(e) => {
-                        eprintln!("Error setting start identities: {:?}", e);
+                        error!("Error setting start identities: {:?}", e);
                         BackendEvent::StrategyError {
                             strategy_name: strategy_name.clone(),
                             error: format!("Error setting start identities: {}", e),
@@ -355,16 +355,13 @@ pub(crate) async fn run_strategy_task<'s>(
         }
         StrategyTask::RunStrategy(strategy_name) => {
             info!("Starting strategy '{}'", strategy_name);
-
+        
             let mut strategies_lock = app_state.available_strategies.lock().await;
             let drive_lock = app_state.drive.lock().await;
-            let mut loaded_wallet_lock = app_state.loaded_wallet.lock().await;
             let identity_private_keys_lock = app_state.identity_private_keys.lock().await;
-            let known_identities_lock = app_state.known_identities.lock().await;
             let mut loaded_identity_lock = match app_state.refresh_identity(&sdk).await {
                 Ok(lock) => lock,
                 Err(e) => {
-                    // Handle the error, for example, log it and return an error event
                     error!("Failed to refresh identity: {:?}", e);
                     return BackendEvent::StrategyError {
                         strategy_name: strategy_name.clone(),
@@ -372,9 +369,18 @@ pub(crate) async fn run_strategy_task<'s>(
                     };
                 }
             };
+        
+            let sdk_ref = Arc::clone(&sdk);
+        
+            // Access the loaded_wallet within the Mutex
+            let mut loaded_wallet_lock = app_state.loaded_wallet.lock().await;
 
-            // Check if a loaded identity is available and clone it for use in the loop
-            let mut loaded_identity_clone = loaded_identity_lock.clone();
+            // Refresh UTXOs for the loaded wallet
+            if let Some(ref mut wallet) = *loaded_wallet_lock {
+                wallet.reload_utxos(insight).await;
+            }
+
+            drop(loaded_wallet_lock);
                         
             // It's normal that we're asking for the mutable strategy because we need to modify
             // some properties of a contract on update
@@ -444,29 +450,18 @@ pub(crate) async fn run_strategy_task<'s>(
                     });
                     strategy_signer.clone()
                 };
-                                
-                // Check if a loaded wallet is available and it is mutable
-                let wallet = match loaded_wallet_lock.as_mut() {
-                    Some(w) => w,
-                    None => {
-                        error!("No wallet loaded");
-                        return BackendEvent::StrategyError {
-                            strategy_name: strategy_name.clone(),
-                            error: "No wallet loaded".to_string(),
-                        };
-                    }
-                };
-        
+                                        
                 // Create map of state transitions to block heights
                 let mut state_transitions_map = HashMap::new();
 
-                // Copy initial block info
-                let mut current_block_info = initial_block_info.clone();
-
                 // Set initial current_identities to known_identities
-                let mut current_identities: Vec<Identity> = known_identities_lock.values().cloned().collect();
+                let mut current_identities: Vec<Identity> = vec![loaded_identity_lock.clone()];
 
                 // Fill out the state transitions map
+                // Loop through each block to precompute state transitions
+                let mut current_block_info = initial_block_info.clone();
+                let mut loaded_identity_clone = loaded_identity_lock.clone();
+            
                 // Loop through each block to precompute state transitions
                 let prep_start_time = Instant::now();
                 while current_block_info.height < (initial_block_info.height + num_blocks) {
@@ -532,30 +527,76 @@ pub(crate) async fn run_strategy_task<'s>(
                         }
                     };
 
-                    let sdk_ref = &sdk;
-                    let wallet_clone = wallet.clone();
+                    let mut create_asset_lock = {
+                        let loaded_wallet_clone = Arc::clone(&app_state.loaded_wallet);
+                        let insight_ref = insight.clone();
+                        let sdk_ref_clone = Arc::clone(&sdk_ref);
+                    
+                        move |amount: u64| -> Option<(AssetLockProof, PrivateKey)> {
+                            // Use the current Tokio runtime to execute the async block
+                            tokio::task::block_in_place(|| {
+                                let rt = tokio::runtime::Handle::current();
+                                rt.block_on(async {
+                                    let mut wallet_lock = loaded_wallet_clone.lock().await;
+                                    if let Some(ref mut wallet) = *wallet_lock {
+                                        // Initialize old_utxos
+                                        let old_utxos = match wallet {
+                                            Wallet::SingleKeyWallet(ref wallet) => wallet.utxos.clone(),
+                                        };
 
-                    let mut create_asset_lock = move |amount: u64| -> Option<(AssetLockProof, PrivateKey)> {
-                        let mut wallet_clone = wallet_clone.clone();
-                    
-                        let future = async move {
-                            let (asset_lock_transaction, asset_lock_proof_private_key) = match wallet_clone.asset_lock_transaction(None, amount) {
-                                Ok(result) => result,
-                                Err(_) => return None,
-                            };
-                    
-                            match AppState::broadcast_and_retrieve_asset_lock(sdk_ref, &asset_lock_transaction, &wallet_clone.receive_address()).await {
-                                Ok(proof) => Some((proof, asset_lock_proof_private_key)),
-                                Err(_) => None,
-                            }
-                        };
-                    
-                        tokio::task::block_in_place(|| {
-                            let rt = tokio::runtime::Handle::current();
-                            rt.block_on(future)
-                        })
-                    };
+                                        // Handle asset lock transaction
+                                        match wallet.asset_lock_transaction(None, amount) {
+                                            Ok((asset_lock_transaction, asset_lock_proof_private_key)) => {
+                                                // Use sdk_ref_clone for broadcasting and retrieving asset lock
+                                                match AppState::broadcast_and_retrieve_asset_lock(&sdk_ref_clone, &asset_lock_transaction, &wallet.receive_address()).await {
+                                                    Ok(proof) => {
+                                                        let max_retries = 5;
+                                                        let mut retries = 0;
+                                                                        
+                                                        let mut found_new_utxos = false;
+                                                        while retries < max_retries {
+                                                            wallet.reload_utxos(&insight_ref).await;
                                     
+                                                            // Check if new UTXOs are available and if UTXO list is not empty
+                                                            let current_utxos = match wallet {
+                                                                Wallet::SingleKeyWallet(ref wallet) => &wallet.utxos,
+                                                            };
+                                                            if current_utxos != &old_utxos && !current_utxos.is_empty() {
+                                                                found_new_utxos = true;
+                                                                break;
+                                                            } else {
+                                                                retries += 1;
+                                                                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                                                            }
+                                                        }
+                                    
+                                                        if !found_new_utxos {
+                                                            error!("Failed to find new UTXOs after maximum retries");
+                                                            return None;
+                                                        }
+                                                                        
+                                                        Some((proof, asset_lock_proof_private_key))
+                                                    },
+                                                    Err(e) => {
+                                                        error!("Error broadcasting asset lock transaction: {:?}", e);
+                                                        None
+                                                    }
+                                                }
+                                            },
+                                            Err(e) => {
+                                                error!("Error creating asset lock transaction: {:?}", e);
+                                                None
+                                            }
+                                        }
+                                    } else {
+                                        error!("Wallet not loaded");
+                                        None
+                                    }
+                                })
+                            })
+                        }
+                    };
+                                                                                                                    
                     // Get rng
                     let mut rng = StdRng::from_entropy();
 
@@ -589,14 +630,13 @@ pub(crate) async fn run_strategy_task<'s>(
                             }
                         }
                     }
-                
+
                     // Update the loaded_identity_clone and loaded_identity_lock with the latest state of the identity
-                    // This probably only needs to be done on certain types of STs. I forget why I added it.
                     if let Some(modified_identity) = current_identities.iter().find(|identity| identity.id() == loaded_identity_clone.id()) {
                         loaded_identity_clone = modified_identity.clone();
                         *loaded_identity_lock = modified_identity.clone();
                     }
-                                                                                                                    
+                                                                                                                                                            
                     // Store the state transitions in the map if not empty
                     if !transitions.is_empty() {
                         let st_queue = VecDeque::from(transitions.clone());
@@ -607,51 +647,51 @@ pub(crate) async fn run_strategy_task<'s>(
                         info!("No state transitions prepared for block {}", current_block_info.height);
                     }
 
-                    // Reload wallet UTXOs if an IdentityCreate or IdentityTopUp transition was created
-                    // Unless it's a start_identity, hence the "if current_block_info.height > initial_block_info.height"
-                    let mut need_utxo_reload = false;
-                    if current_block_info.height > initial_block_info.height {
-                        for transition in &transitions {
-                            if let StateTransition::IdentityCreate(_) | StateTransition::IdentityTopUp(_) = transition {
-                                need_utxo_reload = true;
-                                break;
-                            }
-                        }
-                        if need_utxo_reload {
-                            let max_retries = 5; // Maximum number of retries
-                            let mut retries = 0;
+                    // // Reload wallet UTXOs if an IdentityCreate or IdentityTopUp transition was created
+                    // // Unless it's a start_identity, hence the "if current_block_info.height > initial_block_info.height"
+                    // let mut need_utxo_reload = false;
+                    // if current_block_info.height > initial_block_info.height {
+                    //     for transition in &transitions {
+                    //         if let StateTransition::IdentityCreate(_) | StateTransition::IdentityTopUp(_) = transition {
+                    //             need_utxo_reload = true;
+                    //             break;
+                    //         }
+                    //     }
+                    //     if need_utxo_reload {
+                    //         let max_retries = 5; // Maximum number of retries
+                    //         let mut retries = 0;
                         
-                            // Initialize old_utxos outside the loop
-                            let old_utxos = match wallet {
-                                Wallet::SingleKeyWallet(ref wallet) => wallet.utxos.clone(),
-                                // Add handling for other wallet types if needed
-                            };
+                    //         // Initialize old_utxos outside the loop
+                    //         let old_utxos = match wallet {
+                    //             Wallet::SingleKeyWallet(ref wallet) => wallet.utxos.clone(),
+                    //             // Add handling for other wallet types if needed
+                    //         };
                         
-                            while retries < max_retries {
-                                wallet.reload_utxos(&insight).await;
+                    //         while retries < max_retries {
+                    //             wallet.reload_utxos(&insight).await;
                         
-                                // Check if new UTXOs are available
-                                let found_new_utxos = match wallet {
-                                    Wallet::SingleKeyWallet(ref wallet) => wallet.utxos != old_utxos,
-                                };
+                    //             // Check if new UTXOs are available
+                    //             let found_new_utxos = match wallet {
+                    //                 Wallet::SingleKeyWallet(ref wallet) => wallet.utxos != old_utxos,
+                    //             };
                         
-                                if found_new_utxos {
-                                    break;
-                                } else {
-                                    retries += 1;
-                                    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await; // Sleep before retrying
-                                }
-                            }
+                    //             if found_new_utxos {
+                    //                 break;
+                    //             } else {
+                    //                 retries += 1;
+                    //                 tokio::time::sleep(tokio::time::Duration::from_secs(5)).await; // Sleep before retrying
+                    //             }
+                    //         }
                         
-                            if retries == max_retries {
-                                error!("Failed to find new UTXOs after reloading, aborting operation.");
-                                return BackendEvent::StrategyError { 
-                                    strategy_name: strategy_name.clone(), 
-                                    error: "Failed to find new UTXOs after maximum retries".to_string(),
-                                };
-                            }
-                        }    
-                    }
+                    //         if retries == max_retries {
+                    //             error!("Failed to find new UTXOs after reloading, aborting operation.");
+                    //             return BackendEvent::StrategyError { 
+                    //                 strategy_name: strategy_name.clone(), 
+                    //                 error: "Failed to find new UTXOs after maximum retries".to_string(),
+                    //             };
+                    //         }
+                    //     }    
+                    // }
                                                                                                                                                                                             
                     // Update block_info
                     current_block_info.height += 1;
@@ -925,48 +965,145 @@ async fn set_start_identities(
     signer: &mut SimpleSigner,
     app_state: &AppState,
     sdk: &Sdk,
+    insight: &InsightAPIClient,
 ) -> Result<Vec<(Identity, StateTransition)>, Error> {
-    let loaded_wallet = app_state.loaded_wallet.lock().await;
+    // Lock the loaded wallet.
+    let mut loaded_wallet = app_state.loaded_wallet.lock().await;
+
+    // Refresh UTXOs for the loaded wallet
+    if let Some(ref mut wallet) = *loaded_wallet {
+        wallet.reload_utxos(insight).await;
+    }
+
+
+    // Clone wallet state
     let wallet_clone = loaded_wallet
         .clone()
         .ok_or_else(|| Error::WalletError(super::wallet::WalletError::Insight(InsightError("No wallet loaded".to_string()))))?;
 
+    // Create a reference-counted, thread-safe clone of the wallet for the asset lock callback.
     let wallet_ref = Arc::new(Mutex::new(wallet_clone));
 
+    // Define the asset lock callback.
     let mut create_asset_lock = move |amount: u64| -> Option<(AssetLockProof, PrivateKey)> {
         let wallet_clone = wallet_ref.clone();
-
-        // block_in_place is used to block the current thread until the future is resolved.
+        
+        // Use block_in_place to execute the async code synchronously.
         tokio::task::block_in_place(|| {
-            // Create a new runtime for executing the async code.
             let rt = tokio::runtime::Runtime::new().unwrap();
-
-            // Block on the async code using the new runtime.
             rt.block_on(async move {
                 let mut wallet = wallet_clone.lock().await;
+    
+                // Initialize old_utxos
+                let old_utxos = match &*wallet {
+                    Wallet::SingleKeyWallet(wallet) => wallet.utxos.clone(),
+                };
+    
                 match wallet.asset_lock_transaction(None, amount) {
                     Ok((asset_lock_transaction, asset_lock_proof_private_key)) => {
                         match AppState::broadcast_and_retrieve_asset_lock(sdk, &asset_lock_transaction, &wallet.receive_address()).await {
-                            Ok(proof) => Some((proof, asset_lock_proof_private_key)),
-                            Err(_) => None,
+                            Ok(proof) => {
+                                // Implement retry logic for reloading UTXOs
+                                let max_retries = 5;
+                                let mut retries = 0;
+                                let mut found_new_utxos = false;
+    
+                                while retries < max_retries {
+                                    wallet.reload_utxos(insight).await;
+    
+                                    let current_utxos = match &*wallet {
+                                        Wallet::SingleKeyWallet(wallet) => &wallet.utxos,
+                                        // Add handling for other wallet types if needed
+                                    };
+                                    if current_utxos != &old_utxos && !current_utxos.is_empty() {
+                                        found_new_utxos = true;
+                                        break;
+                                    } else {
+                                        retries += 1;
+                                        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                                    }
+                                }
+    
+                                if !found_new_utxos {
+                                    error!("Failed to find new UTXOs after maximum retries");
+                                    None
+                                } else {
+                                    Some((proof, asset_lock_proof_private_key))
+                                }
+                            },
+                            Err(e) => {
+                                error!("Error during asset lock transaction: {:?}", e);
+                                None
+                            },
                         }
                     },
-                    Err(_) => None,
+                    Err(e) => {
+                        error!("Error initiating asset lock transaction: {:?}", e);
+                        match e {
+                            WalletError::Balance => {
+                                error!("Insufficient balance for asset lock transaction.");
+                            },
+                            _ => error!("Other wallet error occurred."),
+                        }
+                        None
+                    },
                 }
             })
         })
     };
-
-    let identities_and_transitions = create_identities_state_transitions(
+    
+    // Create identities and state transitions.
+    let identities_and_transitions_result = create_identities_state_transitions(
         count,
         key_count,
         signer,
         &mut StdRng::from_entropy(),
         &mut create_asset_lock,
         PlatformVersion::latest(),
-    )?;
+    );
 
-    Ok(identities_and_transitions)
+    drop(loaded_wallet);
+
+    // Check and reload UTXOs after the asset lock transactions, if successful.
+    if identities_and_transitions_result.is_ok() {
+        let mut loaded_wallet = app_state.loaded_wallet.lock().await;
+        if let Some(ref mut wallet) = *loaded_wallet {
+            if let Err(e) = reload_wallet_utxos(wallet, insight).await {
+                error!("Error reloading wallet UTXOs after asset lock: {:?}", e);
+                return Err(e);
+            }
+        }
+    }
+
+    Ok(identities_and_transitions_result?)
+}
+
+
+async fn reload_wallet_utxos(wallet: &mut Wallet, insight: &InsightAPIClient) -> Result<(), Error> {    
+    let old_utxos = match wallet {
+        Wallet::SingleKeyWallet(ref single_key_wallet) => single_key_wallet.utxos.clone(),
+    };
+
+    let max_retries = 5;
+    let mut retries = 0;
+
+    while retries < max_retries {
+        wallet.reload_utxos(insight).await;
+
+        let new_utxos = match wallet {
+            Wallet::SingleKeyWallet(ref single_key_wallet) => &single_key_wallet.utxos,
+            // Handle other wallet types if necessary
+        };
+
+        if new_utxos != &old_utxos && !new_utxos.is_empty() {
+            return Ok(());
+        } else {
+            retries += 1;
+            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+        }
+    }
+
+    Err(Error::SdkError(dash_platform_sdk::Error::Generic("Failed to reload wallet UTXOs after maximum retries".to_string())))
 }
 
 // // Function to fetch current blockchain height

@@ -16,9 +16,6 @@ use strum::IntoEnumIterator;
 use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
 use self::{
-    contract_create::StrategyOpContractCreateFormController,
-    contract_update_doc_types::StrategyOpContractUpdateDocTypesFormController,
-    contract_update_new_fields::StrategyOpContractUpdateNewFieldsFormController,
     document::StrategyOpDocumentFormController,
     identity_top_up::StrategyOpIdentityTopUpFormController,
     identity_transfer::StrategyOpIdentityTransferFormController,

@@ -58,13 +58,7 @@ impl StrategiesScreenController {
         let info_text = if strategies.is_empty() {
             "No available strategies".to_string()
         } else {
-            let strategy_list = strategies
-                .iter()
-                .map(|strategy_name| format!(" > {}", strategy_name))
-                .collect::<Vec<_>>()
-                .join("\n");
-
-            format!("Available strategies:\n{}", strategy_list)
+            "Strategy management commands".to_string()
         };
 
         let info = Info::new_fixed(&info_text);
@@ -147,13 +141,7 @@ impl ScreenController for StrategiesScreenController {
                 let info_text = if self.available_strategies.is_empty() {
                     "No available strategies".to_string()
                 } else {
-                    let strategy_list = self.available_strategies
-                        .iter()
-                        .map(|strategy_name| format!(" - {}", strategy_name))
-                        .collect::<Vec<_>>()
-                        .join("\n");
-            
-                    format!("Available strategies:\n{}", strategy_list)
+                    "Strategy management commands".to_string()
                 };
             
                 self.info = Info::new_fixed(&info_text);

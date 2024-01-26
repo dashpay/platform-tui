@@ -2,7 +2,7 @@
 //! This kind of state does not include UI details and basically all about
 //! persistence required by backend.
 
-use std::{collections::BTreeMap, fs};
+use std::{collections::BTreeMap, fs, sync::Arc};
 
 use bincode::{Decode, Encode};
 use dpp::{
@@ -49,7 +49,7 @@ pub(super) type KnownContractsMap = BTreeMap<String, DataContract>;
 pub(crate) struct AppState {
     pub loaded_identity: Mutex<Option<Identity>>,
     pub identity_private_keys: Mutex<BTreeMap<(Identifier, KeyID), PrivateKey>>,
-    pub loaded_wallet: Mutex<Option<Wallet>>,
+    pub loaded_wallet: Arc<Mutex<Option<Wallet>>>,
     pub drive: Mutex<Drive>,
     pub known_identities: Mutex<BTreeMap<Identifier, Identity>>,
     pub known_contracts: Mutex<KnownContractsMap>, // Contracts fetched from Platform
@@ -118,7 +118,7 @@ impl Default for AppState {
         AppState {
             loaded_identity: None.into(),
             identity_private_keys: Default::default(),
-            loaded_wallet: None.into(),
+            loaded_wallet: Arc::new(Mutex::new(None)),
             drive: Mutex::from(drive),
             known_contracts: BTreeMap::new().into(),
             supporting_contracts: BTreeMap::new().into(),
@@ -394,10 +394,15 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
         let drive: Drive = Drive::open("explorer.drive", None, platform_version)
             .expect("expected to open Drive successfully");
 
+        // Deserialize the wallet state and wrap it in Arc<Mutex<_>>
+        let deserialized_wallet_state = loaded_wallet
+            .map(|wallet| Arc::new(Mutex::new(Some(wallet))))
+            .unwrap_or_else(|| Arc::new(Mutex::new(None)));    
+
         Ok(AppState {
             loaded_identity: loaded_identity.into(),
             identity_private_keys,
-            loaded_wallet: loaded_wallet.into(),
+            loaded_wallet: deserialized_wallet_state,
             drive: drive.into(),
             known_identities: known_identities.into(),
             known_contracts: known_contracts.into(),

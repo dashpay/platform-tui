@@ -15,24 +15,39 @@ use crate::{
     Event,
 };
 
-const COMMAND_KEYS: [ScreenCommandKey; 1] = [
+use super::run_strategy::RunStrategyFormController;
+
+const COMMAND_KEYS: [ScreenCommandKey; 2] = [
     ScreenCommandKey::new("q", "Back to Strategy"),
+    ScreenCommandKey::new("r", "Rerun strategy"),
 ];
 
 pub(crate) struct RunStrategyScreenController {
     info: Info,
     strategy_running: bool,
+    selected_strategy: Option<String>,
 }
 
 impl_builder!(RunStrategyScreenController);
 
 impl RunStrategyScreenController {
-    pub(crate) async fn new(app_state: &AppState) -> Self {        
-        let info = Info::new_fixed("Strategy is running, please wait. \nCheck `explorer.log` file to watch progress.");
+    pub(crate) async fn new(app_state: &AppState) -> Self {
+        let selected_strategy_lock = app_state.selected_strategy.lock().await;
+
+        let (info, strategy_running, selected_strategy) = if let Some(current_strategy) = selected_strategy_lock.as_ref() {
+            let info = Info::new_fixed("Strategy is running, please wait. \nCheck `explorer.log` file to watch progress.");
+            (info, true, Some(current_strategy.clone()))
+        } else {
+            let info = Info::new_fixed("Run strategy not confirmed.");
+            (info, false, None)
+        };
+
+        drop(selected_strategy_lock);
 
         Self {
             info,
-            strategy_running: true,
+            strategy_running,
+            selected_strategy,
         }
     }
 }
@@ -56,6 +71,10 @@ impl ScreenController for RunStrategyScreenController {
                 code: Key::Char('q'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::PreviousScreen,
+            Event::Key(KeyEvent {
+                code: Key::Char('r'),
+                modifiers: KeyModifiers::NONE,
+            }) => ScreenFeedback::Form(Box::new(RunStrategyFormController::new(self.selected_strategy.clone().expect("No selected strategy available")))),
             Event::Backend(BackendEvent::StrategyCompleted {
                 strategy_name,
                 result,
@@ -82,7 +101,6 @@ impl ScreenController for RunStrategyScreenController {
                         reached_block_height,
                         reason
                     } => {
-                        // Handle failure case
                         format!("Strategy '{}' failed to complete. Reached block height {}. Reason: {}", strategy_name, reached_block_height, reason)
                     }
                 };
