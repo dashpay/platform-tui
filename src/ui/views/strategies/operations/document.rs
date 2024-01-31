@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use dash_platform_sdk::platform::DataContract;
+use rs_sdk::platform::DataContract;
 use dpp::data_contract::{
     accessors::v0::DataContractV0Getters,
     document_type::{

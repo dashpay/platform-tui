@@ -22,7 +22,7 @@ impl StrategyStartIdentitiesFormController {
                 ),
                 Field::new(
                     "Keys per identity",
-                    SelectInput::new(vec![2, 3, 4, 5, 10, 20, 32]),
+                    SelectInput::new(vec![3, 4, 5, 10, 15, 20, 32]),
                 ),
             )),
             selected_strategy,

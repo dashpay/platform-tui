@@ -116,6 +116,22 @@ impl ScreenController for StartIdentitiesScreenController {
                     ScreenFeedback::None
                 }
             }
+            Event::Backend(BackendEvent::TaskCompletedStateChange {
+                task: Task::Strategy(StrategyTask::SetStartIdentities { .. }),
+                app_state_update: AppStateUpdate::SelectedStrategy(strategy_name, updated_strategy, _),
+                ..
+            }) => {
+                // Check if the updated strategy is the one currently being displayed
+                if Some(&strategy_name) == self.strategy_name.as_ref().as_ref() {
+                    // Update the selected_strategy with the new data
+                    self.selected_strategy = Some((*updated_strategy).clone());
+
+                    // Trigger a redraw of the screen
+                    ScreenFeedback::Redraw
+                } else {
+                    ScreenFeedback::None
+                }
+            }
             _ => ScreenFeedback::None,
         }
     }

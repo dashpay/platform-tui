@@ -1,11 +1,11 @@
 use std::sync::Arc;
 use std::collections::BTreeMap;
-use dash_platform_sdk::platform::LimitQuery;
+use rs_sdk::platform::LimitQuery;
 use dpp::block::epoch::EpochIndex;
-use dash_platform_sdk::{platform::Fetch, Sdk};
+use rs_sdk::{platform::Fetch, Sdk};
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
-use dash_platform_sdk::platform::types::epoch::ExtendedEpochInfoEx;
-use dash_platform_sdk::platform::FetchMany;
+use rs_sdk::platform::types::epoch::ExtendedEpochInfoEx;
+use rs_sdk::platform::FetchMany;
 use dpp::version::ProtocolVersionVoteCount;
 
 use crate::backend::{as_toml, BackendEvent, Task};

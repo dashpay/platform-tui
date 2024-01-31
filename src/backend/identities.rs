@@ -12,7 +12,7 @@ use dapi_grpc::{
         GetIdentityBalanceRequest,
     },
 };
-use dash_platform_sdk::{
+use rs_sdk::{
     platform::{
         transition::{
             put_identity::PutIdentity, top_up_identity::TopUpIdentity,
@@ -315,7 +315,8 @@ impl AppState {
         signer.add_keys(keys);
 
         let updated_identity = identity
-            .put_to_platform_and_wait_for_response(
+            // v1.0-dev hack: temporarily changed this from put_to_platform_and_wait_for_response
+            .put_to_platform(
                 sdk,
                 asset_lock_proof.clone(),
                 &asset_lock_proof_private_key,
@@ -323,13 +324,15 @@ impl AppState {
             )
             .await?;
 
-        if updated_identity.id() != identity.id() {
-            panic!("identity ids don't match");
-        }
+        // v1.0-dev hack: temporarily remove this
+        // if updated_identity.id() != identity.id() {
+        //     panic!("identity ids don't match");
+        // }
 
         let mut loaded_identity = self.loaded_identity.lock().await;
 
-        loaded_identity.replace(updated_identity);
+        // v1.0-dev hack: change updated_identity to identity here
+        loaded_identity.replace(identity.clone());
         let identity_result =
             MutexGuard::map(loaded_identity, |x| x.as_mut().expect("assigned above"));
 
@@ -507,7 +510,7 @@ impl AppState {
         sdk: &Sdk,
         asset_lock_transaction: &Transaction,
         address: &Address,
-    ) -> Result<AssetLockProof, dash_platform_sdk::Error> {
+    ) -> Result<AssetLockProof, rs_sdk::Error> {
         // let _span = tracing::debug_span!(
         //     "broadcast_and_retrieve_asset_lock",
         //     transaction_id = asset_lock_transaction.txid().to_string(),
@@ -520,7 +523,7 @@ impl AppState {
             .chain
             .map(|chain| chain.best_block_hash)
             .ok_or_else(|| {
-                dash_platform_sdk::Error::DapiClientError("missing `chain` field".to_owned())
+                rs_sdk::Error::DapiClientError("missing `chain` field".to_owned())
             })?;
 
         tracing::debug!(

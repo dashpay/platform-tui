@@ -108,7 +108,7 @@ impl Default for AppState {
             }
         }
 
-        let drive: Drive = Drive::open("explorer.drive", None, platform_version)
+        let drive: Drive = Drive::open("explorer.drive", None)
             .expect("expected to open Drive successfully");
 
         drive
@@ -391,7 +391,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
                 )
             });
 
-        let drive: Drive = Drive::open("explorer.drive", None, platform_version)
+        let drive: Drive = Drive::open("explorer.drive", None)
             .expect("expected to open Drive successfully");
 
         // Deserialize the wallet state and wrap it in Arc<Mutex<_>>

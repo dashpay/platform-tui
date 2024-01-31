@@ -35,7 +35,7 @@ impl RunStrategyScreenController {
         let selected_strategy_lock = app_state.selected_strategy.lock().await;
 
         let (info, strategy_running, selected_strategy) = if let Some(current_strategy) = selected_strategy_lock.as_ref() {
-            let info = Info::new_fixed("Strategy is running, please wait. \nCheck `explorer.log` file to watch progress.");
+            let info = Info::new_fixed("Strategy is running, please wait.");
             (info, true, Some(current_strategy.clone()))
         } else {
             let info = Info::new_fixed("Run strategy not confirmed.");
@@ -54,7 +54,7 @@ impl RunStrategyScreenController {
 
 impl ScreenController for RunStrategyScreenController {
     fn name(&self) -> &'static str {
-        "Run Strategy"
+        "Run strategy"
     }
 
     fn command_keys(&self) -> &[ScreenCommandKey] {
@@ -74,7 +74,10 @@ impl ScreenController for RunStrategyScreenController {
             Event::Key(KeyEvent {
                 code: Key::Char('r'),
                 modifiers: KeyModifiers::NONE,
-            }) => ScreenFeedback::Form(Box::new(RunStrategyFormController::new(self.selected_strategy.clone().expect("No selected strategy available")))),
+            }) => {
+                self.strategy_running = true;
+                ScreenFeedback::Form(Box::new(RunStrategyFormController::new(self.selected_strategy.clone().expect("No selected strategy available"))))
+            }
             Event::Backend(BackendEvent::StrategyCompleted {
                 strategy_name,
                 result,
@@ -123,7 +126,7 @@ impl ScreenController for RunStrategyScreenController {
 
     fn view(&mut self, frame: &mut Frame, area: Rect) {
         if self.strategy_running {
-            self.info = Info::new_fixed("Strategy is running, please wait. \nCheck `explorer.log` file to watch progress.");
+            self.info = Info::new_fixed("Strategy is running, please wait.");
         }
         self.info.view(frame, area)
     }

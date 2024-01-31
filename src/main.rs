@@ -5,7 +5,7 @@ mod ui;
 use std::{fs::File, panic};
 
 use crossterm::event::{Event as TuiEvent, EventStream};
-use dash_platform_sdk::SdkBuilder;
+use rs_sdk::SdkBuilder;
 use dpp::{identity::accessors::IdentityGettersV0, version::PlatformVersion};
 use futures::{future::OptionFuture, select, FutureExt, StreamExt};
 use tuirealm::event::KeyEvent;

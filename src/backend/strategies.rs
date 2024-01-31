@@ -3,7 +3,7 @@
 use std::{collections::{BTreeMap, BTreeSet, HashMap, VecDeque}, sync::Arc, time::Instant};
 
 use dapi_grpc::platform::v0::{GetEpochsInfoRequest, get_epochs_info_request, get_epochs_info_response, wait_for_state_transition_result_response};
-use dash_platform_sdk::{Sdk, platform::transition::broadcast_request::BroadcastRequestForStateTransition};
+use rs_sdk::{Sdk, platform::transition::broadcast_request::BroadcastRequestForStateTransition};
 use dpp::{
     data_contract::{created_data_contract::CreatedDataContract, DataContract, accessors::v0::DataContractV0Getters}, platform_value::{Bytes32, Identifier, string_encoding::Encoding},
     version::PlatformVersion, block::{block_info::BlockInfo, epoch::Epoch}, identity::{Identity, PartialIdentity, state_transition::asset_lock_proof::AssetLockProof, accessors::IdentityGettersV0}, state_transition::{StateTransition, data_contract_create_transition::DataContractCreateTransition}, dashcore::PrivateKey,
@@ -646,52 +646,6 @@ pub(crate) async fn run_strategy_task<'s>(
                         // Log when no state transitions are found for a block
                         info!("No state transitions prepared for block {}", current_block_info.height);
                     }
-
-                    // // Reload wallet UTXOs if an IdentityCreate or IdentityTopUp transition was created
-                    // // Unless it's a start_identity, hence the "if current_block_info.height > initial_block_info.height"
-                    // let mut need_utxo_reload = false;
-                    // if current_block_info.height > initial_block_info.height {
-                    //     for transition in &transitions {
-                    //         if let StateTransition::IdentityCreate(_) | StateTransition::IdentityTopUp(_) = transition {
-                    //             need_utxo_reload = true;
-                    //             break;
-                    //         }
-                    //     }
-                    //     if need_utxo_reload {
-                    //         let max_retries = 5; // Maximum number of retries
-                    //         let mut retries = 0;
-                        
-                    //         // Initialize old_utxos outside the loop
-                    //         let old_utxos = match wallet {
-                    //             Wallet::SingleKeyWallet(ref wallet) => wallet.utxos.clone(),
-                    //             // Add handling for other wallet types if needed
-                    //         };
-                        
-                    //         while retries < max_retries {
-                    //             wallet.reload_utxos(&insight).await;
-                        
-                    //             // Check if new UTXOs are available
-                    //             let found_new_utxos = match wallet {
-                    //                 Wallet::SingleKeyWallet(ref wallet) => wallet.utxos != old_utxos,
-                    //             };
-                        
-                    //             if found_new_utxos {
-                    //                 break;
-                    //             } else {
-                    //                 retries += 1;
-                    //                 tokio::time::sleep(tokio::time::Duration::from_secs(5)).await; // Sleep before retrying
-                    //             }
-                    //         }
-                        
-                    //         if retries == max_retries {
-                    //             error!("Failed to find new UTXOs after reloading, aborting operation.");
-                    //             return BackendEvent::StrategyError { 
-                    //                 strategy_name: strategy_name.clone(), 
-                    //                 error: "Failed to find new UTXOs after maximum retries".to_string(),
-                    //             };
-                    //         }
-                    //     }    
-                    // }
                                                                                                                                                                                             
                     // Update block_info
                     current_block_info.height += 1;
@@ -731,9 +685,6 @@ pub(crate) async fn run_strategy_task<'s>(
                                 StateTransition::IdentityUpdate(_) => "IdentityUpdate".to_string(),
                                 StateTransition::IdentityCreditTransfer(_) => "IdentityCreditTransfer".to_string(),
                             };
-
-                            let mut request_settings = RequestSettings::default();
-                            request_settings.retries = Some(3);
                 
                             // Collect futures for broadcasting state transitions
                             let future = async move {
@@ -761,7 +712,7 @@ pub(crate) async fn run_strategy_task<'s>(
                                         error!("Error broadcasting state transition {} for block height {}: {:?}", index + 1, current_block_height, broadcast_result.err().unwrap());
                                         continue;
                                     }
-                
+
                                     let sdk_clone = Arc::clone(&sdk);
                                     let wait_future = async move {
                                         let wait_result = match transition.wait_for_state_transition_result_request() {
@@ -857,8 +808,8 @@ pub(crate) async fn run_strategy_task<'s>(
                     info!("Strategy start_identities field cleared");
                 }
             
-                info!("Strategy '{}' finished running", strategy_name);
                 let run_time = run_start_time.elapsed();
+                info!("Strategy '{}' finished running", strategy_name);
                                                                             
                 BackendEvent::StrategyCompleted {
                     strategy_name: strategy_name.clone(),
@@ -1103,7 +1054,7 @@ async fn reload_wallet_utxos(wallet: &mut Wallet, insight: &InsightAPIClient) ->
         }
     }
 
-    Err(Error::SdkError(dash_platform_sdk::Error::Generic("Failed to reload wallet UTXOs after maximum retries".to_string())))
+    Err(Error::SdkError(rs_sdk::Error::Generic("Failed to reload wallet UTXOs after maximum retries".to_string())))
 }
 
 // // Function to fetch current blockchain height
