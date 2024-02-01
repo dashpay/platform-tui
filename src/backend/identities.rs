@@ -346,7 +346,7 @@ impl AppState {
             .map(|(key, private_key)| {
                 (
                     (identity.id(), key.id()),
-                    PrivateKey::from_slice(private_key.as_slice(), Network::Testnet).unwrap(),
+                    PrivateKey::from_slice(private_key.as_slice(), Network::Devnet).unwrap(),
                 )
             });
 

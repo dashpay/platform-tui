@@ -360,7 +360,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
             .map(|(key, value)| {
                 (
                     key,
-                    PrivateKey::from_slice(&value, Network::Testnet).expect("expected private key"), // TODO: Should use network from config
+                    PrivateKey::from_slice(&value, Network::Devnet).expect("expected private key"), // TODO: Should use network from config
                 )
             })
             .collect::<BTreeMap<(Identifier, u32), PrivateKey>>()
@@ -372,7 +372,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
                     (
                         Transaction::deserialize(&transaction)
                             .expect("expected to deserialize transaction"),
-                        PrivateKey::from_slice(&private_key, Network::Testnet)  // TODO: Should use network from config
+                        PrivateKey::from_slice(&private_key, Network::Devnet)  // TODO: Should use network from config
                             .expect("expected private key"),
                         asset_lock_proof,
                         identity_info,
@@ -385,7 +385,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
                 (
                     Transaction::deserialize(&transaction)
                         .expect("expected to deserialize transaction"),
-                    PrivateKey::from_slice(&private_key, Network::Testnet)  // TODO: Should use network from config
+                    PrivateKey::from_slice(&private_key, Network::Devnet)  // TODO: Should use network from config
                         .expect("expected private key"),
                     asset_lock_proof,
                 )

@@ -686,6 +686,18 @@ pub(crate) async fn run_strategy_task<'s>(
                                 StateTransition::IdentityCreditTransfer(_) => "IdentityCreditTransfer".to_string(),
                             };
                 
+                            // log transition hash
+                            match transition_clone.hash(false) {
+                                Ok(hash_bytes) => {
+                                    let hash_hex = hex::encode(hash_bytes);
+                                    info!("transition hash: {}", hash_hex);
+                                }
+                                Err(e) => {
+                                    // Handle the error, e.g., log it or propagate it
+                                    error!("Failed to calculate transition hash: {:?}", e);
+                                }
+                            }
+                            
                             // Collect futures for broadcasting state transitions
                             let future = async move {
                                 match transition_clone.broadcast_request_for_state_transition() {
@@ -714,6 +726,7 @@ pub(crate) async fn run_strategy_task<'s>(
                                     }
 
                                     let sdk_clone = Arc::clone(&sdk);
+                                    
                                     let wait_future = async move {
                                         let wait_result = match transition.wait_for_state_transition_result_request() {
                                             Ok(wait_request) => wait_request.execute(&*sdk_clone, RequestSettings::default()).await,
