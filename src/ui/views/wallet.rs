@@ -1,5 +1,6 @@
 //! Screens and forms related to wallet management.
 
+use dpp::dashcore::psbt::serialize::Serialize;
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
     tui::prelude::{Constraint, Direction, Layout, Rect},
@@ -476,5 +477,16 @@ impl FormController for AddWalletPrivateKeyFormController {
 }
 
 fn display_wallet(wallet: &Wallet) -> String {
-    wallet.description()
+    match wallet {
+        Wallet::SingleKeyWallet(single_key_wallet) => {
+            let description = format!(
+                "Single Key Wallet\nPublic Key: {}\nAddress: {}\nBalance: {}",
+                hex::encode(single_key_wallet.public_key.serialize()),
+                single_key_wallet.address,
+                single_key_wallet.balance_dash_formatted()
+            );
+            let utxo_count = single_key_wallet.utxos.len();
+            format!("{}\nNumber of UTXOs: {}", description, utxo_count)
+        }
+    }
 }

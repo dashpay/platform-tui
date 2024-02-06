@@ -86,18 +86,24 @@ impl ScreenController for RunStrategyScreenController {
 
                 let display_text = match result {
                     StrategyCompletionResult::Success {
-                        final_block_height: _final_block_height,
+                        final_block_height,
+                        start_block_height,
                         success_count,
                         transition_count,
                         prep_time: _prep_time,
                         run_time,
+                        dash_spent_identity,
+                        dash_spent_wallet,
                     } => {
                         format!(
-                            "Strategy '{}' completed:\nState transitions attempted: {}\nState transitions succeeded: {}\nRun time: {:?}",
+                            "Strategy '{}' completed:\nState transitions attempted: {}\nState transitions succeeded: {}\nNumber of blocks: {}\nRun time: {:?}\nDash spent (Identity): {}\nDash spent (Wallet): {}",
                             strategy_name,
                             transition_count,
                             success_count,
-                            run_time
+                            (final_block_height - start_block_height),
+                            run_time,
+                            dash_spent_identity,
+                            dash_spent_wallet,
                         )
                     }
                     StrategyCompletionResult::PartiallyCompleted {

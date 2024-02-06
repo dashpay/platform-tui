@@ -104,16 +104,28 @@ impl ScreenController for StrategiesScreenController {
             Event::Key(KeyEvent {
                 code: Key::Char('s'),
                 modifiers: KeyModifiers::NONE,
-            }) => ScreenFeedback::FormThenNextScreen {
-                form: Box::new(SelectStrategyFormController::new(self.available_strategies.clone())),
-                screen: SelectedStrategyScreenController::builder()
+            }) => {
+                if !self.available_strategies.is_empty() {
+                    ScreenFeedback::FormThenNextScreen {
+                        form: Box::new(SelectStrategyFormController::new(self.available_strategies.clone())),
+                        screen: SelectedStrategyScreenController::builder()
+                    }
+                } else {
+                    ScreenFeedback::None // Do nothing if there are no available strategies
+                }
             },
             Event::Key(KeyEvent {
                 code: Key::Char('d'),
                 modifiers: KeyModifiers::NONE,
-            }) => ScreenFeedback::Form(Box::new(DeleteStrategyFormController::new(
-                self.available_strategies.clone(),
-            ))),
+            }) => {
+                if !self.available_strategies.is_empty() {
+                    ScreenFeedback::Form(Box::new(DeleteStrategyFormController::new(
+                        self.available_strategies.clone(),
+                    )))
+                } else {
+                    ScreenFeedback::None // Do nothing if there are no available strategies
+                }
+            },
             Event::Backend(
                 BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
                     strategy_name,

@@ -2,7 +2,7 @@
 
 use std::{collections::{BTreeMap, BTreeSet, HashMap, VecDeque}, sync::Arc, time::Instant};
 
-use dapi_grpc::platform::v0::{GetEpochsInfoRequest, get_epochs_info_request, get_epochs_info_response, wait_for_state_transition_result_response};
+use dapi_grpc::platform::v0::{GetEpochsInfoRequest, get_epochs_info_request, get_epochs_info_response, wait_for_state_transition_result_response::{self, wait_for_state_transition_result_response_v0}};
 use rs_sdk::{Sdk, platform::transition::broadcast_request::BroadcastRequestForStateTransition};
 use dpp::{
     data_contract::{created_data_contract::CreatedDataContract, DataContract, accessors::v0::DataContractV0Getters}, platform_value::{Bytes32, Identifier, string_encoding::Encoding},
@@ -23,7 +23,7 @@ use tracing::{info, error};
 
 use rs_dapi_client::DapiRequestExecutor;
 
-use crate::backend::{Wallet, wallet::WalletError};
+use crate::{backend::{wallet::WalletError, Backend, Wallet}, ui::Ui};
 
 use super::{AppStateUpdate, BackendEvent, AppState, StrategyCompletionResult, error::Error, insight::{InsightError, InsightAPIClient}, Task};
 
@@ -47,7 +47,7 @@ pub(crate) enum StrategyTask {
         strategy_name: String,
         operation: Operation,
     },
-    RunStrategy(String),
+    RunStrategy(String, u64),
     RemoveLastContract(String),
     RemoveIdentityInserts(String),
     RemoveStartIdentities(String),
@@ -353,8 +353,9 @@ pub(crate) async fn run_strategy_task<'s>(
                 BackendEvent::None
             }
         }
-        StrategyTask::RunStrategy(strategy_name) => {
+        StrategyTask::RunStrategy(strategy_name, num_blocks) => {
             info!("Starting strategy '{}'", strategy_name);
+            let run_start_time = Instant::now();
         
             let mut strategies_lock = app_state.available_strategies.lock().await;
             let drive_lock = app_state.drive.lock().await;
@@ -380,14 +381,14 @@ pub(crate) async fn run_strategy_task<'s>(
                 wallet.reload_utxos(insight).await;
             }
 
+            let initial_balance_identity = loaded_identity_lock.balance();
+            let initial_balance_wallet = loaded_wallet_lock.clone().unwrap().balance();
+
             drop(loaded_wallet_lock);
                         
             // It's normal that we're asking for the mutable strategy because we need to modify
             // some properties of a contract on update
-            if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
-                // Define the number of blocks for which to compute state transitions.
-                let num_blocks = 20;
-            
+            if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {            
                 // Get block_info
                 // Get block info for the first block by sending a grpc request and looking at the metadata
                 // Retry up to MAX_RETRIES times
@@ -404,6 +405,7 @@ pub(crate) async fn run_strategy_task<'s>(
                         },
                     )),
                 };
+                // Use retry mechanism to fetch current block info
                 while retries <= MAX_RETRIES {
                     match sdk.execute(request.clone(), RequestSettings::default()).await {
                         Ok(response) => {
@@ -454,7 +456,7 @@ pub(crate) async fn run_strategy_task<'s>(
                 // Create map of state transitions to block heights
                 let mut state_transitions_map = HashMap::new();
 
-                // Set initial current_identities to known_identities
+                // Set initial current_identities to loaded_identity
                 let mut current_identities: Vec<Identity> = vec![loaded_identity_lock.clone()];
 
                 // Fill out the state transitions map
@@ -566,7 +568,7 @@ pub(crate) async fn run_strategy_task<'s>(
                                                                 break;
                                                             } else {
                                                                 retries += 1;
-                                                                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                                                                tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
                                                             }
                                                         }
                                     
@@ -610,7 +612,10 @@ pub(crate) async fn run_strategy_task<'s>(
                             &mut current_identities,
                             &mut signer,
                             &mut rng,
-                            &StrategyConfig { start_block_height: initial_block_info.height },
+                            &StrategyConfig { 
+                                start_block_height: initial_block_info.height,
+                                number_of_blocks: num_blocks,
+                            },
                             PlatformVersion::latest(),
                         )
                         .await;
@@ -618,7 +623,7 @@ pub(crate) async fn run_strategy_task<'s>(
                     // TO-DO: add documents from state transitions to explorer.drive here
                     // this is required for DocumentDelete and DocumentReplace strategy operations
                                                 
-                    // Process each FinalizeBlockOperation
+                    // Process each FinalizeBlockOperation, which so far is just adding keys to the identities
                     for operation in finalize_operations {
                         match operation {
                             FinalizeBlockOperation::IdentityAddKeys(identifier, keys) => {
@@ -657,7 +662,6 @@ pub(crate) async fn run_strategy_task<'s>(
                 let mut current_block_height = initial_block_info.height;
 
                 info!("--- Starting strategy execution loop ---");
-                let run_start_time = Instant::now();
 
                 let mut transition_count = 0;
                 let mut success_count = 0;
@@ -685,19 +689,7 @@ pub(crate) async fn run_strategy_task<'s>(
                                 StateTransition::IdentityUpdate(_) => "IdentityUpdate".to_string(),
                                 StateTransition::IdentityCreditTransfer(_) => "IdentityCreditTransfer".to_string(),
                             };
-                
-                            // log transition hash
-                            match transition_clone.hash(false) {
-                                Ok(hash_bytes) => {
-                                    let hash_hex = hex::encode(hash_bytes);
-                                    info!("transition hash: {}", hash_hex);
-                                }
-                                Err(e) => {
-                                    // Handle the error, e.g., log it or propagate it
-                                    error!("Failed to calculate transition hash: {:?}", e);
-                                }
-                            }
-                            
+                                            
                             // Collect futures for broadcasting state transitions
                             let future = async move {
                                 match transition_clone.broadcast_request_for_state_transition() {
@@ -705,7 +697,10 @@ pub(crate) async fn run_strategy_task<'s>(
                                         let broadcast_result = broadcast_request.execute(&*sdk_clone, RequestSettings::default()).await;
                                         Ok((transition_clone, broadcast_result))
                                     },
-                                    Err(e) => Err(e)
+                                    Err(e) => {
+                                        error!("Error creating broadcast request for state transition: {:?}", e);
+                                        Err(e)
+                                    }
                                 }
                             };
                 
@@ -738,6 +733,13 @@ pub(crate) async fn run_strategy_task<'s>(
                 
                                         match wait_result {
                                             Ok(wait_response) => {
+                                                if let Some(wait_for_state_transition_result_response::Version::V0(v0_response)) = &wait_response.version {
+                                                    if let Some(wait_for_state_transition_result_response_v0::Result::Error(error)) = &v0_response.result {
+                                                        // Log the detailed state transition broadcast error
+                                                        error!("State Transition Broadcast Error: Code: {}, Message: \"{}\"", error.code, error.message);
+                                                    }
+                                                }                                        
+
                                                 // If a data contract was registered, add it to known_contracts
                                                 if let StateTransition::DataContractCreate(DataContractCreateTransition::V0(data_contract_create_transition)) = &transition {
                                                     // Extract the data contract from the transition
@@ -752,7 +754,6 @@ pub(crate) async fn run_strategy_task<'s>(
                                                         },
                                                         Err(e) => {
                                                             error!("Error deserializing data contract: {:?}", e);
-                                                            // Handle the error as appropriate for your application
                                                         }
                                                     }
                                                 }
@@ -761,10 +762,12 @@ pub(crate) async fn run_strategy_task<'s>(
                                                 if let Some(wait_for_state_transition_result_response::Version::V0(v0_response)) = wait_response.version {
                                                     v0_response.metadata.map(|metadata| metadata.height)
                                                 } else {
+                                                    error!("Error getting actual block height");
                                                     None
                                                 }
                                             }
-                                            Err(_) => {
+                                            Err(e) => {
+                                                error!("Wait result error: {:?}", e);
                                                 None
                                             }
                                         }
@@ -787,28 +790,13 @@ pub(crate) async fn run_strategy_task<'s>(
                                     success_count += 1;
                                     info!("Successfully processed state transition {} ({}) for block {} (actual block height: {})", index + 1, transition_type, current_block_height, height)
                                 },
-                                None => continue,
+                                None => {
+                                    continue
+                                },
                             }
                         }
                     } else {
                         info!("No state transitions to process for block {}", current_block_height);
-
-                        // // Wait until the blockchain height aligns with the next block height for state transitions
-                        // loop {
-                        //     match fetch_current_blockchain_height(&sdk).await {
-                        //         Ok(blockchain_height) => {
-                        //             if blockchain_height >= current_block_height {
-                        //                 break;
-                        //             }
-                        //             info!("Waiting for blockchain to reach height {}. Current height: {}", current_block_height, blockchain_height);
-                        //             tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-                        //         },
-                        //         Err(e) => {
-                        //             error!("Error fetching current blockchain height: {}", e);
-                        //             tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-                        //         }
-                        //     }
-                        // }
                     }
                                                 
                     // Increment block height after processing each block
@@ -821,17 +809,45 @@ pub(crate) async fn run_strategy_task<'s>(
                     info!("Strategy start_identities field cleared");
                 }
             
-                let run_time = run_start_time.elapsed();
                 info!("Strategy '{}' finished running", strategy_name);
-                                                                            
+                let run_time = run_start_time.elapsed();
+
+                // Refresh the identity at the end
+                drop(loaded_identity_lock);
+                let refresh_result = app_state.refresh_identity(&sdk).await;
+                if let Err(ref e) = refresh_result {
+                    error!("Failed to refresh identity after running strategy: {:?}", e);
+                }
+
+                // Attempt to retrieve the final balance from the refreshed identity
+                let final_balance_identity = match refresh_result {
+                    Ok(refreshed_identity_lock) => {
+                        // Successfully refreshed, now access the balance
+                        refreshed_identity_lock.balance()
+                    },
+                    Err(_) => {
+                        error!("Error refreshing identity after running strategy");
+                        initial_balance_identity
+                    }
+                };
+
+                let dash_spent_identity = (initial_balance_identity as f64 - final_balance_identity as f64) / 100_000_000_000.0;
+
+                let loaded_wallet_lock = app_state.loaded_wallet.lock().await;
+                let final_balance_wallet = loaded_wallet_lock.clone().unwrap().balance();
+                let dash_spent_wallet = (initial_balance_wallet as f64 - final_balance_wallet as f64) / 100_000_000_000.0;
+
                 BackendEvent::StrategyCompleted {
                     strategy_name: strategy_name.clone(),
                     result: StrategyCompletionResult::Success {
                         final_block_height: current_block_height,
+                        start_block_height: initial_block_info.height,
                         success_count,
                         transition_count,
                         prep_time,
                         run_time,
+                        dash_spent_identity,
+                        dash_spent_wallet,
                     }
                 }
             } else {
@@ -977,14 +993,13 @@ async fn set_start_identities(
     
                                     let current_utxos = match &*wallet {
                                         Wallet::SingleKeyWallet(wallet) => &wallet.utxos,
-                                        // Add handling for other wallet types if needed
                                     };
                                     if current_utxos != &old_utxos && !current_utxos.is_empty() {
                                         found_new_utxos = true;
                                         break;
                                     } else {
                                         retries += 1;
-                                        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                                        tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
                                     }
                                 }
     

@@ -135,10 +135,13 @@ pub(crate) enum AppStateUpdate<'s> {
 pub(crate) enum StrategyCompletionResult {
     Success {
         final_block_height: u64,
+        start_block_height: u64,
         success_count: u64,
         transition_count: u64,
         run_time: Duration,
         prep_time: Duration,
+        dash_spent_identity: f64,
+        dash_spent_wallet: f64,
     },
     PartiallyCompleted {
         reached_block_height: u64,

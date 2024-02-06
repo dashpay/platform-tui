@@ -4,18 +4,27 @@ use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
 use crate::{
     backend::{StrategyTask, Task},
-    ui::form::{FormController, FormStatus, Input, InputStatus, SelectInput},
+    ui::form::{ComposedInput, Field, FormController, FormStatus, Input, InputStatus, SelectInput},
 };
 
 pub(super) struct RunStrategyFormController {
-    input: SelectInput<String>,
+    input: ComposedInput<(
+        Field<SelectInput<u64>>,
+        Field<SelectInput<String>>,
+    )>,
     selected_strategy: String,
 }
 
 impl RunStrategyFormController {
     pub(super) fn new(selected_strategy: String) -> Self {
         RunStrategyFormController {
-            input: SelectInput::new(vec!["Yes".to_string(), "No".to_string()]),
+            input: ComposedInput::new((
+                Field::new(
+                    "Number of blocks to run the strategy",
+                    SelectInput::new(vec![10, 20, 50, 100, 500]),
+                ),
+                Field::new("Confirm you would like to run the strategy", SelectInput::new(vec!["Yes".to_string(), "No".to_string()])),
+            )),
             selected_strategy,
         }
     }
@@ -24,22 +33,24 @@ impl RunStrategyFormController {
 impl FormController for RunStrategyFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
         match self.input.on_event(event) {
-            InputStatus::Done(selection) => {
-                match selection.as_str() {
-                    "Yes" => FormStatus::Done {
-                        task: Task::Strategy(StrategyTask::RunStrategy(self.selected_strategy.clone())),
+            InputStatus::Done((num_blocks, confirm)) => {
+                if confirm == "Yes" {
+                    FormStatus::Done {
+                        task: Task::Strategy(StrategyTask::RunStrategy(self.selected_strategy.clone(), num_blocks)),
                         block: true,
-                    },
-                    "No" => FormStatus::Exit,
-                    _ => FormStatus::Exit,
+                    }
+                } else {
+                    FormStatus::Exit
                 }
-            },
-            status => status.into(),
+            }
+            InputStatus::Redraw => FormStatus::Redraw,
+            InputStatus::None => FormStatus::None,
+            InputStatus::Exit => FormStatus::Exit,
         }
     }
-    
+
     fn form_name(&self) -> &'static str {
-        "Confirm you would like to run the strategy."
+        "Run strategy"
     }
 
     fn step_view(&mut self, frame: &mut Frame, area: Rect) {
@@ -47,14 +58,14 @@ impl FormController for RunStrategyFormController {
     }
 
     fn step_name(&self) -> &'static str {
-        "Run strategy?"
+        self.input.step_name()
     }
 
     fn step_index(&self) -> u8 {
-        0
+        self.input.step_index()
     }
 
     fn steps_number(&self) -> u8 {
-        1
+        2
     }
 }

@@ -52,11 +52,11 @@ impl StrategyOpDocumentFormController {
                 Field::new("Select Action", SelectInput::new(action_types)),
                 Field::new(
                     "Times per block",
-                    SelectInput::new(vec![1, 2, 5, 10, 20, 40, 100, 1000]),
+                    SelectInput::new(vec![1, 5, 10, 50, 100, 500, 1000]),
                 ),
                 Field::new(
                     "Chance per block",
-                    SelectInput::new(vec![1.0, 0.9, 0.75, 0.5, 0.25, 0.1, 0.05, 0.01]),
+                    SelectInput::new(vec![1.0, 0.75, 0.5, 0.25, 0.1]),
                 ),
             )),
             selected_strategy,

@@ -315,8 +315,7 @@ impl AppState {
         signer.add_keys(keys);
 
         let updated_identity = identity
-            // v1.0-dev hack: temporarily changed this from put_to_platform_and_wait_for_response
-            .put_to_platform(
+            .put_to_platform_and_wait_for_response(
                 sdk,
                 asset_lock_proof.clone(),
                 &asset_lock_proof_private_key,
@@ -324,15 +323,13 @@ impl AppState {
             )
             .await?;
 
-        // v1.0-dev hack: temporarily remove this
-        // if updated_identity.id() != identity.id() {
-        //     panic!("identity ids don't match");
-        // }
+        if updated_identity.id() != identity.id() {
+            panic!("identity ids don't match");
+        }
 
         let mut loaded_identity = self.loaded_identity.lock().await;
 
-        // v1.0-dev hack: change updated_identity to identity here
-        loaded_identity.replace(identity.clone());
+        loaded_identity.replace(updated_identity.clone());
         let identity_result =
             MutexGuard::map(loaded_identity, |x| x.as_mut().expect("assigned above"));
 

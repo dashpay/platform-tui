@@ -26,15 +26,15 @@ use crate::ui::form::{FormController, FormStatus, Input, InputStatus, SelectInpu
 
 #[derive(Debug, strum::Display, Clone, strum::EnumIter, Copy)]
 enum OperationType {
+    Document,
     IdentityTopUp,
     IdentityAddKeys,
     IdentityDisableKeys,
-    IdentityWithdrawal,
+    // IdentityWithdrawal,
     IdentityTransfer,
     // ContractCreateRandom,
     // ContractUpdateDocTypesRandom,
     // ContractUpdateFieldsRandom,
-    Document,
 }
 
 pub(super) struct StrategyAddOperationFormController {
@@ -59,6 +59,10 @@ impl StrategyAddOperationFormController {
 
     fn set_op_form(&mut self, op_type: OperationType) {
         self.op_specific_form = Some(match op_type {
+            OperationType::Document => Box::new(StrategyOpDocumentFormController::new(
+                self.strategy_name.clone(),
+                self.known_contracts.clone(),
+            )),
             OperationType::IdentityTopUp => Box::new(StrategyOpIdentityTopUpFormController::new(
                 self.strategy_name.clone(),
             )),
@@ -74,16 +78,12 @@ impl StrategyAddOperationFormController {
                     identity_update::KeyUpdateOp::DisableKeys,
                 ))
             }
-            OperationType::IdentityWithdrawal => Box::new(
-                StrategyOpIdentityWithdrawalFormController::new(self.strategy_name.clone()),
-            ),
+            // OperationType::IdentityWithdrawal => Box::new(
+            //     StrategyOpIdentityWithdrawalFormController::new(self.strategy_name.clone()),
+            // ),
             OperationType::IdentityTransfer => Box::new(
                 StrategyOpIdentityTransferFormController::new(self.strategy_name.clone()),
             ),
-            OperationType::Document => Box::new(StrategyOpDocumentFormController::new(
-                self.strategy_name.clone(),
-                self.known_contracts.clone(),
-            )),
             // OperationType::ContractCreateRandom => Box::new(
             //     StrategyOpContractCreateFormController::new(self.strategy_name.clone()),
             // ),
