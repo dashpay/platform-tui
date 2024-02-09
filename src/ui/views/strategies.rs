@@ -11,8 +11,8 @@ mod start_identities;
 
 use std::collections::BTreeMap;
 
-use dash_platform_sdk::platform::DataContract;
 use dpp::{tests::json_document::json_document_to_created_contract, version::PlatformVersion};
+use rs_sdk::platform::DataContract;
 use strategy_tests::{
     operations::{
         DataContractUpdateOp::{DataContractNewDocumentTypes, DataContractNewOptionalFields},

@@ -12,16 +12,6 @@ use dapi_grpc::{
         GetIdentityBalanceRequest,
     },
 };
-use dash_platform_sdk::{
-    platform::{
-        transition::{
-            put_identity::PutIdentity, top_up_identity::TopUpIdentity,
-            withdraw_from_identity::WithdrawFromIdentity,
-        },
-        Fetch,
-    },
-    Sdk,
-};
 use dpp::{
     dashcore::{psbt::serialize::Serialize, Address, Network, PrivateKey, Transaction},
     identity::{
@@ -34,6 +24,16 @@ use dpp::{
 };
 use rand::{rngs::StdRng, SeedableRng};
 use rs_dapi_client::{DapiRequestExecutor, RequestSettings};
+use rs_sdk::{
+    platform::{
+        transition::{
+            put_identity::PutIdentity, top_up_identity::TopUpIdentity,
+            withdraw_from_identity::WithdrawFromIdentity,
+        },
+        Fetch,
+    },
+    Sdk,
+};
 use simple_signer::signer::SimpleSigner;
 use tokio::sync::{MappedMutexGuard, MutexGuard};
 
@@ -492,7 +492,7 @@ impl AppState {
         sdk: &Sdk,
         asset_lock_transaction: &Transaction,
         address: &Address,
-    ) -> Result<AssetLockProof, dash_platform_sdk::Error> {
+    ) -> Result<AssetLockProof, rs_sdk::Error> {
         let _span = tracing::debug_span!(
             "broadcast_and_retrieve_asset_lock",
             transaction_id = asset_lock_transaction.txid().to_string(),
@@ -504,9 +504,7 @@ impl AppState {
             .await?
             .chain
             .map(|chain| chain.best_block_hash)
-            .ok_or_else(|| {
-                dash_platform_sdk::Error::DapiClientError("missing `chain` field".to_owned())
-            })?;
+            .ok_or_else(|| rs_sdk::Error::DapiClientError("missing `chain` field".to_owned()))?;
 
         tracing::debug!(
             "starting the stream from the tip block hash {}",

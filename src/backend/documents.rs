@@ -8,10 +8,6 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use dash_platform_sdk::{
-    platform::{transition::put_document::PutDocument, DocumentQuery, FetchMany},
-    Error as SdkError, Sdk,
-};
 use dpp::{
     data_contract::{
         accessors::v0::DataContractV0Getters,
@@ -32,6 +28,10 @@ use dpp::{
 use futures::future::join_all;
 use rand::{prelude::StdRng, Rng, SeedableRng};
 use rs_dapi_client::RequestSettings;
+use rs_sdk::{
+    platform::{transition::put_document::PutDocument, DocumentQuery, FetchMany},
+    Error as SdkError, Sdk,
+};
 use simple_signer::signer::SimpleSigner;
 use tokio::{sync::Semaphore, time::Instant};
 use tracing::Level;

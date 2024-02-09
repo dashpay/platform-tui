@@ -2,8 +2,8 @@
 
 use std::{marker::PhantomData, str::FromStr};
 
-use dash_platform_sdk::platform::{DocumentQuery, DriveQuery};
 use dpp::prelude::DataContract;
+use rs_sdk::platform::{DocumentQuery, DriveQuery};
 
 pub(crate) trait TextInputParser {
     type Output;

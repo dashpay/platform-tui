@@ -17,12 +17,12 @@ use std::{
     sync::Arc,
 };
 
-use dash_platform_sdk::{Error as SdkError, Sdk};
 use dpp::{
     document::Document,
     identity::accessors::IdentityGettersV0,
     prelude::{Identifier, Identity},
 };
+use rs_sdk::{Error as SdkError, Sdk};
 use serde::Serialize;
 pub(crate) use state::AppState;
 use strategy_tests::Strategy;

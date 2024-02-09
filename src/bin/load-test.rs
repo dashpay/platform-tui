@@ -1,10 +1,6 @@
 use std::{panic, sync::Arc, time::Duration};
 
 use clap::Parser;
-use dash_platform_sdk::{
-    platform::{Fetch, Identifier},
-    SdkBuilder,
-};
 use dpp::{
     data_contract::{accessors::v0::DataContractV0Getters, DataContract},
     data_contracts::dpns_contract,
@@ -17,6 +13,10 @@ use rs_platform_explorer::{
         identities::IdentityTask, insight::InsightAPIClient, wallet::WalletTask, Backend, Task,
     },
     config::Config,
+};
+use rs_sdk::{
+    platform::{Fetch, Identifier},
+    SdkBuilder,
 };
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::EnvFilter;

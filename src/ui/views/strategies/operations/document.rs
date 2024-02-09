@@ -2,7 +2,6 @@
 
 use std::collections::BTreeMap;
 
-use dash_platform_sdk::platform::DataContract;
 use dpp::data_contract::{
     accessors::v0::DataContractV0Getters,
     document_type::{
@@ -10,6 +9,7 @@ use dpp::data_contract::{
         DocumentType,
     },
 };
+use rs_sdk::platform::DataContract;
 use strategy_tests::{
     frequency::Frequency,
     operations::{DocumentAction, DocumentOp, Operation, OperationType},

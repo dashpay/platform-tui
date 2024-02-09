@@ -10,7 +10,7 @@ tui-realm-stdlib = { git = "https://github.com/fominok/tui-realm-stdlib", branch
 tuirealm = "1.9.0"
 bs58 = "0.5.0"
 dpp = { path = "../platform/packages/rs-dpp", features = ["identity-serialization", "identity-serde-conversion", "random-documents", "random-identities", "random-document-types", "state-transition-signing"]}
-dash-platform-sdk = { path = "../platform/packages/rs-sdk"}
+rs-sdk = { path = "../platform/packages/rs-sdk"}
 thiserror = "1"
 serde = "1.0.188"
 serde_json = "1.0.107"

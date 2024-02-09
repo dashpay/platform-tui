@@ -5,10 +5,10 @@ mod ui;
 use std::{fs::File, panic, time::Duration};
 
 use crossterm::event::{Event as TuiEvent, EventStream};
-use dash_platform_sdk::SdkBuilder;
 use dpp::{identity::accessors::IdentityGettersV0, version::PlatformVersion};
 use futures::{future::OptionFuture, select, FutureExt, StreamExt};
 use rs_dapi_client::RequestSettings;
+use rs_sdk::SdkBuilder;
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::EnvFilter;
 use tuirealm::event::KeyEvent;

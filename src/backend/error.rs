@@ -21,9 +21,9 @@ pub enum Error {
     #[error("Wallet error: {0}")]
     Wallet(#[from] wallet::WalletError),
     #[error("SDK error: {0}: {1}")]
-    SdkExplained(String, dash_platform_sdk::Error),
+    SdkExplained(String, rs_sdk::Error),
     #[error("SDK error: {0}")]
-    Sdk(#[from] dash_platform_sdk::Error),
+    Sdk(#[from] rs_sdk::Error),
     #[error("Identity registration error: {0}")]
     IdentityRegistration(String),
     #[error("Identity top up error: {0}")]
