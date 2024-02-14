@@ -17,7 +17,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use dash_platform_sdk::Sdk;
+use rs_sdk::Sdk;
 use dpp::{
     document::Document,
     identity::accessors::IdentityGettersV0,

@@ -12,7 +12,7 @@ use dapi_grpc::{
         GetIdentityBalanceRequest,
     },
 };
-use dash_platform_sdk::{
+use rs_sdk::{
     platform::{
         transition::{
             broadcast::BroadcastStateTransition, put_identity::PutIdentity,
@@ -545,7 +545,7 @@ impl AppState {
         sdk: &Sdk,
         asset_lock_transaction: &Transaction,
         address: &Address,
-    ) -> Result<AssetLockProof, dash_platform_sdk::Error> {
+    ) -> Result<AssetLockProof, rs_sdk::Error> {
         let _span = tracing::debug_span!(
             "broadcast_and_retrieve_asset_lock",
             transaction_id = asset_lock_transaction.txid().to_string(),
@@ -558,7 +558,7 @@ impl AppState {
             .chain
             .map(|chain| chain.best_block_hash)
             .ok_or_else(|| {
-                dash_platform_sdk::Error::DapiClientError("missing `chain` field".to_owned())
+                rs_sdk::Error::DapiClientError("missing `chain` field".to_owned())
             })?;
 
         tracing::debug!(
