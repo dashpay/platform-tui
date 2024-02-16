@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use strategy_tests::{
     operations::{
-        DataContractUpdateOp::{DataContractNewDocumentTypes, DataContractNewOptionalFields},
+        DataContractUpdateAction::{DataContractNewDocumentTypes, DataContractNewOptionalFields},
         DocumentAction, OperationType,
     },
     Strategy,
@@ -229,7 +229,7 @@ fn display_strategy(
             OperationType::IdentityWithdrawal => "IdentityWithdrawal".to_string(),
             OperationType::ContractCreate(..) => "ContractCreateRandom".to_string(),
             OperationType::ContractUpdate(op) => {
-                let op_type = match op {
+                let op_type = match op.action {
                     DataContractNewDocumentTypes(_) => "NewDocTypesRandom".to_string(),
                     DataContractNewOptionalFields(..) => "NewFieldsRandom".to_string(),
                 };

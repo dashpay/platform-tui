@@ -2,8 +2,8 @@
 
 use std::collections::BTreeMap;
 
-use strategy_tests::operations::DataContractUpdateOp::DataContractNewDocumentTypes;
-use strategy_tests::operations::DataContractUpdateOp::DataContractNewOptionalFields;
+use strategy_tests::operations::DataContractUpdateAction::DataContractNewDocumentTypes;
+use strategy_tests::operations::DataContractUpdateAction::DataContractNewOptionalFields;
 use dpp::{data_contract::{DataContract, created_data_contract::CreatedDataContract}, version::PlatformVersion, tests::json_document::json_document_to_created_contract};
 use strategy_tests::{Strategy, operations::{OperationType, DocumentAction}};
 use tuirealm::{
@@ -234,7 +234,7 @@ fn format_operation_name(op_type: &OperationType) -> String {
         OperationType::IdentityWithdrawal => "IdentityWithdrawal".to_string(),
         OperationType::ContractCreate(..) => "ContractCreateRandom".to_string(),
         OperationType::ContractUpdate(op) => {
-            match op {
+            match op.action {
                 DataContractNewDocumentTypes(_) => "NewDocTypesRandom",
                 DataContractNewOptionalFields(..) => "NewFieldsRandom",
             }.to_string()

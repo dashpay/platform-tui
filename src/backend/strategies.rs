@@ -360,6 +360,7 @@ pub(crate) async fn run_strategy_task<'s>(
             let mut strategies_lock = app_state.available_strategies.lock().await;
             let drive_lock = app_state.drive.lock().await;
             let identity_private_keys_lock = app_state.identity_private_keys.lock().await;
+            let mut known_contracts_lock = app_state.known_contracts.lock().await;
             let mut loaded_identity_lock = match app_state.refresh_identity(&sdk).await {
                 Ok(lock) => lock,
                 Err(e) => {
@@ -610,6 +611,7 @@ pub(crate) async fn run_strategy_task<'s>(
                             &mut create_asset_lock,
                             &current_block_info,
                             &mut current_identities,
+                            &mut known_contracts_lock,
                             &mut signer,
                             &mut rng,
                             &StrategyConfig { 
@@ -798,7 +800,7 @@ pub(crate) async fn run_strategy_task<'s>(
                     } else {
                         info!("No state transitions to process for block {}", current_block_height);
                     }
-                                                
+
                     // Increment block height after processing each block
                     current_block_height += 1;
                 }
@@ -808,7 +810,7 @@ pub(crate) async fn run_strategy_task<'s>(
                     strategy.start_identities = Vec::new();
                     info!("Strategy start_identities field cleared");
                 }
-            
+
                 info!("Strategy '{}' finished running", strategy_name);
                 let run_time = run_start_time.elapsed();
 

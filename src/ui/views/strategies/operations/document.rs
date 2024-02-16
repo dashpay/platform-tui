@@ -74,6 +74,8 @@ impl FormController for StrategyOpDocumentFormController {
                 let document_types = selected_contract.document_types();
                 self.document_types = document_types.clone();
 
+                // To-do: let the user select the document type
+                // Pretty sure this just selects the first document type every time
                 let selected_document_type = self.document_types.values().next().unwrap().clone();
 
                 let action = match action_type.as_ref() {

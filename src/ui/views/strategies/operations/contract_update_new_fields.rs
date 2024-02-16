@@ -3,7 +3,7 @@
 use rand::Rng;
 use strategy_tests::{
     frequency::Frequency,
-    operations::{DataContractUpdateOp::DataContractNewOptionalFields, Operation, OperationType},
+    operations::{DataContractUpdateAction::DataContractNewOptionalFields, DataContractUpdateOp, Operation, OperationType},
 };
 use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
@@ -35,46 +35,50 @@ impl StrategyOpContractUpdateNewFieldsFormController {
     }
 }
 
-impl FormController for StrategyOpContractUpdateNewFieldsFormController {
-    fn on_event(&mut self, event: KeyEvent) -> FormStatus {
-        match self.input.on_event(event) {
-            InputStatus::Done((times_per_block, chance_per_block)) => FormStatus::Done {
-                task: Task::Strategy(StrategyTask::AddOperation {
-                    strategy_name: self.selected_strategy.clone(),
-                    operation: Operation {
-                        op_type: OperationType::ContractUpdate(DataContractNewOptionalFields(
-                            1..rand::thread_rng().gen_range(1..=u16::MAX),
-                            1..rand::thread_rng().gen_range(1..=u16::MAX),
-                        )),
-                        frequency: Frequency {
-                            times_per_block_range: 1..times_per_block+1,
-                            chance_per_block: Some(chance_per_block),
-                        },
-                    },
-                }),
-                block: false,
-            },
-            status => status.into(),
-        }
-    }
+// impl FormController for StrategyOpContractUpdateNewFieldsFormController {
+//     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
+//         match self.input.on_event(event) {
+//             InputStatus::Done((times_per_block, chance_per_block)) => FormStatus::Done {
+//                 task: Task::Strategy(StrategyTask::AddOperation {
+//                     strategy_name: self.selected_strategy.clone(),
+//                     operation: Operation {
+//                         op_type: OperationType::ContractUpdate(DataContractUpdateOp {
+//                             action: DataContractNewOptionalFields(
+//                                 1..rand::thread_rng().gen_range(1..=u16::MAX),
+//                                 1..rand::thread_rng().gen_range(1..=u16::MAX),
+//                             ),
+//                             contract,
+//                             document_type,
+//                         }),
+//                         frequency: Frequency {
+//                             times_per_block_range: 1..times_per_block+1,
+//                             chance_per_block: Some(chance_per_block),
+//                         },
+//                     },
+//                 }),
+//                 block: false,
+//             },
+//             status => status.into(),
+//         }
+//     }
 
-    fn form_name(&self) -> &'static str {
-        "Contract update new fields operation"
-    }
+//     fn form_name(&self) -> &'static str {
+//         "Contract update new fields operation"
+//     }
 
-    fn step_view(&mut self, frame: &mut Frame, area: Rect) {
-        self.input.view(frame, area)
-    }
+//     fn step_view(&mut self, frame: &mut Frame, area: Rect) {
+//         self.input.view(frame, area)
+//     }
 
-    fn step_name(&self) -> &'static str {
-        self.input.step_name()
-    }
+//     fn step_name(&self) -> &'static str {
+//         self.input.step_name()
+//     }
 
-    fn step_index(&self) -> u8 {
-        self.input.step_index()
-    }
+//     fn step_index(&self) -> u8 {
+//         self.input.step_index()
+//     }
 
-    fn steps_number(&self) -> u8 {
-        2
-    }
-}
+//     fn steps_number(&self) -> u8 {
+//         2
+//     }
+// }

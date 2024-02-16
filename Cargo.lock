@@ -942,8 +942,8 @@ source = "git+https://github.com/dashpay/rust-dashcore?branch=master#53893b5c5a2
 
 [[package]]
 name = "dashcore-rpc"
-version = "0.15.1"
-source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=master#016e3af953fe92e0e58a8fe2b3958334e318b6c0"
+version = "0.15.2"
+source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=master#7309f3a7e70bc2b3559883322d8d56a312885437"
 dependencies = [
  "dashcore-private",
  "dashcore-rpc-json",
@@ -957,8 +957,8 @@ dependencies = [
 
 [[package]]
 name = "dashcore-rpc-json"
-version = "0.15.1"
-source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=master#016e3af953fe92e0e58a8fe2b3958334e318b6c0"
+version = "0.15.2"
+source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=master#7309f3a7e70bc2b3559883322d8d56a312885437"
 dependencies = [
  "bincode 2.0.0-rc.3",
  "dashcore",
@@ -3907,6 +3907,7 @@ dependencies = [
  "platform-serialization-derive",
  "platform-version",
  "rand",
+ "serde_json",
  "simple-signer",
  "tracing",
 ]
