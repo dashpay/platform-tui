@@ -524,6 +524,7 @@ impl AppState {
         concurrent_requests: u16,
         rate_limit_per_sec: u32,
     ) -> Result<(), Error> {
+        let rate_limit_per_sec = NonZeroU32::new(rate_limit_per_sec).unwrap_or(NonZeroU32::MAX);
         tracing::info!(
             data_contract_id = data_contract.id().to_string(Encoding::Base58),
             document_type = document_type.name(),
@@ -583,9 +584,7 @@ impl AppState {
 
         let permits = Arc::new(Semaphore::new(concurrent_requests as usize));
 
-        let rate_limit = Arc::new(RateLimiter::direct(Quota::per_second(
-            NonZeroU32::new(rate_limit_per_sec).unwrap_or(NonZeroU32::MAX),
-        )));
+        let rate_limit = Arc::new(RateLimiter::direct(Quota::per_second(rate_limit_per_sec)));
 
         let cancel = CancellationToken::new();
 

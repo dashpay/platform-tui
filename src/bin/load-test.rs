@@ -34,7 +34,12 @@ struct Args {
         help = "The duration (in seconds) for which to handle the load test"
     )]
     time: u16,
-    #[arg(short, long, help = "Number of transactions to send per second")]
+    #[arg(
+        short,
+        long,
+        help = "Number of transactions to send per second",
+        default_value = "0"
+    )]
     rate: u32,
 }
 
