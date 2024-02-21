@@ -1,4 +1,4 @@
-use dash_platform_sdk::{
+use rs_sdk::{
     platform::{types::epoch::ExtendedEpochInfoEx, Fetch, FetchMany, LimitQuery},
     Sdk,
 };
