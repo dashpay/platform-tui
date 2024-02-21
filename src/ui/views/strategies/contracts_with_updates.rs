@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use dash_platform_sdk::platform::DataContract;
+use rs_sdk::platform::DataContract;
 use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
 use crate::{

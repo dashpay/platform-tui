@@ -12,16 +12,6 @@ use dapi_grpc::{
         GetIdentityBalanceRequest,
     },
 };
-use dash_platform_sdk::{
-    platform::{
-        transition::{
-            broadcast::BroadcastStateTransition, put_identity::PutIdentity,
-            top_up_identity::TopUpIdentity, withdraw_from_identity::WithdrawFromIdentity,
-        },
-        Fetch,
-    },
-    Sdk,
-};
 use dpp::{
     bls_signatures::PrivateKey,
     dashcore::{psbt::serialize::Serialize, Address, Network, Transaction},
@@ -45,6 +35,16 @@ use dpp::{
 };
 use rand::{rngs::StdRng, SeedableRng};
 use rs_dapi_client::{DapiRequestExecutor, RequestSettings};
+use rs_sdk::{
+    platform::{
+        transition::{
+            broadcast::BroadcastStateTransition, put_identity::PutIdentity,
+            top_up_identity::TopUpIdentity, withdraw_from_identity::WithdrawFromIdentity,
+        },
+        Fetch,
+    },
+    Sdk,
+};
 use simple_signer::signer::SimpleSigner;
 use tokio::sync::{MappedMutexGuard, MutexGuard};
 
@@ -531,7 +531,7 @@ impl AppState {
         //// Platform steps
 
         let updated_identity_balance = identity
-            .withdraw(sdk, new_receive_address, amount, None, signer)
+            .withdraw(sdk, new_receive_address, amount, None, signer, None)
             .await?;
 
         identity.set_balance(updated_identity_balance);
@@ -545,7 +545,7 @@ impl AppState {
         sdk: &Sdk,
         asset_lock_transaction: &Transaction,
         address: &Address,
-    ) -> Result<AssetLockProof, dash_platform_sdk::Error> {
+    ) -> Result<AssetLockProof, rs_sdk::Error> {
         let _span = tracing::debug_span!(
             "broadcast_and_retrieve_asset_lock",
             transaction_id = asset_lock_transaction.txid().to_string(),
@@ -557,9 +557,7 @@ impl AppState {
             .await?
             .chain
             .map(|chain| chain.best_block_hash)
-            .ok_or_else(|| {
-                dash_platform_sdk::Error::DapiClientError("missing `chain` field".to_owned())
-            })?;
+            .ok_or_else(|| rs_sdk::Error::DapiClientError("missing `chain` field".to_owned()))?;
 
         tracing::debug!(
             "starting the stream from the tip block hash {}",
@@ -670,12 +668,18 @@ async fn add_identity_key<'a>(
     let mut identity_updated = loaded_identity.clone();
     identity_updated.bump_revision();
 
+    let new_identity_nonce = sdk
+        .get_identity_nonce(identity_updated.id(), true, None)
+        .await
+        .map_err(|e| format!("Can't get new identity nonce: {e}"))?;
+
     let identity_update_transition = IdentityUpdateTransitionV0::try_from_identity_with_signer(
         &identity_updated,
         master_public_key_id,
         vec![Into::<IdentityPublicKeyInCreationV0>::into(identity_public_key.clone()).into()],
         Vec::new(),
         None,
+        new_identity_nonce,
         &signer,
         &platform_version,
         None,

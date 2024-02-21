@@ -14,8 +14,9 @@ use crate::{
             ScreenFeedback, ScreenToggleKey,
         },
         views::{
-            identities::IdentitiesScreenController, platform_info::PlatformInfoScreenController,
-            strategies::StrategiesScreenController,
+            identities::IdentitiesScreenController,
+            platform_info::PlatformInfoScreenController,
+            //            strategies::StrategiesScreenController,
         },
     },
     Event,
@@ -80,10 +81,10 @@ impl ScreenController for MainScreenController {
                 code: Key::Char('i'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::NextScreen(IdentitiesScreenController::builder()),
-            Event::Key(KeyEvent {
-                code: Key::Char('s'),
-                modifiers: KeyModifiers::NONE,
-            }) => ScreenFeedback::NextScreen(StrategiesScreenController::builder()),
+            // Event::Key(KeyEvent {
+            //     code: Key::Char('s'),
+            //     modifiers: KeyModifiers::NONE,
+            // }) => ScreenFeedback::NextScreen(StrategiesScreenController::builder()),
             Event::Key(KeyEvent {
                 code: Key::Char('w'),
                 modifiers: KeyModifiers::NONE,

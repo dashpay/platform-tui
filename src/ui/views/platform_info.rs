@@ -1,6 +1,4 @@
-//! Platform invo views.
-
-use std::fmt::{self, Display};
+//! Platform info views.
 
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
@@ -13,12 +11,12 @@ use crate::{
         platform_info::PlatformInfoTask::{
             FetchCurrentEpochInfo, FetchCurrentVersionVotingState, FetchSpecificEpochInfo,
         },
-        AppState, AppStateUpdate, BackendEvent, StrategyTask, Task,
+        AppState, BackendEvent, Task,
     },
     ui::{
         form::{
             parsers::DefaultTextInputParser, FormController, FormStatus, Input, InputStatus,
-            SelectInput, TextInput,
+            TextInput,
         },
         screen::{
             utils::impl_builder, widgets::info::Info, ScreenCommandKey, ScreenController,

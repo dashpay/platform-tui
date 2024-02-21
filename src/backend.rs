@@ -8,7 +8,7 @@ pub(crate) mod identities;
 pub(crate) mod insight;
 pub(crate) mod platform_info;
 mod state;
-mod strategies;
+// mod strategies;
 mod wallet;
 
 use std::{
@@ -17,7 +17,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use dash_platform_sdk::Sdk;
+use rs_sdk::Sdk;
 use dpp::{
     document::Document,
     identity::accessors::IdentityGettersV0,
@@ -25,14 +25,14 @@ use dpp::{
 };
 use serde::Serialize;
 pub(crate) use state::AppState;
-use strategy_tests::Strategy;
+// use strategy_tests::Strategy;
 use tokio::sync::{MappedMutexGuard, Mutex, MutexGuard};
 
-use self::state::{KnownContractsMap, StrategiesMap};
+use self::state::{KnownContractsMap};
 pub(crate) use self::{
     contracts::ContractTask,
-    state::StrategyContractNames,
-    strategies::StrategyTask,
+//    state::StrategyContractNames,
+//    strategies::StrategyTask,
     wallet::{Wallet, WalletTask},
 };
 use crate::{
@@ -51,7 +51,7 @@ use crate::{
 pub(crate) enum Task {
     FetchIdentityById(String, bool),
     PlatformInfo(PlatformInfoTask),
-    Strategy(StrategyTask),
+//    Strategy(StrategyTask),
     Wallet(WalletTask),
     Identity(IdentityTask),
     Contract(ContractTask),
@@ -109,15 +109,15 @@ pub(crate) enum BackendEvent<'s> {
 pub(crate) enum AppStateUpdate<'s> {
     KnownContracts(MutexGuard<'s, KnownContractsMap>),
     LoadedWallet(MappedMutexGuard<'s, Wallet>),
-    Strategies(
-        MutexGuard<'s, StrategiesMap>,
-        MutexGuard<'s, BTreeMap<String, StrategyContractNames>>,
-    ),
-    SelectedStrategy(
-        String,
-        MappedMutexGuard<'s, Strategy>,
-        MappedMutexGuard<'s, StrategyContractNames>,
-    ),
+    // Strategies(
+    //     MutexGuard<'s, StrategiesMap>,
+    //     MutexGuard<'s, BTreeMap<String, StrategyContractNames>>,
+    // ),
+    // SelectedStrategy(
+    //     String,
+    //     MappedMutexGuard<'s, Strategy>,
+    //     MappedMutexGuard<'s, StrategyContractNames>,
+    // ),
     IdentityRegistrationProgressed, // TODO provide state update details
     LoadedIdentity(MappedMutexGuard<'s, Identity>),
     FailedToRefreshIdentity,
@@ -169,16 +169,16 @@ impl<'a> Backend<'a> {
                     execution_result: execution_info_result,
                 }
             }
-            Task::Strategy(strategy_task) => {
-                strategies::run_strategy_task(
-                    &self.app_state.available_strategies,
-                    &self.app_state.available_strategies_contract_names,
-                    &self.app_state.selected_strategy,
-                    &self.app_state.known_contracts,
-                    strategy_task,
-                )
-                .await
-            }
+            // Task::Strategy(strategy_task) => {
+            //     strategies::run_strategy_task(
+            //         &self.app_state.available_strategies,
+            //         &self.app_state.available_strategies_contract_names,
+            //         &self.app_state.selected_strategy,
+            //         &self.app_state.known_contracts,
+            //         strategy_task,
+            //     )
+            //     .await
+            // }
             Task::Wallet(wallet_task) => {
                 wallet::run_wallet_task(&self.app_state.loaded_wallet, wallet_task, &self.insight)
                     .await
