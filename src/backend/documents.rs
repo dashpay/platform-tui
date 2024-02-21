@@ -527,7 +527,8 @@ impl AppState {
         tracing::info!(
             data_contract_id = data_contract.id().to_string(Encoding::Base58),
             document_type = document_type.name(),
-            "broadcasting simultaneously {} random documents for {} secs",
+            "broadcasting up to {} random documents per second in {} parallel threads for {} secs",
+            rate_limit_per_sec,
             concurrent_requests,
             duration.as_secs_f32()
         );
