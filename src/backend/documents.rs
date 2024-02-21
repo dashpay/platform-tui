@@ -1,5 +1,6 @@
 use std::{
     collections::{BTreeMap, HashSet},
+    num::NonZeroU32,
     ops::Deref,
     sync::{
         atomic::{AtomicU64, AtomicUsize, Ordering},
@@ -26,6 +27,7 @@ use dpp::{
     prelude::DataContract,
 };
 use futures::future::join_all;
+use governor::{Quota, RateLimiter};
 use rand::{prelude::StdRng, Rng, SeedableRng};
 use rs_dapi_client::RequestSettings;
 use rs_sdk::{
@@ -34,6 +36,7 @@ use rs_sdk::{
 };
 use simple_signer::signer::SimpleSigner;
 use tokio::{sync::Semaphore, time::Instant};
+use tokio_util::sync::CancellationToken;
 use tracing::Level;
 
 use super::{AppStateUpdate, CompletedTaskPayload};
@@ -519,6 +522,7 @@ impl AppState {
         document_type: Arc<DocumentType>,
         duration: Duration,
         concurrent_requests: u16,
+        rate_limit_per_sec: u32,
     ) -> Result<(), Error> {
         tracing::info!(
             data_contract_id = data_contract.id().to_string(Encoding::Base58),
@@ -578,6 +582,12 @@ impl AppState {
 
         let permits = Arc::new(Semaphore::new(concurrent_requests as usize));
 
+        let rate_limit = Arc::new(RateLimiter::direct(Quota::per_second(
+            NonZeroU32::new(rate_limit_per_sec).unwrap_or(NonZeroU32::MAX),
+        )));
+
+        let cancel = CancellationToken::new();
+
         let oks = Arc::new(AtomicUsize::new(0)); // Atomic counter for tasks
         let errs = Arc::new(AtomicUsize::new(0)); // Atomic counter for tasks
         let pending = Arc::new(AtomicUsize::new(0));
@@ -594,7 +604,19 @@ impl AppState {
             ban_failed_address: Some(false),
         };
 
-        while start_time.elapsed() < duration {
+        // start a timer to cancel the broadcast after the duration
+        let timeout_cancel = cancel.clone();
+        tokio::task::spawn(async move {
+            tokio::select! {
+                _ = timeout_cancel.cancelled() => {},
+                _ = tokio::time::sleep_until(start_time + duration) => {},
+            }
+
+            tracing::info!("cancelling the broadcast of random documents");
+            timeout_cancel.cancel()
+        });
+
+        while !cancel.is_cancelled() {
             // Acquire a permit
             let permits = Arc::clone(&permits);
             let permit = permits.acquire_owned().await.unwrap();
@@ -609,6 +631,8 @@ impl AppState {
 
             let identity_public_key = identity_public_key.clone();
 
+            let rate_limiter = rate_limit.clone();
+            let cancel_task = cancel.clone();
             let task = tokio::task::spawn(async move {
                 let mut std_rng = StdRng::from_entropy();
                 let document_state_transition_entropy: [u8; 32] = std_rng.gen();
@@ -634,6 +658,10 @@ impl AppState {
                 signer.add_key(identity_public_key.clone(), private_key.to_bytes());
 
                 // Broadcast the document
+                tokio::select! {
+                   _ = rate_limiter.until_ready() => {},
+                   _ = cancel_task.cancelled() => {},
+                };
 
                 tracing::trace!(
                     "broadcasting document {}",
@@ -664,7 +692,7 @@ impl AppState {
                         document_state_transition_entropy,
                         identity_public_key,
                         &signer,
-                        settings.clone(),
+                        settings,
                     )
                     .await;
 

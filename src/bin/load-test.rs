@@ -7,7 +7,6 @@ use dpp::{
     identity::accessors::IdentityGettersV0,
     version::PlatformVersion,
 };
-use rs_dapi_client::RequestSettings;
 use rs_platform_explorer::{
     backend::{
         identities::IdentityTask, insight::InsightAPIClient, wallet::WalletTask, Backend, Task,
@@ -35,6 +34,8 @@ struct Args {
         help = "The duration (in seconds) for which to handle the load test"
     )]
     time: u16,
+    #[arg(short, long, help = "Number of transactions to send per second")]
+    rate: u32,
 }
 
 #[tokio::main]
@@ -170,6 +171,7 @@ async fn main() {
             Arc::new(document_type),
             Duration::from_secs(args.time.into()),
             args.connections,
+            args.rate,
         )
         .await
         .unwrap();

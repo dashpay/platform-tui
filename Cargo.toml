@@ -9,20 +9,28 @@ strum = { version = "0.25.0", features = ["derive"] }
 tui-realm-stdlib = { git = "https://github.com/fominok/tui-realm-stdlib", branch = "input-cursor-fix" }
 tuirealm = "1.9.0"
 bs58 = "0.5.0"
-dpp = { path = "../platform/packages/rs-dpp", features = ["identity-serialization", "identity-serde-conversion", "random-documents", "random-identities", "random-document-types", "state-transition-signing"]}
-rs-sdk = { path = "../platform/packages/rs-sdk"}
+dpp = { path = "../platform/packages/rs-dpp", features = [
+    "identity-serialization",
+    "identity-serde-conversion",
+    "random-documents",
+    "random-identities",
+    "random-document-types",
+    "state-transition-signing",
+] }
+rs-sdk = { path = "../platform/packages/rs-sdk" }
 thiserror = "1"
 serde = "1.0.188"
 serde_json = "1.0.107"
 toml = { version = "0.8.2", features = ["display"] }
-dapi-grpc = { path = "../platform/packages/dapi-grpc", features = ["client"]}
-rs-dapi-client = { path = "../platform/packages/rs-dapi-client"}
+dapi-grpc = { path = "../platform/packages/dapi-grpc", features = ["client"] }
+rs-dapi-client = { path = "../platform/packages/rs-dapi-client" }
 tokio = { version = "1.32.0", features = ["full"] }
+tokio-util = { version = "0.7.10", default-features = false }
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
-strategy-tests = {path = "../platform/packages/strategy-tests"}
-simple-signer = {path = "../platform/packages/simple-signer"}
+strategy-tests = { path = "../platform/packages/strategy-tests" }
+simple-signer = { path = "../platform/packages/simple-signer" }
 reqwest = { version = "0.11.22", features = ["json"] }
-hex = { version = "0.4.3"}
+hex = { version = "0.4.3" }
 itertools = "0.11.0"
 crossterm = { version = "0.27.0", features = ["event-stream"] }
 futures = "0.3.29"
@@ -35,3 +43,4 @@ tracing-subscriber = "0.3.18"
 dotenvy = "0.15.7"
 envy = "0.4.1"
 clap = { version = "4.4.11", features = ["derive"] }
+governor = "0.6.3"
