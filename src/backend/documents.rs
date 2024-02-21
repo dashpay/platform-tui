@@ -658,12 +658,13 @@ impl AppState {
 
                 signer.add_key(identity_public_key.clone(), private_key.to_bytes());
 
-                // Broadcast the document
+                // Wait for the rate limiter to allow further processing
                 tokio::select! {
                    _ = rate_limiter.until_ready() => {},
-                   _ = cancel_task.cancelled() => {},
+                   _ = cancel_task.cancelled() => return,
                 };
 
+                // Broadcast the document
                 tracing::trace!(
                     "broadcasting document {}",
                     random_document.id().to_string(Encoding::Base58),
