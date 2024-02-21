@@ -25,7 +25,7 @@ use super::{AppStateUpdate, BackendEvent, Task};
 use crate::backend::insight::{InsightAPIClient, InsightError};
 
 #[derive(Clone, PartialEq)]
-pub(crate) enum WalletTask {
+pub enum WalletTask {
     AddByPrivateKey(String),
     Refresh,
     CopyAddress,
