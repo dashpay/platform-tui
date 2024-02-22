@@ -664,6 +664,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "chrono-humanize"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "799627e6b4d27827a814e837b9d8a504832086081806d45b1afa34dc982b023b"
+dependencies = [
+ "chrono",
+]
+
+[[package]]
 name = "ciborium"
 version = "0.2.0"
 source = "git+https://github.com/qrayven/ciborium?branch=feat-ser-null-as-undefined#5fbba76d132caf04cd1f271336d9daafdc747f10"
@@ -3520,6 +3529,8 @@ version = "0.1.0"
 dependencies = [
  "bincode 2.0.0-rc.3",
  "bs58 0.5.0",
+ "chrono",
+ "chrono-humanize",
  "clap",
  "cli-clipboard",
  "crossterm 0.27.0",
