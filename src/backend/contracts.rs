@@ -1,10 +1,10 @@
 //! Contracts backend.
 
-use rs_sdk::{platform::Fetch, Sdk};
 use dpp::{
     prelude::{DataContract, Identifier},
     system_data_contracts::{dashpay_contract, dpns_contract},
 };
+use rs_sdk::{platform::Fetch, Sdk};
 use tokio::sync::Mutex;
 
 use super::{as_toml, state::KnownContractsMap, AppStateUpdate, BackendEvent, Task};

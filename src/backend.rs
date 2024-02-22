@@ -1,15 +1,15 @@
 //! Application backend.
 //! This includes all logic unrelated to UI.
 
-mod contracts;
-pub(crate) mod documents;
-mod error;
-pub(crate) mod identities;
-pub(crate) mod insight;
-pub(crate) mod platform_info;
-mod state;
-mod strategies;
-mod wallet;
+pub mod contracts;
+pub mod documents;
+pub mod error;
+pub mod identities;
+pub mod insight;
+pub mod platform_info;
+pub mod state;
+// mod strategies;
+pub mod wallet;
 
 use std::{
     collections::BTreeMap,
@@ -17,22 +17,22 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use rs_sdk::Sdk;
 use dpp::{
     document::Document,
     identity::accessors::IdentityGettersV0,
     prelude::{Identifier, Identity},
 };
+use rs_sdk::Sdk;
 use serde::Serialize;
 pub(crate) use state::AppState;
-use strategy_tests::Strategy;
+// use strategy_tests::Strategy;
 use tokio::sync::{MappedMutexGuard, Mutex, MutexGuard};
 
-use self::state::{KnownContractsMap, StrategiesMap};
+use self::state::KnownContractsMap;
 pub(crate) use self::{
     contracts::ContractTask,
-    state::StrategyContractNames,
-    strategies::StrategyTask,
+    //    state::StrategyContractNames,
+    //    strategies::StrategyTask,
     wallet::{Wallet, WalletTask},
 };
 use crate::{
@@ -48,10 +48,10 @@ use crate::{
 /// things decoupled and for future UI/UX improvements it returns a [Task]
 /// instead.
 #[derive(Clone)]
-pub(crate) enum Task {
+pub enum Task {
     FetchIdentityById(String, bool),
     PlatformInfo(PlatformInfoTask),
-    Strategy(StrategyTask),
+    //    Strategy(StrategyTask),
     Wallet(WalletTask),
     Identity(IdentityTask),
     Contract(ContractTask),
@@ -61,7 +61,7 @@ pub(crate) enum Task {
 /// A positive task execution result.
 /// Occasionally it's desired to represent data on UI in a structured way, in
 /// that case specific variants are used.
-pub(crate) enum CompletedTaskPayload {
+pub enum CompletedTaskPayload {
     Documents(BTreeMap<Identifier, Option<Document>>),
     Document(Document),
     String(String),
@@ -89,7 +89,7 @@ impl Display for CompletedTaskPayload {
 }
 
 /// Any update coming from backend that UI may or may not react to.
-pub(crate) enum BackendEvent<'s> {
+pub enum BackendEvent<'s> {
     TaskCompleted {
         task: Task,
         execution_result: Result<CompletedTaskPayload, String>,
@@ -109,34 +109,30 @@ pub(crate) enum BackendEvent<'s> {
 pub(crate) enum AppStateUpdate<'s> {
     KnownContracts(MutexGuard<'s, KnownContractsMap>),
     LoadedWallet(MappedMutexGuard<'s, Wallet>),
-    Strategies(
-        MutexGuard<'s, StrategiesMap>,
-        MutexGuard<'s, BTreeMap<String, StrategyContractNames>>,
-    ),
-    SelectedStrategy(
-        String,
-        MappedMutexGuard<'s, Strategy>,
-        MappedMutexGuard<'s, StrategyContractNames>,
-    ),
+    // Strategies(
+    //     MutexGuard<'s, StrategiesMap>,
+    //     MutexGuard<'s, BTreeMap<String, StrategyContractNames>>,
+    // ),
+    // SelectedStrategy(
+    //     String,
+    //     MappedMutexGuard<'s, Strategy>,
+    //     MappedMutexGuard<'s, StrategyContractNames>,
+    // ),
     IdentityRegistrationProgressed, // TODO provide state update details
     LoadedIdentity(MappedMutexGuard<'s, Identity>),
     FailedToRefreshIdentity,
 }
 
 /// Application state, dependencies are task execution logic around it.
-pub(crate) struct Backend<'a> {
-    sdk: &'a Sdk,
+pub struct Backend<'a> {
+    pub sdk: &'a Sdk,
     app_state: AppState,
     insight: InsightAPIClient,
-    config: Config,
+    pub config: Config,
 }
 
 impl<'a> Backend<'a> {
-    pub(crate) async fn new(
-        sdk: &'a Sdk,
-        insight: InsightAPIClient,
-        config: Config,
-    ) -> Backend<'a> {
+    pub async fn new(sdk: &'a Sdk, insight: InsightAPIClient, config: Config) -> Backend<'a> {
         Backend {
             sdk,
             app_state: AppState::load(&insight, &config).await,
@@ -145,11 +141,11 @@ impl<'a> Backend<'a> {
         }
     }
 
-    pub(crate) fn state(&self) -> &AppState {
+    pub fn state(&self) -> &AppState {
         &self.app_state
     }
 
-    pub(crate) async fn run_task(&self, task: Task) -> BackendEvent {
+    pub async fn run_task(&self, task: Task) -> BackendEvent {
         match task {
             Task::FetchIdentityById(ref base58_id, add_to_known_identities) => {
                 let execution_result =
@@ -169,16 +165,16 @@ impl<'a> Backend<'a> {
                     execution_result: execution_info_result,
                 }
             }
-            Task::Strategy(strategy_task) => {
-                strategies::run_strategy_task(
-                    &self.app_state.available_strategies,
-                    &self.app_state.available_strategies_contract_names,
-                    &self.app_state.selected_strategy,
-                    &self.app_state.known_contracts,
-                    strategy_task,
-                )
-                .await
-            }
+            // Task::Strategy(strategy_task) => {
+            //     strategies::run_strategy_task(
+            //         &self.app_state.available_strategies,
+            //         &self.app_state.available_strategies_contract_names,
+            //         &self.app_state.selected_strategy,
+            //         &self.app_state.known_contracts,
+            //         strategy_task,
+            //     )
+            //     .await
+            // }
             Task::Wallet(wallet_task) => {
                 wallet::run_wallet_task(&self.app_state.loaded_wallet, wallet_task, &self.insight)
                     .await
