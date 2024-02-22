@@ -3,12 +3,13 @@
 mod document_type;
 mod fetch_contract;
 
-use std::fmt::{self, Display};
+use std::{collections::BTreeMap, fmt::{self, Display}};
 
 use dpp::{
     data_contract::accessors::v0::DataContractV0Getters, platform_value::string_encoding::Encoding,
     prelude::DataContract,
 };
+use itertools::Itertools;
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
     tui::prelude::Rect,
@@ -22,7 +23,7 @@ use self::{
 use crate::{
     backend::{AppState, AppStateUpdate, BackendEvent, ContractTask, Task},
     ui::{
-        form::{Input, InputStatus, SelectInput},
+        form::{FormController, FormStatus, Input, InputStatus, SelectInput},
         screen::{
             utils::impl_builder, widgets::info::Info, ScreenCommandKey, ScreenController,
             ScreenFeedback, ScreenToggleKey,
@@ -37,7 +38,7 @@ const COMMAND_KEYS: [ScreenCommandKey; 6] = [
     ScreenCommandKey::new("↓ / C-n", "Next contract"),
     ScreenCommandKey::new("↑ / C-p", "Prev contract"),
     ScreenCommandKey::new("Enter", "Select contract"),
-    ScreenCommandKey::new("c", "Clear known contracts"),
+    ScreenCommandKey::new("r", "Remove a contract"),
 ];
 
 /// Data contract name (identifier in app state) wrapper for better display
@@ -72,6 +73,7 @@ impl Display for DataContractEntry {
 
 pub(crate) struct ContractsScreenController {
     select: Option<SelectInput<DataContractEntry>>,
+    known_contracts: BTreeMap<String, DataContract>,
 }
 
 impl_builder!(ContractsScreenController);
@@ -86,7 +88,8 @@ impl ContractsScreenController {
         } else {
             None
         };
-        ContractsScreenController { select }
+        let known_contracts = known_contracts_lock.clone();
+        ContractsScreenController { select, known_contracts }
     }
 
     fn contract_entries_vec<'a>(
@@ -133,12 +136,9 @@ impl ScreenController for ContractsScreenController {
             }) => ScreenFeedback::NextScreen(FetchSystemContractScreenController::builder()),
 
             Event::Key(KeyEvent {
-                code: Key::Char('c'),
+                code: Key::Char('r'),
                 modifiers: KeyModifiers::NONE,
-            }) => ScreenFeedback::Task {
-                task: Task::Contract(ContractTask::ClearKnownContracts),
-                block: false,
-            },
+            }) => ScreenFeedback::Form(Box::new(RemoveContractFormController::new(self.known_contracts.clone()))),
 
             Event::Key(event) => {
                 if let Some(select) = &mut self.select {
@@ -176,5 +176,51 @@ impl ScreenController for ContractsScreenController {
             }
             _ => ScreenFeedback::None,
         }
+    }
+}
+
+pub(super) struct RemoveContractFormController {
+    input: SelectInput<String>,
+}
+
+impl RemoveContractFormController {
+    pub(super) fn new(contracts: BTreeMap<String, DataContract>) -> Self {
+        let contract_names = contracts.keys().cloned().collect_vec();
+        Self {
+            input: SelectInput::new(contract_names),
+        }
+    }
+}
+
+impl FormController for RemoveContractFormController {
+    fn on_event(&mut self, event: KeyEvent) -> FormStatus {
+        match self.input.on_event(event) {
+            InputStatus::Done(contract_name) => FormStatus::Done {
+                task: Task::Contract(ContractTask::RemoveContract(contract_name)),
+                block: false,
+            },
+            InputStatus::Exit => FormStatus::Exit,
+            status => status.into(),
+        }
+    }
+
+    fn form_name(&self) -> &'static str {
+        "Remove contract"
+    }
+
+    fn step_view(&mut self, frame: &mut Frame, area: Rect) {
+        self.input.view(frame, area)
+    }
+
+    fn step_name(&self) -> &'static str {
+        ""
+    }
+
+    fn step_index(&self) -> u8 {
+        0
+    }
+
+    fn steps_number(&self) -> u8 {
+        1
     }
 }
