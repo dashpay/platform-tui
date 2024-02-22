@@ -195,27 +195,31 @@ async fn broadcast_random_documents<'s>(
     let mut signer = SimpleSigner::default();
     signer.add_key(identity_public_key.clone(), private_key.to_vec());
 
-    let entropy = Bytes32(std_rng.gen());
-    let documents = document_type.random_documents_faker(
-        identity.id(),
-        &entropy,
-        count as u32,
-        &PlatformVersion::latest(),
-    )?;
-
-    let mut futures: FuturesUnordered<_> = documents
-        .iter()
-        .map(|document| {
-            document.put_to_platform_and_wait_for_response(
-                sdk,
-                document_type.clone(),
-                entropy.0,
-                identity_public_key.clone(),
-                Arc::clone(&data_contract),
-                &signer,
-            )
-        })
-        .collect();
+    let mut futures: FuturesUnordered<_> = iter::repeat_with(|| {
+        let entropy = Bytes32(std_rng.gen());
+        let data_contract = Arc::clone(&data_contract);
+        let signer = &signer;
+        async move {
+            let documents = document_type.random_documents_faker(
+                identity.id(),
+                &entropy,
+                1,
+                &PlatformVersion::latest(),
+            )?;
+            documents[0]
+                .put_to_platform_and_wait_for_response(
+                    sdk,
+                    document_type.clone(),
+                    entropy.0,
+                    identity_public_key.clone(),
+                    data_contract,
+                    signer,
+                )
+                .await
+        }
+    })
+    .take(count as usize)
+    .collect();
 
     let mut completed = 0;
     let mut last_error = None;

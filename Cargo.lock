@@ -1174,7 +1174,7 @@ dependencies = [
 
 [[package]]
 name = "dapi-grpc"
-version = "1.0.0-dev.4"
+version = "1.0.0-dev.5"
 dependencies = [
  "dapi-grpc-macros",
  "platform-version",
@@ -1189,7 +1189,7 @@ dependencies = [
 
 [[package]]
 name = "dapi-grpc-macros"
-version = "1.0.0-dev.4"
+version = "1.0.0-dev.5"
 dependencies = [
  "heck",
  "quote",
@@ -1307,7 +1307,7 @@ dependencies = [
 
 [[package]]
 name = "dashpay-contract"
-version = "1.0.0-dev.4"
+version = "1.0.0-dev.5"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -1317,7 +1317,7 @@ dependencies = [
 
 [[package]]
 name = "data-contracts"
-version = "1.0.0-dev.4"
+version = "1.0.0-dev.5"
 dependencies = [
  "dashpay-contract",
  "dpns-contract",
@@ -1429,7 +1429,7 @@ checksum = "9ea835d29036a4087793836fa931b08837ad5e957da9e23886b29586fb9b6650"
 
 [[package]]
 name = "dpns-contract"
-version = "1.0.0-dev.4"
+version = "1.0.0-dev.5"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -1439,7 +1439,7 @@ dependencies = [
 
 [[package]]
 name = "dpp"
-version = "1.0.0-dev.4"
+version = "1.0.0-dev.5"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1487,7 +1487,7 @@ dependencies = [
 
 [[package]]
 name = "drive"
-version = "1.0.0-dev.4"
+version = "1.0.0-dev.5"
 dependencies = [
  "byteorder",
  "ciborium",
@@ -1510,7 +1510,7 @@ dependencies = [
 
 [[package]]
 name = "drive-proof-verifier"
-version = "1.0.0-dev.4"
+version = "1.0.0-dev.5"
 dependencies = [
  "dapi-grpc",
  "dpp",
@@ -1726,7 +1726,7 @@ dependencies = [
 
 [[package]]
 name = "feature-flags-contract"
-version = "1.0.0-dev.4"
+version = "1.0.0-dev.5"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -2753,7 +2753,7 @@ dependencies = [
 
 [[package]]
 name = "masternode-reward-shares-contract"
-version = "1.0.0-dev.4"
+version = "1.0.0-dev.5"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -3320,7 +3320,7 @@ checksum = "d231b230927b5e4ad203db57bbcbee2802f6bce620b1e4a9024a07d94e2907ec"
 
 [[package]]
 name = "platform-serialization"
-version = "1.0.0-dev.4"
+version = "1.0.0-dev.5"
 dependencies = [
  "bincode 2.0.0-rc.3",
  "platform-version",
@@ -3328,7 +3328,7 @@ dependencies = [
 
 [[package]]
 name = "platform-serialization-derive"
-version = "1.0.0-dev.4"
+version = "1.0.0-dev.5"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3338,7 +3338,7 @@ dependencies = [
 
 [[package]]
 name = "platform-value"
-version = "1.0.0-dev.4"
+version = "1.0.0-dev.5"
 dependencies = [
  "base64 0.13.1",
  "bincode 2.0.0-rc.3",
@@ -3359,14 +3359,14 @@ dependencies = [
 
 [[package]]
 name = "platform-version"
-version = "1.0.0-dev.4"
+version = "1.0.0-dev.5"
 dependencies = [
  "thiserror",
 ]
 
 [[package]]
 name = "platform-versioning"
-version = "1.0.0-dev.4"
+version = "1.0.0-dev.5"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3945,7 +3945,7 @@ dependencies = [
 
 [[package]]
 name = "rs-dapi-client"
-version = "1.0.0-dev.4"
+version = "1.0.0-dev.5"
 dependencies = [
  "backon",
  "chrono",
@@ -4001,7 +4001,7 @@ dependencies = [
 
 [[package]]
 name = "rs-sdk"
-version = "1.0.0-dev.4"
+version = "1.0.0-dev.5"
 dependencies = [
  "async-trait",
  "bincode 2.0.0-rc.3",
@@ -4487,7 +4487,7 @@ checksum = "f27f6278552951f1f2b8cf9da965d10969b2efdea95a6ec47987ab46edfe263a"
 
 [[package]]
 name = "simple-signer"
-version = "1.0.0-dev.4"
+version = "1.0.0-dev.5"
 dependencies = [
  "anyhow",
  "bincode 2.0.0-rc.3",
@@ -6238,7 +6238,7 @@ dependencies = [
 
 [[package]]
 name = "withdrawals-contract"
-version = "1.0.0-dev.4"
+version = "1.0.0-dev.5"
 dependencies = [
  "num_enum",
  "platform-value",
