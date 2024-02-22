@@ -1,17 +1,16 @@
-use std::sync::Arc;
-use std::collections::BTreeMap;
 use chrono::LocalResult;
 use dpp::{
     block::{epoch::EpochIndex, extended_epoch_info::ExtendedEpochInfo},
     version::ProtocolVersionVoteCount,
 };
-use rs_sdk::{Error, platform::{types::epoch::ExtendedEpochInfoEx, Fetch, FetchMany, LimitQuery}, Sdk};
+use rs_sdk::{platform::{types::epoch::ExtendedEpochInfoEx, Fetch, FetchMany, LimitQuery}, Sdk};
 
 use crate::backend::{BackendEvent, Task};
 use chrono::prelude::*;
 use chrono_humanize::{Accuracy, HumanTime, Tense};
 use dapi_grpc::platform::v0::ResponseMetadata;
 use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
+use crate::backend::as_toml;
 
 #[derive(Clone, PartialEq)]
 pub(crate) enum PlatformInfoTask {

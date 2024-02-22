@@ -46,7 +46,7 @@ pub type IdentityPrivateKeysMap = BTreeMap<(Identifier, KeyID), Vec<u8>>;
 // tasks are executed on different state parts,
 // moreover single mutex hold during rendering will block unrelated tasks from
 // finishing
-#[derive(Debug)]
+// #[derive(Debug)]
 pub struct AppState {
     pub loaded_identity: Mutex<Option<Identity>>,
     pub identity_private_keys: Mutex<IdentityPrivateKeysMap>,
@@ -60,8 +60,8 @@ pub struct AppState {
     /// cannot properly restore the state and display a strategy, so this
     /// field serves as a double of strategies' `contracts_with_updates`,
     /// but using file names
-    // pub available_strategies_contract_names: Mutex<BTreeMap<String, StrategyContractNames>>,
-    // pub selected_strategy: Mutex<Option<String>>,
+    pub available_strategies_contract_names: Mutex<BTreeMap<String, StrategyContractNames>>,
+    pub selected_strategy: Mutex<Option<String>>,
     pub identity_asset_lock_private_key_in_creation: Mutex<
         Option<(
             Transaction,
@@ -120,7 +120,7 @@ impl Default for AppState {
             selected_strategy: None.into(),
             identity_asset_lock_private_key_in_creation: None.into(),
             identity_asset_lock_private_key_in_top_up: None.into(),
-            //            available_strategies_contract_names: BTreeMap::new().into(),
+            available_strategies_contract_names: BTreeMap::new().into(),
         }
     }
 }
@@ -172,7 +172,7 @@ impl PlatformSerializableWithPlatformVersion for AppState {
             available_strategies,
             selected_strategy,
             identity_asset_lock_private_key_in_creation,
-            //            available_strategies_contract_names,
+            available_strategies_contract_names,
             identity_asset_lock_private_key_in_top_up,
         } = self;
 
@@ -205,12 +205,6 @@ impl PlatformSerializableWithPlatformVersion for AppState {
                 Ok((key.clone(), serialized_strategy))
             })
             .collect::<Result<BTreeMap<String, Vec<u8>>, ProtocolError>>()?;
-
-        let identity_private_keys = identity_private_keys
-            .blocking_lock()
-            .iter()
-            .map(|(key, value)| (key.clone(), value.inner.secret_bytes()))
-            .collect();
 
         let identity_asset_lock_private_key_in_creation =
             identity_asset_lock_private_key_in_creation
@@ -348,17 +342,6 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
             })
             .collect::<Result<BTreeMap<String, Strategy>, ProtocolError>>()?;
 
-        let identity_private_keys = identity_private_keys
-            .into_iter()
-            .map(|(key, value)| {
-                (
-                    key,
-                    PrivateKey::from_slice(&value, Network::Devnet).expect("expected private key"), // TODO: Should use network from config
-                )
-            })
-            .collect::<BTreeMap<(Identifier, u32), PrivateKey>>()
-            .into();
-
         let identity_asset_lock_private_key_in_creation =
             identity_asset_lock_private_key_in_creation.map(
                 |(transaction, private_key, asset_lock_proof, identity_info)| {
@@ -391,12 +374,12 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
         
         // Deserialize the wallet state and wrap it in Arc<Mutex<_>>
         let deserialized_wallet_state = loaded_wallet
-            .map(|wallet| Arc::new(Mutex::new(Some(wallet))))
-            .unwrap_or_else(|| Arc::new(Mutex::new(None)));    
+            .map(|wallet| Mutex::new(Some(wallet)))
+            .unwrap_or_else(|| Mutex::new(None));
 
         Ok(AppState {
             loaded_identity: loaded_identity.into(),
-            identity_private_keys,
+            identity_private_keys: identity_private_keys.into(),
             loaded_wallet: deserialized_wallet_state,
             drive: drive.into(),
             known_identities: known_identities.into(),

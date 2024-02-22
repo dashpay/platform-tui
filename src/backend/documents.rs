@@ -27,10 +27,6 @@ use dpp::{
 };
 use futures::{stream::FuturesUnordered, Future, StreamExt};
 use rand::{prelude::StdRng, Rng, SeedableRng};
-use rs_sdk::{
-    platform::{transition::put_document::PutDocument, DocumentQuery, FetchMany},
-    Sdk,
-};
 use simple_signer::signer::SimpleSigner;
 
 use super::{state::IdentityPrivateKeysMap, AppStateUpdate, CompletedTaskPayload};

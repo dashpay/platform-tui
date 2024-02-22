@@ -54,7 +54,7 @@ pub(crate) enum StrategyTask {
 }
 
 pub(crate) async fn run_strategy_task<'s>(
-    sdk: Arc<Sdk>,
+    sdk:  &Sdk,
     app_state: &'s AppState,
     task: StrategyTask,
     insight: &'s InsightAPIClient,
@@ -309,7 +309,7 @@ pub(crate) async fn run_strategy_task<'s>(
                                 for (key_id, public_key) in &identity_v0.public_keys {
                                     let identity_key_tuple = (identity_v0.id, *key_id);
                                     if let Some(private_key_bytes) = identity_private_keys_lock.get(&identity_key_tuple) {
-                                        signer.private_keys.insert(public_key.clone(), private_key_bytes.to_bytes());
+                                        signer.private_keys.insert(public_key.clone(), private_key_bytes.clone());
                                     }
                                 }
                             }
@@ -361,7 +361,7 @@ pub(crate) async fn run_strategy_task<'s>(
             let identity_private_keys_lock = app_state.identity_private_keys.lock().await;
 
             // Fetch known_contracts from the chain to assure local copies match actual state.
-            match update_known_contracts(sdk.clone(), &app_state.known_contracts).await {
+            match update_known_contracts(sdk, &app_state.known_contracts).await {
                 Ok(_) => info!("Known contracts updated successfully."),
                 Err(e) => {
                     error!("Failed to update known contracts: {:?}", e);
@@ -382,8 +382,6 @@ pub(crate) async fn run_strategy_task<'s>(
                     };
                 }
             };
-        
-            let sdk_ref = Arc::clone(&sdk);
         
             // Access the loaded_wallet within the Mutex
             let mut loaded_wallet_lock = app_state.loaded_wallet.lock().await;
@@ -457,7 +455,7 @@ pub(crate) async fn run_strategy_task<'s>(
                         for (key_id, public_key) in &identity_v0.public_keys {
                             let identity_key_tuple = (identity_v0.id, *key_id);
                             if let Some(private_key_bytes) = identity_private_keys_lock.get(&identity_key_tuple) {
-                                new_signer.private_keys.insert(public_key.clone(), private_key_bytes.to_bytes());
+                                new_signer.private_keys.insert(public_key.clone(), private_key_bytes.clone());
                             }
                         }
                         new_signer
@@ -547,16 +545,14 @@ pub(crate) async fn run_strategy_task<'s>(
                     };
 
                     let mut create_asset_lock = {
-                        let loaded_wallet_clone = Arc::clone(&app_state.loaded_wallet);
                         let insight_ref = insight.clone();
-                        let sdk_ref_clone = Arc::clone(&sdk_ref);
                     
                         move |amount: u64| -> Option<(AssetLockProof, PrivateKey)> {
                             // Use the current Tokio runtime to execute the async block
                             tokio::task::block_in_place(|| {
                                 let rt = tokio::runtime::Handle::current();
                                 rt.block_on(async {
-                                    let mut wallet_lock = loaded_wallet_clone.lock().await;
+                                    let mut wallet_lock = app_state.loaded_wallet.lock().await;
                                     if let Some(ref mut wallet) = *wallet_lock {
                                         // Initialize old_utxos
                                         let old_utxos = match wallet {
@@ -567,7 +563,7 @@ pub(crate) async fn run_strategy_task<'s>(
                                         match wallet.asset_lock_transaction(None, amount) {
                                             Ok((asset_lock_transaction, asset_lock_proof_private_key)) => {
                                                 // Use sdk_ref_clone for broadcasting and retrieving asset lock
-                                                match AppState::broadcast_and_retrieve_asset_lock(&sdk_ref_clone, &asset_lock_transaction, &wallet.receive_address()).await {
+                                                match AppState::broadcast_and_retrieve_asset_lock(&sdk, &asset_lock_transaction, &wallet.receive_address()).await {
                                                     Ok(proof) => {
                                                         let max_retries = 5;
                                                         let mut retries = 0;
@@ -688,7 +684,6 @@ pub(crate) async fn run_strategy_task<'s>(
                             // Init
                             transition_count += 1;
                             st_queue_index += 1;
-                            let sdk_clone = Arc::clone(&sdk);
                             let transition_clone = transition.clone();                    
                             transition_type = transition_clone.name().to_owned();
                     
@@ -700,10 +695,10 @@ pub(crate) async fn run_strategy_task<'s>(
                             if is_dependent_transition {
                                 // Sequentially process dependent transitions with a delay between them
                                 if let Ok(broadcast_request) = transition_clone.broadcast_request_for_state_transition() {
-                                    match broadcast_request.execute(&*sdk_clone, RequestSettings::default()).await {
+                                    match broadcast_request.execute(sdk, RequestSettings::default()).await {
                                         Ok(_broadcast_result) => {
                                             if let Ok(wait_request) = transition_clone.wait_for_state_transition_result_request() {
-                                                match wait_request.execute(&*sdk_clone, RequestSettings::default()).await {
+                                                match wait_request.execute(sdk, RequestSettings::default()).await {
                                                     Ok(wait_response) => {
                                                         if let Some(wait_for_state_transition_result_response::Version::V0(v0_response)) = &wait_response.version {
                                                             if let Some(metadata) = &v0_response.metadata {
@@ -744,7 +739,7 @@ pub(crate) async fn run_strategy_task<'s>(
                                 let future = async move {
                                     match transition_clone.broadcast_request_for_state_transition() {
                                         Ok(broadcast_request) => {
-                                            let broadcast_result = broadcast_request.execute(&*sdk_clone, RequestSettings::default()).await;
+                                            let broadcast_result = broadcast_request.execute(sdk, RequestSettings::default()).await;
                                             Ok((transition_clone, broadcast_result))
                                         },
                                         Err(e) => Err(e),
@@ -767,12 +762,10 @@ pub(crate) async fn run_strategy_task<'s>(
                                         error!("Error broadcasting state transition {} for block height {}: {:?}", index + 1, current_block_info.height, broadcast_result.err().unwrap());
                                         continue;
                                     }
-
-                                    let sdk_clone = Arc::clone(&sdk);
                                     
                                     let wait_future = async move {
                                         let wait_result = match transition.wait_for_state_transition_result_request() {
-                                            Ok(wait_request) => wait_request.execute(&*sdk_clone, RequestSettings::default()).await,
+                                            Ok(wait_request) => wait_request.execute(sdk, RequestSettings::default()).await,
                                             Err(e) => {
                                                 error!("Error creating wait request for state transition {} block height {}: {:?}", index + 1, current_block_info.height, e);
                                                 return None;
@@ -1132,7 +1125,7 @@ async fn reload_wallet_utxos(wallet: &mut Wallet, insight: &InsightAPIClient) ->
 }
 
 pub async fn update_known_contracts(
-    sdk: Arc<Sdk>,
+    sdk: &Sdk,
     known_contracts: &Mutex<KnownContractsMap>,
 ) -> Result<(), String> {
     let contract_ids = {

@@ -8,8 +8,8 @@ pub mod identities;
 pub mod insight;
 pub mod platform_info;
 pub mod state;
-// mod strategies;
 pub mod wallet;
+mod strategies;
 
 use std::{
     collections::BTreeMap,
@@ -31,8 +31,8 @@ use tokio::sync::{MappedMutexGuard, MutexGuard, Mutex};
 use self::state::KnownContractsMap;
 pub(crate) use self::{
     contracts::ContractTask,
-    //    state::StrategyContractNames,
-    //    strategies::StrategyTask,
+    state::StrategyContractNames,
+    strategies::StrategyTask,
     wallet::{Wallet, WalletTask},
 };
 use crate::{
@@ -42,6 +42,7 @@ use crate::{
     },
     config::Config,
 };
+use crate::backend::state::StrategiesMap;
 
 /// Unit of work for the backend.
 /// UI shall not execute any actions unrelated to rendering directly, to keep
@@ -51,7 +52,7 @@ use crate::{
 pub enum Task {
     FetchIdentityById(String, bool),
     PlatformInfo(PlatformInfoTask),
-    //    Strategy(StrategyTask),
+    Strategy(StrategyTask),
     Wallet(WalletTask),
     Identity(IdentityTask),
     Contract(ContractTask),
@@ -117,15 +118,15 @@ pub enum BackendEvent<'s> {
 pub(crate) enum AppStateUpdate<'s> {
     KnownContracts(MutexGuard<'s, KnownContractsMap>),
     LoadedWallet(MappedMutexGuard<'s, Wallet>),
-    // Strategies(
-    //     MutexGuard<'s, StrategiesMap>,
-    //     MutexGuard<'s, BTreeMap<String, StrategyContractNames>>,
-    // ),
-    // SelectedStrategy(
-    //     String,
-    //     MappedMutexGuard<'s, Strategy>,
-    //     MappedMutexGuard<'s, StrategyContractNames>,
-    // ),
+    Strategies(
+        MutexGuard<'s, StrategiesMap>,
+        MutexGuard<'s, BTreeMap<String, StrategyContractNames>>,
+    ),
+    SelectedStrategy(
+        String,
+        MappedMutexGuard<'s, Strategy>,
+        MappedMutexGuard<'s, StrategyContractNames>,
+    ),
     IdentityRegistrationProgressed, // TODO provide state update details
     LoadedIdentity(MappedMutexGuard<'s, Identity>),
     FailedToRefreshIdentity,
@@ -192,7 +193,7 @@ impl<'a> Backend<'a> {
             }
             Task::Strategy(strategy_task) => {
                 strategies::run_strategy_task(
-                    Arc::clone(&self.sdk),
+                    &self.sdk,
                     &self.app_state,
                     strategy_task,
                     &self.insight,

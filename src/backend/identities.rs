@@ -39,11 +39,13 @@ use dpp::{
     identity::{
         accessors::{IdentityGettersV0, IdentitySettersV0},
         identity_public_key::accessors::v0::IdentityPublicKeyGettersV0,
-        KeyType, Purpose, SecurityLevel,
+        KeyType, Purpose as KeyPurpose, SecurityLevel as KeySecurityLevel,
     },
     platform_value::{string_encoding::Encoding, Identifier},
     prelude::{AssetLockProof, Identity, IdentityPublicKey},
 };
+use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+use dpp::identity::PartialIdentity;
 use rand::{rngs::StdRng, SeedableRng};
 use rs_dapi_client::RequestSettings;
 use simple_signer::signer::SimpleSigner;
@@ -518,8 +520,8 @@ impl AppState {
 
         let identity_public_key = identity
             .get_first_public_key_matching(
-                Purpose::WITHDRAW,
-                SecurityLevel::full_range().into(),
+                KeyPurpose::WITHDRAW,
+                KeySecurityLevel::full_range().into(),
                 KeyType::all_key_types().into(),
             )
             .ok_or(Error::IdentityWithdrawalError(

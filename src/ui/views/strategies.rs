@@ -16,17 +16,6 @@ mod run_strategy;
 mod run_strategy_screen;
 pub mod selected_strategy;
 
-use std::collections::BTreeMap;
-
-use rs_sdk::platform::DataContract;
-use dpp::{tests::json_document::json_document_to_created_contract, version::PlatformVersion};
-use strategy_tests::{
-    operations::{
-        DataContractUpdateOp::{DataContractNewDocumentTypes, DataContractNewOptionalFields},
-        DocumentAction, OperationType,
-    },
-    Strategy,
-};
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
     tui::prelude::Rect,
