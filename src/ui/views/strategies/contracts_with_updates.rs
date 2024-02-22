@@ -64,20 +64,22 @@ impl FormController for ContractsWithUpdatesFormController {
 
                 if add_another_answer == "Yes" {
                     // Collect contract names from known_contracts
-                    let mut contract_names: Vec<String> = self.known_contracts.keys().cloned().collect();
-            
+                    let mut contract_names: Vec<String> =
+                        self.known_contracts.keys().cloned().collect();
+
                     // Collect and add names from supporting_contracts, avoiding duplicates
-                    let additional_names: Vec<String> = self.supporting_contracts
+                    let additional_names: Vec<String> = self
+                        .supporting_contracts
                         .keys()
                         .filter(|name| !contract_names.contains(name))
                         .cloned()
                         .collect();
                     contract_names.extend(additional_names);
-            
+
                     // Remove duplicates
                     contract_names.sort();
                     contract_names.dedup();
-            
+
                     self.input = ComposedInput::new((
                         Field::new("Select Contract", SelectInput::new(contract_names)),
                         Field::new(

@@ -2,10 +2,18 @@
 
 use std::collections::BTreeMap;
 
-use strategy_tests::operations::DataContractUpdateAction::DataContractNewDocumentTypes;
-use strategy_tests::operations::DataContractUpdateAction::DataContractNewOptionalFields;
-use dpp::{data_contract::{DataContract, created_data_contract::CreatedDataContract}, version::PlatformVersion, tests::json_document::json_document_to_created_contract};
-use strategy_tests::{Strategy, operations::{OperationType, DocumentAction}};
+use dpp::{
+    data_contract::{created_data_contract::CreatedDataContract, DataContract},
+    tests::json_document::json_document_to_created_contract,
+    version::PlatformVersion,
+};
+use strategy_tests::{
+    operations::{
+        DataContractUpdateAction::{DataContractNewDocumentTypes, DataContractNewOptionalFields},
+        DocumentAction, OperationType,
+    },
+    Strategy,
+};
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
     tui::prelude::Rect,
@@ -13,16 +21,15 @@ use tuirealm::{
 };
 use walkdir::WalkDir;
 
+use super::operations::StrategyAddOperationFormController;
 use crate::{
     backend::{AppState, AppStateUpdate, BackendEvent, StrategyTask, Task},
     ui::screen::{
-            utils::impl_builder, widgets::info::Info, ScreenCommandKey, ScreenController,
-            ScreenFeedback, ScreenToggleKey,
-        },
+        utils::impl_builder, widgets::info::Info, ScreenCommandKey, ScreenController,
+        ScreenFeedback, ScreenToggleKey,
+    },
     Event,
 };
-
-use super::operations::StrategyAddOperationFormController;
 
 const COMMAND_KEYS: [ScreenCommandKey; 3] = [
     ScreenCommandKey::new("q", "Back to Strategy"),
@@ -34,7 +41,10 @@ pub struct OperationsScreenController {
     info: Info,
     strategy_name: Option<String>,
     selected_strategy: Option<Strategy>,
-    contracts_with_updates: Vec<(CreatedDataContract, Option<BTreeMap<u64, CreatedDataContract>>)>,
+    contracts_with_updates: Vec<(
+        CreatedDataContract,
+        Option<BTreeMap<u64, CreatedDataContract>>,
+    )>,
     known_contracts: BTreeMap<String, DataContract>,
     supporting_contracts: BTreeMap<String, DataContract>,
     strategy_contract_names: BTreeMap<String, Vec<(String, Option<BTreeMap<u64, String>>)>>,
@@ -48,20 +58,27 @@ impl OperationsScreenController {
         let selected_strategy_lock = app_state.selected_strategy.lock().await;
         let known_contracts_lock = app_state.known_contracts.lock().await;
         let supporting_contracts_lock = app_state.supporting_contracts.lock().await;
-        let strategy_contract_names_lock = app_state.available_strategies_contract_names.lock().await;
+        let strategy_contract_names_lock =
+            app_state.available_strategies_contract_names.lock().await;
 
-        let (info_text, current_strategy, current_contracts_with_updates) = if let Some(selected_strategy_name) = &*selected_strategy_lock {
-            if let Some(strategy) = available_strategies_lock.get(selected_strategy_name) {
-                // Construct the info_text and get the contracts_with_updates for the selected strategy
-                let info_text = format!("Selected Strategy: {}", selected_strategy_name);
-                let current_contracts_with_updates = strategy.contracts_with_updates.clone();
-                (info_text, Some(strategy.clone()), current_contracts_with_updates)
+        let (info_text, current_strategy, current_contracts_with_updates) =
+            if let Some(selected_strategy_name) = &*selected_strategy_lock {
+                if let Some(strategy) = available_strategies_lock.get(selected_strategy_name) {
+                    // Construct the info_text and get the contracts_with_updates for the selected
+                    // strategy
+                    let info_text = format!("Selected Strategy: {}", selected_strategy_name);
+                    let current_contracts_with_updates = strategy.contracts_with_updates.clone();
+                    (
+                        info_text,
+                        Some(strategy.clone()),
+                        current_contracts_with_updates,
+                    )
+                } else {
+                    ("No selected strategy found".to_string(), None, vec![])
+                }
             } else {
-                ("No selected strategy found".to_string(), None, vec![])
-            }
-        } else {
-            ("No strategy selected".to_string(), None, vec![])
-        };
+                ("No strategy selected".to_string(), None, vec![])
+            };
 
         let info = Info::new_fixed(&info_text);
 
@@ -76,7 +93,7 @@ impl OperationsScreenController {
         }
     }
 
-    async fn update_supporting_contracts(&mut self, ) {
+    async fn update_supporting_contracts(&mut self) {
         let platform_version = PlatformVersion::latest();
 
         for entry in WalkDir::new("supporting_files/contract")
@@ -109,7 +126,6 @@ impl OperationsScreenController {
             })
         });
     }
-
 }
 
 impl ScreenController for OperationsScreenController {
@@ -171,12 +187,13 @@ impl ScreenController for OperationsScreenController {
                 self.selected_strategy = Some((*strategy).clone());
                 self.strategy_name = Some(strategy_name.clone());
                 self.contracts_with_updates = strategy.contracts_with_updates.clone();
-            
+
                 // Update the strategy_contract_names map
                 if let Some(strategy_name) = &self.strategy_name {
-                    self.strategy_contract_names.insert(strategy_name.clone(), contract_names.to_vec());
+                    self.strategy_contract_names
+                        .insert(strategy_name.clone(), contract_names.to_vec());
                 }
-            
+
                 ScreenFeedback::Redraw
             }
             _ => ScreenFeedback::None,
@@ -188,7 +205,9 @@ impl ScreenController for OperationsScreenController {
             let mut operations_lines = String::new();
             for op in &strategy.operations {
                 let op_name = format_operation_name(&op.op_type);
-                let times_per_block_display = if op.frequency.times_per_block_range.end > op.frequency.times_per_block_range.start {
+                let times_per_block_display = if op.frequency.times_per_block_range.end
+                    > op.frequency.times_per_block_range.start
+                {
                     op.frequency.times_per_block_range.end - 1
                 } else {
                     op.frequency.times_per_block_range.end
@@ -202,16 +221,22 @@ impl ScreenController for OperationsScreenController {
                     indent = 0
                 ));
             }
-    
+
             if operations_lines.is_empty() {
                 "No operations defined for this strategy.".to_string()
             } else {
-                format!("Strategy: {}\nOperations:\n{}", self.strategy_name.as_ref().unwrap_or(&"Unknown".to_string()), operations_lines)
+                format!(
+                    "Strategy: {}\nOperations:\n{}",
+                    self.strategy_name
+                        .as_ref()
+                        .unwrap_or(&"Unknown".to_string()),
+                    operations_lines
+                )
             }
         } else {
             "Select a strategy to view its operations.".to_string()
         };
-    
+
         self.info = Info::new_fixed(&display_text);
         self.info.view(frame, area);
     }
@@ -233,12 +258,11 @@ fn format_operation_name(op_type: &OperationType) -> String {
         OperationType::IdentityUpdate(op) => format!("IdentityUpdate({:?})", op),
         OperationType::IdentityWithdrawal => "IdentityWithdrawal".to_string(),
         OperationType::ContractCreate(..) => "ContractCreateRandom".to_string(),
-        OperationType::ContractUpdate(op) => {
-            match op.action {
-                DataContractNewDocumentTypes(_) => "NewDocTypesRandom",
-                DataContractNewOptionalFields(..) => "NewFieldsRandom",
-            }.to_string()
+        OperationType::ContractUpdate(op) => match op.action {
+            DataContractNewDocumentTypes(_) => "NewDocTypesRandom",
+            DataContractNewOptionalFields(..) => "NewFieldsRandom",
         }
+        .to_string(),
         OperationType::IdentityTransfer => "IdentityTransfer".to_string(),
         // Add other operation types as necessary
     }

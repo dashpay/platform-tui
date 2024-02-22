@@ -38,7 +38,7 @@ pub(crate) type ContractFileName = String;
 
 pub(super) type StrategiesMap = BTreeMap<String, Strategy>;
 pub(crate) type StrategyContractNames =
-     Vec<(ContractFileName, Option<BTreeMap<u64, ContractFileName>>)>;
+    Vec<(ContractFileName, Option<BTreeMap<u64, ContractFileName>>)>;
 pub(super) type KnownContractsMap = BTreeMap<String, DataContract>;
 pub type IdentityPrivateKeysMap = BTreeMap<(Identifier, KeyID), Vec<u8>>;
 
@@ -54,7 +54,8 @@ pub struct AppState {
     pub drive: Mutex<Drive>,
     pub known_identities: Mutex<BTreeMap<Identifier, Identity>>,
     pub known_contracts: Mutex<KnownContractsMap>,
-    pub supporting_contracts: Mutex<BTreeMap<String, DataContract>>, // Contracts from supporting_files
+    pub supporting_contracts: Mutex<BTreeMap<String, DataContract>>, /* Contracts from
+                                                                      * supporting_files */
     pub available_strategies: Mutex<StrategiesMap>,
     /// Because we don't store which contract support file was used exactly we
     /// cannot properly restore the state and display a strategy, so this
@@ -101,9 +102,9 @@ impl Default for AppState {
             }
         }
 
-        let (drive, protocol_version) = Drive::open("explorer.drive", None)
-            .expect("expected to open Drive successfully");
-    
+        let (drive, protocol_version) =
+            Drive::open("explorer.drive", None).expect("expected to open Drive successfully");
+
         drive
             .create_initial_state_structure(None, platform_version)
             .expect("expected to create root tree successfully");
@@ -316,7 +317,10 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
                     platform_version,
                 )
                 .map_err(|e| {
-                    let msg = format!("Error deserializing supporting_contract for key {}: {}", key, e);
+                    let msg = format!(
+                        "Error deserializing supporting_contract for key {}: {}",
+                        key, e
+                    );
                     PlatformDeserializationError(msg)
                 })?;
                 Ok((key, contract))
@@ -369,9 +373,9 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
                 )
             });
 
-        let (drive, protocol_version) = Drive::open("explorer.drive", None)
-            .expect("expected to open Drive successfully");
-        
+        let (drive, protocol_version) =
+            Drive::open("explorer.drive", None).expect("expected to open Drive successfully");
+
         // Deserialize the wallet state and wrap it in Arc<Mutex<_>>
         let deserialized_wallet_state = loaded_wallet
             .map(|wallet| Mutex::new(Some(wallet)))

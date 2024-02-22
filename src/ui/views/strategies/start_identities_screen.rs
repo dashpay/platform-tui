@@ -7,16 +7,15 @@ use tuirealm::{
     Frame,
 };
 
+use super::start_identities::StrategyStartIdentitiesFormController;
 use crate::{
     backend::{AppState, AppStateUpdate, BackendEvent, StrategyTask, Task},
     ui::screen::{
-            utils::impl_builder, widgets::info::Info, ScreenCommandKey, ScreenController,
-            ScreenFeedback, ScreenToggleKey,
-        },
+        utils::impl_builder, widgets::info::Info, ScreenCommandKey, ScreenController,
+        ScreenFeedback, ScreenToggleKey,
+    },
     Event,
 };
-
-use super::start_identities::StrategyStartIdentitiesFormController;
 
 const COMMAND_KEYS: [ScreenCommandKey; 3] = [
     ScreenCommandKey::new("q", "Back to Strategy"),
@@ -37,16 +36,17 @@ impl StartIdentitiesScreenController {
         let available_strategies_lock = app_state.available_strategies.lock().await;
         let selected_strategy_lock = app_state.selected_strategy.lock().await;
 
-        let (info_text, current_strategy) = if let Some(selected_strategy_name) = &*selected_strategy_lock {
-            if let Some(strategy) = available_strategies_lock.get(selected_strategy_name) {
-                let info_text = format!("Selected Strategy: {}", selected_strategy_name);
-                (info_text, Some(strategy.clone()))
+        let (info_text, current_strategy) =
+            if let Some(selected_strategy_name) = &*selected_strategy_lock {
+                if let Some(strategy) = available_strategies_lock.get(selected_strategy_name) {
+                    let info_text = format!("Selected Strategy: {}", selected_strategy_name);
+                    (info_text, Some(strategy.clone()))
+                } else {
+                    ("No selected strategy found".to_string(), None)
+                }
             } else {
-                ("No selected strategy found".to_string(), None)
-            }
-        } else {
-            ("No strategy selected".to_string(), None)
-        };
+                ("No strategy selected".to_string(), None)
+            };
 
         let info = Info::new_fixed(&info_text);
 
@@ -98,13 +98,11 @@ impl ScreenController for StartIdentitiesScreenController {
                 )),
                 block: false,
             },
-            Event::Backend(
-                BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
-                    strategy_name,
-                    strategy,
-                    _,
-                )),
-            ) => {
+            Event::Backend(BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
+                strategy_name,
+                strategy,
+                _,
+            ))) => {
                 // Check if the updated strategy is the one currently being displayed
                 if Some(strategy_name) == self.strategy_name.as_ref() {
                     // Update the selected_strategy with the new data
@@ -118,7 +116,8 @@ impl ScreenController for StartIdentitiesScreenController {
             }
             Event::Backend(BackendEvent::TaskCompletedStateChange {
                 task: Task::Strategy(StrategyTask::SetStartIdentities { .. }),
-                app_state_update: AppStateUpdate::SelectedStrategy(strategy_name, updated_strategy, _),
+                app_state_update:
+                    AppStateUpdate::SelectedStrategy(strategy_name, updated_strategy, _),
                 ..
             }) => {
                 // Check if the updated strategy is the one currently being displayed
@@ -139,14 +138,14 @@ impl ScreenController for StartIdentitiesScreenController {
     fn view(&mut self, frame: &mut Frame, area: Rect) {
         let display_text = if let Some(strategy) = &self.selected_strategy {
             // Construct the text to display start identities
-            let start_identities_text = format!(
-                "Start identities: {}",
-                strategy.start_identities.len()
-            );
+            let start_identities_text =
+                format!("Start identities: {}", strategy.start_identities.len());
 
             format!(
                 "Strategy: {}\n{}",
-                self.strategy_name.as_ref().unwrap_or(&"Unknown".to_string()), 
+                self.strategy_name
+                    .as_ref()
+                    .unwrap_or(&"Unknown".to_string()),
                 start_identities_text
             )
         } else {

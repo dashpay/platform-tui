@@ -5,10 +5,6 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use rs_sdk::{
-    platform::{transition::put_document::PutDocument, DocumentQuery, FetchMany},
-    Sdk,
-};
 use dpp::{
     data_contract::{
         accessors::v0::DataContractV0Getters,
@@ -27,6 +23,10 @@ use dpp::{
 };
 use futures::{stream::FuturesUnordered, Future, StreamExt};
 use rand::{prelude::StdRng, Rng, SeedableRng};
+use rs_sdk::{
+    platform::{transition::put_document::PutDocument, DocumentQuery, FetchMany},
+    Sdk,
+};
 use simple_signer::signer::SimpleSigner;
 
 use super::{state::IdentityPrivateKeysMap, AppStateUpdate, CompletedTaskPayload};

@@ -1,7 +1,3 @@
-mod backend;
-mod config;
-mod ui;
-
 use std::{fs::File, panic, time::Duration};
 
 use crossterm::event::{Event as TuiEvent, EventStream};
@@ -27,7 +23,8 @@ async fn main() {
         .with_ansi(false)
         .finish();
 
-    tracing::subscriber::set_global_default(subscriber).expect("Unable to set global default subscriber");
+    tracing::subscriber::set_global_default(subscriber)
+        .expect("Unable to set global default subscriber");
 
     // Test log statement
     tracing::info!("Logger initialized successfully");
@@ -96,7 +93,7 @@ async fn main() {
         }
 
         *selected_strategy = None;
-    }    
+    }
 
     let initial_identity_balance = backend
         .state()

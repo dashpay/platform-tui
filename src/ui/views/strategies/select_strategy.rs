@@ -26,9 +26,7 @@ impl FormController for SelectStrategyFormController {
                 task: Task::Strategy(StrategyTask::SelectStrategy(strategy_name)),
                 block: false,
             },
-            InputStatus::Exit => {
-                FormStatus::Exit
-            }
+            InputStatus::Exit => FormStatus::Exit,
             status => status.into(),
         }
     }

@@ -126,7 +126,10 @@ impl Ui {
         // On task completion we shall unfreeze the screen and update status bar
         // "blocked" message
         if let Event::Backend(
-            BackendEvent::TaskCompleted { .. } | BackendEvent::TaskCompletedStateChange { .. } | BackendEvent::StrategyCompleted { .. } | BackendEvent::StrategyError { .. },
+            BackendEvent::TaskCompleted { .. }
+            | BackendEvent::TaskCompletedStateChange { .. }
+            | BackendEvent::StrategyCompleted { .. }
+            | BackendEvent::StrategyError { .. },
         ) = &event
         {
             self.status_bar_state.unblock();
@@ -211,13 +214,18 @@ impl Ui {
                 }
                 ScreenFeedback::PreviousScreen => {
                     self.status_bar_state.to_parent();
-            
+
                     let current_screen_name = self.screen.controller.name();
-                    let previous_screen_name = self.screen_stack.last().map(|s| s.controller.name());
-            
-                    if current_screen_name == "Strategy" && previous_screen_name == Some("Strategies") {
-                        // Rebuild the StrategiesScreenController when navigating back from SelectedStrategyScreenController
-                        let new_controller = StrategiesScreenController::new(app_state.deref()).await;
+                    let previous_screen_name =
+                        self.screen_stack.last().map(|s| s.controller.name());
+
+                    if current_screen_name == "Strategy"
+                        && previous_screen_name == Some("Strategies")
+                    {
+                        // Rebuild the StrategiesScreenController when navigating back from
+                        // SelectedStrategyScreenController
+                        let new_controller =
+                            StrategiesScreenController::new(app_state.deref()).await;
                         self.screen_stack.pop(); // Remove the old StrategiesScreenController from the stack
                         self.screen = Screen::new(Box::new(new_controller));
                     } else {
@@ -229,7 +237,7 @@ impl Ui {
                             return UiFeedback::Quit;
                         }
                     }
-            
+
                     UiFeedback::Redraw
                 }
                 ScreenFeedback::Form(controller) => {
@@ -238,14 +246,14 @@ impl Ui {
                 }
                 ScreenFeedback::FormThenNextScreen { form, screen } => {
                     self.form = Some(Form::new(form));
-            
+
                     let controller = screen(app_state.deref()).await;
                     self.status_bar_state.add_child(controller.name());
                     let old_screen = mem::replace(&mut self.screen, Screen::new(controller));
                     self.screen_stack.push(old_screen);
-                    
+
                     UiFeedback::Redraw
-                },
+                }
                 ScreenFeedback::Task { task, block } => {
                     if block {
                         self.status_bar_state.block();

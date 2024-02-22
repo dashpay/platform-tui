@@ -8,13 +8,14 @@ pub mod identities;
 pub mod insight;
 pub mod platform_info;
 pub mod state;
-pub mod wallet;
 mod strategies;
+pub mod wallet;
 
 use std::{
     collections::BTreeMap,
     fmt::{self, Display},
-    sync::Arc, time::Duration,
+    sync::Arc,
+    time::Duration,
 };
 
 use dpp::{
@@ -26,7 +27,7 @@ use rs_sdk::Sdk;
 use serde::Serialize;
 pub(crate) use state::AppState;
 use strategy_tests::Strategy;
-use tokio::sync::{MappedMutexGuard, MutexGuard, Mutex};
+use tokio::sync::{MappedMutexGuard, Mutex, MutexGuard};
 
 use self::state::KnownContractsMap;
 pub(crate) use self::{
@@ -38,11 +39,10 @@ pub(crate) use self::{
 use crate::{
     backend::{
         documents::DocumentTask, identities::IdentityTask, insight::InsightAPIClient,
-        platform_info::PlatformInfoTask,
+        platform_info::PlatformInfoTask, state::StrategiesMap,
     },
     config::Config,
 };
-use crate::backend::state::StrategiesMap;
 
 /// Unit of work for the backend.
 /// UI shall not execute any actions unrelated to rendering directly, to keep

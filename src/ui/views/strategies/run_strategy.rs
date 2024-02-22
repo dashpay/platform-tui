@@ -8,10 +8,7 @@ use crate::{
 };
 
 pub(super) struct RunStrategyFormController {
-    input: ComposedInput<(
-        Field<SelectInput<u64>>,
-        Field<SelectInput<String>>,
-    )>,
+    input: ComposedInput<(Field<SelectInput<u64>>, Field<SelectInput<String>>)>,
     selected_strategy: String,
 }
 
@@ -23,7 +20,10 @@ impl RunStrategyFormController {
                     "Number of blocks to run the strategy",
                     SelectInput::new(vec![10, 20, 50, 100, 500]),
                 ),
-                Field::new("Confirm you would like to run the strategy", SelectInput::new(vec!["Yes".to_string(), "No".to_string()])),
+                Field::new(
+                    "Confirm you would like to run the strategy",
+                    SelectInput::new(vec!["Yes".to_string(), "No".to_string()]),
+                ),
             )),
             selected_strategy,
         }
@@ -36,7 +36,10 @@ impl FormController for RunStrategyFormController {
             InputStatus::Done((num_blocks, confirm)) => {
                 if confirm == "Yes" {
                     FormStatus::Done {
-                        task: Task::Strategy(StrategyTask::RunStrategy(self.selected_strategy.clone(), num_blocks)),
+                        task: Task::Strategy(StrategyTask::RunStrategy(
+                            self.selected_strategy.clone(),
+                            num_blocks,
+                        )),
                         block: true,
                     }
                 } else {

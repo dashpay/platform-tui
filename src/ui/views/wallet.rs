@@ -6,7 +6,6 @@ mod add_identity_key;
 
 use std::ops::Deref;
 
-
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
     tui::prelude::{Constraint, Direction, Layout, Rect},

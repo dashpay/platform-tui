@@ -33,20 +33,22 @@ impl FormController for DeleteStrategyFormController {
                     self.selected_strategy = Some(strategy_name);
                     self.step = 1;
                     FormStatus::Redraw
-                },
+                }
                 status => status.into(),
             },
             1 => match self.confirm_input.on_event(event) {
                 InputStatus::Done(choice) => {
                     if choice == "Yes" {
                         FormStatus::Done {
-                            task: Task::Strategy(StrategyTask::DeleteStrategy(self.selected_strategy.clone().unwrap())),
+                            task: Task::Strategy(StrategyTask::DeleteStrategy(
+                                self.selected_strategy.clone().unwrap(),
+                            )),
                             block: false,
                         }
                     } else {
                         FormStatus::Exit
                     }
-                },
+                }
                 status => status.into(),
             },
             _ => FormStatus::None,

@@ -2,7 +2,6 @@
 
 use std::collections::BTreeMap;
 
-use rs_sdk::platform::DataContract;
 use dpp::data_contract::{
     accessors::v0::DataContractV0Getters,
     document_type::{
@@ -10,6 +9,7 @@ use dpp::data_contract::{
         DocumentType,
     },
 };
+use rs_sdk::platform::DataContract;
 use strategy_tests::{
     frequency::Frequency,
     operations::{DocumentAction, DocumentOp, Operation, OperationType},
@@ -98,7 +98,7 @@ impl FormController for StrategyOpDocumentFormController {
                                 action: action.clone(),
                             }),
                             frequency: Frequency {
-                                times_per_block_range: 1..times_per_block+1,
+                                times_per_block_range: 1..times_per_block + 1,
                                 chance_per_block: Some(chance_per_block),
                             },
                         },

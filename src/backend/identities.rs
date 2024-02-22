@@ -12,8 +12,15 @@ use dapi_grpc::{
         GetIdentityBalanceRequest,
     },
 };
-
 use dpp::{
+    dashcore::{psbt::serialize::Serialize, Address, Network, PrivateKey, Transaction},
+    identity::{
+        accessors::{IdentityGettersV0, IdentitySettersV0},
+        identity_public_key::{accessors::v0::IdentityPublicKeyGettersV0, v0::IdentityPublicKeyV0},
+        KeyType, PartialIdentity, Purpose as KeyPurpose, SecurityLevel as KeySecurityLevel,
+    },
+    platform_value::{string_encoding::Encoding, Identifier},
+    prelude::{AssetLockProof, Identity, IdentityPublicKey},
     state_transition::{
         identity_update_transition::{
             methods::IdentityUpdateTransitionMethodsV0, v0::IdentityUpdateTransitionV0,
@@ -24,6 +31,8 @@ use dpp::{
     },
     version::PlatformVersion,
 };
+use rand::{rngs::StdRng, SeedableRng};
+use rs_dapi_client::{DapiRequestExecutor, RequestSettings};
 use rs_sdk::{
     platform::{
         transition::{
@@ -34,29 +43,15 @@ use rs_sdk::{
     },
     Sdk,
 };
-use dpp::{
-    dashcore::{psbt::serialize::Serialize, Address, Network, PrivateKey, Transaction},
-    identity::{
-        accessors::{IdentityGettersV0, IdentitySettersV0},
-        identity_public_key::accessors::v0::IdentityPublicKeyGettersV0,
-        KeyType, Purpose as KeyPurpose, SecurityLevel as KeySecurityLevel,
-    },
-    platform_value::{string_encoding::Encoding, Identifier},
-    prelude::{AssetLockProof, Identity, IdentityPublicKey},
-};
-use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
-use dpp::identity::PartialIdentity;
-use rand::{rngs::StdRng, SeedableRng};
-use rs_dapi_client::RequestSettings;
 use simple_signer::signer::SimpleSigner;
 use tokio::sync::{MappedMutexGuard, MutexGuard};
 use tracing::info;
 
-use super::{AppStateUpdate, Wallet, insight::InsightError, wallet::WalletError};
-use super::{state::IdentityPrivateKeysMap, CompletedTaskPayload};
+use super::{
+    insight::InsightError, state::IdentityPrivateKeysMap, wallet::WalletError, AppStateUpdate,
+    CompletedTaskPayload, Wallet,
+};
 use crate::backend::{error::Error, stringify_result_keep_item, AppState, BackendEvent, Task};
-
-use rs_dapi_client::DapiRequestExecutor;
 
 pub(super) async fn fetch_identity_by_b58_id(
     sdk: &Sdk,
@@ -348,8 +343,12 @@ impl AppState {
                         sdk.version(),
                     )?;
 
-                let (critical_key, critical_private_key) = 
-                    IdentityPublicKey::random_ecdsa_critical_level_authentication_key(2, None, sdk.version())?;
+                let (critical_key, critical_private_key) =
+                    IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
+                        2,
+                        None,
+                        sdk.version(),
+                    )?;
                 identity.add_public_key(critical_key.clone());
                 keys.insert(critical_key, critical_private_key);
 
@@ -542,7 +541,7 @@ impl AppState {
         signer.add_key(identity_public_key.clone(), private_key.to_vec());
 
         //// Platform steps
-        
+
         let updated_identity_balance = identity
             .withdraw(sdk, new_receive_address, amount, None, signer, None)
             .await?;
@@ -644,12 +643,22 @@ impl AppState {
         amount: u64,
     ) -> Result<(AssetLockProof, PrivateKey), Error> {
         // Create the wallet registration transaction
-        let (asset_lock_transaction, asset_lock_proof_private_key) = 
-            wallet.asset_lock_transaction(None, amount)
-                .map_err(|e| Error::WalletError(WalletError::Insight(InsightError(format!("Wallet transaction error: {}", e)))))?;
-    
+        let (asset_lock_transaction, asset_lock_proof_private_key) =
+            wallet.asset_lock_transaction(None, amount).map_err(|e| {
+                Error::WalletError(WalletError::Insight(InsightError(format!(
+                    "Wallet transaction error: {}",
+                    e
+                ))))
+            })?;
+
         // Broadcast the transaction and retrieve the asset lock proof
-        match Self::broadcast_and_retrieve_asset_lock(sdk, &asset_lock_transaction, &wallet.receive_address()).await {
+        match Self::broadcast_and_retrieve_asset_lock(
+            sdk,
+            &asset_lock_transaction,
+            &wallet.receive_address(),
+        )
+        .await
+        {
             Ok(proof) => Ok((proof, asset_lock_proof_private_key)),
             Err(e) => Err(Error::SdkError(e)),
         }

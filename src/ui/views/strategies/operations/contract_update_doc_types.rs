@@ -2,13 +2,19 @@
 
 use std::{cmp::min, collections::BTreeMap};
 
-use dpp::data_contract::{document_type::v0::random_document_type::{
-    FieldMinMaxBounds, FieldTypeWeights, RandomDocumentTypeParameters,
-}, DataContract};
+use dpp::data_contract::{
+    document_type::v0::random_document_type::{
+        FieldMinMaxBounds, FieldTypeWeights, RandomDocumentTypeParameters,
+    },
+    DataContract,
+};
 use rand::Rng;
 use strategy_tests::{
     frequency::Frequency,
-    operations::{DataContractUpdateAction::DataContractNewDocumentTypes, DataContractUpdateOp, Operation, OperationType},
+    operations::{
+        DataContractUpdateAction::DataContractNewDocumentTypes, DataContractUpdateOp, Operation,
+        OperationType,
+    },
 };
 use tracing::error;
 use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
@@ -49,7 +55,7 @@ impl StrategyOpContractUpdateDocTypesFormController {
                 ),
             )),
             selected_strategy,
-            known_contracts
+            known_contracts,
         }
     }
 }
@@ -106,12 +112,14 @@ impl FormController for StrategyOpContractUpdateDocTypesFormController {
                             strategy_name: self.selected_strategy.clone(),
                             operation: Operation {
                                 op_type: OperationType::ContractUpdate(DataContractUpdateOp {
-                                    action: DataContractNewDocumentTypes(random_doc_type_parameters),
+                                    action: DataContractNewDocumentTypes(
+                                        random_doc_type_parameters,
+                                    ),
                                     contract: contract.clone(),
-                                    document_type: None
+                                    document_type: None,
                                 }),
                                 frequency: Frequency {
-                                    times_per_block_range: 1..times_per_block+1,
+                                    times_per_block_range: 1..times_per_block + 1,
                                     chance_per_block: Some(chance_per_block),
                                 },
                             },
@@ -122,7 +130,7 @@ impl FormController for StrategyOpContractUpdateDocTypesFormController {
                     error!("No contract in known_contracts with that name");
                     FormStatus::None
                 }
-            },
+            }
             status => status.into(),
         }
     }

@@ -3,7 +3,10 @@
 use rand::Rng;
 use strategy_tests::{
     frequency::Frequency,
-    operations::{DataContractUpdateAction::DataContractNewOptionalFields, DataContractUpdateOp, Operation, OperationType},
+    operations::{
+        DataContractUpdateAction::DataContractNewOptionalFields, DataContractUpdateOp, Operation,
+        OperationType,
+    },
 };
 use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
@@ -38,15 +41,15 @@ impl StrategyOpContractUpdateNewFieldsFormController {
 // impl FormController for StrategyOpContractUpdateNewFieldsFormController {
 //     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
 //         match self.input.on_event(event) {
-//             InputStatus::Done((times_per_block, chance_per_block)) => FormStatus::Done {
-//                 task: Task::Strategy(StrategyTask::AddOperation {
-//                     strategy_name: self.selected_strategy.clone(),
-//                     operation: Operation {
-//                         op_type: OperationType::ContractUpdate(DataContractUpdateOp {
-//                             action: DataContractNewOptionalFields(
-//                                 1..rand::thread_rng().gen_range(1..=u16::MAX),
-//                                 1..rand::thread_rng().gen_range(1..=u16::MAX),
-//                             ),
+//             InputStatus::Done((times_per_block, chance_per_block)) =>
+// FormStatus::Done {                 task:
+// Task::Strategy(StrategyTask::AddOperation {                     
+// strategy_name: self.selected_strategy.clone(),                     operation:
+// Operation {                         op_type:
+// OperationType::ContractUpdate(DataContractUpdateOp {                         
+// action: DataContractNewOptionalFields(                                 
+// 1..rand::thread_rng().gen_range(1..=u16::MAX),                               
+// 1..rand::thread_rng().gen_range(1..=u16::MAX),                             ),
 //                             contract,
 //                             document_type,
 //                         }),

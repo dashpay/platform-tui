@@ -15,23 +15,21 @@ use tuirealm::{
     Frame,
 };
 
+use super::{
+    clone_strategy::CloneStrategyFormController,
+    contracts_with_updates_screen::ContractsWithUpdatesScreenController,
+    identity_inserts_screen::IdentityInsertsScreenController,
+    operations_screen::OperationsScreenController, run_strategy::RunStrategyFormController,
+    run_strategy_screen::RunStrategyScreenController,
+    start_identities_screen::StartIdentitiesScreenController,
+};
 use crate::{
     backend::{AppState, AppStateUpdate, BackendEvent},
     ui::screen::{
-            utils::impl_builder, widgets::info::Info, ScreenCommandKey, ScreenController,
-            ScreenFeedback, ScreenToggleKey,
-        },
+        utils::impl_builder, widgets::info::Info, ScreenCommandKey, ScreenController,
+        ScreenFeedback, ScreenToggleKey,
+    },
     Event,
-};
-
-use super::{
-    identity_inserts_screen::IdentityInsertsScreenController, 
-    start_identities_screen::StartIdentitiesScreenController, 
-    operations_screen::OperationsScreenController, 
-    run_strategy::RunStrategyFormController, 
-    run_strategy_screen::RunStrategyScreenController,
-    contracts_with_updates_screen::ContractsWithUpdatesScreenController,
-    clone_strategy::CloneStrategyFormController,
 };
 
 const COMMAND_KEYS: [ScreenCommandKey; 7] = [
@@ -44,9 +42,8 @@ const COMMAND_KEYS: [ScreenCommandKey; 7] = [
     ScreenCommandKey::new("s", "Start identities"),
 ];
 
-const COMMAND_KEYS_NO_SELECTION: [ScreenCommandKey; 1] = [
-    ScreenCommandKey::new("q", "Back to Strategies"),
-];
+const COMMAND_KEYS_NO_SELECTION: [ScreenCommandKey; 1] =
+    [ScreenCommandKey::new("q", "Back to Strategies")];
 
 pub struct SelectedStrategyScreenController {
     info: Info,
@@ -129,8 +126,10 @@ impl ScreenController for SelectedStrategyScreenController {
                 code: Key::Char('r'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::FormThenNextScreen {
-                form: Box::new(RunStrategyFormController::new(self.selected_strategy.clone().unwrap())),
-                screen: RunStrategyScreenController::builder()
+                form: Box::new(RunStrategyFormController::new(
+                    self.selected_strategy.clone().unwrap(),
+                )),
+                screen: RunStrategyScreenController::builder(),
             },
             Event::Key(KeyEvent {
                 code: Key::Char('l'),
@@ -198,12 +197,14 @@ fn display_strategy(
         }
     }
 
-    let times_per_block_display = if strategy.identities_inserts.times_per_block_range.end > strategy.identities_inserts.times_per_block_range.start {
+    let times_per_block_display = if strategy.identities_inserts.times_per_block_range.end
+        > strategy.identities_inserts.times_per_block_range.start
+    {
         strategy.identities_inserts.times_per_block_range.end - 1
     } else {
         strategy.identities_inserts.times_per_block_range.end
     };
-    
+
     let identity_inserts_line = format!(
         "{:indent$}Times per block: {}; chance per block: {}\n",
         "",
@@ -211,7 +212,7 @@ fn display_strategy(
         strategy.identities_inserts.chance_per_block.unwrap_or(0.0),
         indent = 8,
     );
-    
+
     let mut operations_lines = String::new();
     for op in strategy.operations.iter() {
         let op_name = match op.op_type.clone() {
@@ -238,12 +239,13 @@ fn display_strategy(
             OperationType::IdentityTransfer => "IdentityTransfer".to_string(),
         };
 
-        let times_per_block_display = if op.frequency.times_per_block_range.end > op.frequency.times_per_block_range.start {
-            op.frequency.times_per_block_range.end - 1
-        } else {
-            op.frequency.times_per_block_range.end
-        };
-    
+        let times_per_block_display =
+            if op.frequency.times_per_block_range.end > op.frequency.times_per_block_range.start {
+                op.frequency.times_per_block_range.end - 1
+            } else {
+                op.frequency.times_per_block_range.end
+            };
+
         operations_lines.push_str(&format!(
             "{:indent$}{}; Times per block: {}, chance per block: {}\n",
             "",

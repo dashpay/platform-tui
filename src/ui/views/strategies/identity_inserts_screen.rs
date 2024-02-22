@@ -7,16 +7,15 @@ use tuirealm::{
     Frame,
 };
 
+use super::identity_inserts::StrategyIdentityInsertsFormController;
 use crate::{
     backend::{AppState, AppStateUpdate, BackendEvent, StrategyTask, Task},
     ui::screen::{
-            utils::impl_builder, widgets::info::Info, ScreenCommandKey, ScreenController,
-            ScreenFeedback, ScreenToggleKey,
-        },
+        utils::impl_builder, widgets::info::Info, ScreenCommandKey, ScreenController,
+        ScreenFeedback, ScreenToggleKey,
+    },
     Event,
 };
-
-use super::identity_inserts::StrategyIdentityInsertsFormController;
 
 const COMMAND_KEYS: [ScreenCommandKey; 3] = [
     ScreenCommandKey::new("q", "Back to Strategy"),
@@ -37,16 +36,17 @@ impl IdentityInsertsScreenController {
         let available_strategies_lock = app_state.available_strategies.lock().await;
         let selected_strategy_lock = app_state.selected_strategy.lock().await;
 
-        let (info_text, current_strategy) = if let Some(selected_strategy_name) = &*selected_strategy_lock {
-            if let Some(strategy) = available_strategies_lock.get(selected_strategy_name) {
-                let info_text = format!("Selected Strategy: {}", selected_strategy_name);
-                (info_text, Some(strategy.clone()))
+        let (info_text, current_strategy) =
+            if let Some(selected_strategy_name) = &*selected_strategy_lock {
+                if let Some(strategy) = available_strategies_lock.get(selected_strategy_name) {
+                    let info_text = format!("Selected Strategy: {}", selected_strategy_name);
+                    (info_text, Some(strategy.clone()))
+                } else {
+                    ("No selected strategy found".to_string(), None)
+                }
             } else {
-                ("No selected strategy found".to_string(), None)
-            }
-        } else {
-            ("No strategy selected".to_string(), None)
-        };
+                ("No strategy selected".to_string(), None)
+            };
 
         let info = Info::new_fixed(&info_text);
 
@@ -98,13 +98,11 @@ impl ScreenController for IdentityInsertsScreenController {
                 )),
                 block: false,
             },
-            Event::Backend(
-                BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
-                    strategy_name,
-                    strategy,
-                    _,
-                )),
-            ) => {
+            Event::Backend(BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
+                strategy_name,
+                strategy,
+                _,
+            ))) => {
                 // Check if the updated strategy is the one currently being displayed
                 if Some(strategy_name) == self.strategy_name.as_ref() {
                     // Update the selected_strategy with the new data
@@ -122,8 +120,11 @@ impl ScreenController for IdentityInsertsScreenController {
 
     fn view(&mut self, frame: &mut Frame, area: Rect) {
         let display_text = if let Some(strategy) = &self.selected_strategy {
-            // Extracting times per block and chance per block from strategy.identities_inserts
-            let times_per_block_display = if strategy.identities_inserts.times_per_block_range.end > strategy.identities_inserts.times_per_block_range.start {
+            // Extracting times per block and chance per block from
+            // strategy.identities_inserts
+            let times_per_block_display = if strategy.identities_inserts.times_per_block_range.end
+                > strategy.identities_inserts.times_per_block_range.start
+            {
                 strategy.identities_inserts.times_per_block_range.end - 1
             } else {
                 strategy.identities_inserts.times_per_block_range.end
@@ -135,7 +136,13 @@ impl ScreenController for IdentityInsertsScreenController {
                 strategy.identities_inserts.chance_per_block.unwrap_or(0.0),
             );
 
-            format!("Strategy: {}\n{}", self.strategy_name.as_ref().unwrap_or(&"Unknown".to_string()), identity_inserts_text)
+            format!(
+                "Strategy: {}\n{}",
+                self.strategy_name
+                    .as_ref()
+                    .unwrap_or(&"Unknown".to_string()),
+                identity_inserts_text
+            )
         } else {
             "Select a strategy to view identity inserts.".to_string()
         };

@@ -9,12 +9,12 @@ mod identity_inserts_screen;
 mod new_strategy;
 mod operations;
 mod operations_screen;
-mod select_strategy;
-mod start_identities;
-mod start_identities_screen;
 mod run_strategy;
 mod run_strategy_screen;
+mod select_strategy;
 pub mod selected_strategy;
+mod start_identities;
+mod start_identities_screen;
 
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
@@ -23,16 +23,16 @@ use tuirealm::{
 };
 
 use self::{
-    delete_strategy::DeleteStrategyFormController,
-    new_strategy::NewStrategyFormController,
-    select_strategy::SelectStrategyFormController, selected_strategy::SelectedStrategyScreenController,
+    delete_strategy::DeleteStrategyFormController, new_strategy::NewStrategyFormController,
+    select_strategy::SelectStrategyFormController,
+    selected_strategy::SelectedStrategyScreenController,
 };
 use crate::{
     backend::{AppState, AppStateUpdate, BackendEvent},
     ui::screen::{
-            utils::impl_builder, widgets::info::Info, ScreenCommandKey, ScreenController,
-            ScreenFeedback, ScreenToggleKey,
-        },
+        utils::impl_builder, widgets::info::Info, ScreenCommandKey, ScreenController,
+        ScreenFeedback, ScreenToggleKey,
+    },
     Event,
 };
 
@@ -54,7 +54,10 @@ impl_builder!(StrategiesScreenController);
 impl StrategiesScreenController {
     pub(crate) async fn new(app_state: &AppState) -> Self {
         let available_strategies_lock = app_state.available_strategies.lock().await;
-        let strategies = available_strategies_lock.keys().cloned().collect::<Vec<_>>();
+        let strategies = available_strategies_lock
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
         let info_text = if strategies.is_empty() {
             "No available strategies".to_string()
         } else {
@@ -78,7 +81,8 @@ impl ScreenController for StrategiesScreenController {
 
     fn command_keys(&self) -> &[ScreenCommandKey] {
         if self.available_strategies.is_empty() {
-            &COMMAND_KEYS[..2] // Exclude Delete and Select when no strategies loaded
+            &COMMAND_KEYS[..2] // Exclude Delete and Select when no strategies
+                               // loaded
         } else {
             COMMAND_KEYS.as_ref()
         }
@@ -98,8 +102,8 @@ impl ScreenController for StrategiesScreenController {
                 code: Key::Char('n'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::FormThenNextScreen {
-                form: Box::new(NewStrategyFormController::new()), 
-                screen: SelectedStrategyScreenController::builder()
+                form: Box::new(NewStrategyFormController::new()),
+                screen: SelectedStrategyScreenController::builder(),
             },
             Event::Key(KeyEvent {
                 code: Key::Char('s'),
@@ -107,13 +111,16 @@ impl ScreenController for StrategiesScreenController {
             }) => {
                 if !self.available_strategies.is_empty() {
                     ScreenFeedback::FormThenNextScreen {
-                        form: Box::new(SelectStrategyFormController::new(self.available_strategies.clone())),
-                        screen: SelectedStrategyScreenController::builder()
+                        form: Box::new(SelectStrategyFormController::new(
+                            self.available_strategies.clone(),
+                        )),
+                        screen: SelectedStrategyScreenController::builder(),
                     }
                 } else {
-                    ScreenFeedback::None // Do nothing if there are no available strategies
+                    ScreenFeedback::None // Do nothing if there are no available
+                                         // strategies
                 }
-            },
+            }
             Event::Key(KeyEvent {
                 code: Key::Char('d'),
                 modifiers: KeyModifiers::NONE,
@@ -123,9 +130,10 @@ impl ScreenController for StrategiesScreenController {
                         self.available_strategies.clone(),
                     )))
                 } else {
-                    ScreenFeedback::None // Do nothing if there are no available strategies
+                    ScreenFeedback::None // Do nothing if there are no available
+                                         // strategies
                 }
-            },
+            }
             Event::Backend(
                 BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
                     strategy_name,
@@ -146,16 +154,16 @@ impl ScreenController for StrategiesScreenController {
             }
             Event::Backend(
                 BackendEvent::AppStateUpdated(AppStateUpdate::Strategies(strategies, ..)),
-                ..
+                ..,
             ) => {
                 self.available_strategies = strategies.keys().cloned().collect();
-            
+
                 let info_text = if self.available_strategies.is_empty() {
                     "No available strategies".to_string()
                 } else {
                     "Strategy management commands".to_string()
                 };
-            
+
                 self.info = Info::new_fixed(&info_text);
                 ScreenFeedback::Redraw
             }

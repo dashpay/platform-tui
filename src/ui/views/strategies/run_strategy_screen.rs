@@ -6,16 +6,15 @@ use tuirealm::{
     Frame,
 };
 
+use super::run_strategy::RunStrategyFormController;
 use crate::{
     backend::{AppState, BackendEvent, StrategyCompletionResult},
     ui::screen::{
-            utils::impl_builder, widgets::info::Info, ScreenCommandKey, ScreenController,
-            ScreenFeedback, ScreenToggleKey,
-        },
+        utils::impl_builder, widgets::info::Info, ScreenCommandKey, ScreenController,
+        ScreenFeedback, ScreenToggleKey,
+    },
     Event,
 };
-
-use super::run_strategy::RunStrategyFormController;
 
 const COMMAND_KEYS: [ScreenCommandKey; 2] = [
     ScreenCommandKey::new("q", "Back to Strategy"),
@@ -34,13 +33,14 @@ impl RunStrategyScreenController {
     pub(crate) async fn new(app_state: &AppState) -> Self {
         let selected_strategy_lock = app_state.selected_strategy.lock().await;
 
-        let (info, strategy_running, selected_strategy) = if let Some(current_strategy) = selected_strategy_lock.as_ref() {
-            let info = Info::new_fixed("Strategy is running, please wait.");
-            (info, true, Some(current_strategy.clone()))
-        } else {
-            let info = Info::new_fixed("Run strategy not confirmed.");
-            (info, false, None)
-        };
+        let (info, strategy_running, selected_strategy) =
+            if let Some(current_strategy) = selected_strategy_lock.as_ref() {
+                let info = Info::new_fixed("Strategy is running, please wait.");
+                (info, true, Some(current_strategy.clone()))
+            } else {
+                let info = Info::new_fixed("Run strategy not confirmed.");
+                (info, false, None)
+            };
 
         drop(selected_strategy_lock);
 
@@ -76,7 +76,11 @@ impl ScreenController for RunStrategyScreenController {
                 modifiers: KeyModifiers::NONE,
             }) => {
                 self.strategy_running = true;
-                ScreenFeedback::Form(Box::new(RunStrategyFormController::new(self.selected_strategy.clone().expect("No selected strategy available"))))
+                ScreenFeedback::Form(Box::new(RunStrategyFormController::new(
+                    self.selected_strategy
+                        .clone()
+                        .expect("No selected strategy available"),
+                )))
             }
             Event::Backend(BackendEvent::StrategyCompleted {
                 strategy_name,
@@ -95,7 +99,9 @@ impl ScreenController for RunStrategyScreenController {
                         dash_spent_wallet,
                     } => {
                         format!(
-                            "Strategy '{}' completed:\nState transitions attempted: {}\nState transitions succeeded: {}\nNumber of blocks: {}\nRun time: {:?}\nDash spent (Identity): {}\nDash spent (Wallet): {}",
+                            "Strategy '{}' completed:\nState transitions attempted: {}\nState \
+                             transitions succeeded: {}\nNumber of blocks: {}\nRun time: \
+                             {:?}\nDash spent (Identity): {}\nDash spent (Wallet): {}",
                             strategy_name,
                             transition_count,
                             success_count,
@@ -107,12 +113,15 @@ impl ScreenController for RunStrategyScreenController {
                     }
                     StrategyCompletionResult::PartiallyCompleted {
                         reached_block_height,
-                        reason
+                        reason,
                     } => {
-                        format!("Strategy '{}' failed to complete. Reached block height {}. Reason: {}", strategy_name, reached_block_height, reason)
+                        format!(
+                            "Strategy '{}' failed to complete. Reached block height {}. Reason: {}",
+                            strategy_name, reached_block_height, reason
+                        )
                     }
                 };
-    
+
                 self.info = Info::new_fixed(&display_text);
                 ScreenFeedback::Redraw
             }
@@ -122,7 +131,10 @@ impl ScreenController for RunStrategyScreenController {
             }) => {
                 self.strategy_running = false;
 
-                self.info = Info::new_fixed(&format!("Error running strategy {}: {}", strategy_name, &error));
+                self.info = Info::new_fixed(&format!(
+                    "Error running strategy {}: {}",
+                    strategy_name, &error
+                ));
                 ScreenFeedback::Redraw
             }
             _ => ScreenFeedback::None,
