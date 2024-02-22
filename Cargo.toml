@@ -3,6 +3,7 @@ name = "rs-platform-explorer"
 version = "0.1.0"
 license = "MIT"
 edition = "2021"
+default-run = "rs-platform-explorer"
 
 [dependencies]
 strum = { version = "0.25.0", features = ["derive"] }
@@ -37,3 +38,5 @@ envy = "0.4.2"
 clap = { version = "4.5.1", features = ["derive"] }
 governor = "0.6.3"
 tokio-util = "0.7.10"
+chrono = "0.4"
+chrono-humanize = "0.2.3"
