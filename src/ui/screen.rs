@@ -26,7 +26,7 @@ use crate::backend::{AppState, Task};
 /// however, they're different about what keys to show and how to process them,
 /// so we use a generic [ScreenController] here.
 pub(crate) struct Screen<C: ScreenController> {
-    controller: C,
+    pub controller: C,
 }
 
 impl<C: ScreenController> Screen<C> {
@@ -126,7 +126,14 @@ pub(crate) enum ScreenFeedback {
     NextScreen(ScreenControllerBuilder),
     PreviousScreen,
     Form(Box<dyn FormController>),
-    Task { task: Task, block: bool }, // TODO task should define whether it blocks or not
+    FormThenNextScreen {
+        form: Box<dyn FormController>,
+        screen: ScreenControllerBuilder,
+    },
+    Task {
+        task: Task,
+        block: bool,
+    }, // TODO task should define whether it blocks or not
     Redraw,
     Quit,
     None,

@@ -1,4 +1,4 @@
-//! Identity top up form for strategy.
+//! Identity keys.
 
 use strategy_tests::{
     frequency::Frequency,
@@ -11,14 +11,13 @@ use crate::{
     ui::form::{ComposedInput, Field, FormController, FormStatus, Input, InputStatus, SelectInput},
 };
 
-pub(super) struct StrategyOpIdentityTopUpFormController {
+pub(super) struct ViewIdentityKeysScreenController {
     input: ComposedInput<(Field<SelectInput<u16>>, Field<SelectInput<f64>>)>,
-    selected_strategy: String,
 }
 
-impl StrategyOpIdentityTopUpFormController {
-    pub(super) fn new(selected_strategy: String) -> Self {
-        StrategyOpIdentityTopUpFormController {
+impl ViewIdentityKeysScreenController {
+    pub(super) fn new() -> Self {
+        ViewIdentityKeysScreenController {
             input: ComposedInput::new((
                 Field::new(
                     "Times per block",
@@ -29,21 +28,19 @@ impl StrategyOpIdentityTopUpFormController {
                     SelectInput::new(vec![1.0, 0.9, 0.75, 0.5, 0.25, 0.1, 0.05, 0.01]),
                 ),
             )),
-            selected_strategy,
         }
     }
 }
 
-impl FormController for StrategyOpIdentityTopUpFormController {
+impl FormController for ViewIdentityKeysScreenController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
         match self.input.on_event(event) {
             InputStatus::Done((times_per_block, chance_per_block)) => FormStatus::Done {
                 task: Task::Strategy(StrategyTask::AddOperation {
-                    strategy_name: self.selected_strategy.clone(),
                     operation: Operation {
                         op_type: OperationType::IdentityTopUp,
                         frequency: Frequency {
-                            times_per_block_range: 1..times_per_block + 1,
+                            times_per_block_range: 1..times_per_block+1,
                             chance_per_block: Some(chance_per_block),
                         },
                     },

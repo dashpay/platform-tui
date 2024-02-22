@@ -81,11 +81,11 @@ impl<V: Display + Clone> Input for SelectInput<V> {
             } => InputStatus::Done(
                 self.variants[self.input.state().unwrap_one().unwrap_usize()].clone(),
             ),
-            // Cancel
-            KeyEvent {
-                code: Key::Char('q'),
-                modifiers: KeyModifiers::NONE,
-            } => InputStatus::Exit,
+            // // Cancel
+            // KeyEvent {
+            //     code: Key::Char('q'),
+            //     modifiers: KeyModifiers::NONE,
+            // } => InputStatus::Exit,
             _ => InputStatus::None,
         }
     }

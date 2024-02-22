@@ -18,11 +18,11 @@ impl StrategyStartIdentitiesFormController {
             input: ComposedInput::new((
                 Field::new(
                     "Number of identities",
-                    SelectInput::new(vec![1, 10, 100, 1000, 10000, u16::MAX]),
+                    SelectInput::new(vec![1, 2, 3, 5, 10, 100]),
                 ),
                 Field::new(
                     "Keys per identity",
-                    SelectInput::new(vec![2, 3, 4, 5, 10, 20, 32]),
+                    SelectInput::new(vec![3, 4, 5, 10, 15, 20, 32]),
                 ),
             )),
             selected_strategy,

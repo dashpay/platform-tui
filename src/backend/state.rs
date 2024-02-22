@@ -2,7 +2,7 @@
 //! This kind of state does not include UI details and basically all about
 //! persistence required by backend.
 
-use std::{collections::BTreeMap, fs};
+use std::{collections::BTreeMap, fs, sync::Arc};
 
 use bincode::{Decode, Encode};
 use dpp::{
@@ -16,14 +16,16 @@ use dpp::{
         PlatformDeserializableWithPotentialValidationFromVersionedStructure,
         PlatformSerializableWithPlatformVersion,
     },
+    tests::json_document::json_document_to_created_contract,
     util::deserializer::ProtocolVersion,
     version::PlatformVersion,
     ProtocolError,
     ProtocolError::{PlatformDeserializationError, PlatformSerializationError},
 };
-// use strategy_tests::Strategy;
+use drive::drive::Drive;
+use strategy_tests::Strategy;
 use tokio::sync::Mutex;
-use walkdir::DirEntry;
+use walkdir::{DirEntry, WalkDir};
 
 use super::wallet::Wallet;
 use crate::{backend::insight::InsightAPIClient, config::Config};
@@ -34,9 +36,9 @@ const USE_LOCAL: bool = false;
 
 pub(crate) type ContractFileName = String;
 
-// pub(super) type StrategiesMap = BTreeMap<String, Strategy>;
-// pub(crate) type StrategyContractNames =
-//     Vec<(ContractFileName, Option<BTreeMap<u64, ContractFileName>>)>;
+pub(super) type StrategiesMap = BTreeMap<String, Strategy>;
+pub(crate) type StrategyContractNames =
+    Vec<(ContractFileName, Option<BTreeMap<u64, ContractFileName>>)>;
 pub(super) type KnownContractsMap = BTreeMap<String, DataContract>;
 pub type IdentityPrivateKeysMap = BTreeMap<(Identifier, KeyID), Vec<u8>>;
 
@@ -44,20 +46,23 @@ pub type IdentityPrivateKeysMap = BTreeMap<(Identifier, KeyID), Vec<u8>>;
 // tasks are executed on different state parts,
 // moreover single mutex hold during rendering will block unrelated tasks from
 // finishing
-#[derive(Debug)]
+// #[derive(Debug)]
 pub struct AppState {
     pub loaded_identity: Mutex<Option<Identity>>,
     pub identity_private_keys: Mutex<IdentityPrivateKeysMap>,
     pub loaded_wallet: Mutex<Option<Wallet>>,
+    pub drive: Mutex<Drive>,
     pub known_identities: Mutex<BTreeMap<Identifier, Identity>>,
     pub known_contracts: Mutex<KnownContractsMap>,
-    // pub available_strategies: Mutex<StrategiesMap>,
+    pub supporting_contracts: Mutex<BTreeMap<String, DataContract>>, /* Contracts from
+                                                                      * supporting_files */
+    pub available_strategies: Mutex<StrategiesMap>,
     /// Because we don't store which contract support file was used exactly we
     /// cannot properly restore the state and display a strategy, so this
     /// field serves as a double of strategies' `contracts_with_updates`,
     /// but using file names
-    // pub available_strategies_contract_names: Mutex<BTreeMap<String, StrategyContractNames>>,
-    // pub selected_strategy: Mutex<Option<String>>,
+    pub available_strategies_contract_names: Mutex<BTreeMap<String, StrategyContractNames>>,
+    pub selected_strategy: Mutex<Option<String>>,
     pub identity_asset_lock_private_key_in_creation: Mutex<
         Option<(
             Transaction,
@@ -72,28 +77,51 @@ pub struct AppState {
 
 impl Default for AppState {
     fn default() -> Self {
-        let mut known_contracts_raw = BTreeMap::new();
-        // let mut available_strategies = BTreeMap::new();
+        let platform_version = PlatformVersion::get(CURRENT_PROTOCOL_VERSION).unwrap();
 
-        let _platform_version = PlatformVersion::get(CURRENT_PROTOCOL_VERSION).unwrap();
-
+        // Helper function to check if a file is a JSON file
         fn is_json(entry: &DirEntry) -> bool {
             entry.path().extension().and_then(|s| s.to_str()) == Some("json")
         }
 
-        let known_contracts = Mutex::from(known_contracts_raw);
+        // Initialize supporting_contracts
+        let mut supporting_contracts_raw = BTreeMap::new();
+
+        // Iterate over JSON files in the supporting_files/contract directory
+        for entry in WalkDir::new("supporting_files/contract")
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(is_json)
+        {
+            let path = entry.path();
+            let contract_name = path.file_stem().unwrap().to_str().unwrap().to_string();
+
+            if let Ok(contract) = json_document_to_created_contract(&path, true, platform_version) {
+                // Insert the contract into supporting_contracts_raw
+                supporting_contracts_raw.insert(contract_name, contract.data_contract_owned());
+            }
+        }
+
+        let (drive, protocol_version) =
+            Drive::open("explorer.drive", None).expect("expected to open Drive successfully");
+
+        drive
+            .create_initial_state_structure(None, platform_version)
+            .expect("expected to create root tree successfully");
 
         AppState {
             loaded_identity: None.into(),
             identity_private_keys: Default::default(),
-            loaded_wallet: None.into(),
+            loaded_wallet: Mutex::new(None),
+            drive: Mutex::from(drive),
+            known_contracts: BTreeMap::new().into(),
+            supporting_contracts: BTreeMap::new().into(),
             known_identities: BTreeMap::new().into(),
-            known_contracts,
-            // available_strategies: BTreeMap::new().into(),
-            // selected_strategy: None.into(),
+            available_strategies: BTreeMap::new().into(),
+            selected_strategy: None.into(),
             identity_asset_lock_private_key_in_creation: None.into(),
             identity_asset_lock_private_key_in_top_up: None.into(),
-            //            available_strategies_contract_names: BTreeMap::new().into(),
+            available_strategies_contract_names: BTreeMap::new().into(),
         }
     }
 }
@@ -105,10 +133,11 @@ struct AppStateInSerializationFormat {
     pub loaded_wallet: Option<Wallet>,
     pub known_identities: BTreeMap<Identifier, Identity>,
     pub known_contracts: BTreeMap<String, Vec<u8>>,
-    //    pub available_strategies: BTreeMap<String, Vec<u8>>,
-    //    pub available_strategies_contract_names:
-    //        BTreeMap<String, Vec<(ContractFileName, Option<BTreeMap<u64, ContractFileName>>)>>,
-    //    pub selected_strategy: Option<String>,
+    pub supporting_contracts: BTreeMap<String, Vec<u8>>,
+    pub available_strategies: BTreeMap<String, Vec<u8>>,
+    pub available_strategies_contract_names:
+        BTreeMap<String, Vec<(ContractFileName, Option<BTreeMap<u64, ContractFileName>>)>>,
+    pub selected_strategy: Option<String>,
     pub identity_asset_lock_private_key_in_creation: Option<(
         Vec<u8>,
         [u8; 32],
@@ -137,12 +166,14 @@ impl PlatformSerializableWithPlatformVersion for AppState {
             loaded_identity,
             identity_private_keys,
             loaded_wallet,
+            drive,
             known_identities,
             known_contracts,
-            //            available_strategies,
-            //            selected_strategy,
+            supporting_contracts,
+            available_strategies,
+            selected_strategy,
             identity_asset_lock_private_key_in_creation,
-            //            available_strategies_contract_names,
+            available_strategies_contract_names,
             identity_asset_lock_private_key_in_top_up,
         } = self;
 
@@ -156,16 +187,25 @@ impl PlatformSerializableWithPlatformVersion for AppState {
             })
             .collect::<Result<BTreeMap<String, Vec<u8>>, ProtocolError>>()?;
 
-        // let available_strategies_in_serialization_format = available_strategies
-        //     .blocking_lock()
-        //     .iter()
-        //     .map(|(key, strategy)| {
-        //         let serialized_strategy =
-        //             
-        // strategy.serialize_to_bytes_with_platform_version(platform_version)?;
-        //         Ok((key.clone(), serialized_strategy))
-        //     })
-        //     .collect::<Result<BTreeMap<String, Vec<u8>>, ProtocolError>>()?;
+        let supporting_contracts_in_serialization_format = supporting_contracts
+            .blocking_lock()
+            .iter()
+            .map(|(key, contract)| {
+                let serialized_contract =
+                    contract.serialize_to_bytes_with_platform_version(platform_version)?;
+                Ok((key.clone(), serialized_contract))
+            })
+            .collect::<Result<BTreeMap<String, Vec<u8>>, ProtocolError>>()?;
+
+        let available_strategies_in_serialization_format = available_strategies
+            .blocking_lock()
+            .iter()
+            .map(|(key, strategy)| {
+                let serialized_strategy =
+                    strategy.serialize_to_bytes_with_platform_version(platform_version)?;
+                Ok((key.clone(), serialized_strategy))
+            })
+            .collect::<Result<BTreeMap<String, Vec<u8>>, ProtocolError>>()?;
 
         let identity_asset_lock_private_key_in_creation =
             identity_asset_lock_private_key_in_creation
@@ -199,11 +239,12 @@ impl PlatformSerializableWithPlatformVersion for AppState {
             loaded_wallet: loaded_wallet.blocking_lock().clone(),
             known_identities: known_identities.blocking_lock().clone(),
             known_contracts: known_contracts_in_serialization_format,
-            //            available_strategies: available_strategies_in_serialization_format,
-            //            selected_strategy: selected_strategy.blocking_lock().clone(),
-            // available_strategies_contract_names: available_strategies_contract_names
-            //     .blocking_lock()
-            //     .clone(),
+            supporting_contracts: supporting_contracts_in_serialization_format,
+            available_strategies: available_strategies_in_serialization_format,
+            selected_strategy: selected_strategy.blocking_lock().clone(),
+            available_strategies_contract_names: available_strategies_contract_names
+                .blocking_lock()
+                .clone(),
             identity_asset_lock_private_key_in_creation,
             identity_asset_lock_private_key_in_top_up,
         };
@@ -243,9 +284,10 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
             loaded_wallet,
             known_identities,
             known_contracts,
-            //            available_strategies,
-            //            selected_strategy,
-            //            available_strategies_contract_names,
+            supporting_contracts,
+            available_strategies,
+            selected_strategy,
+            available_strategies_contract_names,
             identity_asset_lock_private_key_in_creation,
             identity_asset_lock_private_key_in_top_up,
         } = app_state;
@@ -266,30 +308,43 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
             })
             .collect::<Result<BTreeMap<String, DataContract>, ProtocolError>>()?;
 
-        // let available_strategies = available_strategies
-        //     .into_iter()
-        //     .map(|(key, strategy)| {
-        //         let strategy = Strategy::versioned_deserialize(
-        //             strategy.as_slice(),
-        //             validate,
-        //             platform_version,
-        //         )
-        //         .map_err(|e| {
-        //             let msg = format!(
-        //                 "Error deserializing available_strategies for key {}: {}",
-        //                 key, e
-        //             );
-        //             PlatformDeserializationError(msg)
-        //         })?;
-        //         Ok((key, strategy))
-        //     })
-        //     .collect::<Result<BTreeMap<String, Strategy>, ProtocolError>>()?;
-
-        let identity_private_keys = identity_private_keys
+        let supporting_contracts = supporting_contracts
             .into_iter()
-            .map(|(key, value)| (key, value.to_vec()))
-            .collect::<BTreeMap<(Identifier, u32), Vec<u8>>>()
-            .into();
+            .map(|(key, contract)| {
+                let contract = DataContract::versioned_deserialize(
+                    contract.as_slice(),
+                    validate,
+                    platform_version,
+                )
+                .map_err(|e| {
+                    let msg = format!(
+                        "Error deserializing supporting_contract for key {}: {}",
+                        key, e
+                    );
+                    PlatformDeserializationError(msg)
+                })?;
+                Ok((key, contract))
+            })
+            .collect::<Result<BTreeMap<String, DataContract>, ProtocolError>>()?;
+
+        let available_strategies = available_strategies
+            .into_iter()
+            .map(|(key, strategy)| {
+                let strategy = Strategy::versioned_deserialize(
+                    strategy.as_slice(),
+                    validate,
+                    platform_version,
+                )
+                .map_err(|e| {
+                    let msg = format!(
+                        "Error deserializing available_strategies for key {}: {}",
+                        key, e
+                    );
+                    PlatformDeserializationError(msg)
+                })?;
+                Ok((key, strategy))
+            })
+            .collect::<Result<BTreeMap<String, Strategy>, ProtocolError>>()?;
 
         let identity_asset_lock_private_key_in_creation =
             identity_asset_lock_private_key_in_creation.map(
@@ -318,15 +373,25 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
                 )
             });
 
+        let (drive, protocol_version) =
+            Drive::open("explorer.drive", None).expect("expected to open Drive successfully");
+
+        // Deserialize the wallet state and wrap it in Arc<Mutex<_>>
+        let deserialized_wallet_state = loaded_wallet
+            .map(|wallet| Mutex::new(Some(wallet)))
+            .unwrap_or_else(|| Mutex::new(None));
+
         Ok(AppState {
             loaded_identity: loaded_identity.into(),
-            identity_private_keys,
-            loaded_wallet: loaded_wallet.into(),
+            identity_private_keys: identity_private_keys.into(),
+            loaded_wallet: deserialized_wallet_state,
+            drive: drive.into(),
             known_identities: known_identities.into(),
             known_contracts: known_contracts.into(),
-            //            available_strategies: available_strategies.into(),
-            //            selected_strategy: selected_strategy.into(),
-            // available_strategies_contract_names: available_strategies_contract_names.into(),
+            supporting_contracts: supporting_contracts.into(),
+            available_strategies: available_strategies.into(),
+            selected_strategy: selected_strategy.into(),
+            available_strategies_contract_names: available_strategies_contract_names.into(),
             identity_asset_lock_private_key_in_creation:
                 identity_asset_lock_private_key_in_creation.into(),
             identity_asset_lock_private_key_in_top_up: identity_asset_lock_private_key_in_top_up
@@ -350,6 +415,27 @@ impl AppState {
         ) else {
             return AppState::default();
         };
+
+        // Load supporting contracts
+        let platform_version = PlatformVersion::get(CURRENT_PROTOCOL_VERSION).unwrap();
+        let mut supporting_contracts = BTreeMap::new();
+        for entry in WalkDir::new("supporting_files/contract")
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("json"))
+        {
+            let path = entry.path();
+            let contract_name = path.file_stem().unwrap().to_str().unwrap().to_string();
+
+            if let Ok(contract) = json_document_to_created_contract(&path, true, platform_version) {
+                supporting_contracts.insert(contract_name, contract.data_contract_owned());
+            }
+        }
+
+        {
+            let mut app_state_supporting_contracts = app_state.supporting_contracts.lock().await;
+            *app_state_supporting_contracts = supporting_contracts;
+        }
 
         if let Some(wallet) = app_state.loaded_wallet.lock().await.as_mut() {
             wallet.reload_utxos(insight).await;
