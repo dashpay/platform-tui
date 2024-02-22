@@ -1,6 +1,6 @@
 //! Identities backend logic.
 
-use std::{collections::BTreeMap, time::Duration};
+use std::{cmp, collections::BTreeMap, time::Duration};
 
 use dapi_grpc::{
     core::v0::{
@@ -12,11 +12,23 @@ use dapi_grpc::{
         GetIdentityBalanceRequest,
     },
 };
+
+use dpp::{
+    state_transition::{
+        identity_update_transition::{
+            methods::IdentityUpdateTransitionMethodsV0, v0::IdentityUpdateTransitionV0,
+        },
+        proof_result::StateTransitionProofResult,
+        public_key_in_creation::v0::IdentityPublicKeyInCreationV0,
+        StateTransition,
+    },
+    version::PlatformVersion,
+};
 use rs_sdk::{
     platform::{
         transition::{
-            put_identity::PutIdentity, top_up_identity::TopUpIdentity,
-            withdraw_from_identity::WithdrawFromIdentity,
+            broadcast::BroadcastStateTransition, put_identity::PutIdentity,
+            top_up_identity::TopUpIdentity, withdraw_from_identity::WithdrawFromIdentity,
         },
         Fetch,
     },
@@ -39,6 +51,7 @@ use tokio::sync::{MappedMutexGuard, MutexGuard};
 use tracing::info;
 
 use super::{AppStateUpdate, Wallet, insight::InsightError, wallet::WalletError};
+use super::{state::IdentityPrivateKeysMap, CompletedTaskPayload};
 use crate::backend::{error::Error, stringify_result_keep_item, AppState, BackendEvent, Task};
 
 use rs_dapi_client::DapiRequestExecutor;
@@ -47,8 +60,6 @@ pub(super) async fn fetch_identity_by_b58_id(
     sdk: &Sdk,
     base58_id: &str,
 ) -> Result<(Option<Identity>, String), String> {
-    tokio::time::sleep(Duration::from_secs(3)).await;
-
     let id_bytes = Identifier::from_string(base58_id, Encoding::Base58)
         .map_err(|_| "can't parse identifier as base58 string".to_owned())?;
 
@@ -57,12 +68,17 @@ pub(super) async fn fetch_identity_by_b58_id(
 }
 
 #[derive(Clone, Copy, PartialEq)]
-pub(crate) enum IdentityTask {
+pub enum IdentityTask {
     RegisterIdentity(u64),
     TopUpIdentity(u64),
     WithdrawFromIdentity(u64),
     Refresh,
     CopyIdentityId,
+    AddIdentityKey {
+        key_type: KeyType,
+        security_level: KeySecurityLevel,
+        purpose: KeyPurpose,
+    },
 }
 
 impl AppState {
@@ -148,6 +164,47 @@ impl AppState {
                     }
                 } else {
                     BackendEvent::None
+                }
+            }
+            IdentityTask::AddIdentityKey {
+                key_type,
+                security_level,
+                purpose,
+            } => {
+                let loaded_identity_lock = self.loaded_identity.lock().await;
+                let loaded_identity = if loaded_identity_lock.is_some() {
+                    MutexGuard::map(loaded_identity_lock, |identity| {
+                        identity.as_mut().expect("checked above")
+                    })
+                } else {
+                    return BackendEvent::TaskCompleted {
+                        task: Task::Identity(task),
+                        execution_result: Err("No identity loaded".to_owned()),
+                    };
+                };
+
+                let identity_private_keys_lock = self.identity_private_keys.lock().await;
+                match add_identity_key(
+                    sdk,
+                    loaded_identity,
+                    identity_private_keys_lock,
+                    key_type,
+                    security_level,
+                    purpose,
+                )
+                .await
+                {
+                    Ok(app_state_update) => BackendEvent::TaskCompletedStateChange {
+                        task: Task::Identity(task),
+                        execution_result: Ok(CompletedTaskPayload::String(
+                            "Successfully added a key to the identity".to_owned(),
+                        )),
+                        app_state_update,
+                    },
+                    Err(e) => BackendEvent::TaskCompleted {
+                        task: Task::Identity(task),
+                        execution_result: Err(e),
+                    },
                 }
             }
         }
@@ -340,12 +397,7 @@ impl AppState {
             .expect("expected an identity")
             .1
             .into_iter()
-            .map(|(key, private_key)| {
-                (
-                    (identity.id(), key.id()),
-                    PrivateKey::from_slice(private_key.as_slice(), Network::Devnet).unwrap(),
-                )
-            });
+            .map(|(key, private_key)| ((identity.id(), key.id()), private_key));
 
         let mut identity_private_keys = self.identity_private_keys.lock().await;
 
@@ -485,10 +537,7 @@ impl AppState {
 
         let mut signer = SimpleSigner::default();
 
-        signer.add_key(
-            identity_public_key.clone(),
-            private_key.inner.secret_bytes().to_vec(),
-        );
+        signer.add_key(identity_public_key.clone(), private_key.to_vec());
 
         //// Platform steps
         
@@ -508,20 +557,18 @@ impl AppState {
         asset_lock_transaction: &Transaction,
         address: &Address,
     ) -> Result<AssetLockProof, rs_sdk::Error> {
-        // let _span = tracing::debug_span!(
-        //     "broadcast_and_retrieve_asset_lock",
-        //     transaction_id = asset_lock_transaction.txid().to_string(),
-        // )
-        // .entered();
+        let _span = tracing::debug_span!(
+            "broadcast_and_retrieve_asset_lock",
+            transaction_id = asset_lock_transaction.txid().to_string(),
+        )
+        .entered();
 
         let block_hash = sdk
             .execute(GetStatusRequest {}, RequestSettings::default())
             .await?
             .chain
             .map(|chain| chain.best_block_hash)
-            .ok_or_else(|| {
-                rs_sdk::Error::DapiClientError("missing `chain` field".to_owned())
-            })?;
+            .ok_or_else(|| rs_sdk::Error::DapiClientError("missing `chain` field".to_owned()))?;
 
         tracing::debug!(
             "starting the stream from the tip block hash {}",
@@ -605,4 +652,89 @@ impl AppState {
             Err(e) => Err(Error::SdkError(e)),
         }
     }
+}
+
+async fn add_identity_key<'a>(
+    sdk: &Sdk,
+    mut loaded_identity: MappedMutexGuard<'a, Identity>,
+    mut identity_private_keys: MutexGuard<'a, IdentityPrivateKeysMap>,
+    key_type: KeyType,
+    security_level: KeySecurityLevel,
+    purpose: KeyPurpose,
+) -> Result<AppStateUpdate<'a>, String> {
+    let mut rng = StdRng::from_entropy();
+    let platform_version = PlatformVersion::latest();
+
+    let (public_key, private_key) = key_type
+        .random_public_and_private_key_data(&mut rng, &platform_version)
+        .map_err(|e| format!("Cannot generate key pair: {e}"))?;
+    let identity_public_key: IdentityPublicKey = IdentityPublicKeyV0 {
+        id: loaded_identity.get_public_key_max_id() + 1,
+        purpose,
+        security_level,
+        contract_bounds: None,
+        key_type,
+        read_only: false,
+        data: public_key.into(),
+        disabled_at: None,
+    }
+    .into();
+
+    let (master_public_key_id, master_public_key) = loaded_identity
+        .public_keys()
+        .iter()
+        .find(|(_, key)| key.security_level() == KeySecurityLevel::MASTER)
+        .ok_or_else(|| "No master key found for identity".to_owned())?;
+    let master_private_key = identity_private_keys
+        .get(&(loaded_identity.id(), *master_public_key_id))
+        .ok_or_else(|| "Master private key not found".to_owned())?;
+
+    let mut signer = SimpleSigner::default();
+    signer.add_key(master_public_key.clone(), master_private_key.to_vec());
+    signer.add_key(identity_public_key.clone(), private_key.clone());
+
+    let mut identity_updated = loaded_identity.clone();
+    identity_updated.bump_revision();
+
+    let new_identity_nonce = sdk
+        .get_identity_nonce(identity_updated.id(), true, None)
+        .await
+        .map_err(|e| format!("Can't get new identity nonce: {e}"))?;
+
+    let identity_update_transition = IdentityUpdateTransitionV0::try_from_identity_with_signer(
+        &identity_updated,
+        master_public_key_id,
+        vec![Into::<IdentityPublicKeyInCreationV0>::into(identity_public_key.clone()).into()],
+        Vec::new(),
+        None,
+        new_identity_nonce,
+        &signer,
+        &platform_version,
+        None,
+    )
+    .map_err(|e| format!("Unable to create state transition: {e}"))?;
+
+    let StateTransitionProofResult::VerifiedPartialIdentity(PartialIdentity {
+        loaded_public_keys,
+        balance: Some(balance),
+        revision: Some(revision),
+        ..
+    }) = identity_update_transition
+        .broadcast_and_wait(sdk, None)
+        .await
+        .map_err(|e| format!("Error broadcasting identity update transition: {e}"))?
+    else {
+        return Err(format!("Cannot verify identity update transition proof"));
+    };
+
+    loaded_identity.set_balance(balance);
+    loaded_identity.set_revision(revision);
+    loaded_identity.set_public_keys(loaded_public_keys);
+
+    identity_private_keys.insert(
+        (loaded_identity.id(), identity_public_key.id()),
+        private_key,
+    );
+
+    Ok(AppStateUpdate::LoadedIdentity(loaded_identity))
 }

@@ -1,5 +1,6 @@
 use std::{
     collections::{BTreeMap, HashSet},
+    iter,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -9,34 +10,46 @@ use rs_sdk::{
     Sdk,
 };
 use dpp::{
-    data_contract::document_type::{
-        accessors::DocumentTypeV0Getters,
-        random_document::{CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType},
-        DocumentType,
+    data_contract::{
+        accessors::v0::DataContractV0Getters,
+        document_type::{
+            accessors::DocumentTypeV0Getters,
+            random_document::{CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType},
+            DocumentType,
+        },
     },
     document::Document,
     identity::{
         accessors::IdentityGettersV0,
         identity_public_key::accessors::v0::IdentityPublicKeyGettersV0, KeyType, Purpose,
     },
-    prelude::DataContract,
+    prelude::{DataContract, Identity, IdentityPublicKey},
 };
+use futures::{stream::FuturesUnordered, Future, StreamExt};
 use rand::{prelude::StdRng, Rng, SeedableRng};
+use rs_sdk::{
+    platform::{transition::put_document::PutDocument, DocumentQuery, FetchMany},
+    Sdk,
+};
 use simple_signer::signer::SimpleSigner;
 
-use super::{AppStateUpdate, CompletedTaskPayload};
+use super::{state::IdentityPrivateKeysMap, AppStateUpdate, CompletedTaskPayload};
 use crate::backend::{error::Error, AppState, BackendEvent, Task};
 
 #[derive(Clone)]
 pub(crate) enum DocumentTask {
     QueryDocuments(DocumentQuery),
-    BroadcastRandomDocument(DataContract, DocumentType),
+    BroadcastRandomDocuments {
+        data_contract_name: String,
+        document_type_name: String,
+        count: u16,
+    },
 }
 
 impl AppState {
     pub(super) async fn run_document_task<'s>(
         &'s self,
-        sdk: Arc<Sdk>,
+        sdk: &Sdk,
         task: DocumentTask,
     ) -> BackendEvent<'s> {
         match &task {
@@ -50,78 +63,154 @@ impl AppState {
                     execution_result,
                 }
             }
-            DocumentTask::BroadcastRandomDocument(data_contract, document_type) => {
-                let execution_result = self
-                    .broadcast_random_document(sdk.clone(), data_contract, document_type)
-                    .await
-                    .map(CompletedTaskPayload::Document)
-                    .map_err(|e| e.to_string());
+            DocumentTask::BroadcastRandomDocuments {
+                data_contract_name,
+                document_type_name,
+                count,
+            } => {
+                let broadcast_stats = {
+                    let data_contracts_lock = self.known_contracts.lock().await;
+                    let Some(data_contract) = data_contracts_lock.get(data_contract_name) else {
+                        return BackendEvent::TaskCompleted {
+                            task: Task::Document(task),
+                            execution_result: Err("Data contract not found".to_owned()),
+                        };
+                    };
+                    let loaded_identity_lock = self.loaded_identity.lock().await;
+                    let Some(identity) = loaded_identity_lock.as_ref() else {
+                        return BackendEvent::TaskCompleted {
+                            task: Task::Document(task),
+                            execution_result: Err("No loaded identity".to_owned()),
+                        };
+                    };
+                    let identity_private_keys_lock = self.identity_private_keys.lock().await;
+                    let Ok(document_type) =
+                        data_contract.document_type_cloned_for_name(&document_type_name)
+                    else {
+                        return BackendEvent::TaskCompleted {
+                            task: Task::Document(task),
+                            execution_result: Err("Document type not found".to_owned()),
+                        };
+                    };
 
-                if execution_result.is_ok() {
-                    match self.refresh_identity(&sdk).await {
+                    broadcast_random_documents(
+                        sdk,
+                        identity,
+                        &identity_private_keys_lock,
+                        data_contract,
+                        &document_type,
+                        *count,
+                    )
+                    .await
+                };
+
+                match broadcast_stats {
+                    Ok(stats) => match self.refresh_identity(sdk).await {
                         Ok(updated_identity) => BackendEvent::TaskCompletedStateChange {
                             task: Task::Document(task),
-                            execution_result,
+                            execution_result: Ok(CompletedTaskPayload::String(
+                                stats.info_display(),
+                            )),
                             app_state_update: AppStateUpdate::LoadedIdentity(updated_identity),
                         },
                         Err(_) => BackendEvent::TaskCompletedStateChange {
                             task: Task::Document(task),
-                            execution_result,
+                            execution_result: Ok(CompletedTaskPayload::String(
+                                stats.info_display(),
+                            )),
                             app_state_update: AppStateUpdate::FailedToRefreshIdentity,
                         },
-                    }
-                } else {
-                    BackendEvent::TaskCompleted {
-                        task: Task::Document(task),
-                        execution_result,
+                    },
+                    Err(e) => {
+                        return BackendEvent::TaskCompleted {
+                            task: Task::Document(task),
+                            execution_result: Err(format!(
+                                "Unable to start broadcasting: {}",
+                                e.to_string()
+                            )),
+                        }
                     }
                 }
             }
         }
     }
+}
 
-    pub(crate) async fn broadcast_random_document<'s>(
-        &'s self,
-        sdk: Arc<Sdk>,
-        data_contract: &DataContract,
-        document_type: &DocumentType,
-    ) -> Result<Document, Error> {
-        let mut std_rng = StdRng::from_entropy();
+struct BroadcastRandomDocumentsStats {
+    total: u16,
+    completed: u16,
+    last_error: Option<String>,
+}
 
-        let mut loaded_identity = self.loaded_identity.lock().await;
-        let Some(identity) = loaded_identity.as_mut() else {
-            return Err(Error::IdentityTopUpError("No identity loaded".to_string()));
-        };
+impl BroadcastRandomDocumentsStats {
+    fn info_display(&self) -> String {
+        format!(
+            "Broadcast random documents results:
+Completed {} of {}
+Last error: {}",
+            self.completed,
+            self.total,
+            self.last_error
+                .as_ref()
+                .map(|e| e.to_string())
+                .unwrap_or("".to_owned())
+        )
+    }
+}
 
-        let identity_public_key = identity
-            .get_first_public_key_matching(
-                Purpose::AUTHENTICATION,
-                HashSet::from([document_type.security_level_requirement()]),
-                HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
-            )
-            .ok_or(Error::DocumentSigningError(
-                "No public key matching security level requirements".to_string(),
-            ))?;
+async fn broadcast_random_documents<'s>(
+    sdk: &Sdk,
+    identity: &Identity,
+    identity_private_keys: &IdentityPrivateKeysMap,
+    data_contract: &DataContract,
+    document_type: &DocumentType,
+    count: u16,
+) -> Result<BroadcastRandomDocumentsStats, Error> {
+    let mut std_rng = StdRng::from_entropy();
 
-        let loaded_identity_private_keys = self.identity_private_keys.lock().await;
-        let Some(private_key) =
-            loaded_identity_private_keys.get(&(identity.id(), identity_public_key.id()))
-        else {
-            return Err(Error::IdentityTopUpError(format!(
-                "expected private keys, but we only have private keys for {:?}, trying to get \
-                 {:?} : {}",
-                loaded_identity_private_keys
-                    .keys()
-                    .map(|(id, key_id)| (id, key_id))
-                    .collect::<BTreeMap<_, _>>(),
-                identity.id(),
-                identity_public_key.id(),
-            )));
-        };
+    let identity_public_key = identity
+        .get_first_public_key_matching(
+            Purpose::AUTHENTICATION,
+            HashSet::from([document_type.security_level_requirement()]),
+            HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
+        )
+        .ok_or(Error::DocumentSigningError(
+            "No public key matching security level requirements".to_string(),
+        ))?;
 
-        let document_state_transition_entropy: [u8; 32] = std_rng.gen();
+    let Some(private_key) = identity_private_keys.get(&(identity.id(), identity_public_key.id()))
+    else {
+        // TODO inappropriate error type
+        return Err(Error::IdentityTopUpError(format!(
+            "expected private keys, but we only have private keys for {:?}, trying to get {:?} : \
+             {}",
+            identity_private_keys
+                .keys()
+                .map(|(id, key_id)| (id, key_id))
+                .collect::<BTreeMap<_, _>>(),
+            identity.id(),
+            identity_public_key.id(),
+        )));
+    };
 
-        let time_ms = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis();
+    let data_contract = Arc::new(data_contract.clone());
+    let mut signer = SimpleSigner::default();
+    signer.add_key(identity_public_key.clone(), private_key.to_vec());
+
+    fn put_random_document<'a, 'r>(
+        sdk: &'a Sdk,
+        document_type: &'a DocumentType,
+        identity: &'a Identity,
+        rng: &'r mut StdRng,
+        signer: &'a SimpleSigner,
+        identity_public_key: &'a IdentityPublicKey,
+        data_contract: Arc<DataContract>,
+    ) -> impl Future<Output = Result<(), String>> + 'a {
+        let document_state_transition_entropy: [u8; 32] = rng.gen();
+        let time_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock may have gone backwards")
+            .as_millis();
 
         let random_document = document_type
             .random_document_with_params(
@@ -130,28 +219,54 @@ impl AppState {
                 time_ms as u64,
                 DocumentFieldFillType::FillIfNotRequired,
                 DocumentFieldFillSize::AnyDocumentFillSize,
-                &mut std_rng,
+                rng,
                 sdk.version(),
             )
             .expect("expected a random document");
 
-        let mut signer = SimpleSigner::default();
-
-        signer.add_key(identity_public_key.clone(), private_key.to_bytes());
-
-        let data_contract = data_contract.clone();
-
-        let document = random_document
-            .put_to_platform_and_wait_for_response(
-                &sdk,
-                document_type.clone(),
-                document_state_transition_entropy,
-                identity_public_key.clone(),
-                Arc::new(data_contract),
-                &signer,
-            )
-            .await?;
-
-        Ok(document)
+        async move {
+            random_document
+                .put_to_platform_and_wait_for_response(
+                    sdk,
+                    document_type.clone(),
+                    document_state_transition_entropy,
+                    identity_public_key.clone(),
+                    data_contract,
+                    signer,
+                )
+                .await
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        }
     }
+
+    let mut futures: FuturesUnordered<_> = iter::repeat_with(|| {
+        put_random_document(
+            sdk,
+            document_type,
+            identity,
+            &mut std_rng,
+            &signer,
+            identity_public_key,
+            Arc::clone(&data_contract),
+        )
+    })
+    .take(count as usize)
+    .collect();
+
+    let mut completed = 0;
+    let mut last_error = None;
+
+    while let Some(result) = futures.next().await {
+        match result {
+            Ok(_) => completed += 1,
+            Err(e) => last_error = Some(e),
+        }
+    }
+
+    Ok(BroadcastRandomDocumentsStats {
+        total: count,
+        completed,
+        last_error,
+    })
 }

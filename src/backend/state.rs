@@ -28,8 +28,7 @@ use tokio::sync::Mutex;
 use walkdir::{DirEntry, WalkDir};
 
 use super::wallet::Wallet;
-use crate::backend::insight::InsightAPIClient;
-use crate::config::Config;
+use crate::{backend::insight::InsightAPIClient, config::Config};
 
 const CURRENT_PROTOCOL_VERSION: ProtocolVersion = 1;
 
@@ -39,28 +38,30 @@ pub(crate) type ContractFileName = String;
 
 pub(super) type StrategiesMap = BTreeMap<String, Strategy>;
 pub(crate) type StrategyContractNames =
-    Vec<(ContractFileName, Option<BTreeMap<u64, ContractFileName>>)>;
+     Vec<(ContractFileName, Option<BTreeMap<u64, ContractFileName>>)>;
 pub(super) type KnownContractsMap = BTreeMap<String, DataContract>;
+pub type IdentityPrivateKeysMap = BTreeMap<(Identifier, KeyID), Vec<u8>>;
 
 // TODO: each state part should be in it's own mutex in case multiple backend
 // tasks are executed on different state parts,
 // moreover single mutex hold during rendering will block unrelated tasks from
 // finishing
-pub(crate) struct AppState {
+#[derive(Debug)]
+pub struct AppState {
     pub loaded_identity: Mutex<Option<Identity>>,
-    pub identity_private_keys: Mutex<BTreeMap<(Identifier, KeyID), PrivateKey>>,
-    pub loaded_wallet: Arc<Mutex<Option<Wallet>>>,
+    pub identity_private_keys: Mutex<IdentityPrivateKeysMap>,
+    pub loaded_wallet: Mutex<Option<Wallet>>,
     pub drive: Mutex<Drive>,
     pub known_identities: Mutex<BTreeMap<Identifier, Identity>>,
-    pub known_contracts: Mutex<KnownContractsMap>, // Contracts fetched from Platform
+    pub known_contracts: Mutex<KnownContractsMap>,
     pub supporting_contracts: Mutex<BTreeMap<String, DataContract>>, // Contracts from supporting_files
     pub available_strategies: Mutex<StrategiesMap>,
     /// Because we don't store which contract support file was used exactly we
     /// cannot properly restore the state and display a strategy, so this
     /// field serves as a double of strategies' `contracts_with_updates`,
     /// but using file names
-    pub available_strategies_contract_names: Mutex<BTreeMap<String, StrategyContractNames>>,
-    pub selected_strategy: Mutex<Option<String>>,
+    // pub available_strategies_contract_names: Mutex<BTreeMap<String, StrategyContractNames>>,
+    // pub selected_strategy: Mutex<Option<String>>,
     pub identity_asset_lock_private_key_in_creation: Mutex<
         Option<(
             Transaction,
@@ -72,14 +73,6 @@ pub(crate) struct AppState {
     pub identity_asset_lock_private_key_in_top_up:
         Mutex<Option<(Transaction, PrivateKey, Option<AssetLockProof>)>>,
 }
-
-// pub fn default_strategy_description(mut map: BTreeMap<String, String>) ->
-// BTreeMap<String, String> {     map.insert("contracts_with_updates".
-// to_string(), "".to_string());     map.insert("operations".to_string(),
-// "".to_string());     map.insert("start_identities".to_string(),
-// "".to_string());     map.insert("identities_inserts".to_string(),
-// "".to_string());     map
-// }
 
 impl Default for AppState {
     fn default() -> Self {
@@ -118,7 +111,7 @@ impl Default for AppState {
         AppState {
             loaded_identity: None.into(),
             identity_private_keys: Default::default(),
-            loaded_wallet: Arc::new(Mutex::new(None)),
+            loaded_wallet: Mutex::new(None),
             drive: Mutex::from(drive),
             known_contracts: BTreeMap::new().into(),
             supporting_contracts: BTreeMap::new().into(),
@@ -127,7 +120,7 @@ impl Default for AppState {
             selected_strategy: None.into(),
             identity_asset_lock_private_key_in_creation: None.into(),
             identity_asset_lock_private_key_in_top_up: None.into(),
-            available_strategies_contract_names: BTreeMap::new().into(),
+            //            available_strategies_contract_names: BTreeMap::new().into(),
         }
     }
 }
@@ -135,7 +128,7 @@ impl Default for AppState {
 #[derive(Clone, Debug, Encode, Decode)]
 struct AppStateInSerializationFormat {
     pub loaded_identity: Option<Identity>,
-    pub identity_private_keys: BTreeMap<(Identifier, KeyID), [u8; 32]>,
+    pub identity_private_keys: IdentityPrivateKeysMap,
     pub loaded_wallet: Option<Wallet>,
     pub known_identities: BTreeMap<Identifier, Identity>,
     pub known_contracts: BTreeMap<String, Vec<u8>>,
@@ -179,7 +172,7 @@ impl PlatformSerializableWithPlatformVersion for AppState {
             available_strategies,
             selected_strategy,
             identity_asset_lock_private_key_in_creation,
-            available_strategies_contract_names,
+            //            available_strategies_contract_names,
             identity_asset_lock_private_key_in_top_up,
         } = self;
 
@@ -247,7 +240,7 @@ impl PlatformSerializableWithPlatformVersion for AppState {
 
         let app_state_in_serialization_format = AppStateInSerializationFormat {
             loaded_identity: loaded_identity.blocking_lock().clone(),
-            identity_private_keys,
+            identity_private_keys: identity_private_keys.blocking_lock().clone(),
             loaded_wallet: loaded_wallet.blocking_lock().clone(),
             known_identities: known_identities.blocking_lock().clone(),
             known_contracts: known_contracts_in_serialization_format,
@@ -372,7 +365,8 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
                     (
                         Transaction::deserialize(&transaction)
                             .expect("expected to deserialize transaction"),
-                        PrivateKey::from_slice(&private_key, Network::Devnet)  // TODO: Should use network from config
+                        // TODO: Should use network from config
+                        PrivateKey::from_slice(&private_key, Network::Testnet)
                             .expect("expected private key"),
                         asset_lock_proof,
                         identity_info,
@@ -385,7 +379,8 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
                 (
                     Transaction::deserialize(&transaction)
                         .expect("expected to deserialize transaction"),
-                    PrivateKey::from_slice(&private_key, Network::Devnet)  // TODO: Should use network from config
+                    // TODO: Should use network from config
+                    PrivateKey::from_slice(&private_key, Network::Testnet)
                         .expect("expected private key"),
                     asset_lock_proof,
                 )

@@ -2,25 +2,19 @@ mod backend;
 mod config;
 mod ui;
 
-use std::{fs::File, panic};
+use std::{fs::File, panic, time::Duration};
 
 use crossterm::event::{Event as TuiEvent, EventStream};
-use rs_sdk::SdkBuilder;
 use dpp::{identity::accessors::IdentityGettersV0, version::PlatformVersion};
 use futures::{future::OptionFuture, select, FutureExt, StreamExt};
-use tuirealm::event::KeyEvent;
-use ui::IdentityBalance;
-
-use self::{
-    backend::{Backend, BackendEvent, Task},
-    ui::{Ui, UiFeedback},
+use rs_platform_explorer::{
+    backend::{insight::InsightAPIClient, Backend},
+    config::Config,
+    ui::{IdentityBalance, Ui, UiFeedback},
+    Event,
 };
-use crate::{backend::insight::InsightAPIClient, config::Config};
-
-pub(crate) enum Event<'s> {
-    Key(KeyEvent),
-    Backend(BackendEvent<'s>),
-}
+use rs_sdk::{RequestSettings, SdkBuilder};
+use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() {
@@ -65,7 +59,12 @@ async fn main() {
 
     // Setup Platform SDK
     let address_list = config.dapi_address_list();
-
+    let request_settings = RequestSettings {
+        connect_timeout: Some(Duration::from_secs(10)),
+        timeout: Some(Duration::from_secs(10)),
+        retries: None,
+        ban_failed_address: Some(false),
+    };
     let sdk = SdkBuilder::new(address_list)
         .with_version(PlatformVersion::get(1).unwrap())
         .with_core(
@@ -74,12 +73,13 @@ async fn main() {
             &config.core_rpc_user,
             &config.core_rpc_password,
         )
+        .with_settings(request_settings)
         .build()
         .expect("expected to build sdk");
 
     let insight = InsightAPIClient::new(config.insight_api_uri());
 
-    let backend = Backend::new(sdk, insight, config).await;
+    let backend = Backend::new(sdk.as_ref(), insight, config).await;
 
     // Add loaded identity to known identities if it's not already there
     // And set selected_strategy to None
@@ -112,6 +112,7 @@ async fn main() {
 
     let mut terminal_event_stream = EventStream::new().fuse();
     let mut backend_task: OptionFuture<_> = None.into();
+    let mut ui_debounced_redraw: OptionFuture<_> = None.into();
 
     while active {
         let event = select! {
@@ -123,12 +124,18 @@ async fn main() {
                 _ => None
             },
             backend_task_finished = backend_task => backend_task_finished.map(Event::Backend),
+            ui_redraw = ui_debounced_redraw => ui_redraw.map(|_| Event::RedrawDebounceTimeout),
         };
 
-        let ui_feedback = if let Some(e) = event {
-            ui.on_event(backend.state(), e).await
-        } else {
-            UiFeedback::None
+        let ui_feedback = match event {
+            Some(event @ (Event::Backend(_) | Event::Key(_))) => {
+                ui.on_event(backend.state(), event).await
+            }
+            Some(Event::RedrawDebounceTimeout) => {
+                ui.redraw();
+                UiFeedback::None
+            }
+            _ => UiFeedback::None,
         };
 
         match ui_feedback {
@@ -137,7 +144,14 @@ async fn main() {
                 backend_task = Some(backend.run_task(task.clone()).boxed_local().fuse()).into();
                 ui.redraw();
             }
-            UiFeedback::Redraw => ui.redraw(), // TODO Debounce redraw?
+            UiFeedback::Redraw => {
+                ui_debounced_redraw = Some(
+                    tokio::time::sleep(Duration::from_millis(10))
+                        .boxed_local()
+                        .fuse(),
+                )
+                .into();
+            }
             UiFeedback::None => (),
         }
     }

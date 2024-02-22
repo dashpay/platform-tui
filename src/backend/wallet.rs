@@ -26,7 +26,7 @@ use super::{AppStateUpdate, BackendEvent, Task};
 use crate::backend::insight::{InsightAPIClient, InsightError};
 
 #[derive(Clone, PartialEq)]
-pub(crate) enum WalletTask {
+pub enum WalletTask {
     AddByPrivateKey(String),
     Refresh,
     CopyAddress,
@@ -75,15 +75,21 @@ pub(super) async fn run_wallet_task<'s>(
         WalletTask::Refresh => {
             let mut wallet_guard = wallet_state.lock().await;
             if let Some(wallet) = wallet_guard.deref_mut() {
-                wallet.reload_utxos(&insight).await;
-                let loaded_wallet_update = MutexGuard::map(wallet_guard, |opt| {
-                    opt.as_mut().expect("wallet was set above")
-                });
-                BackendEvent::TaskCompletedStateChange {
-                    task: Task::Wallet(task),
-                    execution_result: Ok("Refreshed wallet".into()), /* TODO actually failure
-                                                                      * is not reported */
-                    app_state_update: AppStateUpdate::LoadedWallet(loaded_wallet_update),
+                match wallet.reload_utxos(&insight).await {
+                    Ok(_) => {
+                        let loaded_wallet_update = MutexGuard::map(wallet_guard, |opt| {
+                            opt.as_mut().expect("wallet was set above")
+                        });
+                        BackendEvent::TaskCompletedStateChange {
+                            task: Task::Wallet(task),
+                            execution_result: Ok("Refreshed wallet".into()),
+                            app_state_update: AppStateUpdate::LoadedWallet(loaded_wallet_update),
+                        }
+                    }
+                    Err(err) => BackendEvent::TaskCompleted {
+                        task: Task::Wallet(task),
+                        execution_result: Err(err.to_string()),
+                    },
                 }
             } else {
                 BackendEvent::None
@@ -299,16 +305,19 @@ impl Wallet {
         }
     }
 
-    pub async fn reload_utxos(&mut self, insight: &InsightAPIClient) {
+    pub async fn reload_utxos(&mut self, insight: &InsightAPIClient) -> Result<(), InsightError> {
         match self {
             Wallet::SingleKeyWallet(wallet) => {
-                let Ok(utxos) = insight
+                match insight
                     .utxos_with_amount_for_addresses(&[&wallet.address])
                     .await
-                else {
-                    return;
-                };
-                wallet.utxos = utxos;
+                {
+                    Ok(utxos) => {
+                        wallet.utxos = utxos;
+                        Ok(())
+                    }
+                    Err(err) => Err(err),
+                }
             }
         }
     }

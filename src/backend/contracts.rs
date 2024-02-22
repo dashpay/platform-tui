@@ -1,12 +1,9 @@
 //! Contracts backend.
-
-use std::sync::Arc;
-
-use rs_sdk::{platform::Fetch, Sdk};
 use dpp::{
     prelude::{DataContract, Identifier},
     system_data_contracts::{dashpay_contract, dpns_contract},
 };
+use rs_sdk::{platform::Fetch, Sdk};
 use tokio::sync::Mutex;
 
 use super::{as_toml, state::KnownContractsMap, AppStateUpdate, BackendEvent, Task};
@@ -22,7 +19,7 @@ const DASHPAY_CONTRACT_NAME: &str = "dashpay";
 const DPNS_CONTRACT_NAME: &str = "dpns";
 
 pub(super) async fn run_contract_task<'s>(
-    sdk: Arc<Sdk>,
+    sdk: &Sdk,
     known_contracts: &'s Mutex<KnownContractsMap>,
     task: ContractTask,
 ) -> BackendEvent<'s> {

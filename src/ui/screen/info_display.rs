@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use dpp::{
     identity::{
         accessors::IdentityGettersV0,
@@ -8,108 +10,84 @@ use dpp::{
 
 use crate::ui::IdentityBalance;
 
-pub struct TabbedString {
+pub struct TabbedString<'s> {
     pub indent: usize,
-    pub content: String,
+    pub content: Cow<'s, str>,
 }
 
-impl TabbedString {
+impl<'s> TabbedString<'s> {
     const SPACES_PER_INDENT: usize = 2;
 
-    pub fn new(indent: usize, content: &str) -> Self {
-        TabbedString {
-            indent,
-            content: content.into(),
-        }
+    pub fn new(indent: usize, content: Cow<'s, str>) -> Self {
+        TabbedString { indent, content }
     }
 
-    pub fn to_string(&self, parent_indent: usize) -> String {
+    pub fn to_string(&self) -> String {
         format!(
             "{:indent$}{}",
             "",
             self.content,
-            indent = (parent_indent + self.indent) * Self::SPACES_PER_INDENT
+            indent = self.indent * Self::SPACES_PER_INDENT
         )
     }
-}
 
-macro_rules! tabbed_string {
-    ($indent:expr, $content:expr) => {
-        TabbedString {
-            indent: $indent,
-            content: $content.to_string(),
-        }
-    };
-}
-
-macro_rules! tabbed_key_value_string {
-    ($indent:expr, $key:expr, $value:expr) => {
-        TabbedString {
-            indent: $indent,
-            content: format!("{}: {}", $key, $value),
-        }
-    };
-}
-
-macro_rules! tabbed_key_value_display_info_string {
-    ($indent:expr, $key:expr, $value:expr) => {
-        TabbedString {
-            indent: $indent,
-            content: format!("{}: {}", $key, $value.display_info($indent + 1)),
-        }
-    };
-}
-
-macro_rules! tabbed_key_value_iter_string {
-    ($indent:expr, $key:expr, $value:expr) => {
-        TabbedString {
-            indent: $indent,
-            content: format!(
-                "{}: {}",
-                $key,
-                $value
-                    .into_iter()
-                    .map(
-                        |(key, value)| tabbed_key_value_display_info_string!($indent, key, value)
-                            .to_string($indent)
-                    )
-                    .collect::<Vec<String>>()
-                    .join("\n")
-            ),
-        }
-    };
+    pub fn adjust_parent_indent(mut self, parent_indent: usize) -> Self {
+        self.indent += parent_indent;
+        self
+    }
 }
 
 pub trait InfoDisplay {
-    fn display_info_lines(&self) -> Vec<TabbedString>;
-
-    fn display_info(&self, parent_indent: usize) -> String {
-        self.display_info_lines()
-            .into_iter()
-            .map(|tabbed_string| tabbed_string.to_string(parent_indent))
-            .collect::<Vec<String>>()
-            .join("\n")
-    }
+    fn display_info_lines(&self, parent_indent: usize) -> impl Iterator<Item = TabbedString>;
 }
 
 impl InfoDisplay for Identity {
-    fn display_info_lines(&self) -> Vec<TabbedString> {
-        vec![
-            tabbed_string!(0, "Identity"),
-            tabbed_key_value_string!(1, "Id", self.id()),
-            tabbed_key_value_string!(
+    fn display_info_lines(&self, parent_indent: usize) -> impl Iterator<Item = TabbedString> {
+        let identity_lines = [
+            TabbedString::new(0, "Identity:".into()),
+            TabbedString::new(1, format!("Id: {}", self.id()).into()),
+            TabbedString::new(
                 1,
-                "Balance",
-                IdentityBalance::from_credits(self.balance()).dash_str()
+                format!(
+                    "Balance: {}",
+                    IdentityBalance::from_credits(self.balance()).dash_str()
+                )
+                .into(),
             ),
-            tabbed_key_value_string!(1, "Revision", self.revision()),
-            tabbed_key_value_iter_string!(1, "Public Keys", self.public_keys()),
+            TabbedString::new(1, format!("Revision: {}", self.revision()).into()),
+            TabbedString::new(1, "Public Keys:".into()),
         ]
+        .into_iter();
+
+        let public_keys_lines = self
+            .public_keys()
+            .values()
+            .map(|pk| pk.display_info_lines(2))
+            .flatten();
+
+        identity_lines
+            .chain(public_keys_lines)
+            .map(move |s| s.adjust_parent_indent(parent_indent))
     }
 }
 
 impl InfoDisplay for IdentityPublicKey {
-    fn display_info_lines(&self) -> Vec<TabbedString> {
-        vec![tabbed_string!(0, format!("{} Key", self.key_type()))]
+    fn display_info_lines(&self, parent_indent: usize) -> impl Iterator<Item = TabbedString> {
+        [
+            TabbedString::new(0, format!("{} key:", self.purpose()).into()),
+            TabbedString::new(1, format!("Type: {}", self.key_type()).into()),
+            TabbedString::new(1, format!("Security: {}", self.security_level()).into()),
+        ]
+        .into_iter()
+        .map(move |s| s.adjust_parent_indent(parent_indent))
     }
+}
+
+pub(crate) fn display_info(value: &impl InfoDisplay) -> String {
+    value
+        .display_info_lines(0)
+        .into_iter()
+        .map(|tabbed_string| tabbed_string.to_string())
+        .collect::<Vec<String>>()
+        .join("\n")
 }

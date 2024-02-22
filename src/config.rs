@@ -1,11 +1,11 @@
 use std::{path::PathBuf, str::FromStr};
 
-use rs_sdk::sdk::Uri;
 use dpp::dashcore::Network;
 use rs_dapi_client::AddressList;
+use rs_sdk::sdk::Uri;
 use serde::Deserialize;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 /// Configuration for platform explorer.
 ///
 /// Content of this configuration is loaded from environment variables or `.env`
@@ -29,6 +29,8 @@ pub struct Config {
     pub insight_api_url: String,
     /// Network name
     pub network: String,
+    /// Optional wallet private key to instantiate the wallet
+    pub wallet_private_key: Option<String>,
 }
 
 impl Config {

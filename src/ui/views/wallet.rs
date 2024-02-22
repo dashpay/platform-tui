@@ -1,12 +1,19 @@
 //! Screens and forms related to wallet management.
 
 use dpp::dashcore::psbt::serialize::Serialize;
+
+mod add_identity_key;
+
+use std::ops::Deref;
+
+
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
     tui::prelude::{Constraint, Direction, Layout, Rect},
     Frame,
 };
 
+use self::add_identity_key::AddIdentityKeyFormController;
 use crate::{
     backend::{
         identities::IdentityTask, AppState, AppStateUpdate, BackendEvent, Task, Wallet, WalletTask,
@@ -17,8 +24,10 @@ use crate::{
             TextInput,
         },
         screen::{
-            info_display::InfoDisplay, utils::impl_builder, widgets::info::Info, ScreenCommandKey,
-            ScreenController, ScreenFeedback, ScreenToggleKey,
+            info_display::{display_info, InfoDisplay},
+            utils::impl_builder,
+            widgets::info::Info,
+            ScreenCommandKey, ScreenController, ScreenFeedback, ScreenToggleKey,
         },
     },
     Event,
@@ -29,10 +38,11 @@ const WALLET_LOADED_COMMANDS: [ScreenCommandKey; 2] = [
     ScreenCommandKey::new("c", "Copy Receive Address"),
 ];
 
-const IDENTITY_LOADED_COMMANDS: [ScreenCommandKey; 3] = [
+const IDENTITY_LOADED_COMMANDS: [ScreenCommandKey; 4] = [
     ScreenCommandKey::new("r", "Identity refresh"),
     ScreenCommandKey::new("w", "Withdraw balance"),
     ScreenCommandKey::new("d", "Copy Identity ID"),
+    ScreenCommandKey::new("k", "Add Identity key"),
 ];
 
 #[memoize::memoize]
@@ -46,25 +56,23 @@ fn join_commands(
 
     if wallet_loaded {
         commands.extend_from_slice(&WALLET_LOADED_COMMANDS);
+        if identity_loaded {
+            commands.extend_from_slice(&IDENTITY_LOADED_COMMANDS);
+            if identity_top_up_in_progress {
+                commands.push(ScreenCommandKey::new("t", "Continue identity top up"));
+            } else {
+                commands.push(ScreenCommandKey::new("t", "Identity top up"));
+            }
+        } else {
+            if identity_registration_in_progress {
+                commands.push(ScreenCommandKey::new("i", "Continue identity registration"));
+            } else {
+                commands.push(ScreenCommandKey::new("i", "Register identity"));
+            }
+        }
     } else {
         commands.push(ScreenCommandKey::new("a", "Add wallet by private key"));
     }
-
-    if identity_loaded {
-        commands.extend_from_slice(&IDENTITY_LOADED_COMMANDS);
-        if identity_top_up_in_progress {
-            commands.push(ScreenCommandKey::new("t", "Continue identity top up"));
-        } else {
-            commands.push(ScreenCommandKey::new("t", "Identity top up"));
-        }
-    } else {
-        if identity_registration_in_progress {
-            commands.push(ScreenCommandKey::new("i", "Continue identity registration"));
-        } else {
-            commands.push(ScreenCommandKey::new("i", "Register identity"));
-        }
-    }
-
     commands.leak()
 }
 
@@ -237,7 +245,7 @@ impl WalletScreenController {
                     .is_some();
                 (
                     Info::new_fixed(&display_wallet(wallet)),
-                    Info::new_fixed(&identity.display_info(0)),
+                    Info::new_fixed(&display_info(identity)),
                     true,
                     true,
                     false,
@@ -370,6 +378,13 @@ impl ScreenController for WalletScreenController {
                 block: true,
             },
 
+            Event::Key(KeyEvent {
+                code: Key::Char('k'),
+                modifiers: KeyModifiers::NONE,
+            }) if self.identity_loaded => {
+                ScreenFeedback::Form(Box::new(AddIdentityKeyFormController::new()))
+            }
+
             Event::Backend(
                 BackendEvent::AppStateUpdated(AppStateUpdate::LoadedWallet(wallet))
                 | BackendEvent::TaskCompletedStateChange {
@@ -401,11 +416,10 @@ impl ScreenController for WalletScreenController {
                 self.identity_loaded = true;
                 self.identity_registration_in_progress = false;
                 if execution_result.is_ok() {
-                    self.identity_info = Info::new_fixed(&identity.display_info(0));
+                    self.identity_info = Info::new_fixed(&display_info(identity.deref()));
                 } else {
                     self.identity_info = Info::new_from_result(execution_result);
                 }
-                self.identity_info = Info::new_fixed(&identity.display_info(0));
                 ScreenFeedback::Redraw
             }
 
