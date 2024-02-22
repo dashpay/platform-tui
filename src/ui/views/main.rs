@@ -21,6 +21,7 @@ use crate::{
     },
     Event,
 };
+use crate::ui::views::strategies::StrategiesScreenController;
 
 const COMMAND_KEYS: [ScreenCommandKey; 7] = [
     ScreenCommandKey::new("q", "Quit"),
@@ -81,10 +82,10 @@ impl ScreenController for MainScreenController {
                 code: Key::Char('i'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::NextScreen(IdentitiesScreenController::builder()),
-            // Event::Key(KeyEvent {
-            //     code: Key::Char('s'),
-            //     modifiers: KeyModifiers::NONE,
-            // }) => ScreenFeedback::NextScreen(StrategiesScreenController::builder()),
+            Event::Key(KeyEvent {
+                code: Key::Char('s'),
+                modifiers: KeyModifiers::NONE,
+            }) => ScreenFeedback::NextScreen(StrategiesScreenController::builder()),
             Event::Key(KeyEvent {
                 code: Key::Char('w'),
                 modifiers: KeyModifiers::NONE,
