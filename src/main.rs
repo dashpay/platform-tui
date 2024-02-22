@@ -1,28 +1,16 @@
-mod backend;
-mod config;
-mod ui;
-
 use std::{fs::File, panic, time::Duration};
 
 use crossterm::event::{Event as TuiEvent, EventStream};
-use rs_sdk::{RequestSettings, SdkBuilder};
 use dpp::{identity::accessors::IdentityGettersV0, version::PlatformVersion};
 use futures::{future::OptionFuture, select, FutureExt, StreamExt};
-use tracing_subscriber::EnvFilter;
-use tuirealm::event::KeyEvent;
-use ui::IdentityBalance;
-
-use self::{
-    backend::{Backend, BackendEvent, Task},
-    ui::{Ui, UiFeedback},
+use rs_platform_explorer::{
+    backend::{insight::InsightAPIClient, Backend},
+    config::Config,
+    ui::{IdentityBalance, Ui, UiFeedback},
+    Event,
 };
-use crate::{backend::insight::InsightAPIClient, config::Config};
-
-pub(crate) enum Event<'s> {
-    Key(KeyEvent),
-    Backend(BackendEvent<'s>),
-    RedrawDebounceTimeout,
-}
+use rs_sdk::{RequestSettings, SdkBuilder};
+use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() {

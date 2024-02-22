@@ -38,14 +38,14 @@ pub(crate) type ContractFileName = String;
 // pub(crate) type StrategyContractNames =
 //     Vec<(ContractFileName, Option<BTreeMap<u64, ContractFileName>>)>;
 pub(super) type KnownContractsMap = BTreeMap<String, DataContract>;
-pub(crate) type IdentityPrivateKeysMap = BTreeMap<(Identifier, KeyID), Vec<u8>>;
+pub type IdentityPrivateKeysMap = BTreeMap<(Identifier, KeyID), Vec<u8>>;
 
 // TODO: each state part should be in it's own mutex in case multiple backend
 // tasks are executed on different state parts,
 // moreover single mutex hold during rendering will block unrelated tasks from
 // finishing
 #[derive(Debug)]
-pub(crate) struct AppState {
+pub struct AppState {
     pub loaded_identity: Mutex<Option<Identity>>,
     pub identity_private_keys: Mutex<IdentityPrivateKeysMap>,
     pub loaded_wallet: Mutex<Option<Wallet>>,
@@ -93,7 +93,7 @@ impl Default for AppState {
             // selected_strategy: None.into(),
             identity_asset_lock_private_key_in_creation: None.into(),
             identity_asset_lock_private_key_in_top_up: None.into(),
-//            available_strategies_contract_names: BTreeMap::new().into(),
+            //            available_strategies_contract_names: BTreeMap::new().into(),
         }
     }
 }
@@ -105,10 +105,10 @@ struct AppStateInSerializationFormat {
     pub loaded_wallet: Option<Wallet>,
     pub known_identities: BTreeMap<Identifier, Identity>,
     pub known_contracts: BTreeMap<String, Vec<u8>>,
-//    pub available_strategies: BTreeMap<String, Vec<u8>>,
-//    pub available_strategies_contract_names:
-//        BTreeMap<String, Vec<(ContractFileName, Option<BTreeMap<u64, ContractFileName>>)>>,
-//    pub selected_strategy: Option<String>,
+    //    pub available_strategies: BTreeMap<String, Vec<u8>>,
+    //    pub available_strategies_contract_names:
+    //        BTreeMap<String, Vec<(ContractFileName, Option<BTreeMap<u64, ContractFileName>>)>>,
+    //    pub selected_strategy: Option<String>,
     pub identity_asset_lock_private_key_in_creation: Option<(
         Vec<u8>,
         [u8; 32],
@@ -139,10 +139,10 @@ impl PlatformSerializableWithPlatformVersion for AppState {
             loaded_wallet,
             known_identities,
             known_contracts,
-//            available_strategies,
-//            selected_strategy,
+            //            available_strategies,
+            //            selected_strategy,
             identity_asset_lock_private_key_in_creation,
-//            available_strategies_contract_names,
+            //            available_strategies_contract_names,
             identity_asset_lock_private_key_in_top_up,
         } = self;
 
@@ -161,7 +161,8 @@ impl PlatformSerializableWithPlatformVersion for AppState {
         //     .iter()
         //     .map(|(key, strategy)| {
         //         let serialized_strategy =
-        //             strategy.serialize_to_bytes_with_platform_version(platform_version)?;
+        //             
+        // strategy.serialize_to_bytes_with_platform_version(platform_version)?;
         //         Ok((key.clone(), serialized_strategy))
         //     })
         //     .collect::<Result<BTreeMap<String, Vec<u8>>, ProtocolError>>()?;
@@ -198,8 +199,8 @@ impl PlatformSerializableWithPlatformVersion for AppState {
             loaded_wallet: loaded_wallet.blocking_lock().clone(),
             known_identities: known_identities.blocking_lock().clone(),
             known_contracts: known_contracts_in_serialization_format,
-//            available_strategies: available_strategies_in_serialization_format,
-//            selected_strategy: selected_strategy.blocking_lock().clone(),
+            //            available_strategies: available_strategies_in_serialization_format,
+            //            selected_strategy: selected_strategy.blocking_lock().clone(),
             // available_strategies_contract_names: available_strategies_contract_names
             //     .blocking_lock()
             //     .clone(),
@@ -242,9 +243,9 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
             loaded_wallet,
             known_identities,
             known_contracts,
-//            available_strategies,
-//            selected_strategy,
-//            available_strategies_contract_names,
+            //            available_strategies,
+            //            selected_strategy,
+            //            available_strategies_contract_names,
             identity_asset_lock_private_key_in_creation,
             identity_asset_lock_private_key_in_top_up,
         } = app_state;
@@ -323,8 +324,8 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
             loaded_wallet: loaded_wallet.into(),
             known_identities: known_identities.into(),
             known_contracts: known_contracts.into(),
-//            available_strategies: available_strategies.into(),
-//            selected_strategy: selected_strategy.into(),
+            //            available_strategies: available_strategies.into(),
+            //            selected_strategy: selected_strategy.into(),
             // available_strategies_contract_names: available_strategies_contract_names.into(),
             identity_asset_lock_private_key_in_creation:
                 identity_asset_lock_private_key_in_creation.into(),

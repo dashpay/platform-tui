@@ -24,20 +24,20 @@ use self::{
     views::main::MainScreenController,
 };
 use crate::{
-    backend::{AppState, AppStateUpdate},
-    BackendEvent, Event, Task,
+    backend::{AppState, AppStateUpdate, BackendEvent, Task},
+    Event,
 };
 
-pub(crate) struct IdentityBalance {
+pub struct IdentityBalance {
     credits: u64,
 }
 
 impl IdentityBalance {
-    pub(crate) fn from_credits(credits: u64) -> Self {
+    pub fn from_credits(credits: u64) -> Self {
         IdentityBalance { credits }
     }
 
-    pub(crate) fn dash_str(&self) -> String {
+    pub fn dash_str(&self) -> String {
         let dash_amount = self.credits as f64 * 10f64.powf(-11.0);
         format!("{:.4} DASH", dash_amount)
     }
@@ -45,7 +45,7 @@ impl IdentityBalance {
 
 /// TUI entry point that handles terminal events as well as terminal output,
 /// linking UI parts together.
-pub(crate) struct Ui {
+pub struct Ui {
     redraw_ts: Instant,
     terminal: TerminalBridge,
     status_bar_state: StatusBarState,
@@ -56,7 +56,7 @@ pub(crate) struct Ui {
 }
 
 /// UI updates delivered to the main application loop.
-pub(crate) enum UiFeedback {
+pub enum UiFeedback {
     Redraw,
     Quit,
     ExecuteTask(Task),
@@ -64,7 +64,7 @@ pub(crate) enum UiFeedback {
 }
 
 impl Ui {
-    pub(crate) fn redraw(&mut self) {
+    pub fn redraw(&mut self) {
         self.terminal
             .raw_mut()
             .draw(|frame| {
@@ -83,7 +83,7 @@ impl Ui {
             .expect("unable to draw to terminal");
     }
 
-    pub(crate) fn new(initial_identity_balance: Option<IdentityBalance>) -> Self {
+    pub fn new(initial_identity_balance: Option<IdentityBalance>) -> Self {
         let mut terminal = TerminalBridge::new().expect("cannot initialize terminal app");
         terminal
             .enter_alternate_screen()
@@ -116,7 +116,7 @@ impl Ui {
         ui
     }
 
-    pub(crate) async fn on_event<'s>(
+    pub async fn on_event<'s>(
         &mut self,
         app_state: impl Deref<Target = AppState>,
         event: Event<'s>,
