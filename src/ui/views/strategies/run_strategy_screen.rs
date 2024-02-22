@@ -90,7 +90,6 @@ impl ScreenController for RunStrategyScreenController {
                         start_block_height,
                         success_count,
                         transition_count,
-                        prep_time: _prep_time,
                         run_time,
                         dash_spent_identity,
                         dash_spent_wallet,

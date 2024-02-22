@@ -15,6 +15,7 @@ use super::{as_toml, state::KnownContractsMap, AppStateUpdate, BackendEvent, Tas
 pub(crate) enum ContractTask {
     FetchDashpayContract,
     FetchDPNSContract,
+    ClearKnownContracts,
 }
 
 const DASHPAY_CONTRACT_NAME: &str = "dashpay";
@@ -73,6 +74,15 @@ pub(super) async fn run_contract_task<'s>(
                     task: Task::Contract(task),
                     execution_result: Err(e.to_string()),
                 },
+            }
+        }
+        ContractTask::ClearKnownContracts => {
+            let mut contracts_lock = known_contracts.lock().await;
+            contracts_lock.clear();
+            BackendEvent::TaskCompletedStateChange {
+                task: Task::Contract(task),
+                execution_result: Ok("Known contracts cleared".into()),
+                app_state_update: AppStateUpdate::KnownContracts(contracts_lock),
             }
         }
     }

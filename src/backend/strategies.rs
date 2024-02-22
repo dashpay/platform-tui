@@ -1,12 +1,11 @@
 //! Strategies management backend module.
 
-use std::{collections::{BTreeMap, BTreeSet, HashMap, VecDeque}, sync::Arc, time::Instant};
+use std::{collections::{BTreeMap, BTreeSet, VecDeque}, sync::Arc, time::Instant};
 
 use dapi_grpc::platform::v0::{GetEpochsInfoRequest, get_epochs_info_request, get_epochs_info_response, wait_for_state_transition_result_response::{self, wait_for_state_transition_result_response_v0}};
-use rs_sdk::{Sdk, platform::transition::broadcast_request::BroadcastRequestForStateTransition};
+use rs_sdk::{platform::{transition::broadcast_request::BroadcastRequestForStateTransition, Fetch}, Sdk};
 use dpp::{
-    data_contract::{created_data_contract::CreatedDataContract, DataContract, accessors::v0::DataContractV0Getters}, platform_value::{Bytes32, Identifier, string_encoding::Encoding},
-    version::PlatformVersion, block::{block_info::BlockInfo, epoch::Epoch}, identity::{Identity, PartialIdentity, state_transition::asset_lock_proof::AssetLockProof, accessors::IdentityGettersV0}, state_transition::{StateTransition, data_contract_create_transition::DataContractCreateTransition}, dashcore::PrivateKey,
+    block::{block_info::BlockInfo, epoch::Epoch}, dashcore::PrivateKey, data_contract::{accessors::v0::DataContractV0Getters, created_data_contract::CreatedDataContract, DataContract}, identity::{accessors::IdentityGettersV0, state_transition::asset_lock_proof::AssetLockProof, Identity, PartialIdentity}, platform_value::{string_encoding::Encoding, Bytes32, Identifier}, state_transition::{data_contract_create_transition::DataContractCreateTransition, StateTransition}, version::PlatformVersion
 };
 use drive::{drive::{identity::key::fetch::IdentityKeysRequest, document::query::{QueryDocumentsOutcome, QueryDocumentsOutcomeV0Methods}}, query::DriveQuery};
 use futures::future::join_all;
@@ -23,9 +22,9 @@ use tracing::{info, error};
 
 use rs_dapi_client::DapiRequestExecutor;
 
-use crate::{backend::{wallet::WalletError, Backend, Wallet}, ui::Ui};
+use crate::backend::{wallet::WalletError, Wallet};
 
-use super::{AppStateUpdate, BackendEvent, AppState, StrategyCompletionResult, error::Error, insight::{InsightError, InsightAPIClient}, Task};
+use super::{error::Error, insight::{InsightAPIClient, InsightError}, state::KnownContractsMap, AppState, AppStateUpdate, BackendEvent, StrategyCompletionResult, Task};
 
 #[derive(Debug, PartialEq, Clone)]
 pub(crate) enum StrategyTask {
@@ -354,13 +353,25 @@ pub(crate) async fn run_strategy_task<'s>(
             }
         }
         StrategyTask::RunStrategy(strategy_name, num_blocks) => {
-            info!("Starting strategy '{}'", strategy_name);
+            info!("-----Starting strategy '{}'-----", strategy_name);
             let run_start_time = Instant::now();
         
             let mut strategies_lock = app_state.available_strategies.lock().await;
             let drive_lock = app_state.drive.lock().await;
             let identity_private_keys_lock = app_state.identity_private_keys.lock().await;
-            let mut known_contracts_lock = app_state.known_contracts.lock().await;
+
+            // Fetch known_contracts from the chain to assure local copies match actual state.
+            match update_known_contracts(sdk.clone(), &app_state.known_contracts).await {
+                Ok(_) => info!("Known contracts updated successfully."),
+                Err(e) => {
+                    error!("Failed to update known contracts: {:?}", e);
+                    return BackendEvent::StrategyError {
+                        strategy_name: strategy_name.clone(),
+                        error: format!("Failed to update known contracts: {:?}", e),
+                    };
+                }
+            };
+
             let mut loaded_identity_lock = match app_state.refresh_identity(&sdk).await {
                 Ok(lock) => lock,
                 Err(e) => {
@@ -454,19 +465,24 @@ pub(crate) async fn run_strategy_task<'s>(
                     strategy_signer.clone()
                 };
                                         
-                // Create map of state transitions to block heights
-                let mut state_transitions_map = HashMap::new();
-
                 // Set initial current_identities to loaded_identity
-                let mut current_identities: Vec<Identity> = vec![loaded_identity_lock.clone()];
-
-                // Fill out the state transitions map
-                // Loop through each block to precompute state transitions
-                let mut current_block_info = initial_block_info.clone();
                 let mut loaded_identity_clone = loaded_identity_lock.clone();
-            
-                // Loop through each block to precompute state transitions
-                let prep_start_time = Instant::now();
+                let mut current_identities: Vec<Identity> = vec![loaded_identity_clone.clone()];
+
+                let mut identity_nonce_counter = BTreeMap::new();
+                let current_identity_nonce = sdk.get_identity_nonce(loaded_identity_clone.id(), false, None).await.expect("Couldn't get current identity nonce");
+                identity_nonce_counter.insert(loaded_identity_clone.id(), current_identity_nonce);
+                let mut contract_nonce_counter = BTreeMap::new();
+                for used_contract_id in strategy.used_contract_ids() {
+                    let current_identity_contract_nonce = sdk.get_identity_contract_nonce(loaded_identity_clone.id(), used_contract_id, false, None).await.expect("Couldn't get current identity contract nonce");
+                    contract_nonce_counter.insert((loaded_identity_clone.id(), used_contract_id), current_identity_contract_nonce);
+                }
+                
+                let mut current_block_info = initial_block_info.clone();
+
+                let mut transition_count = 0;
+                let mut success_count = 0;
+
                 while current_block_info.height < (initial_block_info.height + num_blocks) {
                     let mut document_query_callback = |query: LocalDocumentQuery| {
                         match query {
@@ -603,6 +619,8 @@ pub(crate) async fn run_strategy_task<'s>(
                     // Get rng
                     let mut rng = StdRng::from_entropy();
 
+                    let mut known_contracts_lock = app_state.known_contracts.lock().await;
+
                     // Call the function to get STs for block
                     let (transitions, finalize_operations) = strategy
                         .state_transitions_for_block_with_new_identities(
@@ -613,6 +631,8 @@ pub(crate) async fn run_strategy_task<'s>(
                             &mut current_identities,
                             &mut known_contracts_lock,
                             &mut signer,
+                            &mut identity_nonce_counter,
+                            &mut contract_nonce_counter,
                             &mut rng,
                             &StrategyConfig { 
                                 start_block_height: initial_block_info.height,
@@ -621,6 +641,8 @@ pub(crate) async fn run_strategy_task<'s>(
                             PlatformVersion::latest(),
                         )
                         .await;
+
+                    drop(known_contracts_lock);
 
                     // TO-DO: add documents from state transitions to explorer.drive here
                     // this is required for DocumentDelete and DocumentReplace strategy operations
@@ -643,82 +665,106 @@ pub(crate) async fn run_strategy_task<'s>(
                         loaded_identity_clone = modified_identity.clone();
                         *loaded_identity_lock = modified_identity.clone();
                     }
+
+                    let mut st_queue = VecDeque::new();
                                                                                                                                                             
-                    // Store the state transitions in the map if not empty
+                    // Put the state transitions in the queue if not empty
                     if !transitions.is_empty() {
-                        let st_queue = VecDeque::from(transitions.clone());
-                        state_transitions_map.insert(current_block_info.height, st_queue.clone());
+                        st_queue = transitions.into();
                         info!("Prepared {} state transitions for block {}", st_queue.len(), current_block_info.height);
                     } else {
                         // Log when no state transitions are found for a block
                         info!("No state transitions prepared for block {}", current_block_info.height);
                     }
-                                                                                                                                                                                            
-                    // Update block_info
-                    current_block_info.height += 1;
-                    current_block_info.time_ms += 1 * 1000; // plus 1 second
-                }
 
-                let prep_time = prep_start_time.elapsed();
-            
-                let mut current_block_height = initial_block_info.height;
-
-                info!("--- Starting strategy execution loop ---");
-
-                let mut transition_count = 0;
-                let mut success_count = 0;
-
-                // Iterate over each block height
-                while current_block_height < (initial_block_info.height + num_blocks) {                
-                    if let Some(transitions) = state_transitions_map.get(&current_block_height) {
+                    if st_queue.is_empty() {
+                        info!("No state transitions to process for block {}", current_block_info.height);
+                    } else {
+                        let mut st_queue_index = 0;
                         let mut broadcast_futures = Vec::new();
+
                         let mut transition_type = String::new();
-
-                        for transition in transitions {
+                        for transition in st_queue.iter() {
+                            // Init
                             transition_count += 1;
-
+                            st_queue_index += 1;
                             let sdk_clone = Arc::clone(&sdk);
-                            let transition_clone = transition.clone();
-
-                            // Get ST type as string for logs
-                            transition_type = match transition_clone {
-                                StateTransition::DataContractCreate(_) => "DataContractCreate".to_string(),
-                                StateTransition::DataContractUpdate(_) => "DataContractUpdate".to_string(),
-                                StateTransition::DocumentsBatch(_) =>  "DocumentsBatch".to_string(),
-                                StateTransition::IdentityCreate(_) => "IdentityCreate".to_string(),
-                                StateTransition::IdentityTopUp(_) => "IdentityTopUp".to_string(),
-                                StateTransition::IdentityCreditWithdrawal(_) => "IdentityCreditWithdrawal".to_string(),
-                                StateTransition::IdentityUpdate(_) => "IdentityUpdate".to_string(),
-                                StateTransition::IdentityCreditTransfer(_) => "IdentityCreditTransfer".to_string(),
-                            };
-                                            
-                            // Collect futures for broadcasting state transitions
-                            let future = async move {
-                                match transition_clone.broadcast_request_for_state_transition() {
-                                    Ok(broadcast_request) => {
-                                        let broadcast_result = broadcast_request.execute(&*sdk_clone, RequestSettings::default()).await;
-                                        Ok((transition_clone, broadcast_result))
-                                    },
-                                    Err(e) => {
-                                        error!("Error creating broadcast request for state transition: {:?}", e);
-                                        Err(e)
+                            let transition_clone = transition.clone();                    
+                            transition_type = transition_clone.name().to_owned();
+                    
+                            let is_dependent_transition = matches!(
+                                transition_clone,
+                                StateTransition::IdentityUpdate(_) | StateTransition::DataContractUpdate(_) | StateTransition::IdentityCreditTransfer(_) | StateTransition::IdentityCreditWithdrawal(_)
+                            );
+                            
+                            if is_dependent_transition {
+                                // Sequentially process dependent transitions with a delay between them
+                                if let Ok(broadcast_request) = transition_clone.broadcast_request_for_state_transition() {
+                                    match broadcast_request.execute(&*sdk_clone, RequestSettings::default()).await {
+                                        Ok(_broadcast_result) => {
+                                            if let Ok(wait_request) = transition_clone.wait_for_state_transition_result_request() {
+                                                match wait_request.execute(&*sdk_clone, RequestSettings::default()).await {
+                                                    Ok(wait_response) => {
+                                                        if let Some(wait_for_state_transition_result_response::Version::V0(v0_response)) = &wait_response.version {
+                                                            if let Some(metadata) = &v0_response.metadata {
+                                                                let actual_block_height = metadata.height;
+                                                                success_count += 1;
+                                                                info!("Successfully processed state transition {} ({}) for block {} (Actual block height: {})", st_queue_index, transition_type, current_block_info.height, actual_block_height);
+                                                                // Sleep because we need to give the chain state time to update revisions
+                                                                // It seems this is only necessary for certain STs. Like AddKeys and DisableKeys seem to need it, but Transfer does not. Not sure about Withdraw or ContractUpdate yet.
+                                                                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                                                            }
+                                                            // Additional logging to inspect the result regardless of metadata presence
+                                                            match &v0_response.result {
+                                                                Some(wait_for_state_transition_result_response_v0::Result::Error(error)) => {
+                                                                    error!("WaitForStateTransitionResultResponse error: {:?}", error);
+                                                                }
+                                                                Some(wait_for_state_transition_result_response_v0::Result::Proof(_)) => {
+                                                                    // nothing
+                                                                }
+                                                                _ => {}
+                                                            }
+                                                        } else {
+                                                            info!("Response version other than V0 received or absent for state transition {} ({})", st_queue_index, transition_type);
+                                                        }
+                                                    },
+                                                    Err(e) => error!("Error waiting for state transition result: {:?}", e),
+                                                }
+                                            } else {
+                                                error!("Failed to create wait request for state transition.");
+                                            }
+                                        },
+                                        Err(e) => error!("Error broadcasting dependent state transition: {:?}", e),
                                     }
+                                } else {
+                                    error!("Failed to create broadcast request for state transition.");
                                 }
-                            };
-                
-                            broadcast_futures.push(future);
+                            } else {
+                                // Prepare futures for broadcasting independent transitions
+                                let future = async move {
+                                    match transition_clone.broadcast_request_for_state_transition() {
+                                        Ok(broadcast_request) => {
+                                            let broadcast_result = broadcast_request.execute(&*sdk_clone, RequestSettings::default()).await;
+                                            Ok((transition_clone, broadcast_result))
+                                        },
+                                        Err(e) => Err(e),
+                                    }
+                                };
+                                broadcast_futures.push(future);
+                            }
                         }
-                
-                        // Concurrently execute all broadcast requests
+                    
+                        // Concurrently execute all broadcast requests for independent transitions
                         let broadcast_results = join_all(broadcast_futures).await;
-                
+                                    
                         // Create futures for waiting for state transition results
                         let mut wait_futures = Vec::new();
                         for (index, result) in broadcast_results.into_iter().enumerate() {
                             match result {
                                 Ok((transition, broadcast_result)) => {
+
                                     if broadcast_result.is_err() {
-                                        error!("Error broadcasting state transition {} for block height {}: {:?}", index + 1, current_block_height, broadcast_result.err().unwrap());
+                                        error!("Error broadcasting state transition {} for block height {}: {:?}", index + 1, current_block_info.height, broadcast_result.err().unwrap());
                                         continue;
                                     }
 
@@ -728,7 +774,7 @@ pub(crate) async fn run_strategy_task<'s>(
                                         let wait_result = match transition.wait_for_state_transition_result_request() {
                                             Ok(wait_request) => wait_request.execute(&*sdk_clone, RequestSettings::default()).await,
                                             Err(e) => {
-                                                error!("Error creating wait request for state transition {} block height {}: {:?}", index + 1, current_block_height, e);
+                                                error!("Error creating wait request for state transition {} block height {}: {:?}", index + 1, current_block_info.height, e);
                                                 return None;
                                             }
                                         };
@@ -740,19 +786,19 @@ pub(crate) async fn run_strategy_task<'s>(
                                                         // Log the detailed state transition broadcast error
                                                         error!("State Transition Broadcast Error: Code: {}, Message: \"{}\"", error.code, error.message);
                                                     }
-                                                }                                        
-
+                                                }
+                                                
                                                 // If a data contract was registered, add it to known_contracts
                                                 if let StateTransition::DataContractCreate(DataContractCreateTransition::V0(data_contract_create_transition)) = &transition {
+
                                                     // Extract the data contract from the transition
                                                     let data_contract_serialized = &data_contract_create_transition.data_contract;
                                                     let data_contract_result = DataContract::try_from_platform_versioned(data_contract_serialized.clone(), false, PlatformVersion::latest());
-                                                    
+
                                                     match data_contract_result {
                                                         Ok(data_contract) => {
-                                                            // Get a mutable reference to app_state
-                                                            let mut app_state_lock = app_state.known_contracts.lock().await;
-                                                            app_state_lock.insert(data_contract.id().to_string(Encoding::Base58), data_contract);
+                                                            let mut known_contracts_lock = app_state.known_contracts.lock().await;
+                                                            known_contracts_lock.insert(data_contract.id().to_string(Encoding::Base58), data_contract);
                                                         },
                                                         Err(e) => {
                                                             error!("Error deserializing data contract: {:?}", e);
@@ -777,7 +823,7 @@ pub(crate) async fn run_strategy_task<'s>(
                                     wait_futures.push(wait_future);
                                 },
                                 Err(e) => {
-                                    error!("Error preparing broadcast request for state transition {} block height {}: {:?}", index + 1, current_block_height, e);
+                                    error!("Error preparing broadcast request for state transition {} block height {}: {:?}", index + 1, current_block_info.height, e);
                                 }
                             }
                         }
@@ -790,28 +836,27 @@ pub(crate) async fn run_strategy_task<'s>(
                             match actual_block_height {
                                 Some(height) => {
                                     success_count += 1;
-                                    info!("Successfully processed state transition {} ({}) for block {} (actual block height: {})", index + 1, transition_type, current_block_height, height)
+                                    info!("Successfully processed state transition {} ({}) for block {} (actual block height: {})", index + 1, transition_type, current_block_info.height, height)
                                 },
                                 None => {
                                     continue
                                 },
                             }
                         }
-                    } else {
-                        info!("No state transitions to process for block {}", current_block_height);
                     }
-
-                    // Increment block height after processing each block
-                    current_block_height += 1;
+                                                                                                                                                                                            
+                    // Update block_info
+                    current_block_info.height += 1;
+                    current_block_info.time_ms += 1 * 1000; // plus 1 second
                 }
-
+            
                 // Clear start_identities since they have now been registered, if any
                 if !strategy.start_identities.is_empty() {
                     strategy.start_identities = Vec::new();
                     info!("Strategy start_identities field cleared");
                 }
 
-                info!("Strategy '{}' finished running", strategy_name);
+                info!("-----Strategy '{}' finished running-----", strategy_name);
                 let run_time = run_start_time.elapsed();
 
                 // Refresh the identity at the end
@@ -842,11 +887,10 @@ pub(crate) async fn run_strategy_task<'s>(
                 BackendEvent::StrategyCompleted {
                     strategy_name: strategy_name.clone(),
                     result: StrategyCompletionResult::Success {
-                        final_block_height: current_block_height,
+                        final_block_height: current_block_info.height,
                         start_block_height: initial_block_info.height,
                         success_count,
                         transition_count,
-                        prep_time,
                         run_time,
                         dash_spent_identity,
                         dash_spent_wallet,
@@ -1085,6 +1129,40 @@ async fn reload_wallet_utxos(wallet: &mut Wallet, insight: &InsightAPIClient) ->
     }
 
     Err(Error::SdkError(rs_sdk::Error::Generic("Failed to reload wallet UTXOs after maximum retries".to_string())))
+}
+
+pub async fn update_known_contracts(
+    sdk: Arc<Sdk>,
+    known_contracts: &Mutex<KnownContractsMap>,
+) -> Result<(), String> {
+    let contract_ids = {
+        let contracts_lock = known_contracts.lock().await;
+        contracts_lock.keys().cloned().collect::<Vec<String>>()
+    };
+
+    // Clear known contracts first. This is necessary for some reason, I don't know.
+    let mut contracts_lock = known_contracts.lock().await;
+    contracts_lock.clear();
+    drop(contracts_lock);
+
+    for contract_id_str in contract_ids.iter() {
+        let contract_id = Identifier::from_string(contract_id_str, Encoding::Base58).expect("Failed to convert ID string to Identifier");
+
+        match DataContract::fetch(&*sdk, contract_id).await {
+            Ok(Some(data_contract)) => {
+                let mut contracts_lock = known_contracts.lock().await;
+                contracts_lock.insert(contract_id_str.clone(), data_contract);
+            },
+            Ok(None) => {
+                error!("Contract not found for ID: {}", contract_id_str);
+            },
+            Err(e) => {
+                return Err(format!("Error fetching contract {}: {}", contract_id_str, e));
+            },
+        }
+    }
+
+    Ok(())
 }
 
 // // Function to fetch current blockchain height
