@@ -75,7 +75,7 @@ pub(super) async fn run_contract_task<'s>(
         }
         ContractTask::RemoveContract(ref contract_name) => {
             let mut contracts_lock = known_contracts.lock().await;
-            contracts_lock.remove(&contract_name.clone());
+            contracts_lock.remove(contract_name);
             BackendEvent::TaskCompletedStateChange {
                 task: Task::Contract(task),
                 execution_result: Ok("Contract removed".into()),
