@@ -138,7 +138,14 @@ impl ScreenController for ContractsScreenController {
             Event::Key(KeyEvent {
                 code: Key::Char('r'),
                 modifiers: KeyModifiers::NONE,
-            }) => ScreenFeedback::Form(Box::new(RemoveContractFormController::new(self.known_contracts.clone()))),
+            }) => {
+                let contract_names = self.known_contracts
+                    .iter()
+                    .map(|(name, _)| name.clone())
+                    .collect::<Vec<String>>();
+
+                ScreenFeedback::Form(Box::new(RemoveContractFormController::new(contract_names)))
+            },
 
             Event::Key(event) => {
                 if let Some(select) = &mut self.select {
@@ -165,15 +172,17 @@ impl ScreenController for ContractsScreenController {
                     ..
                 },
             ) => {
-                self.select = if known_contracts.len() > 0 {
+                self.select = if !known_contracts.is_empty() {
                     Some(SelectInput::new(Self::contract_entries_vec(
                         known_contracts.iter().map(|(k, v)| (k.clone(), v)),
                     )))
                 } else {
                     None
                 };
+                self.known_contracts = (*known_contracts).clone();
                 ScreenFeedback::Redraw
             }
+                        
             _ => ScreenFeedback::None,
         }
     }
@@ -184,10 +193,9 @@ pub(super) struct RemoveContractFormController {
 }
 
 impl RemoveContractFormController {
-    pub(super) fn new(contracts: BTreeMap<String, DataContract>) -> Self {
-        let contract_names = contracts.keys().cloned().collect_vec();
+    pub(super) fn new(contracts: Vec<String>) -> Self {
         Self {
-            input: SelectInput::new(contract_names),
+            input: SelectInput::new(contracts),
         }
     }
 }
