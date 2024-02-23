@@ -1,18 +1,19 @@
-use chrono::LocalResult;
+use chrono::{prelude::*, LocalResult};
+use chrono_humanize::{Accuracy, HumanTime, Tense};
+use dapi_grpc::platform::v0::ResponseMetadata;
 use dpp::{
-    block::{epoch::EpochIndex, extended_epoch_info::ExtendedEpochInfo},
+    block::{
+        epoch::EpochIndex,
+        extended_epoch_info::{v0::ExtendedEpochInfoV0Getters, ExtendedEpochInfo},
+    },
     version::ProtocolVersionVoteCount,
 };
 use rs_sdk::{
     platform::{types::epoch::ExtendedEpochInfoEx, Fetch, FetchMany, LimitQuery},
-    Error, Sdk,
+    Sdk,
 };
 
 use crate::backend::{as_toml, BackendEvent, Task};
-use chrono::prelude::*;
-use chrono_humanize::{Accuracy, HumanTime, Tense};
-use dapi_grpc::platform::v0::ResponseMetadata;
-use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
 
 #[derive(Clone, PartialEq)]
 pub(crate) enum PlatformInfoTask {
@@ -36,7 +37,7 @@ fn format_extended_epoch_info(
             let human_readable = HumanTime::from(duration).to_text_en(Accuracy::Rough, Tense::Past);
             human_readable
         }
-        LocalResult::Ambiguous(_, _) => String::new(),
+        LocalResult::Ambiguous(..) => String::new(),
     };
 
     let readable_epoch_start_time = match Utc
@@ -50,7 +51,7 @@ fn format_extended_epoch_info(
             let human_readable = HumanTime::from(duration).to_text_en(Accuracy::Rough, Tense::Past);
             human_readable
         }
-        LocalResult::Ambiguous(_, _) => String::new(),
+        LocalResult::Ambiguous(..) => String::new(),
     };
 
     let in_string = if is_current {
@@ -59,8 +60,24 @@ fn format_extended_epoch_info(
         String::default()
     };
 
-    format!("current height: {}\ncurrent core height: {}\ncurrent block time: {} ({})\n{}epoch: {}\n * start height: {}\n * start core height: {}\n * start time: {} ({})\n * fee multiplier: {}\n", metadata.height, metadata.core_chain_locked_height, metadata.time_ms, readable_block_time, in_string, epoch_info.index(), epoch_info.first_block_height(), epoch_info.first_core_block_height(), epoch_info.first_block_time(), readable_epoch_start_time,  epoch_info.fee_multiplier())
+    format!(
+        "current height: {}\ncurrent core height: {}\ncurrent block time: {} ({})\n{}epoch: {}\n \
+         * start height: {}\n * start core height: {}\n * start time: {} ({})\n * fee multiplier: \
+         {}\n",
+        metadata.height,
+        metadata.core_chain_locked_height,
+        metadata.time_ms,
+        readable_block_time,
+        in_string,
+        epoch_info.index(),
+        epoch_info.first_block_height(),
+        epoch_info.first_core_block_height(),
+        epoch_info.first_block_time(),
+        readable_epoch_start_time,
+        epoch_info.fee_multiplier()
+    )
 }
+
 pub(super) async fn run_platform_task<'s>(sdk: &Sdk, task: PlatformInfoTask) -> BackendEvent<'s> {
     match task {
         PlatformInfoTask::FetchCurrentEpochInfo => {
@@ -101,7 +118,7 @@ pub(super) async fn run_platform_task<'s>(sdk: &Sdk, task: PlatformInfoTask) -> 
                 limit: Some(limit),
             };
 
-            match ExtendedEpochInfo::fetch_many(sdk, query).await {
+            match ExtendedEpochInfo::fetch_many(&sdk, query).await {
                 Ok(epoch_infos) => {
                     let epoch_info = as_toml(&epoch_infos);
 
@@ -117,7 +134,7 @@ pub(super) async fn run_platform_task<'s>(sdk: &Sdk, task: PlatformInfoTask) -> 
             }
         }
         PlatformInfoTask::FetchCurrentVersionVotingState => {
-            match ProtocolVersionVoteCount::fetch_many(sdk, ()).await {
+            match ProtocolVersionVoteCount::fetch_many(&sdk, ()).await {
                 Ok(votes) => {
                     let votes_info = votes
                         .into_iter()

@@ -20,7 +20,7 @@ use self::{
     fetch_contract::FetchSystemContractScreenController,
 };
 use crate::{
-    backend::{AppState, AppStateUpdate, BackendEvent},
+    backend::{AppState, AppStateUpdate, BackendEvent, ContractTask, Task},
     ui::{
         form::{Input, InputStatus, SelectInput},
         screen::{
@@ -31,12 +31,13 @@ use crate::{
     Event,
 };
 
-const COMMAND_KEYS: [ScreenCommandKey; 5] = [
+const COMMAND_KEYS: [ScreenCommandKey; 6] = [
     ScreenCommandKey::new("q", "Back to Main"),
     ScreenCommandKey::new("s", "Fetch system contract"),
     ScreenCommandKey::new("↓ / C-n", "Next contract"),
     ScreenCommandKey::new("↑ / C-p", "Prev contract"),
     ScreenCommandKey::new("Enter", "Select contract"),
+    ScreenCommandKey::new("c", "Clear known contracts"),
 ];
 
 /// Data contract name (identifier in app state) wrapper for better display
@@ -130,6 +131,14 @@ impl ScreenController for ContractsScreenController {
                 code: Key::Char('s'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::NextScreen(FetchSystemContractScreenController::builder()),
+
+            Event::Key(KeyEvent {
+                code: Key::Char('c'),
+                modifiers: KeyModifiers::NONE,
+            }) => ScreenFeedback::Task {
+                task: Task::Contract(ContractTask::ClearKnownContracts),
+                block: false,
+            },
 
             Event::Key(event) => {
                 if let Some(select) = &mut self.select {

@@ -26,6 +26,7 @@ impl FormController for SelectStrategyFormController {
                 task: Task::Strategy(StrategyTask::SelectStrategy(strategy_name)),
                 block: false,
             },
+            InputStatus::Exit => FormStatus::Exit,
             status => status.into(),
         }
     }
@@ -39,7 +40,7 @@ impl FormController for SelectStrategyFormController {
     }
 
     fn step_name(&self) -> &'static str {
-        "By name"
+        ""
     }
 
     fn step_index(&self) -> u8 {

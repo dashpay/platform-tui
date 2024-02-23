@@ -2,7 +2,6 @@
 
 use std::collections::BTreeMap;
 
-use rs_sdk::platform::DataContract;
 use dpp::data_contract::{
     accessors::v0::DataContractV0Getters,
     document_type::{
@@ -10,10 +9,12 @@ use dpp::data_contract::{
         DocumentType,
     },
 };
+use rs_sdk::platform::DataContract;
 use strategy_tests::{
     frequency::Frequency,
     operations::{DocumentAction, DocumentOp, Operation, OperationType},
 };
+use tracing::info;
 use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
 use crate::{
@@ -41,8 +42,8 @@ impl StrategyOpDocumentFormController {
         let contract_names: Vec<String> = known_contracts.keys().cloned().collect();
         let action_types = vec![
             "Insert Random".to_string(),
-            "Delete".to_string(),
-            "Replace".to_string(),
+            // "Delete".to_string(),
+            // "Replace".to_string(),
         ];
 
         StrategyOpDocumentFormController {
@@ -51,11 +52,11 @@ impl StrategyOpDocumentFormController {
                 Field::new("Select Action", SelectInput::new(action_types)),
                 Field::new(
                     "Times per block",
-                    SelectInput::new(vec![1, 2, 5, 10, 20, 40, 100, 1000]),
+                    SelectInput::new(vec![1, 5, 10, 50, 100, 500, 1000]),
                 ),
                 Field::new(
                     "Chance per block",
-                    SelectInput::new(vec![1.0, 0.9, 0.75, 0.5, 0.25, 0.1, 0.05, 0.01]),
+                    SelectInput::new(vec![1.0, 0.75, 0.5, 0.25, 0.1]),
                 ),
             )),
             selected_strategy,
@@ -73,6 +74,8 @@ impl FormController for StrategyOpDocumentFormController {
                 let document_types = selected_contract.document_types();
                 self.document_types = document_types.clone();
 
+                // To-do: let the user select the document type
+                // Pretty sure this just selects the first document type every time
                 let selected_document_type = self.document_types.values().next().unwrap().clone();
 
                 let action = match action_type.as_ref() {
@@ -80,8 +83,8 @@ impl FormController for StrategyOpDocumentFormController {
                         DocumentFieldFillType::FillIfNotRequired,
                         DocumentFieldFillSize::AnyDocumentFillSize,
                     ),
-                    "Delete" => DocumentAction::DocumentActionDelete,
-                    "Replace" => DocumentAction::DocumentActionReplace,
+                    // "Delete" => DocumentAction::DocumentActionDelete,
+                    // "Replace" => DocumentAction::DocumentActionReplace,
                     _ => panic!("Invalid action type"),
                 };
 
@@ -95,7 +98,7 @@ impl FormController for StrategyOpDocumentFormController {
                                 action: action.clone(),
                             }),
                             frequency: Frequency {
-                                times_per_block_range: 1..times_per_block,
+                                times_per_block_range: 1..times_per_block + 1,
                                 chance_per_block: Some(chance_per_block),
                             },
                         },

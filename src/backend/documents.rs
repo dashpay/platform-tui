@@ -52,7 +52,7 @@ impl AppState {
     ) -> BackendEvent<'s> {
         match &task {
             DocumentTask::QueryDocuments(document_query) => {
-                let execution_result = Document::fetch_many(sdk, document_query.clone())
+                let execution_result = Document::fetch_many(&sdk, document_query.clone())
                     .await
                     .map(CompletedTaskPayload::Documents)
                     .map_err(|e| e.to_string());

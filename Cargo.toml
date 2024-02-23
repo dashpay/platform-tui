@@ -12,6 +12,7 @@ tuirealm = "1.9.1"
 bs58 = "0.5.0"
 dpp = { path = "../platform/packages/rs-dpp", features = ["client", "documents-faker"]}
 rs-sdk = { path = "../platform/packages/rs-sdk"}
+drive = { path = "../platform/packages/rs-drive" }
 thiserror = "1"
 serde = "1.0.197"
 serde_json = "1.0.114"
@@ -20,7 +21,7 @@ dapi-grpc = { path = "../platform/packages/dapi-grpc", features = ["client"]}
 rs-dapi-client = { path = "../platform/packages/rs-dapi-client"}
 tokio = { version = "1.36.0", features = ["full"] }
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
-# strategy-tests = {path = "../platform/packages/strategy-tests"}
+strategy-tests = {path = "../platform/packages/strategy-tests"}
 simple-signer = {path = "../platform/packages/simple-signer"}
 reqwest = { version = "0.11.24", features = ["json"] }
 hex = { version = "0.4.3"}

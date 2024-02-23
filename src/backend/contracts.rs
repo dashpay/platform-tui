@@ -1,5 +1,4 @@
 //! Contracts backend.
-
 use dpp::{
     prelude::{DataContract, Identifier},
     system_data_contracts::{dashpay_contract, dpns_contract},
@@ -13,6 +12,7 @@ use super::{as_toml, state::KnownContractsMap, AppStateUpdate, BackendEvent, Tas
 pub(crate) enum ContractTask {
     FetchDashpayContract,
     FetchDPNSContract,
+    ClearKnownContracts,
 }
 
 const DASHPAY_CONTRACT_NAME: &str = "dashpay";
@@ -25,7 +25,7 @@ pub(super) async fn run_contract_task<'s>(
 ) -> BackendEvent<'s> {
     match task {
         ContractTask::FetchDashpayContract => {
-            match DataContract::fetch(sdk, Into::<Identifier>::into(dashpay_contract::ID_BYTES))
+            match DataContract::fetch(&sdk, Into::<Identifier>::into(dashpay_contract::ID_BYTES))
                 .await
             {
                 Ok(Some(data_contract)) => {
@@ -50,7 +50,7 @@ pub(super) async fn run_contract_task<'s>(
             }
         }
         ContractTask::FetchDPNSContract => {
-            match DataContract::fetch(sdk, Into::<Identifier>::into(dpns_contract::ID_BYTES)).await
+            match DataContract::fetch(&sdk, Into::<Identifier>::into(dpns_contract::ID_BYTES)).await
             {
                 Ok(Some(data_contract)) => {
                     let contract_str = as_toml(&data_contract);
@@ -71,6 +71,15 @@ pub(super) async fn run_contract_task<'s>(
                     task: Task::Contract(task),
                     execution_result: Err(e.to_string()),
                 },
+            }
+        }
+        ContractTask::ClearKnownContracts => {
+            let mut contracts_lock = known_contracts.lock().await;
+            contracts_lock.clear();
+            BackendEvent::TaskCompletedStateChange {
+                task: Task::Contract(task),
+                execution_result: Ok("Known contracts cleared".into()),
+                app_state_update: AppStateUpdate::KnownContracts(contracts_lock),
             }
         }
     }

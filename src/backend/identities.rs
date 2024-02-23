@@ -13,15 +13,13 @@ use dapi_grpc::{
     },
 };
 use dpp::{
-    bls_signatures::PrivateKey,
-    dashcore::{psbt::serialize::Serialize, Address, Network, Transaction},
+    dashcore::{psbt::serialize::Serialize, Address, Network, PrivateKey, Transaction},
     identity::{
         accessors::{IdentityGettersV0, IdentitySettersV0},
         identity_public_key::{accessors::v0::IdentityPublicKeyGettersV0, v0::IdentityPublicKeyV0},
-        KeyType, PartialIdentity, Purpose as KeyPurpose, Purpose,
-        SecurityLevel as KeySecurityLevel, SecurityLevel,
+        KeyType, PartialIdentity, Purpose as KeyPurpose, SecurityLevel as KeySecurityLevel,
     },
-    platform_value::{string_encoding::Encoding, BinaryData, Identifier},
+    platform_value::{string_encoding::Encoding, Identifier},
     prelude::{AssetLockProof, Identity, IdentityPublicKey},
     state_transition::{
         identity_update_transition::{
@@ -47,8 +45,12 @@ use rs_sdk::{
 };
 use simple_signer::signer::SimpleSigner;
 use tokio::sync::{MappedMutexGuard, MutexGuard};
+use tracing::info;
 
-use super::{state::IdentityPrivateKeysMap, AppStateUpdate, CompletedTaskPayload};
+use super::{
+    insight::InsightError, state::IdentityPrivateKeysMap, wallet::WalletError, AppStateUpdate,
+    CompletedTaskPayload, Wallet,
+};
 use crate::backend::{error::Error, stringify_result_keep_item, AppState, BackendEvent, Task};
 
 pub(super) async fn fetch_identity_by_b58_id(
@@ -287,7 +289,7 @@ impl AppState {
             )
         } else {
             let (asset_lock_transaction, asset_lock_proof_private_key) =
-                wallet.registration_transaction(None, amount)?;
+                wallet.asset_lock_transaction(None, amount)?;
 
             identity_asset_lock_private_key_in_creation.replace((
                 asset_lock_transaction.clone(),
@@ -334,12 +336,22 @@ impl AppState {
                 identity_info.clone()
             } else {
                 let mut std_rng = StdRng::from_entropy();
-                let (mut identity, keys): (Identity, BTreeMap<IdentityPublicKey, Vec<u8>>) =
+                let (mut identity, mut keys): (Identity, BTreeMap<IdentityPublicKey, Vec<u8>>) =
                     Identity::random_identity_with_main_keys_with_private_key(
                         2,
                         &mut std_rng,
                         sdk.version(),
                     )?;
+
+                let (critical_key, critical_private_key) =
+                    IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
+                        2,
+                        None,
+                        sdk.version(),
+                    )?;
+                identity.add_public_key(critical_key.clone());
+                keys.insert(critical_key, critical_private_key);
+
                 identity.set_id(
                     asset_lock_proof
                         .create_identifier()
@@ -375,7 +387,7 @@ impl AppState {
 
         let mut loaded_identity = self.loaded_identity.lock().await;
 
-        loaded_identity.replace(updated_identity);
+        loaded_identity.replace(updated_identity.clone());
         let identity_result =
             MutexGuard::map(loaded_identity, |x| x.as_mut().expect("assigned above"));
 
@@ -437,7 +449,7 @@ impl AppState {
                 )
             } else {
                 let (asset_lock_transaction, asset_lock_proof_private_key) =
-                    wallet.registration_transaction(None, amount)?;
+                    wallet.asset_lock_transaction(None, amount)?;
 
                 identity_asset_lock_private_key_in_top_up.replace((
                     asset_lock_transaction.clone(),
@@ -507,8 +519,8 @@ impl AppState {
 
         let identity_public_key = identity
             .get_first_public_key_matching(
-                Purpose::WITHDRAW,
-                SecurityLevel::full_range().into(),
+                KeyPurpose::WITHDRAW,
+                KeySecurityLevel::full_range().into(),
                 KeyType::all_key_types().into(),
             )
             .ok_or(Error::IdentityWithdrawalError(
@@ -623,6 +635,33 @@ impl AppState {
             Some(Duration::from_secs(4 * 60)),
         )
         .await
+    }
+
+    pub async fn retrieve_asset_lock_proof(
+        sdk: &Sdk,
+        wallet: &mut Wallet,
+        amount: u64,
+    ) -> Result<(AssetLockProof, PrivateKey), Error> {
+        // Create the wallet registration transaction
+        let (asset_lock_transaction, asset_lock_proof_private_key) =
+            wallet.asset_lock_transaction(None, amount).map_err(|e| {
+                Error::WalletError(WalletError::Insight(InsightError(format!(
+                    "Wallet transaction error: {}",
+                    e
+                ))))
+            })?;
+
+        // Broadcast the transaction and retrieve the asset lock proof
+        match Self::broadcast_and_retrieve_asset_lock(
+            sdk,
+            &asset_lock_transaction,
+            &wallet.receive_address(),
+        )
+        .await
+        {
+            Ok(proof) => Ok((proof, asset_lock_proof_private_key)),
+            Err(e) => Err(Error::SdkError(e)),
+        }
     }
 }
 

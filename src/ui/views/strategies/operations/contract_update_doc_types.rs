@@ -1,15 +1,22 @@
 //! Data contract update doc types operation form for strategy.
 
-use std::cmp::min;
+use std::{cmp::min, collections::BTreeMap};
 
-use dpp::data_contract::document_type::v0::random_document_type::{
-    FieldMinMaxBounds, FieldTypeWeights, RandomDocumentTypeParameters,
+use dpp::data_contract::{
+    document_type::v0::random_document_type::{
+        FieldMinMaxBounds, FieldTypeWeights, RandomDocumentTypeParameters,
+    },
+    DataContract,
 };
 use rand::Rng;
 use strategy_tests::{
     frequency::Frequency,
-    operations::{DataContractUpdateOp::DataContractNewDocumentTypes, Operation, OperationType},
+    operations::{
+        DataContractUpdateAction::DataContractNewDocumentTypes, DataContractUpdateOp, Operation,
+        OperationType,
+    },
 };
+use tracing::error;
 use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
 use crate::{
@@ -18,14 +25,26 @@ use crate::{
 };
 
 pub(super) struct StrategyOpContractUpdateDocTypesFormController {
-    input: ComposedInput<(Field<SelectInput<u16>>, Field<SelectInput<f64>>)>,
+    input: ComposedInput<(
+        Field<SelectInput<String>>,
+        Field<SelectInput<u16>>,
+        Field<SelectInput<f64>>,
+    )>,
     selected_strategy: String,
+    known_contracts: BTreeMap<String, DataContract>,
 }
 
 impl StrategyOpContractUpdateDocTypesFormController {
-    pub(super) fn new(selected_strategy: String) -> Self {
+    pub(super) fn new(
+        selected_strategy: String,
+        known_contracts: BTreeMap<String, DataContract>,
+    ) -> Self {
         StrategyOpContractUpdateDocTypesFormController {
             input: ComposedInput::new((
+                Field::new(
+                    "Contract",
+                    SelectInput::new(known_contracts.keys().cloned().collect()),
+                ),
                 Field::new(
                     "Times per block",
                     SelectInput::new(vec![1, 2, 5, 10, 20, 40, 100, 1000]),
@@ -36,14 +55,15 @@ impl StrategyOpContractUpdateDocTypesFormController {
                 ),
             )),
             selected_strategy,
+            known_contracts,
         }
     }
 }
 
 impl FormController for StrategyOpContractUpdateDocTypesFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
-        let random_number1 = rand::thread_rng().gen_range(1..=50);
-        let random_number2 = rand::thread_rng().gen_range(1..=50);
+        let random_number1 = rand::thread_rng().gen_range(3..=50);
+        let random_number2 = rand::thread_rng().gen_range(3..=50);
         let random_number3 = rand::thread_rng().gen::<i64>() - 1000000;
 
         let random_doc_type_parameters = RandomDocumentTypeParameters {
@@ -84,21 +104,33 @@ impl FormController for StrategyOpContractUpdateDocTypesFormController {
         };
 
         match self.input.on_event(event) {
-            InputStatus::Done((times_per_block, chance_per_block)) => FormStatus::Done {
-                task: Task::Strategy(StrategyTask::AddOperation {
-                    strategy_name: self.selected_strategy.clone(),
-                    operation: Operation {
-                        op_type: OperationType::ContractUpdate(DataContractNewDocumentTypes(
-                            random_doc_type_parameters,
-                        )),
-                        frequency: Frequency {
-                            times_per_block_range: 1..times_per_block,
-                            chance_per_block: Some(chance_per_block),
-                        },
-                    },
-                }),
-                block: false,
-            },
+            InputStatus::Done((contract_name, times_per_block, chance_per_block)) => {
+                // Retrieve the DataContract object by its name
+                if let Some(contract) = self.known_contracts.get(&contract_name) {
+                    FormStatus::Done {
+                        task: Task::Strategy(StrategyTask::AddOperation {
+                            strategy_name: self.selected_strategy.clone(),
+                            operation: Operation {
+                                op_type: OperationType::ContractUpdate(DataContractUpdateOp {
+                                    action: DataContractNewDocumentTypes(
+                                        random_doc_type_parameters,
+                                    ),
+                                    contract: contract.clone(),
+                                    document_type: None,
+                                }),
+                                frequency: Frequency {
+                                    times_per_block_range: 1..times_per_block + 1,
+                                    chance_per_block: Some(chance_per_block),
+                                },
+                            },
+                        }),
+                        block: false,
+                    }
+                } else {
+                    error!("No contract in known_contracts with that name");
+                    FormStatus::None
+                }
+            }
             status => status.into(),
         }
     }

@@ -17,12 +17,17 @@ async fn main() {
     // Initialize logger
     let log_file = File::create("explorer.log").expect("create log file");
 
-    let subscriber = tracing_subscriber::fmt::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
+    let subscriber = tracing_subscriber::fmt()
+        .with_env_filter("info")
         .with_writer(log_file)
+        .with_ansi(false)
         .finish();
 
-    tracing::subscriber::set_global_default(subscriber).expect("can't initialize logging");
+    tracing::subscriber::set_global_default(subscriber)
+        .expect("Unable to set global default subscriber");
+
+    // Test log statement
+    tracing::info!("Logger initialized successfully");
 
     // Log panics
     let default_panic_hook = panic::take_hook();
@@ -72,6 +77,23 @@ async fn main() {
     let insight = InsightAPIClient::new(config.insight_api_uri());
 
     let backend = Backend::new(sdk.as_ref(), insight, config).await;
+
+    // Add loaded identity to known identities if it's not already there
+    // And set selected_strategy to None
+    {
+        let state = backend.state();
+        let loaded_identity = state.loaded_identity.lock().await;
+        let mut selected_strategy = state.selected_strategy.lock().await;
+        let mut known_identities = state.known_identities.lock().await;
+
+        if let Some(loaded_identity) = loaded_identity.as_ref() {
+            known_identities
+                .entry(loaded_identity.id())
+                .or_insert_with(|| loaded_identity.clone());
+        }
+
+        *selected_strategy = None;
+    }
 
     let initial_identity_balance = backend
         .state()

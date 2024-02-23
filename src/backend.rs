@@ -8,13 +8,14 @@ pub mod identities;
 pub mod insight;
 pub mod platform_info;
 pub mod state;
-// mod strategies;
+mod strategies;
 pub mod wallet;
 
 use std::{
     collections::BTreeMap,
     fmt::{self, Display},
-    ops::{Deref, DerefMut},
+    sync::Arc,
+    time::Duration,
 };
 
 use dpp::{
@@ -25,20 +26,20 @@ use dpp::{
 use rs_sdk::Sdk;
 use serde::Serialize;
 pub(crate) use state::AppState;
-// use strategy_tests::Strategy;
+use strategy_tests::Strategy;
 use tokio::sync::{MappedMutexGuard, Mutex, MutexGuard};
 
 use self::state::KnownContractsMap;
 pub(crate) use self::{
     contracts::ContractTask,
-    //    state::StrategyContractNames,
-    //    strategies::StrategyTask,
+    state::StrategyContractNames,
+    strategies::StrategyTask,
     wallet::{Wallet, WalletTask},
 };
 use crate::{
     backend::{
         documents::DocumentTask, identities::IdentityTask, insight::InsightAPIClient,
-        platform_info::PlatformInfoTask,
+        platform_info::PlatformInfoTask, state::StrategiesMap,
     },
     config::Config,
 };
@@ -51,7 +52,7 @@ use crate::{
 pub enum Task {
     FetchIdentityById(String, bool),
     PlatformInfo(PlatformInfoTask),
-    //    Strategy(StrategyTask),
+    Strategy(StrategyTask),
     Wallet(WalletTask),
     Identity(IdentityTask),
     Contract(ContractTask),
@@ -100,6 +101,14 @@ pub enum BackendEvent<'s> {
         app_state_update: AppStateUpdate<'s>,
     },
     AppStateUpdated(AppStateUpdate<'s>),
+    StrategyCompleted {
+        strategy_name: String,
+        result: StrategyCompletionResult,
+    },
+    StrategyError {
+        strategy_name: String,
+        error: String,
+    },
     None,
 }
 
@@ -109,18 +118,35 @@ pub enum BackendEvent<'s> {
 pub(crate) enum AppStateUpdate<'s> {
     KnownContracts(MutexGuard<'s, KnownContractsMap>),
     LoadedWallet(MappedMutexGuard<'s, Wallet>),
-    // Strategies(
-    //     MutexGuard<'s, StrategiesMap>,
-    //     MutexGuard<'s, BTreeMap<String, StrategyContractNames>>,
-    // ),
-    // SelectedStrategy(
-    //     String,
-    //     MappedMutexGuard<'s, Strategy>,
-    //     MappedMutexGuard<'s, StrategyContractNames>,
-    // ),
+    Strategies(
+        MutexGuard<'s, StrategiesMap>,
+        MutexGuard<'s, BTreeMap<String, StrategyContractNames>>,
+    ),
+    SelectedStrategy(
+        String,
+        MappedMutexGuard<'s, Strategy>,
+        MappedMutexGuard<'s, StrategyContractNames>,
+    ),
     IdentityRegistrationProgressed, // TODO provide state update details
     LoadedIdentity(MappedMutexGuard<'s, Identity>),
     FailedToRefreshIdentity,
+}
+
+/// Represents the result of completing a strategy.
+pub(crate) enum StrategyCompletionResult {
+    Success {
+        final_block_height: u64,
+        start_block_height: u64,
+        success_count: u64,
+        transition_count: u64,
+        run_time: Duration,
+        dash_spent_identity: f64,
+        dash_spent_wallet: f64,
+    },
+    PartiallyCompleted {
+        reached_block_height: u64,
+        reason: String,
+    },
 }
 
 /// Application state, dependencies are task execution logic around it.
@@ -165,16 +191,15 @@ impl<'a> Backend<'a> {
                     execution_result: execution_info_result,
                 }
             }
-            // Task::Strategy(strategy_task) => {
-            //     strategies::run_strategy_task(
-            //         &self.app_state.available_strategies,
-            //         &self.app_state.available_strategies_contract_names,
-            //         &self.app_state.selected_strategy,
-            //         &self.app_state.known_contracts,
-            //         strategy_task,
-            //     )
-            //     .await
-            // }
+            Task::Strategy(strategy_task) => {
+                strategies::run_strategy_task(
+                    &self.sdk,
+                    &self.app_state,
+                    strategy_task,
+                    &self.insight,
+                )
+                .await
+            }
             Task::Wallet(wallet_task) => {
                 wallet::run_wallet_task(&self.app_state.loaded_wallet, wallet_task, &self.insight)
                     .await
@@ -194,7 +219,7 @@ impl<'a> Backend<'a> {
             }
             Task::Document(document_task) => {
                 self.app_state
-                    .run_document_task(self.sdk, document_task)
+                    .run_document_task(&self.sdk, document_task)
                     .await
             }
             Task::PlatformInfo(platform_info_task) => {

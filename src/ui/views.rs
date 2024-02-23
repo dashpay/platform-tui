@@ -8,4 +8,5 @@ pub(crate) mod identities;
 pub(crate) mod main;
 pub(crate) mod platform_info;
 // pub(crate) mod strategies;
+pub(crate) mod strategies;
 pub(crate) mod wallet;
