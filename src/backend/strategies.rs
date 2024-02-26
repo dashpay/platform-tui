@@ -17,7 +17,7 @@ use dpp::{
     block::{block_info::BlockInfo, epoch::Epoch},
     dashcore::PrivateKey,
     data_contract::{
-        accessors::v0::DataContractV0Getters, created_data_contract::CreatedDataContract,
+        created_data_contract::CreatedDataContract,
         DataContract,
     },
     identity::{
@@ -25,17 +25,14 @@ use dpp::{
         PartialIdentity,
     },
     platform_value::{string_encoding::Encoding, Bytes32, Identifier},
-    state_transition::{
-        data_contract_create_transition::DataContractCreateTransition, StateTransition,
-    },
+    state_transition::{documents_batch_transition::{document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods, document_transition::DocumentTransition, DocumentCreateTransition, DocumentsBatchTransition}, StateTransition},
     version::PlatformVersion,
 };
 use drive::{
     drive::{
         document::query::{QueryDocumentsOutcome, QueryDocumentsOutcomeV0Methods},
-        identity::key::fetch::IdentityKeysRequest,
-    },
-    query::DriveQuery,
+        identity::key::fetch::IdentityKeysRequest, Drive,
+    }, error::proof::ProofError, query::DriveQuery
 };
 use futures::future::join_all;
 use rand::{rngs::StdRng, SeedableRng};
@@ -458,7 +455,7 @@ pub(crate) async fn run_strategy_task<'s>(
 
             // Refresh UTXOs for the loaded wallet
             if let Some(ref mut wallet) = *loaded_wallet_lock {
-                wallet.reload_utxos(insight).await;
+                let _ = wallet.reload_utxos(insight).await;
             }
 
             let initial_balance_identity = loaded_identity_lock.balance();
@@ -684,7 +681,7 @@ pub(crate) async fn run_strategy_task<'s>(
                                                                         
                                                         let mut found_new_utxos = false;
                                                         while retries < max_retries {
-                                                            wallet.reload_utxos(&insight_ref).await;
+                                                            let _ = wallet.reload_utxos(&insight_ref).await;
                                     
                                                             // Check if new UTXOs are available and if UTXO list is not empty
                                                             let current_utxos = match wallet {
@@ -811,13 +808,12 @@ pub(crate) async fn run_strategy_task<'s>(
                         let mut st_queue_index = 0;
                         let mut broadcast_futures = Vec::new();
 
-                        let mut transition_type = String::new();
                         for transition in st_queue.iter() {
                             // Init
                             transition_count += 1;
                             st_queue_index += 1;
                             let transition_clone = transition.clone();
-                            transition_type = transition_clone.name().to_owned();
+                            let transition_type = transition_clone.name().to_owned();
 
                             let is_dependent_transition = matches!(
                                 transition_clone,
@@ -860,8 +856,21 @@ pub(crate) async fn run_strategy_task<'s>(
                                                                 Some(wait_for_state_transition_result_response_v0::Result::Error(error)) => {
                                                                     error!("WaitForStateTransitionResultResponse error: {:?}", error);
                                                                 }
-                                                                Some(wait_for_state_transition_result_response_v0::Result::Proof(_)) => {
-                                                                    // nothing
+                                                                Some(wait_for_state_transition_result_response_v0::Result::Proof(proof)) => {
+                                                                    let verified = Drive::verify_state_transition_was_executed_with_proof(
+                                                                        &transition_clone,
+                                                                        proof.grovedb_proof.as_slice(),
+                                                                        &|_| Ok(None),
+                                                                        sdk.version(),                                                            
+                                                                    );
+                                                                    match verified {
+                                                                        Ok(_) => {
+                                                                            info!("Verified proof for state transition");
+                                                                        }
+                                                                        Err(e) => {
+                                                                            error!("Error verifying state transition execution proof: {}", e);
+                                                                        }
+                                                                    }
                                                                 }
                                                                 _ => {}
                                                             }
@@ -911,15 +920,14 @@ pub(crate) async fn run_strategy_task<'s>(
                         // Concurrently execute all broadcast requests for independent transitions
                         let broadcast_results = join_all(broadcast_futures).await;
 
-                        // Create futures for waiting for state transition results
+                        // Prepare futures for waiting for state transition results
                         let mut wait_futures = Vec::new();
                         for (index, result) in broadcast_results.into_iter().enumerate() {
                             match result {
                                 Ok((transition, broadcast_result)) => {
                                     if broadcast_result.is_err() {
                                         error!(
-                                            "Error broadcasting state transition {} for block \
-                                             height {}: {:?}",
+                                            "Error broadcasting state transition {} for block height {}: {:?}",
                                             index + 1,
                                             current_block_info.height,
                                             broadcast_result.err().unwrap()
@@ -927,88 +935,91 @@ pub(crate) async fn run_strategy_task<'s>(
                                         continue;
                                     }
 
+                                    // Extract the data contract ID from the transition
+                                    let data_contract_id_option = match &transition {
+                                        StateTransition::DocumentsBatch(DocumentsBatchTransition::V0(documents_batch)) => {
+                                            documents_batch.transitions.get(0).and_then(|document_transition| {
+                                                match document_transition {
+                                                    DocumentTransition::Create(DocumentCreateTransition::V0(create_transition)) => {
+                                                        Some(create_transition.base.data_contract_id())
+                                                    },
+                                                    // Add handling for Replace and Delete transitions if necessary
+                                                    _ => None,
+                                                }
+                                            })
+                                        },
+                                        // Handle other state transition types that involve data contracts here
+                                        _ => None,
+                                    };
+
+                                    let known_contracts_lock = app_state.known_contracts.lock().await;
+
+                                    let data_contract_clone = if let Some(data_contract_id) = data_contract_id_option {
+                                        let data_contract_id_str = data_contract_id.to_string(Encoding::Base58);
+                                        known_contracts_lock.get(&data_contract_id_str).cloned()
+                                    } else {
+                                        None
+                                    };
+
+                                    drop(known_contracts_lock);
+            
                                     let wait_future = async move {
-                                        let wait_result = match transition
-                                            .wait_for_state_transition_result_request()
-                                        {
-                                            Ok(wait_request) => {
-                                                wait_request
-                                                    .execute(sdk, RequestSettings::default())
-                                                    .await
-                                            }
+                                        let wait_result = match transition.wait_for_state_transition_result_request() {
+                                            Ok(wait_request) => wait_request.execute(sdk, RequestSettings::default()).await,
                                             Err(e) => {
                                                 error!(
-                                                    "Error creating wait request for state \
-                                                     transition {} block height {}: {:?}",
-                                                    index + 1,
-                                                    current_block_info.height,
-                                                    e
+                                                    "Error creating wait request for state transition {} block height {}: {:?}",
+                                                    index + 1, current_block_info.height, e
                                                 );
                                                 return None;
                                             }
                                         };
-
+                                    
                                         match wait_result {
                                             Ok(wait_response) => {
-                                                if let Some(wait_for_state_transition_result_response::Version::V0(v0_response)) = &wait_response.version {
-                                                    if let Some(wait_for_state_transition_result_response_v0::Result::Error(error)) = &v0_response.result {
-                                                        // Log the detailed state transition broadcast error
-                                                        error!("State Transition Broadcast Error: Code: {}, Message: \"{}\"", error.code, error.message);
-                                                    }
-                                                }
-
-                                                // If a data contract was registered, add it to
-                                                // known_contracts
-                                                if let StateTransition::DataContractCreate(
-                                                    DataContractCreateTransition::V0(
-                                                        data_contract_create_transition,
-                                                    ),
-                                                ) = &transition
-                                                {
-                                                    // Extract the data contract from the transition
-                                                    let data_contract_serialized =
-                                                        &data_contract_create_transition
-                                                            .data_contract;
-                                                    let data_contract_result =
-                                                        DataContract::try_from_platform_versioned(
-                                                            data_contract_serialized.clone(),
-                                                            false,
-                                                            PlatformVersion::latest(),
+                                                Some(if let Some(wait_for_state_transition_result_response::Version::V0(v0_response)) = &wait_response.version {
+                                                    if let Some(metadata) = &v0_response.metadata {
+                                                        let actual_block_height = metadata.height;
+                                                        info!(
+                                                            "Successfully processed state transition {} ({}) for block {} (Actual block height: {})",
+                                                            index + 1, transition.name(), current_block_info.height, actual_block_height
                                                         );
-
-                                                    match data_contract_result {
-                                                        Ok(data_contract) => {
-                                                            let mut known_contracts_lock =
-                                                                app_state
-                                                                    .known_contracts
-                                                                    .lock()
-                                                                    .await;
-                                                            known_contracts_lock.insert(
-                                                                data_contract
-                                                                    .id()
-                                                                    .to_string(Encoding::Base58),
-                                                                data_contract,
-                                                            );
-                                                        }
-                                                        Err(e) => {
-                                                            error!(
-                                                                "Error deserializing data \
-                                                                 contract: {:?}",
-                                                                e
-                                                            );
+                                    
+                                                        // Verification of the proof, similar to the dependent transitions
+                                                        if let Some(wait_for_state_transition_result_response_v0::Result::Proof(proof)) = &v0_response.result {
+                                                            let verified = if transition.name() == "DocumentsBatch" {
+                                                                match data_contract_clone.as_ref() {
+                                                                    Some(data_contract) => {
+                                                                        Drive::verify_state_transition_was_executed_with_proof(
+                                                                            &transition,
+                                                                            proof.grovedb_proof.as_slice(),
+                                                                            &|_| Ok(Some(data_contract.clone().into())),
+                                                                            sdk.version(),
+                                                                        )
+                                                                    }
+                                                                    None => Err(drive::error::Error::Proof(ProofError::UnknownContract("Data contract ID not found in known_contracts".into()))),
+                                                                }
+                                                            } else {
+                                                                Drive::verify_state_transition_was_executed_with_proof(
+                                                                    &transition,
+                                                                    proof.grovedb_proof.as_slice(),
+                                                                    &|_| Ok(None),
+                                                                    sdk.version(),
+                                                                )
+                                                            };
+                                    
+                                                            match verified {
+                                                                Ok(_) => {
+                                                                    info!("Verified proof for state transition");
+                                                                },
+                                                                Err(e) => {
+                                                                    error!("Error verifying state transition execution proof: {}", e);
+                                                                }
+                                                            }
                                                         }
                                                     }
-                                                }
-
-                                                // Extract actual block height from the wait
-                                                // response
-                                                if let Some(wait_for_state_transition_result_response::Version::V0(v0_response)) = wait_response.version {
-                                                    v0_response.metadata.map(|metadata| metadata.height)
-                                                } else {
-                                                    error!("Error getting actual block height");
-                                                    None
-                                                }
-                                            }
+                                                })
+                                            },
                                             Err(e) => {
                                                 error!("Wait result error: {:?}", e);
                                                 None
@@ -1016,11 +1027,10 @@ pub(crate) async fn run_strategy_task<'s>(
                                         }
                                     };
                                     wait_futures.push(wait_future);
-                                }
+                                },
                                 Err(e) => {
                                     error!(
-                                        "Error preparing broadcast request for state transition \
-                                         {} block height {}: {:?}",
+                                        "Error preparing broadcast request for state transition {} block height {}: {:?}",
                                         index + 1,
                                         current_block_info.height,
                                         e
@@ -1033,18 +1043,10 @@ pub(crate) async fn run_strategy_task<'s>(
                         let wait_results = join_all(wait_futures).await;
 
                         // Log the actual block height for each state transition
-                        for (index, actual_block_height) in wait_results.into_iter().enumerate() {
+                        for (_, actual_block_height) in wait_results.into_iter().enumerate() {
                             match actual_block_height {
-                                Some(height) => {
+                                Some(_) => {
                                     success_count += 1;
-                                    info!(
-                                        "Successfully processed state transition {} ({}) for \
-                                         block {} (actual block height: {})",
-                                        index + 1,
-                                        transition_type,
-                                        current_block_info.height,
-                                        height
-                                    )
                                 }
                                 None => continue,
                             }
@@ -1062,7 +1064,6 @@ pub(crate) async fn run_strategy_task<'s>(
                     info!("Strategy start_identities field cleared");
                 }
 
-                info!("-----Strategy '{}' finished running-----", strategy_name);
                 let run_time = run_start_time.elapsed();
 
                 // Refresh the identity at the end
@@ -1097,7 +1098,7 @@ pub(crate) async fn run_strategy_task<'s>(
                 info!(
                     "-----Strategy '{}' completed-----\n\nState transitions attempted: {}\nState \
                     transitions succeeded: {}\nNumber of blocks: {}\nRun time: \
-                    {:?}\nDash spent (Identity): {}\nDash spent (Wallet): {}",
+                    {:?}\nDash spent (Identity): {}\nDash spent (Wallet): {}\n",
                     strategy_name,
                     transition_count,
                     success_count,
@@ -1225,7 +1226,7 @@ async fn set_start_identities(
 
     // Refresh UTXOs for the loaded wallet
     if let Some(ref mut wallet) = *loaded_wallet {
-        wallet.reload_utxos(insight).await;
+        let _ = wallet.reload_utxos(insight).await;
     }
 
     // Clone wallet state
@@ -1270,7 +1271,7 @@ async fn set_start_identities(
                                 let mut found_new_utxos = false;
 
                                 while retries < max_retries {
-                                    wallet.reload_utxos(insight).await;
+                                    let _ = wallet.reload_utxos(insight).await;
 
                                     let current_utxos = match &*wallet {
                                         Wallet::SingleKeyWallet(wallet) => &wallet.utxos,
@@ -1348,7 +1349,7 @@ async fn reload_wallet_utxos(wallet: &mut Wallet, insight: &InsightAPIClient) ->
     let mut retries = 0;
 
     while retries < max_retries {
-        wallet.reload_utxos(insight).await;
+        let _ = wallet.reload_utxos(insight).await;
 
         let new_utxos = match wallet {
             Wallet::SingleKeyWallet(ref single_key_wallet) => &single_key_wallet.utxos,
