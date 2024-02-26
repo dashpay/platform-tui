@@ -870,15 +870,13 @@ pub(crate) async fn run_strategy_task<'s>(
                                                         }
                                                     }
                                                     Err(e) => error!(
-                                                        "Error waiting for state transition \
-                                                         result: {:?}",
+                                                        "Error waiting for state transition result: {:?}",
                                                         e
                                                     ),
                                                 }
                                             } else {
                                                 error!(
-                                                    "Failed to create wait request for state \
-                                                     transition."
+                                                    "Failed to create wait request for state transition."
                                                 );
                                             }
                                         }
@@ -1095,6 +1093,19 @@ pub(crate) async fn run_strategy_task<'s>(
                 let dash_spent_wallet = (initial_balance_wallet as f64
                     - final_balance_wallet as f64)
                     / 100_000_000_000.0;
+
+                info!(
+                    "-----Strategy '{}' completed-----\n\nState transitions attempted: {}\nState \
+                    transitions succeeded: {}\nNumber of blocks: {}\nRun time: \
+                    {:?}\nDash spent (Identity): {}\nDash spent (Wallet): {}",
+                    strategy_name,
+                    transition_count,
+                    success_count,
+                    (current_block_info.height - initial_block_info.height),
+                    run_time,
+                    dash_spent_identity,
+                    dash_spent_wallet,
+                );
 
                 BackendEvent::StrategyCompleted {
                     strategy_name: strategy_name.clone(),
