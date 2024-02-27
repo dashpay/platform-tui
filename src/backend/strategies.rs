@@ -440,7 +440,10 @@ pub(crate) async fn run_strategy_task<'s>(
             };
 
             let mut loaded_identity_lock = match app_state.refresh_identity(&sdk).await {
-                Ok(lock) => lock,
+                Ok(lock) => {
+                    info!("Refreshed loaded identity.");
+                    lock
+                },
                 Err(e) => {
                     error!("Failed to refresh identity: {:?}", e);
                     return BackendEvent::StrategyError {
