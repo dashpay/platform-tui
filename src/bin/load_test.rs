@@ -82,9 +82,9 @@ struct Args {
     )]
     rate: u32,
     #[arg(
-    long,
-    help = "Number of contracts used to perform the test",
-    default_value = "1"
+        long,
+        help = "Number of contracts used to perform the test",
+        default_value = "1"
     )]
     contracts: u32,
 }

@@ -51,8 +51,8 @@ use super::{
     insight::InsightError, state::IdentityPrivateKeysMap, wallet::WalletError, AppStateUpdate,
     CompletedTaskPayload, Wallet,
 };
-use crate::backend::{error::Error, stringify_result_keep_item, AppState, BackendEvent, Task};
 use crate::backend::error::Error::SdkError;
+use crate::backend::{error::Error, stringify_result_keep_item, AppState, BackendEvent, Task};
 
 pub(super) async fn fetch_identity_by_b58_id(
     sdk: &Sdk,
@@ -487,7 +487,8 @@ impl AppState {
 
         match identity
             .top_up_identity(sdk, asset_lock_proof.clone(), &asset_lock_proof_private_key)
-            .await {
+            .await
+        {
             Ok(updated_identity_balance) => {
                 identity.set_balance(updated_identity_balance);
             }
