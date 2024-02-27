@@ -3,8 +3,7 @@ name = "rs-platform-explorer"
 version = "0.1.0"
 license = "MIT"
 edition = "2021"
-#default-run = "rs-platform-explorer"
-default-run = "load_test"
+default-run = "rs-platform-explorer"
 
 [dependencies]
 strum = { version = "0.26.1", features = ["derive"] }
