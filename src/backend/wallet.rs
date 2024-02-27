@@ -142,7 +142,7 @@ impl Wallet {
             None => StdRng::from_entropy(),
             Some(seed_value) => StdRng::seed_from_u64(seed_value),
         };
-        let fee = 2000;
+        let fee = 3000;
         let random_private_key: [u8; 32] = rng.gen();
         let private_key = PrivateKey::from_slice(&random_private_key, Network::Devnet)
             .expect("expected a private key");
