@@ -78,9 +78,15 @@ struct Args {
         short,
         long,
         help = "Number of transactions to send per second",
-        default_value = "0"
+        default_value = "1"
     )]
     rate: u32,
+    #[arg(
+    long,
+    help = "Number of contracts used to perform the test",
+    default_value = "1"
+    )]
+    contracts: u32,
 }
 
 #[tokio::main]
@@ -157,15 +163,6 @@ async fn main() {
     // Refresh wallet core balance
     backend.run_task(Task::Wallet(WalletTask::Refresh)).await;
 
-    let balance = backend
-        .state()
-        .loaded_wallet
-        .lock()
-        .await
-        .as_ref()
-        .unwrap()
-        .balance();
-
     // Register identity if there is no yet
     if backend.state().loaded_identity.lock().await.is_none() {
         let dash = 15;
@@ -197,7 +194,7 @@ async fn main() {
         tracing::info!("Wallet is initialized with {} Dash", balance / 100000000);
     }
 
-    let credits_balance = backend
+    let mut credits_balance = backend
         .state()
         .loaded_identity
         .lock()
@@ -206,16 +203,26 @@ async fn main() {
         .unwrap()
         .balance();
 
-    tracing::info!("Identity is initialized with {} credits", credits_balance);
-
     if credits_balance < 15 * 100000000000 {
-        tracing::info!("Credits too low, adding more");
+        tracing::info!("Credits too low {}, adding more", credits_balance);
         let dash = 15;
         let amount = dash * 100000000; // Dash
-        backend
+        let event = backend
             .run_task(Task::Identity(IdentityTask::TopUpIdentity(amount)))
             .await;
+        tracing::info!("top up result: {:?}", event);
+
+        credits_balance = backend
+            .state()
+            .loaded_identity
+            .lock()
+            .await
+            .as_ref()
+            .unwrap()
+            .balance();
     }
+
+    tracing::info!("Identity is initialized with {} credits", credits_balance);
 
     backend.state().save(&backend.config);
 
@@ -252,7 +259,7 @@ async fn main() {
     // to be safe we need at least one contract per second of broadcasting,
     // so if we are aiming at 1000 tx/s we would need 1000 contracts
 
-    let contract_count = args.rate;
+    let contract_count = args.contracts;
 
     let document_types = broadcast_contract_variants(
         Arc::clone(&sdk),
@@ -260,7 +267,7 @@ async fn main() {
         arc_signer.clone(),
         &data_contract,
         contract_count,
-        9876, //let's use the same seed so we don't need to reregister contracts
+        9875, //let's use the same seed so we don't need to reregister contracts
     )
     .await
     .into_iter()

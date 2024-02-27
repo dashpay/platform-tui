@@ -8,7 +8,7 @@ use tokio::sync::Mutex;
 
 use super::{as_toml, state::KnownContractsMap, AppStateUpdate, BackendEvent, Task};
 
-#[derive(Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) enum ContractTask {
     FetchDashpayContract,
     FetchDPNSContract,
