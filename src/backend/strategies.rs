@@ -732,7 +732,8 @@ pub(crate) async fn run_strategy_task<'s>(
                     let mut known_contracts_lock = app_state.known_contracts.lock().await;
 
                     // Call the function to get STs for block
-                    let (transitions, finalize_operations) = strategy
+                    // finalize_operations are actually handled within this function now.
+                    let (transitions, _finalize_operations) = strategy
                         .state_transitions_for_block_with_new_identities(
                             &mut document_query_callback,
                             &mut identity_fetch_callback,
@@ -756,23 +757,6 @@ pub(crate) async fn run_strategy_task<'s>(
 
                     // TO-DO: add documents from state transitions to explorer.drive here
                     // this is required for DocumentDelete and DocumentReplace strategy operations
-
-                    // Process each FinalizeBlockOperation, which so far is just adding keys to the
-                    // identities
-                    for operation in finalize_operations {
-                        match operation {
-                            FinalizeBlockOperation::IdentityAddKeys(identifier, keys) => {
-                                if let Some(identity) = current_identities
-                                    .iter_mut()
-                                    .find(|id| id.id() == identifier)
-                                {
-                                    for key in keys {
-                                        identity.add_public_key(key);
-                                    }
-                                }
-                            }
-                        }
-                    }
 
                     // Update the loaded_identity_clone and loaded_identity_lock with the latest
                     // state of the identity
