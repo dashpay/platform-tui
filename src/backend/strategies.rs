@@ -17,8 +17,7 @@ use dpp::{
     block::{block_info::BlockInfo, epoch::Epoch},
     dashcore::PrivateKey,
     data_contract::{
-        created_data_contract::CreatedDataContract,
-        DataContract,
+        created_data_contract::CreatedDataContract, DataContract
     },
     identity::{
         accessors::IdentityGettersV0, state_transition::asset_lock_proof::AssetLockProof, Identity,
@@ -988,8 +987,9 @@ pub(crate) async fn run_strategy_task<'s>(
                                                             index + 1, transition.name(), current_block_info.height, actual_block_height
                                                         );
                                     
-                                                        // Verification of the proof, similar to the dependent transitions
+                                                        // Verification of the proof
                                                         if let Some(wait_for_state_transition_result_response_v0::Result::Proof(proof)) = &v0_response.result {
+                                                            // For proof verification, if it's a DocumentsBatch, include the data contract, else don't
                                                             let verified = if transition.name() == "DocumentsBatch" {
                                                                 match data_contract_clone.as_ref() {
                                                                     Some(data_contract) => {
@@ -1010,14 +1010,10 @@ pub(crate) async fn run_strategy_task<'s>(
                                                                     sdk.version(),
                                                                 )
                                                             };
-                                    
+
                                                             match verified {
-                                                                Ok(_) => {
-                                                                    info!("Verified proof for state transition");
-                                                                },
-                                                                Err(e) => {
-                                                                    error!("Error verifying state transition execution proof: {}", e);
-                                                                }
+                                                                Ok(_) => info!("Verified proof for state transition {}", index+1),
+                                                                Err(e) => error!("Error verifying state transition execution proof: {}", e),
                                                             }
                                                         }
                                                     }
