@@ -300,7 +300,7 @@ async fn broadcast_contract_variants(
     count: u32,
     _seed: u64,
 ) -> Vec<DataContract> {
-    let identity_nonce = sdk.get_identity_nonce(identity.id(), false, None)
+    let identity_nonce = sdk.get_identity_nonce(identity.id(), true, None)
         .await
         .expect("Couldn't get identity nonce");
 

@@ -232,7 +232,7 @@ pub(crate) async fn run_strategy_task<'s>(
                     }
                 };    
                 let identity_nonce = sdk
-                    .get_identity_nonce(loaded_identity_lock.id(), false, None)
+                    .get_identity_nonce(loaded_identity_lock.id(), true, None)
                     .await
                     .expect("Couldn't get current identity nonce");
 
