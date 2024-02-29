@@ -7,6 +7,7 @@ use tuirealm::{
 };
 
 use super::{contracts::ContractsScreenController, wallet::WalletScreenController};
+use crate::ui::views::strategies::StrategiesScreenController;
 use crate::{
     ui::{
         screen::{
@@ -21,7 +22,6 @@ use crate::{
     },
     Event,
 };
-use crate::ui::views::strategies::StrategiesScreenController;
 
 const COMMAND_KEYS: [ScreenCommandKey; 7] = [
     ScreenCommandKey::new("q", "Quit"),

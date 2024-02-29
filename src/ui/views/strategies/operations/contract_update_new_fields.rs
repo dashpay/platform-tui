@@ -43,12 +43,12 @@ impl StrategyOpContractUpdateNewFieldsFormController {
 //         match self.input.on_event(event) {
 //             InputStatus::Done((times_per_block, chance_per_block)) =>
 // FormStatus::Done {                 task:
-// Task::Strategy(StrategyTask::AddOperation {                     
+// Task::Strategy(StrategyTask::AddOperation {
 // strategy_name: self.selected_strategy.clone(),                     operation:
 // Operation {                         op_type:
-// OperationType::ContractUpdate(DataContractUpdateOp {                         
-// action: DataContractNewOptionalFields(                                 
-// 1..rand::thread_rng().gen_range(1..=u16::MAX),                               
+// OperationType::ContractUpdate(DataContractUpdateOp {
+// action: DataContractNewOptionalFields(
+// 1..rand::thread_rng().gen_range(1..=u16::MAX),
 // 1..rand::thread_rng().gen_range(1..=u16::MAX),                             ),
 //                             contract,
 //                             document_type,

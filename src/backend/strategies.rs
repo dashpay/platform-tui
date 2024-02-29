@@ -681,11 +681,9 @@ pub(crate) async fn run_strategy_task<'s>(
                                                     Ok(proof) => {
                                                         let max_retries = 5;
                                                         let mut retries = 0;
-                                                                        
                                                         let mut found_new_utxos = false;
                                                         while retries < max_retries {
                                                             wallet.reload_utxos(&insight_ref).await;
-                                    
                                                             // Check if new UTXOs are available and if UTXO list is not empty
                                                             let current_utxos = match wallet {
                                                                 Wallet::SingleKeyWallet(ref wallet) => &wallet.utxos,
@@ -698,12 +696,10 @@ pub(crate) async fn run_strategy_task<'s>(
                                                                 tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
                                                             }
                                                         }
-                                    
                                                         if !found_new_utxos {
                                                             error!("Failed to find new UTXOs after maximum retries");
                                                             return None;
                                                         }
-                                                                        
                                                         Some((proof, asset_lock_proof_private_key))
                                                     },
                                                     Err(e) => {

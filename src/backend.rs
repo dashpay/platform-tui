@@ -48,7 +48,7 @@ use crate::{
 /// UI shall not execute any actions unrelated to rendering directly, to keep
 /// things decoupled and for future UI/UX improvements it returns a [Task]
 /// instead.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum Task {
     FetchIdentityById(String, bool),
     PlatformInfo(PlatformInfoTask),
@@ -62,6 +62,7 @@ pub enum Task {
 /// A positive task execution result.
 /// Occasionally it's desired to represent data on UI in a structured way, in
 /// that case specific variants are used.
+#[derive(Debug)]
 pub enum CompletedTaskPayload {
     Documents(BTreeMap<Identifier, Option<Document>>),
     Document(Document),
@@ -90,6 +91,7 @@ impl Display for CompletedTaskPayload {
 }
 
 /// Any update coming from backend that UI may or may not react to.
+#[derive(Debug)]
 pub enum BackendEvent<'s> {
     TaskCompleted {
         task: Task,
@@ -115,6 +117,7 @@ pub enum BackendEvent<'s> {
 /// Backend state update data on a specific field.
 /// A screen implementation may handle specific updates to deliver a responsive
 /// UI.
+#[derive(Debug)]
 pub(crate) enum AppStateUpdate<'s> {
     KnownContracts(MutexGuard<'s, KnownContractsMap>),
     LoadedWallet(MappedMutexGuard<'s, Wallet>),
@@ -133,6 +136,7 @@ pub(crate) enum AppStateUpdate<'s> {
 }
 
 /// Represents the result of completing a strategy.
+#[derive(Debug)]
 pub(crate) enum StrategyCompletionResult {
     Success {
         final_block_height: u64,
