@@ -17,14 +17,14 @@ use dpp::{
     block::{block_info::BlockInfo, epoch::Epoch},
     dashcore::PrivateKey,
     data_contract::{
-        created_data_contract::CreatedDataContract, DataContract
+        accessors::v0::DataContractV0Getters, created_data_contract::CreatedDataContract, DataContract
     },
     identity::{
         accessors::IdentityGettersV0, state_transition::asset_lock_proof::AssetLockProof, Identity,
         PartialIdentity,
     },
     platform_value::{string_encoding::Encoding, Bytes32, Identifier},
-    state_transition::{documents_batch_transition::{document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods, document_transition::DocumentTransition, DocumentCreateTransition, DocumentsBatchTransition}, StateTransition},
+    state_transition::{data_contract_create_transition::DataContractCreateTransition, documents_batch_transition::{document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods, document_transition::DocumentTransition, DocumentCreateTransition, DocumentsBatchTransition}, StateTransition},
     version::PlatformVersion,
 };
 use drive::{
@@ -1012,7 +1012,52 @@ pub(crate) async fn run_strategy_task<'s>(
                                                             };
 
                                                             match verified {
-                                                                Ok(_) => info!("Verified proof for state transition {}", index+1),
+                                                                Ok(_) => {
+                                                                    info!("Verified proof for state transition {}", index+1);
+                                                                    
+                                                                    // If a data contract was registered, add it to
+                                                                    // known_contracts
+                                                                    if let StateTransition::DataContractCreate(
+                                                                        DataContractCreateTransition::V0(
+                                                                            data_contract_create_transition,
+                                                                        ),
+                                                                    ) = &transition
+                                                                    {
+                                                                        // Extract the data contract from the transition
+                                                                        let data_contract_serialized =
+                                                                            &data_contract_create_transition
+                                                                                .data_contract;
+                                                                        let data_contract_result =
+                                                                            DataContract::try_from_platform_versioned(
+                                                                                data_contract_serialized.clone(),
+                                                                                false,
+                                                                                PlatformVersion::latest(),
+                                                                            );
+
+                                                                        match data_contract_result {
+                                                                            Ok(data_contract) => {
+                                                                                let mut known_contracts_lock =
+                                                                                    app_state
+                                                                                        .known_contracts
+                                                                                        .lock()
+                                                                                        .await;
+                                                                                known_contracts_lock.insert(
+                                                                                    data_contract
+                                                                                        .id()
+                                                                                        .to_string(Encoding::Base58),
+                                                                                    data_contract,
+                                                                                );
+                                                                            }
+                                                                            Err(e) => {
+                                                                                error!(
+                                                                                    "Error deserializing data \
+                                                                                    contract: {:?}",
+                                                                                    e
+                                                                                );
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
                                                                 Err(e) => error!("Error verifying state transition execution proof: {}", e),
                                                             }
                                                         }
