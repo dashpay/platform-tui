@@ -29,7 +29,7 @@ use dpp::{
         identity_public_key::accessors::v0::IdentityPublicKeyGettersV0, Identity, KeyType, Purpose,
         SecurityLevel,
     },
-    platform_value::{string_encoding::Encoding, Bytes32},
+    platform_value::string_encoding::Encoding,
     state_transition::data_contract_create_transition::{
         methods::DataContractCreateTransitionMethodsV0, DataContractCreateTransition,
     },
@@ -41,7 +41,7 @@ use rand::{rngs::StdRng, Rng, SeedableRng};
 use rs_dapi_client::RequestSettings;
 use rs_platform_explorer::{
     backend::{
-        identities::IdentityTask, insight::InsightAPIClient, state::IdentityPrivateKeysMap,
+        identities::IdentityTask, insight::InsightAPIClient,
         wallet::WalletTask, Backend, Task,
     },
     config::Config,
@@ -49,7 +49,7 @@ use rs_platform_explorer::{
 use rs_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use rs_sdk::{
     platform::{
-        transition::put_document::{PutDocument, PutSettings},
+        transition::{put_document::PutDocument, put_settings::PutSettings},
         Fetch, Identifier,
     },
     Sdk, SdkBuilder,
@@ -298,22 +298,23 @@ async fn broadcast_contract_variants(
     signer: Arc<SimpleSigner>,
     data_contract: &DataContract,
     count: u32,
-    seed: u64,
+    _seed: u64,
 ) -> Vec<DataContract> {
+    let identity_nonce = sdk.get_identity_nonce(identity.id(), false, None)
+        .await
+        .expect("Couldn't get identity nonce");
+
     tracing::info!("registering data contracts");
-    let mut rng = StdRng::seed_from_u64(seed);
     let data_contract_variants = (0..count)
         .into_iter()
-        .map(|i| {
-            let entropy: [u8; 32] = rng.gen();
-
-            let new_id = DataContract::generate_data_contract_id_v0(identity.id(), entropy);
+        .map(|_| {
+            let new_id = DataContract::generate_data_contract_id_v0(identity.id(), identity_nonce);
 
             let mut data_contract_variant = data_contract.clone();
             data_contract_variant.set_id(new_id);
-            CreatedDataContract::from_contract_and_entropy(
+            CreatedDataContract::from_contract_and_identity_nonce(
                 data_contract_variant,
-                entropy.into(),
+                identity_nonce,
                 PlatformVersion::latest(),
             )
             .expect("expected to get contract")
@@ -352,7 +353,7 @@ async fn broadcast_contract_variants(
         if !exists {
             let transition = DataContractCreateTransition::new_from_data_contract(
                 data_contract_variant.data_contract().clone(),
-                *data_contract_variant.entropy_used(),
+                data_contract_variant.identity_nonce(),
                 &partial_identity,
                 key_to_use.id(),
                 signer.as_ref(),
