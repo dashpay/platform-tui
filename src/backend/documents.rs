@@ -32,7 +32,7 @@ use simple_signer::signer::SimpleSigner;
 use super::{state::IdentityPrivateKeysMap, AppStateUpdate, CompletedTaskPayload};
 use crate::backend::{error::Error, AppState, BackendEvent, Task};
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub(crate) enum DocumentTask {
     QueryDocuments(DocumentQuery),
     BroadcastRandomDocuments {

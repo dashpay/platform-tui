@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use dpp::{
     data_contract::{created_data_contract::CreatedDataContract, DataContract},
-    tests::json_document::json_document_to_created_contract,
+    tests::json_document::json_document_to_contract,
     version::PlatformVersion,
 };
 use strategy_tests::Strategy;
@@ -98,13 +98,12 @@ impl ContractsWithUpdatesScreenController {
             let path = entry.path();
             let contract_name = path.file_stem().unwrap().to_str().unwrap().to_string();
 
-            // Change here: Add to supporting_contracts instead of known_contracts
             if !self.supporting_contracts.contains_key(&contract_name) {
                 if let Ok(contract) =
-                    json_document_to_created_contract(&path, true, platform_version)
+                    json_document_to_contract(&path, true, platform_version)
                 {
                     self.supporting_contracts
-                        .insert(contract_name, contract.data_contract_owned());
+                        .insert(contract_name, contract);
                 }
             }
         }

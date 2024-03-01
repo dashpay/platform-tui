@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::{
     collections::HashSet,
     num::NonZeroU32,
@@ -12,7 +13,8 @@ use std::{
 use clap::Parser;
 use dpp::{
     data_contract::{
-        accessors::v0::DataContractV0Getters,
+        accessors::v0::{DataContractV0Getters, DataContractV0Setters},
+        created_data_contract::CreatedDataContract,
         document_type::{
             accessors::DocumentTypeV0Getters,
             random_document::{CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType},
@@ -25,8 +27,12 @@ use dpp::{
     identity::{
         accessors::IdentityGettersV0,
         identity_public_key::accessors::v0::IdentityPublicKeyGettersV0, Identity, KeyType, Purpose,
+        SecurityLevel,
     },
     platform_value::string_encoding::Encoding,
+    state_transition::data_contract_create_transition::{
+        methods::DataContractCreateTransitionMethodsV0, DataContractCreateTransition,
+    },
     version::PlatformVersion,
 };
 use futures::future::join_all;
@@ -35,14 +41,15 @@ use rand::{rngs::StdRng, Rng, SeedableRng};
 use rs_dapi_client::RequestSettings;
 use rs_platform_explorer::{
     backend::{
-        identities::IdentityTask, insight::InsightAPIClient, state::IdentityPrivateKeysMap,
+        identities::IdentityTask, insight::InsightAPIClient,
         wallet::WalletTask, Backend, Task,
     },
     config::Config,
 };
+use rs_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use rs_sdk::{
     platform::{
-        transition::put_document::{PutDocument, PutSettings},
+        transition::{put_document::PutDocument, put_settings::PutSettings},
         Fetch, Identifier,
     },
     Sdk, SdkBuilder,
@@ -71,9 +78,15 @@ struct Args {
         short,
         long,
         help = "Number of transactions to send per second",
-        default_value = "0"
+        default_value = "1"
     )]
     rate: u32,
+    #[arg(
+        long,
+        help = "Number of contracts used to perform the test",
+        default_value = "1"
+    )]
+    contracts: u32,
 }
 
 #[tokio::main]
@@ -147,19 +160,8 @@ async fn main() {
             .await;
     }
 
-    // Refresh wallet balance
+    // Refresh wallet core balance
     backend.run_task(Task::Wallet(WalletTask::Refresh)).await;
-
-    let balance = backend
-        .state()
-        .loaded_wallet
-        .lock()
-        .await
-        .as_ref()
-        .unwrap()
-        .balance();
-
-    tracing::info!("Wallet is initialized with {} Dash", balance / 100000000);
 
     // Register identity if there is no yet
     if backend.state().loaded_identity.lock().await.is_none() {
@@ -174,9 +176,25 @@ async fn main() {
         backend
             .run_task(Task::Identity(IdentityTask::RegisterIdentity(amount)))
             .await;
+    } else {
+        backend.run_task(Task::Wallet(WalletTask::Refresh)).await;
+        backend
+            .run_task(Task::Identity(IdentityTask::Refresh))
+            .await;
+
+        let balance = backend
+            .state()
+            .loaded_wallet
+            .lock()
+            .await
+            .as_ref()
+            .unwrap()
+            .balance();
+
+        tracing::info!("Wallet is initialized with {} Dash", balance / 100000000);
     }
 
-    let credits_balance = backend
+    let mut credits_balance = backend
         .state()
         .loaded_identity
         .lock()
@@ -184,6 +202,25 @@ async fn main() {
         .as_ref()
         .unwrap()
         .balance();
+
+    if credits_balance < 15 * 100000000000 {
+        tracing::info!("Credits too low {}, adding more", credits_balance);
+        let dash = 15;
+        let amount = dash * 100000000; // Dash
+        let event = backend
+            .run_task(Task::Identity(IdentityTask::TopUpIdentity(amount)))
+            .await;
+        tracing::info!("top up result: {:?}", event);
+
+        credits_balance = backend
+            .state()
+            .loaded_identity
+            .lock()
+            .await
+            .as_ref()
+            .unwrap()
+            .balance();
+    }
 
     tracing::info!("Identity is initialized with {} credits", credits_balance);
 
@@ -199,19 +236,55 @@ async fn main() {
 
     let document_type = data_contract
         .document_type_cloned_for_name("preorder")
-        .unwrap();
+        .unwrap()
+        .into();
 
     let identity_lock = backend.state().loaded_identity.lock().await;
     let identity = identity_lock.as_ref().expect("no loaded identity");
 
     let identity_private_keys_lock = backend.state().identity_private_keys.lock().await;
 
+    let mut signer = SimpleSigner::default();
+
+    for (key_id, identity_public_key) in identity.public_keys() {
+        let private_key = identity_private_keys_lock
+            .get(&(identity.id(), *key_id))
+            .expect("expected a private key")
+            .clone();
+        signer.add_key(identity_public_key.clone(), private_key);
+    }
+
+    let arc_signer = Arc::new(signer);
+
+    // to be safe we need at least one contract per second of broadcasting,
+    // so if we are aiming at 1000 tx/s we would need 1000 contracts
+
+    let contract_count = args.contracts;
+
+    let document_types = broadcast_contract_variants(
+        Arc::clone(&sdk),
+        &identity,
+        arc_signer.clone(),
+        &data_contract,
+        contract_count,
+        9875, //let's use the same seed so we don't need to reregister contracts
+    )
+    .await
+    .into_iter()
+    .map(|contract| {
+        contract
+            .document_type_cloned_for_name("preorder")
+            .expect("expected preorder document")
+            .into()
+    })
+    .collect::<Vec<Arc<_>>>();
+
     broadcast_random_documents_load_test(
         Arc::clone(&sdk),
         &identity,
-        &identity_private_keys_lock,
-        Arc::new(data_contract),
-        Arc::new(document_type),
+        arc_signer,
+        document_type,
+        document_types,
         Duration::from_secs(args.time.into()),
         args.connections,
         args.rate,
@@ -219,19 +292,115 @@ async fn main() {
     .await;
 }
 
+async fn broadcast_contract_variants(
+    sdk: Arc<Sdk>,
+    identity: &Identity,
+    signer: Arc<SimpleSigner>,
+    data_contract: &DataContract,
+    count: u32,
+    _seed: u64,
+) -> Vec<DataContract> {
+    let identity_nonce = sdk.get_identity_nonce(identity.id(), true, None)
+        .await
+        .expect("Couldn't get identity nonce");
+
+    tracing::info!("registering data contracts");
+    let data_contract_variants = (0..count)
+        .into_iter()
+        .map(|_| {
+            let new_id = DataContract::generate_data_contract_id_v0(identity.id(), identity_nonce);
+
+            let mut data_contract_variant = data_contract.clone();
+            data_contract_variant.set_id(new_id);
+            CreatedDataContract::from_contract_and_identity_nonce(
+                data_contract_variant,
+                identity_nonce,
+                PlatformVersion::latest(),
+            )
+            .expect("expected to get contract")
+        })
+        .collect::<Vec<_>>();
+
+    let partial_identity = identity.clone().into_partial_identity_info();
+
+    let key_to_use = identity
+        .get_first_public_key_matching(
+            Purpose::AUTHENTICATION,
+            HashSet::from([SecurityLevel::CRITICAL]),
+            HashSet::from([KeyType::ECDSA_SECP256K1]),
+        )
+        .expect("expected to get a key");
+
+    let mut transitions_queue = VecDeque::new();
+
+    let first_exists = DataContract::fetch(
+        &sdk,
+        data_contract_variants.first().unwrap().data_contract().id(),
+    )
+    .await
+    .expect("expected to get data contract")
+    .is_some();
+
+    for data_contract_variant in data_contract_variants.iter().rev() {
+        let exists = if !first_exists {
+            false
+        } else {
+            DataContract::fetch(&sdk, data_contract_variant.data_contract().id())
+                .await
+                .expect("expected to get data contract")
+                .is_some()
+        };
+        if !exists {
+            let transition = DataContractCreateTransition::new_from_data_contract(
+                data_contract_variant.data_contract().clone(),
+                data_contract_variant.identity_nonce(),
+                &partial_identity,
+                key_to_use.id(),
+                signer.as_ref(),
+                PlatformVersion::latest(),
+                None,
+            )
+            .expect("expected transition");
+
+            transitions_queue.push_front(transition); // we push to the front on purpose
+        } else {
+            break; // if one exists we can assume all previous ones also exist
+        }
+    }
+
+    for (i, transaction) in transitions_queue.iter().enumerate() {
+        tracing::info!("registering contract {}", i);
+        if i % 24 == 0 {
+            transaction
+                .broadcast_and_wait(&sdk, None)
+                .await
+                .expect("expected to register contract");
+        } else {
+            transaction
+                .broadcast(&sdk)
+                .await
+                .expect("expected to register contract");
+        }
+    }
+
+    data_contract_variants
+        .into_iter()
+        .map(|c| c.data_contract_owned())
+        .collect()
+}
+
 async fn broadcast_random_documents_load_test(
     sdk: Arc<Sdk>,
     identity: &Identity,
-    identity_private_keys: &IdentityPrivateKeysMap,
-    data_contract: Arc<DataContract>,
-    document_type: Arc<DocumentType>,
+    signer: Arc<SimpleSigner>,
+    document_type: DocumentType,
+    document_type_variants: Vec<Arc<DocumentType>>,
     duration: Duration,
     concurrent_requests: u16,
     rate_limit_per_sec: u32,
 ) {
     let rate_limit_per_sec = NonZeroU32::new(rate_limit_per_sec).unwrap_or(NonZeroU32::MAX);
     tracing::info!(
-        data_contract_id = data_contract.id().to_string(Encoding::Base58),
         document_type = document_type.name(),
         "broadcasting up to {} random documents per second in {} parallel threads for {} secs",
         rate_limit_per_sec,
@@ -250,13 +419,6 @@ async fn broadcast_random_documents_load_test(
             HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
         )
         .expect("No public key matching security level requirements");
-
-    // Get the private key to sign state transition
-
-    let private_key: Vec<u8> = identity_private_keys
-        .get(&(identity.id(), identity_public_key.id()))
-        .expect("expected private keys")
-        .clone();
 
     // Created time for the documents
 
@@ -305,118 +467,118 @@ async fn broadcast_random_documents_load_test(
     let version = sdk.version();
 
     while !cancel.is_cancelled() {
-        // Acquire a permit
-        let permits = Arc::clone(&permits);
-        let permit = permits.acquire_owned().await.unwrap();
-
-        let oks = Arc::clone(&oks);
-        let errs = Arc::clone(&errs);
-        let pending = Arc::clone(&pending);
-        let last_report = Arc::clone(&last_report);
-
-        let document_type = Arc::clone(&document_type);
-
-        let identity_public_key = identity_public_key.clone();
-
-        let rate_limiter = rate_limit.clone();
-        let cancel_task = cancel.clone();
-        let sdk = Arc::clone(&sdk);
-        let private_key = private_key.clone();
-
-        let task = tokio::task::spawn(async move {
-            let mut std_rng = StdRng::from_entropy();
-            let document_state_transition_entropy: [u8; 32] = std_rng.gen();
-
-            // Generate a random document
-
-            let random_document = document_type
-                .random_document_with_params(
-                    identity_id,
-                    document_state_transition_entropy.into(),
-                    created_at_ms as u64,
-                    DocumentFieldFillType::FillIfNotRequired,
-                    DocumentFieldFillSize::AnyDocumentFillSize,
-                    &mut std_rng,
-                    version,
-                )
-                .expect("expected a random document");
-
-            // Create a signer
-
-            let mut signer = SimpleSigner::default();
-
-            signer.add_key(identity_public_key.clone(), private_key.clone());
-
-            // Wait for the rate limiter to allow further processing
-            tokio::select! {
-               _ = rate_limiter.until_ready() => {},
-               _ = cancel_task.cancelled() => return,
-            };
-
-            // Broadcast the document
-            tracing::trace!(
-                "broadcasting document {}",
-                random_document.id().to_string(Encoding::Base58),
-            );
-
-            pending.fetch_add(1, Ordering::SeqCst);
-
-            let elapsed_secs = start_time.elapsed().as_secs();
-
-            if start_time.elapsed().as_secs() % 10 == 0
-                && elapsed_secs != last_report.load(Ordering::SeqCst)
-            {
-                tracing::info!(
-                    "{} secs passed: {} pending, {} successful, {} failed",
-                    elapsed_secs,
-                    pending.load(Ordering::SeqCst),
-                    oks.load(Ordering::SeqCst),
-                    errs.load(Ordering::SeqCst),
-                );
-                last_report.swap(elapsed_secs, Ordering::SeqCst);
+        for document_type_variant in document_type_variants.iter() {
+            if cancel.is_cancelled() {
+                break;
             }
+            // Acquire a permit
+            let permits = Arc::clone(&permits);
+            let permit = permits.acquire_owned().await.unwrap();
 
-            let result = random_document
-                .put_to_platform(
-                    &sdk,
-                    document_type.as_ref().clone(),
-                    document_state_transition_entropy,
-                    identity_public_key,
-                    &signer,
-                    Some(PutSettings {
-                        request_settings: settings,
-                        identity_nonce_stale_time_s: None,
-                    }),
-                )
-                .await;
+            let oks = Arc::clone(&oks);
+            let errs = Arc::clone(&errs);
+            let pending = Arc::clone(&pending);
+            let last_report = Arc::clone(&last_report);
 
-            pending.fetch_sub(1, Ordering::SeqCst);
+            let identity_public_key = identity_public_key.clone();
 
-            match result {
-                Ok(_) => {
-                    oks.fetch_add(1, Ordering::SeqCst);
+            let signer = Arc::clone(&signer);
 
-                    tracing::trace!(
-                        "document {} successfully broadcast",
-                        random_document.id().to_string(Encoding::Base58),
+            let document_type_to_use = document_type_variant.clone();
+
+            let rate_limiter = rate_limit.clone();
+            let cancel_task = cancel.clone();
+            let sdk = Arc::clone(&sdk);
+
+            let task = tokio::task::spawn(async move {
+                let mut std_rng = StdRng::from_entropy();
+                let document_state_transition_entropy: [u8; 32] = std_rng.gen();
+
+                // Generate a random document
+
+                let random_document = document_type_to_use
+                    .random_document_with_params(
+                        identity_id,
+                        document_state_transition_entropy.into(),
+                        created_at_ms as u64,
+                        DocumentFieldFillType::FillIfNotRequired,
+                        DocumentFieldFillSize::AnyDocumentFillSize,
+                        &mut std_rng,
+                        version,
+                    )
+                    .expect("expected a random document");
+
+                // Wait for the rate limiter to allow further processing
+                tokio::select! {
+                   _ = rate_limiter.until_ready() => {},
+                   _ = cancel_task.cancelled() => return,
+                };
+
+                // Broadcast the document
+                tracing::trace!(
+                    "broadcasting document {}",
+                    random_document.id().to_string(Encoding::Base58),
+                );
+
+                pending.fetch_add(1, Ordering::SeqCst);
+
+                let elapsed_secs = start_time.elapsed().as_secs();
+
+                if start_time.elapsed().as_secs() % 10 == 0
+                    && elapsed_secs != last_report.load(Ordering::SeqCst)
+                {
+                    tracing::info!(
+                        "{} secs passed: {} pending, {} successful, {} failed",
+                        elapsed_secs,
+                        pending.load(Ordering::SeqCst),
+                        oks.load(Ordering::SeqCst),
+                        errs.load(Ordering::SeqCst),
                     );
+                    last_report.swap(elapsed_secs, Ordering::SeqCst);
                 }
-                Err(error) => {
-                    tracing::error!(
-                        ?error,
-                        "failed to broadcast document {}: {}",
-                        random_document.id().to_string(Encoding::Base58),
-                        error
-                    );
 
-                    errs.fetch_add(1, Ordering::SeqCst);
-                }
-            };
+                let result = random_document
+                    .put_to_platform(
+                        &sdk,
+                        document_type_to_use.as_ref().clone(),
+                        document_state_transition_entropy,
+                        identity_public_key,
+                        signer.as_ref(),
+                        Some(PutSettings {
+                            request_settings: settings,
+                            identity_nonce_stale_time_s: None,
+                        }),
+                    )
+                    .await;
 
-            drop(permit);
-        });
+                pending.fetch_sub(1, Ordering::SeqCst);
 
-        tasks.push(task)
+                match result {
+                    Ok(_) => {
+                        oks.fetch_add(1, Ordering::SeqCst);
+
+                        tracing::trace!(
+                            "document {} successfully broadcast",
+                            random_document.id().to_string(Encoding::Base58),
+                        );
+                    }
+                    Err(error) => {
+                        tracing::error!(
+                            ?error,
+                            "failed to broadcast document {}: {}",
+                            random_document.id().to_string(Encoding::Base58),
+                            error
+                        );
+
+                        errs.fetch_add(1, Ordering::SeqCst);
+                    }
+                };
+
+                drop(permit);
+            });
+
+            tasks.push(task)
+        }
     }
 
     join_all(tasks).await;
@@ -425,7 +587,6 @@ async fn broadcast_random_documents_load_test(
     let errs = errs.load(Ordering::SeqCst);
 
     tracing::info!(
-        data_contract_id = data_contract.id().to_string(Encoding::Base58),
         document_type = document_type.name(),
         "broadcasting {} random documents during {} secs. successfully: {}, failed: {}, rate: {} \
          docs/sec",

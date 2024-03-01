@@ -2,7 +2,7 @@
 //! This kind of state does not include UI details and basically all about
 //! persistence required by backend.
 
-use std::{collections::BTreeMap, fs, sync::Arc};
+use std::{collections::BTreeMap, fs};
 
 use bincode::{Decode, Encode};
 use dpp::{
@@ -16,11 +16,10 @@ use dpp::{
         PlatformDeserializableWithPotentialValidationFromVersionedStructure,
         PlatformSerializableWithPlatformVersion,
     },
-    tests::json_document::json_document_to_created_contract,
+    tests::json_document::json_document_to_contract,
     util::deserializer::ProtocolVersion,
     version::PlatformVersion,
-    ProtocolError,
-    ProtocolError::{PlatformDeserializationError, PlatformSerializationError},
+    ProtocolError::{self, PlatformDeserializationError, PlatformSerializationError},
 };
 use drive::drive::Drive;
 use strategy_tests::Strategy;
@@ -96,9 +95,9 @@ impl Default for AppState {
             let path = entry.path();
             let contract_name = path.file_stem().unwrap().to_str().unwrap().to_string();
 
-            if let Ok(contract) = json_document_to_created_contract(&path, true, platform_version) {
+            if let Ok(contract) = json_document_to_contract(&path, true, platform_version) {
                 // Insert the contract into supporting_contracts_raw
-                supporting_contracts_raw.insert(contract_name, contract.data_contract_owned());
+                supporting_contracts_raw.insert(contract_name, contract);
             }
         }
 
@@ -427,8 +426,8 @@ impl AppState {
             let path = entry.path();
             let contract_name = path.file_stem().unwrap().to_str().unwrap().to_string();
 
-            if let Ok(contract) = json_document_to_created_contract(&path, true, platform_version) {
-                supporting_contracts.insert(contract_name, contract.data_contract_owned());
+            if let Ok(contract) = json_document_to_contract(&path, true, platform_version) {
+                supporting_contracts.insert(contract_name, contract);
             }
         }
 

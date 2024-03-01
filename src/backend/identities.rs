@@ -51,6 +51,7 @@ use super::{
     insight::InsightError, state::IdentityPrivateKeysMap, wallet::WalletError, AppStateUpdate,
     CompletedTaskPayload, Wallet,
 };
+use crate::backend::error::Error::SdkError;
 use crate::backend::{error::Error, stringify_result_keep_item, AppState, BackendEvent, Task};
 
 pub(super) async fn fetch_identity_by_b58_id(
@@ -64,7 +65,7 @@ pub(super) async fn fetch_identity_by_b58_id(
     stringify_result_keep_item(fetch_result)
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum IdentityTask {
     RegisterIdentity(u64),
     TopUpIdentity(u64),
@@ -484,11 +485,55 @@ impl AppState {
 
         //// Platform steps
 
-        let updated_identity_balance: u64 = identity
+        match identity
             .top_up_identity(sdk, asset_lock_proof.clone(), &asset_lock_proof_private_key)
-            .await?;
+            .await
+        {
+            Ok(updated_identity_balance) => {
+                identity.set_balance(updated_identity_balance);
+            }
+            Err(rs_sdk::Error::DapiClientError(error_string)) => {
+                //todo in the future, errors should be proved with a proof, even from tenderdash
 
-        identity.set_balance(updated_identity_balance);
+                if error_string.starts_with("Transport(Status { code: AlreadyExists, message: \"state transition already in chain\"") {
+                    // This state transition already existed
+                    tracing::info!("we are starting over as the previous top up already existed");
+                    let (new_asset_lock_transaction, new_asset_lock_proof_private_key) =
+                        wallet.asset_lock_transaction(None, amount)?;
+
+                    identity_asset_lock_private_key_in_top_up.replace((
+                        new_asset_lock_transaction.clone(),
+                        new_asset_lock_proof_private_key,
+                        None,
+                    ));
+
+                    let new_asset_lock_proof = Self::broadcast_and_retrieve_asset_lock(
+                        sdk,
+                        &new_asset_lock_transaction,
+                        &wallet.receive_address(),
+                    )
+                        .await
+                        .map_err(|e| {
+                            Error::SdkExplainedError("error broadcasting transaction".to_string(), e)
+                        })?;
+
+                    identity_asset_lock_private_key_in_top_up.replace((
+                        new_asset_lock_transaction.clone(),
+                        new_asset_lock_proof_private_key,
+                        Some(new_asset_lock_proof.clone()),
+                    ));
+
+                    identity
+                        .top_up_identity(sdk, new_asset_lock_proof.clone(), &new_asset_lock_proof_private_key)
+                        .await?;
+                } else {
+                    return Err(rs_sdk::Error::DapiClientError(error_string).into())
+                }
+            }
+            Err(e) => return Err(e.into()),
+        }
+
+        identity_asset_lock_private_key_in_top_up.take(); // clear the top up
 
         Ok(MutexGuard::map(identity_lock, |identity| {
             identity.as_mut().expect("checked above")

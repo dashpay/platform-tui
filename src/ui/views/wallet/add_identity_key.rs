@@ -1,7 +1,6 @@
 //! Definition of a form to add a key to an identity.
 
 use dpp::identity::{KeyType, Purpose as KeyPurpose, SecurityLevel as KeySecurityLevel};
-use strum::IntoEnumIterator;
 use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
 use crate::{
@@ -58,7 +57,7 @@ impl FormController for AddIdentityKeyFormController {
                     // Withdraw keys have critical security so the field will be skipped
                     self.security_result = Some(KeySecurityLevel::CRITICAL);
                     self.step = AddIdentityKeyFormStep::KeyType(SelectInput::new(
-                        KeyType::iter().collect(),
+                        KeyType::all_key_types().into(),
                     ));
                     FormStatus::Redraw
                 }
@@ -66,7 +65,7 @@ impl FormController for AddIdentityKeyFormController {
                 InputStatus::Done(purpose) => {
                     self.purpose_result = Some(purpose);
                     self.step = AddIdentityKeyFormStep::Security(SelectInput::new(
-                        KeySecurityLevel::iter().collect(),
+                        KeySecurityLevel::full_range().into(),
                     ));
                     FormStatus::Redraw
                 }
@@ -76,7 +75,7 @@ impl FormController for AddIdentityKeyFormController {
                 InputStatus::Done(security_level) => {
                     self.security_result = Some(security_level);
                     self.step = AddIdentityKeyFormStep::KeyType(SelectInput::new(
-                        KeyType::iter().collect(),
+                        KeyType::all_key_types().into(),
                     ));
                     FormStatus::Redraw
                 }
