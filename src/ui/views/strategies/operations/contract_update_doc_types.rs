@@ -69,8 +69,7 @@ impl FormController for StrategyOpContractUpdateDocTypesFormController {
         let random_doc_type_parameters = RandomDocumentTypeParameters {
             new_fields_optional_count_range: 1..random_number1,
             new_fields_required_count_range: 1..random_number2,
-            new_indexes_count_range: 1..rand::thread_rng()
-                .gen_range(1..=(min(random_number1 + random_number2, 10))),
+            new_indexes_count_range: 1..rand::thread_rng().gen_range(2..=10),
             field_weights: FieldTypeWeights {
                 string_weight: rand::thread_rng().gen_range(1..=100),
                 float_weight: rand::thread_rng().gen_range(1..=100),

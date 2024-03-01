@@ -16,12 +16,7 @@ use strum::IntoEnumIterator;
 use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
 use self::{
-    contract_update_doc_types::StrategyOpContractUpdateDocTypesFormController,
-    document::StrategyOpDocumentFormController,
-    identity_top_up::StrategyOpIdentityTopUpFormController,
-    identity_transfer::StrategyOpIdentityTransferFormController,
-    identity_update::StrategyOpIdentityUpdateFormController,
-    identity_withdrawal::StrategyOpIdentityWithdrawalFormController,
+    contract_create::StrategyOpContractCreateFormController, contract_update_doc_types::StrategyOpContractUpdateDocTypesFormController, document::StrategyOpDocumentFormController, identity_top_up::StrategyOpIdentityTopUpFormController, identity_transfer::StrategyOpIdentityTransferFormController, identity_update::StrategyOpIdentityUpdateFormController, identity_withdrawal::StrategyOpIdentityWithdrawalFormController
 };
 use crate::ui::form::{FormController, FormStatus, Input, InputStatus, SelectInput};
 
@@ -33,7 +28,7 @@ enum OperationType {
     IdentityDisableKeys,
     IdentityWithdrawal,
     IdentityTransfer,
-    // ContractCreateRandom,
+    ContractCreateRandom,
     ContractUpdateDocTypesRandom,
     // ContractUpdateFieldsRandom,
 }
@@ -85,9 +80,9 @@ impl StrategyAddOperationFormController {
             OperationType::IdentityTransfer => Box::new(
                 StrategyOpIdentityTransferFormController::new(self.strategy_name.clone()),
             ),
-            // OperationType::ContractCreateRandom => Box::new(
-            //     StrategyOpContractCreateFormController::new(self.strategy_name.clone()),
-            // ),
+            OperationType::ContractCreateRandom => Box::new(
+                StrategyOpContractCreateFormController::new(self.strategy_name.clone()),
+            ),
             OperationType::ContractUpdateDocTypesRandom => {
                 Box::new(StrategyOpContractUpdateDocTypesFormController::new(
                     self.strategy_name.clone(),
