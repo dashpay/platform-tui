@@ -32,7 +32,7 @@ impl StrategyOpContractCreateFormController {
                 ),
                 Field::new(
                     "Times per block",
-                    SelectInput::new(vec![1, 2, 5, 10, 20, 40, 100, 1000]),
+                    SelectInput::new(vec![1, 2, 5, 10, 20, 24]),
                 ),
                 Field::new(
                     "Chance per block",
