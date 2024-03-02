@@ -28,7 +28,7 @@ impl StrategyOpContractCreateFormController {
             input: ComposedInput::new((
                 Field::new(
                     "Number of document types",
-                    SelectInput::new(vec![1, 5, 10, 50, 100]),
+                    SelectInput::new(vec![1, 5, 10, 15, 20, 25, 30, 50, 100]),
                 ),
                 Field::new(
                     "Times per block",
@@ -36,7 +36,7 @@ impl StrategyOpContractCreateFormController {
                 ),
                 Field::new(
                     "Chance per block",
-                    SelectInput::new(vec![1.0, 0.9, 0.75, 0.5, 0.25, 0.1, 0.05, 0.01]),
+                    SelectInput::new(vec![1.0, 0.9, 0.75, 0.5, 0.25, 0.1]),
                 ),
             )),
             selected_strategy,
