@@ -15,7 +15,7 @@ use rs_sdk::{
 
 use crate::backend::{as_toml, BackendEvent, Task};
 
-#[derive(Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) enum PlatformInfoTask {
     FetchCurrentEpochInfo,
     FetchCurrentVersionVotingState,

@@ -24,7 +24,7 @@ use dpp::{
         accessors::IdentityGettersV0, state_transition::asset_lock_proof::AssetLockProof, Identity,
         PartialIdentity,
     },
-    platform_value::{string_encoding::Encoding, Bytes32, Identifier},
+    platform_value::{string_encoding::Encoding, Identifier},
     state_transition::{
         data_contract_create_transition::DataContractCreateTransition, StateTransition,
     },
@@ -209,7 +209,6 @@ pub(crate) async fn run_strategy_task<'s>(
                 app_state.available_strategies_contract_names.lock().await;
 
             if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
-                let mut rng = StdRng::from_entropy();
                 let platform_version = PlatformVersion::latest();
 
                 // Function to retrieve the contract from either known_contracts or
@@ -221,12 +220,27 @@ pub(crate) async fn run_strategy_task<'s>(
                         .cloned()
                 };
 
+                // Get the loaded identity nonce
+                let loaded_identity_lock = match app_state.refresh_identity(&sdk).await {
+                    Ok(lock) => lock,
+                    Err(e) => {
+                        error!("Failed to refresh identity: {:?}", e);
+                        return BackendEvent::StrategyError {
+                            strategy_name: strategy_name.clone(),
+                            error: format!("Failed to refresh identity: {:?}", e),
+                        };
+                    }
+                };    
+                let identity_nonce = sdk
+                    .get_identity_nonce(loaded_identity_lock.id(), true, None)
+                    .await
+                    .expect("Couldn't get current identity nonce");
+
                 if let Some(first_contract_name) = selected_contract_names.first() {
                     if let Some(data_contract) = get_contract(first_contract_name) {
-                        let entropy = Bytes32::random_with_rng(&mut rng);
-                        match CreatedDataContract::from_contract_and_entropy(
+                        match CreatedDataContract::from_contract_and_identity_nonce(
                             data_contract,
-                            entropy,
+                            identity_nonce,
                             platform_version,
                         ) {
                             Ok(initial_contract) => {
@@ -236,10 +250,9 @@ pub(crate) async fn run_strategy_task<'s>(
                                     selected_contract_names.iter().enumerate().skip(1)
                                 {
                                     if let Some(update_contract) = get_contract(contract_name) {
-                                        let update_entropy = Bytes32::random_with_rng(&mut rng);
-                                        match CreatedDataContract::from_contract_and_entropy(
+                                        match CreatedDataContract::from_contract_and_identity_nonce(
                                             update_contract,
-                                            update_entropy,
+                                            identity_nonce,
                                             platform_version,
                                         ) {
                                             Ok(created_update_contract) => {
@@ -681,11 +694,9 @@ pub(crate) async fn run_strategy_task<'s>(
                                                     Ok(proof) => {
                                                         let max_retries = 5;
                                                         let mut retries = 0;
-                                                                        
                                                         let mut found_new_utxos = false;
                                                         while retries < max_retries {
                                                             wallet.reload_utxos(&insight_ref).await;
-                                    
                                                             // Check if new UTXOs are available and if UTXO list is not empty
                                                             let current_utxos = match wallet {
                                                                 Wallet::SingleKeyWallet(ref wallet) => &wallet.utxos,
@@ -698,12 +709,10 @@ pub(crate) async fn run_strategy_task<'s>(
                                                                 tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
                                                             }
                                                         }
-                                    
                                                         if !found_new_utxos {
                                                             error!("Failed to find new UTXOs after maximum retries");
                                                             return None;
                                                         }
-                                                                        
                                                         Some((proof, asset_lock_proof_private_key))
                                                     },
                                                     Err(e) => {
