@@ -561,7 +561,13 @@ pub(crate) async fn run_strategy_task<'s>(
 
                 let mut identity_nonce_counter = BTreeMap::new();
                 let current_identity_nonce = sdk
-                    .get_identity_nonce(loaded_identity_clone.id(), false, None)
+                    .get_identity_nonce(
+                        loaded_identity_clone.id(),
+                        false,
+                        Some(rs_sdk::platform::transition::put_settings::PutSettings {
+                            request_settings: RequestSettings::default(),
+                            identity_nonce_stale_time_s: Some(1),
+                        }))
                     .await
                     .expect("Couldn't get current identity nonce");
                 identity_nonce_counter.insert(loaded_identity_clone.id(), current_identity_nonce);
@@ -572,7 +578,10 @@ pub(crate) async fn run_strategy_task<'s>(
                             loaded_identity_clone.id(),
                             used_contract_id,
                             false,
-                            None,
+                            Some(rs_sdk::platform::transition::put_settings::PutSettings {
+                                request_settings: RequestSettings::default(),
+                                identity_nonce_stale_time_s: Some(1),
+                            })
                         )
                         .await
                         .expect("Couldn't get current identity contract nonce");
