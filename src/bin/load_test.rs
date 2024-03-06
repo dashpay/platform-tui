@@ -197,7 +197,7 @@ async fn main() {
 
         let balance = backend
             .state()
-            .loaded_wallet
+            .loaded_identity
             .lock()
             .await
             .as_ref()
