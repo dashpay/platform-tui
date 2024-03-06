@@ -300,7 +300,7 @@ async fn broadcast_contract_variants(
     count: u32,
     _seed: u64,
 ) -> Vec<DataContract> {
-    let identity_nonce = sdk.get_identity_nonce(identity.id(), true, None)
+    let mut identity_nonce = sdk.get_identity_nonce(identity.id(), false, None)
         .await
         .expect("Couldn't get identity nonce");
 
@@ -308,6 +308,7 @@ async fn broadcast_contract_variants(
     let data_contract_variants = (0..count)
         .into_iter()
         .map(|_| {
+            identity_nonce += 1;
             let new_id = DataContract::generate_data_contract_id_v0(identity.id(), identity_nonce);
 
             let mut data_contract_variant = data_contract.clone();
