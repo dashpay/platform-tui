@@ -103,7 +103,6 @@ struct Args {
     verify_all_contracts: bool,
 
     #[arg(
-    short,
     long,
     help = "How many contracts we want to push per block"
     )]
