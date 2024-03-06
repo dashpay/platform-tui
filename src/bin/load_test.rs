@@ -331,16 +331,22 @@ async fn broadcast_contract_variants(
                 &sdk,
                 id,
             )
-                .await
-                .expect("expected to get data contract");
+                .await;
 
-            if let Some(contract) = maybe_contract {
-                tracing::info!("data contract with id {} for nonce {} provably exists", id, nonce);
-                found_data_contracts.push(contract);
-                count_left -= 1;
-            } else {
-                tracing::info!("data contract with id {} for nonce {} provably does not exist, skipping", id, nonce);
+            match maybe_contract {
+                Ok(Some(contract)) => {
+                    tracing::info!("data contract with id {} for nonce {} provably exists", id, nonce);
+                    found_data_contracts.push(contract);
+                    count_left -= 1;
+                }
+                Ok(None) => {
+                    tracing::info!("data contract with id {} for nonce {} provably does not exist, skipping", id, nonce);
+                }
+                Err(e) => {
+                    tracing::info!("ERROR!!!: getting data contract with id {} for nonce {} generated an error {:?}, skipping", id, nonce, e);
+                }
             }
+            
             if count_left == 0 {
                 break;
             }
