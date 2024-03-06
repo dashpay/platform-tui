@@ -92,8 +92,7 @@ struct Args {
 
     #[arg(
     long,
-    help = "The start nonce of identity contracts",
-    default_value = None
+    help = "The start nonce of identity contracts"
     )]
     start_nonce: Option<u64>,
 }
