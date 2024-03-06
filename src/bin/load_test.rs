@@ -103,7 +103,7 @@ struct Args {
     #[arg(
     long,
     help = "How many contracts we want to push per block",
-    default = 6
+    default_value = "6"
     )]
     contract_push_speed: u32,
 }
