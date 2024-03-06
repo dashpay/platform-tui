@@ -446,7 +446,7 @@ async fn broadcast_contract_variants(
         };
         let id = v0.data_contract.id();
         tracing::info!("registering contract {} with id {}", i, id);
-        if i % 24 == 0 || i > (count - count % 24) as usize {
+        if verify_all_data_contracts || i % 24 == 0 || i > (count - count % 24) as usize {
             transaction
                 .broadcast_and_wait(&sdk, None)
                 .await
