@@ -101,6 +101,13 @@ struct Args {
     help = "True means we should we verify the existence of all data contracts"
     )]
     verify_all_contracts: bool,
+
+    #[arg(
+    short,
+    long,
+    help = "How many contracts we want to push per block"
+    )]
+    contract_push_speed: u32,
 }
 
 #[tokio::main]
@@ -276,6 +283,7 @@ async fn main() {
         contract_count,
         args.start_nonce,
         args.verify_all_contracts,
+        args.contract_push_speed,
     )
     .await
     .into_iter()
@@ -308,6 +316,7 @@ async fn broadcast_contract_variants(
     count: u32,
     start_nonce: Option<IdentityNonce>,
     verify_all_data_contracts: bool,
+    contract_push_speed: u32,
 ) -> Vec<DataContract> {
     let mut identity_nonce = if start_nonce.is_none() {
         sdk.get_identity_nonce(identity.id(), false, None)
@@ -446,7 +455,7 @@ async fn broadcast_contract_variants(
         };
         let id = v0.data_contract.id();
         tracing::info!("registering contract {} with id {}", i, id);
-        if verify_all_data_contracts || i % 24 == 0 || i > (count - count % 24) as usize {
+        if i % contract_push_speed == 0 || i > (count - count % contract_push_speed) as usize {
             transaction
                 .broadcast_and_wait(&sdk, None)
                 .await
