@@ -95,6 +95,12 @@ struct Args {
     help = "The start nonce of identity contracts"
     )]
     start_nonce: Option<u64>,
+
+    #[arg(
+    long,
+    help = "True means we should we verify the existence of all data contracts"
+    )]
+    verify_all_contracts: bool,
 }
 
 #[tokio::main]
@@ -269,6 +275,7 @@ async fn main() {
         &data_contract,
         contract_count,
         args.start_nonce,
+        args.verify_all_contracts,
     )
     .await
     .into_iter()
@@ -300,11 +307,45 @@ async fn broadcast_contract_variants(
     data_contract: &DataContract,
     count: u32,
     start_nonce: Option<IdentityNonce>,
+    verify_all_data_contracts: bool,
 ) -> Vec<DataContract> {
     let mut identity_nonce = if start_nonce.is_none() {
         sdk.get_identity_nonce(identity.id(), false, None)
             .await
             .expect("Couldn't get identity nonce")
+    } else if verify_all_data_contracts {
+        let identity_nonce = start_nonce.unwrap();
+
+        let mut all_exist = true;
+
+        for nonce in identity_nonce..identity_nonce + count as u64 {
+            let id = DataContract::generate_data_contract_id_v0(identity.id(), nonce);
+            let exists = DataContract::fetch(
+                &sdk,
+                id,
+            )
+                .await
+                .expect("expected to get data contract")
+                .is_some();
+
+
+
+            if !exists {
+                tracing::info!("data contract with id {} for nonce {} provably does not exist", id, nonce);
+                all_exist = false;
+                break;
+            } else {
+                tracing::info!("data contract with id {} for nonce {} provably exists", id, nonce);
+            }
+        }
+
+        if all_exist {
+            identity_nonce
+        } else {
+            sdk.get_identity_nonce(identity.id(), false, None)
+                .await
+                .expect("Couldn't get identity nonce")
+        }
     } else {
         let identity_nonce = start_nonce.unwrap();
         let first_id = DataContract::generate_data_contract_id_v0(identity.id(), identity_nonce);
