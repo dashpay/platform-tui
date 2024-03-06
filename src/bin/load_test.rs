@@ -9,6 +9,7 @@ use std::{
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
+use std::thread::sleep;
 
 use clap::Parser;
 use dpp::{
@@ -49,13 +50,10 @@ use rs_platform_explorer::{
     config::Config,
 };
 use rs_sdk::platform::transition::broadcast::BroadcastStateTransition;
-use rs_sdk::{
-    platform::{
-        transition::{put_document::PutDocument, put_settings::PutSettings},
-        Fetch, Identifier,
-    },
-    Sdk, SdkBuilder,
-};
+use rs_sdk::{Error, platform::{
+    transition::{put_document::PutDocument, put_settings::PutSettings},
+    Fetch, Identifier,
+}, Sdk, SdkBuilder};
 use simple_signer::signer::SimpleSigner;
 use tokio::{sync::Semaphore, time::Instant};
 use tokio_util::sync::CancellationToken;
@@ -104,7 +102,8 @@ struct Args {
 
     #[arg(
     long,
-    help = "How many contracts we want to push per block"
+    help = "How many contracts we want to push per block",
+    default = 6
     )]
     contract_push_speed: u32,
 }
@@ -455,15 +454,49 @@ async fn broadcast_contract_variants(
         let id = v0.data_contract.id();
         tracing::info!("registering contract {} with id {}", i, id);
         if i % contract_push_speed as usize == 0 || i > (count - count % contract_push_speed) as usize {
-            transaction
+            match transaction
                 .broadcast_and_wait(&sdk, None)
-                .await
-                .expect("expected to register contract");
+                .await {
+                Ok(_) => {}
+                Err(e) => {
+                    tracing::info!("Experienced a failure {:?} broadcasting a contract while waiting for the response", e);
+                    sleep(Duration::from_secs(10));
+                    let contract_exists = DataContract::fetch(
+                        &sdk,
+                        id,
+                    )
+                        .await
+                        .expect("expected to get data contract")
+                        .is_some();
+                    if contract_exists {
+                        tracing::info!("contract proved to exist after 10 seconds");
+                    } else {
+                        tracing::info!("contract proved to not exist after 10 seconds");
+                    }
+                }
+            }
         } else {
-            transaction
+            match transaction
                 .broadcast(&sdk)
-                .await
-                .expect("expected to register contract");
+                .await {
+                Ok(_) => {}
+                Err(e) => {
+                    tracing::info!("Experienced a failure {:?} broadcasting a contract without waiting for the response", e);
+                    sleep(Duration::from_secs(10));
+                    let contract_exists = DataContract::fetch(
+                        &sdk,
+                        id,
+                    )
+                        .await
+                        .expect("expected to get data contract")
+                        .is_some();
+                    if contract_exists {
+                        tracing::info!("contract proved to exist after 10 seconds");
+                    } else {
+                        tracing::info!("contract proved to not exist after 10 seconds");
+                    }
+                }
+            }
         }
     }
 
