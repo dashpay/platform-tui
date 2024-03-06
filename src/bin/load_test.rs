@@ -192,6 +192,17 @@ async fn main() {
             .balance();
 
         tracing::info!("Wallet is initialized with {} Dash", balance / 100000000);
+
+        if balance < 15 * 100000000000 {
+            tracing::info!("Credits too low {}, adding more", balance);
+            let dash = 15;
+            let amount = dash * 100000000; // Dash
+            let event = backend
+                .run_task(Task::Identity(IdentityTask::TopUpIdentity(amount)))
+                .await;
+            tracing::info!("top up result: {:?}", event);
+        }
+
     }
 
     let mut credits_balance = backend
@@ -203,24 +214,6 @@ async fn main() {
         .unwrap()
         .balance();
 
-    if credits_balance < 15 * 100000000000 {
-        tracing::info!("Credits too low {}, adding more", credits_balance);
-        let dash = 15;
-        let amount = dash * 100000000; // Dash
-        let event = backend
-            .run_task(Task::Identity(IdentityTask::TopUpIdentity(amount)))
-            .await;
-        tracing::info!("top up result: {:?}", event);
-
-        credits_balance = backend
-            .state()
-            .loaded_identity
-            .lock()
-            .await
-            .as_ref()
-            .unwrap()
-            .balance();
-    }
 
     tracing::info!("Identity is initialized with {} credits", credits_balance);
 
