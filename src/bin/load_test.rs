@@ -35,6 +35,8 @@ use dpp::{
     },
     version::PlatformVersion,
 };
+use dpp::prelude::IdentityNonce;
+use dpp::state_transition::StateTransition;
 use futures::future::join_all;
 use governor::{Quota, RateLimiter};
 use rand::{rngs::StdRng, Rng, SeedableRng};
@@ -90,10 +92,10 @@ struct Args {
 
     #[arg(
     long,
-    help = "A seed for generating data",
-    default_value = "50"
+    help = "The start nonce of identity contracts",
+    default_value = None
     )]
-    seed: u64,
+    start_nonce: Option<u64>,
 }
 
 #[tokio::main]
@@ -267,7 +269,7 @@ async fn main() {
         arc_signer.clone(),
         &data_contract,
         contract_count,
-        args.seed, //let's use the same seed so we don't need to reregister contracts
+        args.start_nonce,
     )
     .await
     .into_iter()
@@ -298,13 +300,42 @@ async fn broadcast_contract_variants(
     signer: Arc<SimpleSigner>,
     data_contract: &DataContract,
     count: u32,
-    _seed: u64,
+    start_nonce: Option<IdentityNonce>,
 ) -> Vec<DataContract> {
-    let mut identity_nonce = sdk.get_identity_nonce(identity.id(), false, None)
-        .await
-        .expect("Couldn't get identity nonce");
+    let mut identity_nonce = if start_nonce.is_none() {
+        sdk.get_identity_nonce(identity.id(), false, None)
+            .await
+            .expect("Couldn't get identity nonce")
+    } else {
+        let identity_nonce = start_nonce.unwrap();
+        let first_id = DataContract::generate_data_contract_id_v0(identity.id(), identity_nonce);
+        let first_exists = DataContract::fetch(
+            &sdk,
+            first_id,
+        )
+            .await
+            .expect("expected to get data contract")
+            .is_some();
 
-    tracing::info!("registering data contracts");
+        let last_id = DataContract::generate_data_contract_id_v0(identity.id(), identity_nonce + count as u64);
+        let last_exists = DataContract::fetch(
+            &sdk,
+            last_id,
+        )
+            .await
+            .expect("expected to get data contract")
+            .is_some();
+
+        if first_exists && last_exists {
+            start_nonce.unwrap()
+        } else {
+            sdk.get_identity_nonce(identity.id(), false, None)
+                .await
+                .expect("Couldn't get identity nonce")
+        }
+    };
+
+    tracing::info!("registering data contracts, starting with nonce {}", identity_nonce + 1);
     let data_contract_variants = (0..count)
         .into_iter()
         .map(|_| {
@@ -370,8 +401,12 @@ async fn broadcast_contract_variants(
     }
 
     for (i, transaction) in transitions_queue.iter().enumerate() {
-        tracing::info!("registering contract {}", i);
-        if i % 24 == 0 {
+        let StateTransition::DataContractCreate(DataContractCreateTransition::V0(v0)) = &transaction else {
+            panic!("must be a data contract create transition")
+        };
+        let id = v0.data_contract.id();
+        tracing::info!("registering contract {} with id {}", i, id);
+        if i % 24 == 0 || i > (count - count % 24) as usize {
             transaction
                 .broadcast_and_wait(&sdk, None)
                 .await
