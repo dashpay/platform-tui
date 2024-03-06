@@ -100,6 +100,13 @@ struct Args {
     default_value = "6"
     )]
     contract_push_speed: u32,
+
+    #[arg(
+    long,
+    help = "How much we want to refill our wallet with in Dash if the balance is below this",
+    default_value = "15"
+    )]
+    refill_amount: u64,
 }
 
 #[tokio::main]
@@ -206,9 +213,9 @@ async fn main() {
 
         tracing::info!("Credits in platform wallet have {} Dash", balance / 100000000000);
 
-        if balance < 15 * 100000000000 {
-            tracing::info!("Credits too low, adding {} more", dash);
-            let dash = 15;
+        if balance < args.refill_amount * 100000000000 {
+            tracing::info!("Credits too low, adding {} more", args.refill_amount);
+            let dash = args.refill_amount;
             let amount = dash * 100000000; // Dash
             let event = backend
                 .run_task(Task::Identity(IdentityTask::TopUpIdentity(amount)))
