@@ -318,11 +318,7 @@ async fn broadcast_contract_variants(
         .await
         .expect("Couldn't get identity nonce");
 
-    let mut identity_nonce = if start_nonce.is_none() {
-        current_nonce
-    } else {
-        let identity_nonce = start_nonce.unwrap();
-
+    if let Some(identity_nonce) = start_nonce {
         for nonce in identity_nonce..=current_nonce as u64 {
             let id = DataContract::generate_data_contract_id_v0(identity.id(), nonce);
             let maybe_contract = DataContract::fetch(
