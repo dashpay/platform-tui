@@ -87,6 +87,13 @@ struct Args {
         default_value = "1"
     )]
     contracts: u32,
+
+    #[arg(
+    long,
+    help = "A seed for generating data",
+    default_value = "50"
+    )]
+    seed: u64,
 }
 
 #[tokio::main]
@@ -260,7 +267,7 @@ async fn main() {
         arc_signer.clone(),
         &data_contract,
         contract_count,
-        9875, //let's use the same seed so we don't need to reregister contracts
+        args.seed, //let's use the same seed so we don't need to reregister contracts
     )
     .await
     .into_iter()
