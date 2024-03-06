@@ -96,12 +96,6 @@ struct Args {
 
     #[arg(
     long,
-    help = "True means we should we verify the existence of all data contracts"
-    )]
-    verify_all_contracts: bool,
-
-    #[arg(
-    long,
     help = "How many contracts we want to push per block",
     default_value = "6"
     )]
@@ -313,77 +307,52 @@ async fn broadcast_contract_variants(
     data_contract: &DataContract,
     count: u32,
     start_nonce: Option<IdentityNonce>,
-    verify_all_data_contracts: bool,
     contract_push_speed: u32,
 ) -> Vec<DataContract> {
+
+    let mut found_data_contracts = vec![];
+
+    let mut count_left = count;
+
+    let current_nonce = sdk.get_identity_nonce(identity.id(), false, None)
+        .await
+        .expect("Couldn't get identity nonce");
+
     let mut identity_nonce = if start_nonce.is_none() {
-        sdk.get_identity_nonce(identity.id(), false, None)
-            .await
-            .expect("Couldn't get identity nonce")
-    } else if verify_all_data_contracts {
+        current_nonce
+    } else {
         let identity_nonce = start_nonce.unwrap();
 
-        let mut all_exist = true;
-
-        for nonce in identity_nonce..identity_nonce + count as u64 {
+        for nonce in identity_nonce..=current_nonce as u64 {
             let id = DataContract::generate_data_contract_id_v0(identity.id(), nonce);
-            let exists = DataContract::fetch(
+            let maybe_contract = DataContract::fetch(
                 &sdk,
                 id,
             )
                 .await
-                .expect("expected to get data contract")
-                .is_some();
+                .expect("expected to get data contract");
 
-
-
-            if !exists {
-                tracing::info!("data contract with id {} for nonce {} provably does not exist", id, nonce);
-                all_exist = false;
-                break;
-            } else {
+            if let Some(contract) = maybe_contract {
                 tracing::info!("data contract with id {} for nonce {} provably exists", id, nonce);
+                found_data_contracts.push(contract);
+                count_left -= 1;
+            } else {
+                tracing::info!("data contract with id {} for nonce {} provably does not exist, skipping", id, nonce);
             }
-        }
-
-        if all_exist {
-            identity_nonce
-        } else {
-            sdk.get_identity_nonce(identity.id(), false, None)
-                .await
-                .expect("Couldn't get identity nonce")
-        }
-    } else {
-        let identity_nonce = start_nonce.unwrap();
-        let first_id = DataContract::generate_data_contract_id_v0(identity.id(), identity_nonce);
-        let first_exists = DataContract::fetch(
-            &sdk,
-            first_id,
-        )
-            .await
-            .expect("expected to get data contract")
-            .is_some();
-
-        let last_id = DataContract::generate_data_contract_id_v0(identity.id(), identity_nonce + count as u64);
-        let last_exists = DataContract::fetch(
-            &sdk,
-            last_id,
-        )
-            .await
-            .expect("expected to get data contract")
-            .is_some();
-
-        if first_exists && last_exists {
-            start_nonce.unwrap()
-        } else {
-            sdk.get_identity_nonce(identity.id(), false, None)
-                .await
-                .expect("Couldn't get identity nonce")
+            if count_left == 0 {
+                break;
+            }
         }
     };
 
+    if count_left > 0 {
+        tracing::info!("we still need to register {} contracts", count_left);
+    } else {
+        return found_data_contracts;
+    }
+
     tracing::info!("registering data contracts, starting with nonce {}", identity_nonce + 1);
-    let data_contract_variants = (0..count)
+    let data_contract_variants = (0..count_left)
         .into_iter()
         .map(|_| {
             identity_nonce += 1;
@@ -500,10 +469,10 @@ async fn broadcast_contract_variants(
         }
     }
 
-    data_contract_variants
+    found_data_contracts.extend(data_contract_variants
         .into_iter()
-        .map(|c| c.data_contract_owned())
-        .collect()
+        .map(|c| c.data_contract_owned()));
+    found_data_contracts
 }
 
 async fn broadcast_random_documents_load_test(
