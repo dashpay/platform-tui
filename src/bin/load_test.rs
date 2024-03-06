@@ -204,10 +204,10 @@ async fn main() {
             .unwrap()
             .balance();
 
-        tracing::info!("Wallet is initialized with {} Dash", balance / 100000000);
+        tracing::info!("Credits in platform wallet have {} Dash", balance / 100000000000);
 
         if balance < 15 * 100000000000 {
-            tracing::info!("Credits too low {}, adding more", balance);
+            tracing::info!("Credits too low, adding {} more", dash);
             let dash = 15;
             let amount = dash * 100000000; // Dash
             let event = backend
