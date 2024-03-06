@@ -274,7 +274,6 @@ async fn main() {
         &data_contract,
         contract_count,
         args.start_nonce,
-        args.verify_all_contracts,
         args.contract_push_speed,
     )
     .await
@@ -314,12 +313,12 @@ async fn broadcast_contract_variants(
 
     let mut count_left = count;
 
-    let current_nonce = sdk.get_identity_nonce(identity.id(), false, None)
+    let mut identity_nonce = sdk.get_identity_nonce(identity.id(), false, None)
         .await
         .expect("Couldn't get identity nonce");
 
-    if let Some(identity_nonce) = start_nonce {
-        for nonce in identity_nonce..=current_nonce as u64 {
+    if let Some(start_nonce) = start_nonce {
+        for nonce in start_nonce..=identity_nonce as u64 {
             let id = DataContract::generate_data_contract_id_v0(identity.id(), nonce);
             let maybe_contract = DataContract::fetch(
                 &sdk,
