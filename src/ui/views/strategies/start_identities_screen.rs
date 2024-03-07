@@ -139,7 +139,7 @@ impl ScreenController for StartIdentitiesScreenController {
         let display_text = if let Some(strategy) = &self.selected_strategy {
             // Construct the text to display start identities
             let start_identities_text =
-                format!("Start identities: {}", strategy.start_identities.len());
+                format!("Start identities: {}", strategy.start_identities.0);
 
             format!(
                 "Strategy: {}\n{}",
