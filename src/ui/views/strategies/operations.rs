@@ -13,6 +13,7 @@ use std::collections::BTreeMap;
 
 use rs_sdk::platform::DataContract;
 use strum::IntoEnumIterator;
+use tracing::error;
 use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
 use self::{
@@ -39,7 +40,7 @@ enum OperationType {
 }
 
 pub(super) struct StrategyAddOperationFormController {
-    op_type_input: SelectInput<OperationType>,
+    op_type_input: SelectInput<String>,
     op_specific_form: Option<Box<dyn FormController>>,
     strategy_name: String,
     known_contracts: BTreeMap<String, DataContract>,
@@ -50,8 +51,19 @@ impl StrategyAddOperationFormController {
         strategy_name: String,
         known_contracts: BTreeMap<String, DataContract>,
     ) -> Self {
-        StrategyAddOperationFormController {
-            op_type_input: SelectInput::new(OperationType::iter().collect()),
+        let operation_types = vec![
+            "Document".to_string(),
+            "IdentityTopUp".to_string(),
+            "IdentityAddKeys".to_string(),
+            "IdentityDisableKeys".to_string(),
+            "IdentityWithdrawal".to_string(),
+            "IdentityTransfer (requires start_identities > 0)".to_string(),
+            // "ContractCreateRandom".to_string(),
+            "ContractUpdateDocTypesRandom".to_string(),
+            // "ContractUpdateFieldsRandom".to_string(),        
+        ];
+        Self {
+            op_type_input: SelectInput::new(operation_types),
             op_specific_form: None,
             strategy_name,
             known_contracts,
@@ -107,7 +119,22 @@ impl FormController for StrategyAddOperationFormController {
         } else {
             match self.op_type_input.on_event(event) {
                 InputStatus::Done(op_type) => {
-                    self.set_op_form(op_type);
+                    let operation_type = match op_type.as_str() {
+                        "Document" => OperationType::Document,
+                        "IdentityTopUp" => OperationType::IdentityTopUp,
+                        "IdentityAddKeys" => OperationType::IdentityAddKeys,
+                        "IdentityDisableKeys" => OperationType::IdentityDisableKeys,
+                        "IdentityWithdrawal" => OperationType::IdentityWithdrawal,
+                        "IdentityTransfer (requires start_identities > 0)" => OperationType::IdentityTransfer,
+                        // "ContractCreateRandom" => OperationType::ContractCreateRandom,
+                        "ContractUpdateDocTypesRandom" => OperationType::ContractUpdateDocTypesRandom,
+                        // "ContractUpdateFieldsRandom" => OperationType::ContractUpdateFields,
+                        _ => {
+                            error!("Non-existant operation type selected");
+                            panic!("Non-existant operation type selected")
+                        }
+                    };
+                    self.set_op_form(operation_type);
                     FormStatus::Redraw
                 }
                 status => status.into(),
