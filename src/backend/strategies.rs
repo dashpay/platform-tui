@@ -78,7 +78,7 @@ pub(crate) enum StrategyTask {
         strategy_name: String,
         operation: Operation,
     },
-    RunStrategy(String, u64),
+    RunStrategy(String, u64, bool),
     RemoveLastContract(String),
     RemoveIdentityInserts(String),
     RemoveStartIdentities(String),
@@ -430,7 +430,7 @@ pub(crate) async fn run_strategy_task<'s>(
                 BackendEvent::None
             }
         }
-        StrategyTask::RunStrategy(strategy_name, num_blocks) => {
+        StrategyTask::RunStrategy(strategy_name, num_blocks, verify_proofs) => {
             info!("-----Starting strategy '{}'-----", strategy_name);
             let run_start_time = Instant::now();
 
@@ -868,19 +868,21 @@ pub(crate) async fn run_strategy_task<'s>(
                                                                     error!("WaitForStateTransitionResultResponse error: {:?}", error);
                                                                 }
                                                                 Some(wait_for_state_transition_result_response_v0::Result::Proof(proof)) => {
-                                                                    let verified = Drive::verify_state_transition_was_executed_with_proof(
-                                                                        &transition_clone,
-                                                                        proof.grovedb_proof.as_slice(),
-                                                                        &|_| Ok(None),
-                                                                        sdk.version(),                                                            
-                                                                    );
-                                                                    match verified {
-                                                                        Ok(_) => {
-                                                                            info!("Verified proof for state transition");
-                                                                        }
-                                                                        Err(e) => {
-                                                                            error!("Error verifying state transition execution proof: {}", e);
-                                                                        }
+                                                                    if verify_proofs {
+                                                                        let verified = Drive::verify_state_transition_was_executed_with_proof(
+                                                                            &transition_clone,
+                                                                            proof.grovedb_proof.as_slice(),
+                                                                            &|_| Ok(None),
+                                                                            sdk.version(),                                                            
+                                                                        );
+                                                                        match verified {
+                                                                            Ok(_) => {
+                                                                                info!("Verified proof for state transition");
+                                                                            }
+                                                                            Err(e) => {
+                                                                                error!("Error verifying state transition execution proof: {}", e);
+                                                                            }
+                                                                        }    
                                                                     }
                                                                 }
                                                                 _ => {}
@@ -998,76 +1000,78 @@ pub(crate) async fn run_strategy_task<'s>(
                                     
                                                         // Verification of the proof
                                                         if let Some(wait_for_state_transition_result_response_v0::Result::Proof(proof)) = &v0_response.result {
-                                                            // For proof verification, if it's a DocumentsBatch, include the data contract, else don't
-                                                            let verified = if transition.name() == "DocumentsBatch" {
-                                                                match data_contract_clone.as_ref() {
-                                                                    Some(data_contract) => {
-                                                                        Drive::verify_state_transition_was_executed_with_proof(
-                                                                            &transition,
-                                                                            proof.grovedb_proof.as_slice(),
-                                                                            &|_| Ok(Some(data_contract.clone().into())),
-                                                                            sdk.version(),
-                                                                        )
+                                                            if verify_proofs {
+                                                                // For proof verification, if it's a DocumentsBatch, include the data contract, else don't
+                                                                let verified = if transition.name() == "DocumentsBatch" {
+                                                                    match data_contract_clone.as_ref() {
+                                                                        Some(data_contract) => {
+                                                                            Drive::verify_state_transition_was_executed_with_proof(
+                                                                                &transition,
+                                                                                proof.grovedb_proof.as_slice(),
+                                                                                &|_| Ok(Some(data_contract.clone().into())),
+                                                                                sdk.version(),
+                                                                            )
+                                                                        }
+                                                                        None => Err(drive::error::Error::Proof(ProofError::UnknownContract("Data contract ID not found in known_contracts".into()))),
                                                                     }
-                                                                    None => Err(drive::error::Error::Proof(ProofError::UnknownContract("Data contract ID not found in known_contracts".into()))),
-                                                                }
-                                                            } else {
-                                                                Drive::verify_state_transition_was_executed_with_proof(
-                                                                    &transition,
-                                                                    proof.grovedb_proof.as_slice(),
-                                                                    &|_| Ok(None),
-                                                                    sdk.version(),
-                                                                )
-                                                            };
+                                                                } else {
+                                                                    Drive::verify_state_transition_was_executed_with_proof(
+                                                                        &transition,
+                                                                        proof.grovedb_proof.as_slice(),
+                                                                        &|_| Ok(None),
+                                                                        sdk.version(),
+                                                                    )
+                                                                };
 
-                                                            match verified {
-                                                                Ok(_) => {
-                                                                    info!("Verified proof for state transition {}", index+1);
-                                                                    
-                                                                    // If a data contract was registered, add it to
-                                                                    // known_contracts
-                                                                    if let StateTransition::DataContractCreate(
-                                                                        DataContractCreateTransition::V0(
-                                                                            data_contract_create_transition,
-                                                                        ),
-                                                                    ) = &transition
-                                                                    {
-                                                                        // Extract the data contract from the transition
-                                                                        let data_contract_serialized =
-                                                                            &data_contract_create_transition
-                                                                                .data_contract;
-                                                                        let data_contract_result =
-                                                                            DataContract::try_from_platform_versioned(
-                                                                                data_contract_serialized.clone(),
-                                                                                false,
-                                                                                PlatformVersion::latest(),
-                                                                            );
+                                                                match verified {
+                                                                    Ok(_) => {
+                                                                        info!("Verified proof for state transition {}", index+1);
+                                                                        
+                                                                        // If a data contract was registered, add it to
+                                                                        // known_contracts
+                                                                        if let StateTransition::DataContractCreate(
+                                                                            DataContractCreateTransition::V0(
+                                                                                data_contract_create_transition,
+                                                                            ),
+                                                                        ) = &transition
+                                                                        {
+                                                                            // Extract the data contract from the transition
+                                                                            let data_contract_serialized =
+                                                                                &data_contract_create_transition
+                                                                                    .data_contract;
+                                                                            let data_contract_result =
+                                                                                DataContract::try_from_platform_versioned(
+                                                                                    data_contract_serialized.clone(),
+                                                                                    false,
+                                                                                    PlatformVersion::latest(),
+                                                                                );
 
-                                                                        match data_contract_result {
-                                                                            Ok(data_contract) => {
-                                                                                let mut known_contracts_lock =
-                                                                                    app_state
-                                                                                        .known_contracts
-                                                                                        .lock()
-                                                                                        .await;
-                                                                                known_contracts_lock.insert(
-                                                                                    data_contract
-                                                                                        .id()
-                                                                                        .to_string(Encoding::Base58),
-                                                                                    data_contract,
-                                                                                );
-                                                                            }
-                                                                            Err(e) => {
-                                                                                error!(
-                                                                                    "Error deserializing data \
-                                                                                    contract: {:?}",
-                                                                                    e
-                                                                                );
+                                                                            match data_contract_result {
+                                                                                Ok(data_contract) => {
+                                                                                    let mut known_contracts_lock =
+                                                                                        app_state
+                                                                                            .known_contracts
+                                                                                            .lock()
+                                                                                            .await;
+                                                                                    known_contracts_lock.insert(
+                                                                                        data_contract
+                                                                                            .id()
+                                                                                            .to_string(Encoding::Base58),
+                                                                                        data_contract,
+                                                                                    );
+                                                                                }
+                                                                                Err(e) => {
+                                                                                    error!(
+                                                                                        "Error deserializing data \
+                                                                                        contract: {:?}",
+                                                                                        e
+                                                                                    );
+                                                                                }
                                                                             }
                                                                         }
                                                                     }
+                                                                    Err(e) => error!("Error verifying state transition execution proof: {}", e),
                                                                 }
-                                                                Err(e) => error!("Error verifying state transition execution proof: {}", e),
                                                             }
                                                         }
                                                     }
