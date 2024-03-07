@@ -1,36 +1,13 @@
-use std::{
-    collections::{BTreeMap, HashSet},
-    iter,
-    sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
-};
+mod broadcast_random_documents;
 
-use dpp::{
-    data_contract::{
-        accessors::v0::DataContractV0Getters,
-        document_type::{
-            accessors::DocumentTypeV0Getters,
-            random_document::{CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType},
-            DocumentType,
-        },
-    },
-    document::Document,
-    identity::{
-        accessors::IdentityGettersV0,
-        identity_public_key::accessors::v0::IdentityPublicKeyGettersV0, KeyType, Purpose,
-    },
-    prelude::{DataContract, Identity, IdentityPublicKey},
-};
-use futures::{stream::FuturesUnordered, Future, StreamExt};
-use rand::{prelude::StdRng, Rng, SeedableRng};
+use dpp::{data_contract::accessors::v0::DataContractV0Getters, document::Document};
 use rs_sdk::{
-    platform::{transition::put_document::PutDocument, DocumentQuery, FetchMany},
+    platform::{DocumentQuery, FetchMany},
     Sdk,
 };
-use simple_signer::signer::SimpleSigner;
 
-use super::{state::IdentityPrivateKeysMap, AppStateUpdate, CompletedTaskPayload};
-use crate::backend::{error::Error, AppState, BackendEvent, Task};
+use super::{AppStateUpdate, CompletedTaskPayload};
+pub(crate) use crate::backend::{AppState, BackendEvent, Task};
 
 #[derive(Debug, Clone)]
 pub(crate) enum DocumentTask {
@@ -89,7 +66,7 @@ impl AppState {
                         };
                     };
 
-                    broadcast_random_documents(
+                    broadcast_random_documents::broadcast_random_documents(
                         sdk,
                         identity,
                         &identity_private_keys_lock,
@@ -130,139 +107,4 @@ impl AppState {
             }
         }
     }
-}
-
-struct BroadcastRandomDocumentsStats {
-    total: u16,
-    completed: u16,
-    last_error: Option<String>,
-}
-
-impl BroadcastRandomDocumentsStats {
-    fn info_display(&self) -> String {
-        format!(
-            "Broadcast random documents results:
-Completed {} of {}
-Last error: {}",
-            self.completed,
-            self.total,
-            self.last_error
-                .as_ref()
-                .map(|e| e.to_string())
-                .unwrap_or("".to_owned())
-        )
-    }
-}
-
-async fn broadcast_random_documents<'s>(
-    sdk: &Sdk,
-    identity: &Identity,
-    identity_private_keys: &IdentityPrivateKeysMap,
-    data_contract: &DataContract,
-    document_type: &DocumentType,
-    count: u16,
-) -> Result<BroadcastRandomDocumentsStats, Error> {
-    let mut std_rng = StdRng::from_entropy();
-
-    let identity_public_key = identity
-        .get_first_public_key_matching(
-            Purpose::AUTHENTICATION,
-            HashSet::from([document_type.security_level_requirement()]),
-            HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
-        )
-        .ok_or(Error::DocumentSigningError(
-            "No public key matching security level requirements".to_string(),
-        ))?;
-
-    let Some(private_key) = identity_private_keys.get(&(identity.id(), identity_public_key.id()))
-    else {
-        // TODO inappropriate error type
-        return Err(Error::IdentityTopUpError(format!(
-            "expected private keys, but we only have private keys for {:?}, trying to get {:?} : \
-             {}",
-            identity_private_keys
-                .keys()
-                .map(|(id, key_id)| (id, key_id))
-                .collect::<BTreeMap<_, _>>(),
-            identity.id(),
-            identity_public_key.id(),
-        )));
-    };
-
-    let data_contract = Arc::new(data_contract.clone());
-    let mut signer = SimpleSigner::default();
-    signer.add_key(identity_public_key.clone(), private_key.to_vec());
-
-    fn put_random_document<'a, 'r>(
-        sdk: &'a Sdk,
-        document_type: &'a DocumentType,
-        identity: &'a Identity,
-        rng: &'r mut StdRng,
-        signer: &'a SimpleSigner,
-        identity_public_key: &'a IdentityPublicKey,
-        data_contract: Arc<DataContract>,
-    ) -> impl Future<Output = Result<(), String>> + 'a {
-        let document_state_transition_entropy: [u8; 32] = rng.gen();
-        let time_ms = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock may have gone backwards")
-            .as_millis();
-
-        let random_document = document_type
-            .random_document_with_params(
-                identity.id(),
-                document_state_transition_entropy.into(),
-                time_ms as u64,
-                DocumentFieldFillType::FillIfNotRequired,
-                DocumentFieldFillSize::AnyDocumentFillSize,
-                rng,
-                sdk.version(),
-            )
-            .expect("expected a random document");
-
-        async move {
-            random_document
-                .put_to_platform_and_wait_for_response(
-                    sdk,
-                    document_type.clone(),
-                    document_state_transition_entropy,
-                    identity_public_key.clone(),
-                    data_contract,
-                    signer,
-                )
-                .await
-                .map(|_| ())
-                .map_err(|e| e.to_string())
-        }
-    }
-
-    let mut futures: FuturesUnordered<_> = iter::repeat_with(|| {
-        put_random_document(
-            sdk,
-            document_type,
-            identity,
-            &mut std_rng,
-            &signer,
-            identity_public_key,
-            Arc::clone(&data_contract),
-        )
-    })
-    .take(count as usize)
-    .collect();
-
-    let mut completed = 0;
-    let mut last_error = None;
-
-    while let Some(result) = futures.next().await {
-        match result {
-            Ok(_) => completed += 1,
-            Err(e) => last_error = Some(e),
-        }
-    }
-
-    Ok(BroadcastRandomDocumentsStats {
-        total: count,
-        completed,
-        last_error,
-    })
 }
