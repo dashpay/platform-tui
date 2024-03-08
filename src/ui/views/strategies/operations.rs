@@ -43,18 +43,21 @@ pub(super) struct StrategyAddOperationFormController {
     op_specific_form: Option<Box<dyn FormController>>,
     strategy_name: String,
     known_contracts: BTreeMap<String, DataContract>,
+    supporting_contracts: BTreeMap<String, DataContract>,
 }
 
 impl StrategyAddOperationFormController {
     pub(super) fn new(
         strategy_name: String,
         known_contracts: BTreeMap<String, DataContract>,
+        supporting_contracts: BTreeMap<String, DataContract>,
     ) -> Self {
         StrategyAddOperationFormController {
             op_type_input: SelectInput::new(OperationType::iter().collect()),
             op_specific_form: None,
             strategy_name,
             known_contracts,
+            supporting_contracts,
         }
     }
 
@@ -63,6 +66,7 @@ impl StrategyAddOperationFormController {
             OperationType::Document => Box::new(StrategyOpDocumentFormController::new(
                 self.strategy_name.clone(),
                 self.known_contracts.clone(),
+                self.supporting_contracts.clone(),
             )),
             OperationType::IdentityTopUp => Box::new(StrategyOpIdentityTopUpFormController::new(
                 self.strategy_name.clone(),

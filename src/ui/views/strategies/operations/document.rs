@@ -42,7 +42,13 @@ impl StrategyOpDocumentFormController {
         known_contracts: BTreeMap<String, DataContract>,
         supporting_contracts: BTreeMap<String, DataContract>,
     ) -> Self {
-        let contract_names: Vec<String> = known_contracts.keys().cloned().collect();
+        // Collect known_contracts and supporting_contracts names for the form
+        let mut contract_names: Vec<String> = known_contracts.keys().cloned().collect();
+        contract_names.extend(supporting_contracts.keys().cloned());
+
+        // Remove duplicates
+        let contract_names: Vec<String> = contract_names.into_iter().collect::<std::collections::HashSet<_>>().into_iter().collect();
+
         let action_types = vec![
             "Insert Random".to_string(),
             // "Delete".to_string(),
