@@ -9,6 +9,7 @@ use dpp::data_contract::{
         DocumentType,
     },
 };
+use drive::drive::contract;
 use rs_sdk::platform::DataContract;
 use strategy_tests::{
     frequency::Frequency,
@@ -31,6 +32,7 @@ pub(super) struct StrategyOpDocumentFormController {
     )>,
     selected_strategy: String,
     known_contracts: BTreeMap<String, DataContract>,
+    supporting_contracts: BTreeMap<String, DataContract>,
     document_types: BTreeMap<String, DocumentType>,
 }
 
@@ -38,6 +40,7 @@ impl StrategyOpDocumentFormController {
     pub(super) fn new(
         selected_strategy: String,
         known_contracts: BTreeMap<String, DataContract>,
+        supporting_contracts: BTreeMap<String, DataContract>,
     ) -> Self {
         let contract_names: Vec<String> = known_contracts.keys().cloned().collect();
         let action_types = vec![
@@ -46,7 +49,7 @@ impl StrategyOpDocumentFormController {
             // "Replace".to_string(),
         ];
 
-        StrategyOpDocumentFormController {
+        Self {
             input: ComposedInput::new((
                 Field::new("Select Contract", SelectInput::new(contract_names)),
                 Field::new("Select Action", SelectInput::new(action_types)),
@@ -61,6 +64,7 @@ impl StrategyOpDocumentFormController {
             )),
             selected_strategy,
             known_contracts,
+            supporting_contracts,
             document_types: BTreeMap::new(),
         }
     }
@@ -70,7 +74,10 @@ impl FormController for StrategyOpDocumentFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
         match self.input.on_event(event) {
             InputStatus::Done((contract_name, action_type, times_per_block, chance_per_block)) => {
-                let selected_contract = self.known_contracts.get(&contract_name).unwrap();
+                let selected_contract = self.known_contracts.get(&contract_name)
+                    .or_else(|| self.supporting_contracts.get(&contract_name))
+                    .expect("Contract name not found in known_contracts or supporting_contracts.");
+
                 let document_types = selected_contract.document_types();
                 self.document_types = document_types.clone();
 
