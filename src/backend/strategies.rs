@@ -939,10 +939,13 @@ pub(crate) async fn run_strategy_task<'s>(
                         for (index, result) in broadcast_results.into_iter().enumerate() {
                             match result {
                                 Ok((transition, broadcast_result)) => {
+                                    let transition_type = transition.name().to_owned();
+
                                     if broadcast_result.is_err() {
                                         error!(
-                                            "Error broadcasting state transition {} for block height {}: {:?}",
+                                            "Error broadcasting state transition {} ({}) for block height {}: {:?}",
                                             index + 1,
+                                            transition_type,
                                             current_block_info.height,
                                             broadcast_result.err().unwrap()
                                         );
@@ -1026,7 +1029,7 @@ pub(crate) async fn run_strategy_task<'s>(
 
                                                                 match verified {
                                                                     Ok(_) => {
-                                                                        info!("Verified proof for state transition {}", index+1);
+                                                                        info!("Verified proof for state transition {} ({}) for block {} (Actual block height: {})", st_queue_index, transition_type, current_block_info.height, actual_block_height);
                                                                         
                                                                         // If a data contract was registered, add it to
                                                                         // known_contracts
