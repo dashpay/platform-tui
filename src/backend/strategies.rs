@@ -854,8 +854,9 @@ pub(crate) async fn run_strategy_task<'s>(
                                                 {
                                                     Ok(wait_response) => {
                                                         if let Some(wait_for_state_transition_result_response::Version::V0(v0_response)) = &wait_response.version {
+                                                            let mut actual_block_height: u64 = 0;
                                                             if let Some(metadata) = &v0_response.metadata {
-                                                                let actual_block_height = metadata.height;
+                                                                actual_block_height = metadata.height;
                                                                 success_count += 1;
                                                                 info!("Successfully processed state transition {} ({}) for block {} (Actual block height: {})", st_queue_index, transition_type, current_block_info.height, actual_block_height);
                                                                 // Sleep because we need to give the chain state time to update revisions
@@ -877,7 +878,7 @@ pub(crate) async fn run_strategy_task<'s>(
                                                                         );
                                                                         match verified {
                                                                             Ok(_) => {
-                                                                                info!("Verified proof for state transition");
+                                                                                info!("Verified proof for state transition {} ({}) for block {} (Actual block height: {})", st_queue_index, transition_type, current_block_info.height, actual_block_height);
                                                                             }
                                                                             Err(e) => {
                                                                                 error!("Error verifying state transition execution proof: {}", e);

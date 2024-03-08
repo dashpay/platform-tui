@@ -21,11 +21,11 @@ impl RunStrategyFormController {
                     SelectInput::new(vec![10, 20, 50, 100, 500]),
                 ),
                 Field::new(
-                    "Confirm you would like to run the strategy",
+                    "Verify state transition proofs?",
                     SelectInput::new(vec!["Yes".to_string(), "No".to_string()]),
                 ),
                 Field::new(
-                    "Verify state transition proofs?",
+                    "Confirm you would like to run the strategy",
                     SelectInput::new(vec!["Yes".to_string(), "No".to_string()]),
                 ),
             )),
@@ -37,7 +37,7 @@ impl RunStrategyFormController {
 impl FormController for RunStrategyFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
         match self.input.on_event(event) {
-            InputStatus::Done((num_blocks, confirm, verify_proofs)) => {
+            InputStatus::Done((num_blocks, verify_proofs, confirm)) => {
                 if confirm == "Yes" {
                     if verify_proofs == "Yes" {
                         FormStatus::Done {
@@ -85,6 +85,6 @@ impl FormController for RunStrategyFormController {
     }
 
     fn steps_number(&self) -> u8 {
-        2
+        3
     }
 }
