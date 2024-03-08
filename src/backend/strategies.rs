@@ -828,6 +828,9 @@ pub(crate) async fn run_strategy_task<'s>(
                             let transition_clone = transition.clone();
                             transition_type = transition_clone.name().to_owned();
 
+                            // Dependent state transitions are those that get their revision checked. Sending multiple
+                            // in the same block causes errors because they get sent to different nodes and become disordered.
+                            // So we sleep for 1 second for dependent transitions so that they only go 1 per block.
                             let is_dependent_transition = matches!(
                                 transition_clone,
                                 StateTransition::IdentityUpdate(_)

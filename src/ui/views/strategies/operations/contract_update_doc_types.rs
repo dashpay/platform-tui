@@ -27,7 +27,7 @@ use crate::{
 pub(super) struct StrategyOpContractUpdateDocTypesFormController {
     input: ComposedInput<(
         Field<SelectInput<String>>,
-        Field<SelectInput<u16>>,
+        // Field<SelectInput<u16>>,
         Field<SelectInput<f64>>,
     )>,
     selected_strategy: String,
@@ -45,10 +45,10 @@ impl StrategyOpContractUpdateDocTypesFormController {
                     "Contract",
                     SelectInput::new(known_contracts.keys().cloned().collect()),
                 ),
-                Field::new(
-                    "Times per block",
-                    SelectInput::new(vec![1, 2, 5, 10, 20, 40, 100, 1000]),
-                ),
+                // Field::new(
+                //     "Times per block",
+                //     SelectInput::new(vec![1, 2, 5, 10, 20, 40, 100, 1000]),
+                // ),
                 Field::new(
                     "Chance per block",
                     SelectInput::new(vec![1.0, 0.9, 0.75, 0.5, 0.25, 0.1, 0.05, 0.01]),
@@ -69,8 +69,7 @@ impl FormController for StrategyOpContractUpdateDocTypesFormController {
         let random_doc_type_parameters = RandomDocumentTypeParameters {
             new_fields_optional_count_range: 1..random_number1,
             new_fields_required_count_range: 1..random_number2,
-            new_indexes_count_range: 1..rand::thread_rng()
-                .gen_range(1..=(min(random_number1 + random_number2, 10))),
+            new_indexes_count_range: 1..rand::thread_rng().gen_range(2..=10),
             field_weights: FieldTypeWeights {
                 string_weight: rand::thread_rng().gen_range(1..=100),
                 float_weight: rand::thread_rng().gen_range(1..=100),
@@ -104,7 +103,7 @@ impl FormController for StrategyOpContractUpdateDocTypesFormController {
         };
 
         match self.input.on_event(event) {
-            InputStatus::Done((contract_name, times_per_block, chance_per_block)) => {
+            InputStatus::Done((contract_name, chance_per_block)) => {
                 // Retrieve the DataContract object by its name
                 if let Some(contract) = self.known_contracts.get(&contract_name) {
                     FormStatus::Done {
@@ -119,7 +118,7 @@ impl FormController for StrategyOpContractUpdateDocTypesFormController {
                                     document_type: None,
                                 }),
                                 frequency: Frequency {
-                                    times_per_block_range: 1..times_per_block + 1,
+                                    times_per_block_range: 1..2,
                                     chance_per_block: Some(chance_per_block),
                                 },
                             },
