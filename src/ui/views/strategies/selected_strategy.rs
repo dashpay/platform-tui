@@ -265,6 +265,6 @@ fn display_strategy(
     Operations:
 {operations_lines}
     Start identities: {}"#,
-        strategy.start_identities.len()
+        strategy.start_identities.0
     )
 }
