@@ -2,9 +2,9 @@
 //! This kind of state does not include UI details and basically all about
 //! persistence required by backend.
 
-use std::{collections::BTreeMap, fs};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::{collections::BTreeMap, fs};
 
 use bincode::{Decode, Encode};
 use dpp::{
@@ -106,11 +106,15 @@ impl Default for AppState {
         let (drive, protocol_version) =
             Drive::open("explorer.drive", None).expect("expected to open Drive successfully");
 
-        if drive.grove.is_empty_tree(drive::grovedb_path::SubtreePath::empty(), None).unwrap().expect("expected to find id this is an empty db") {
+        if drive
+            .grove
+            .is_empty_tree(drive::grovedb_path::SubtreePath::empty(), None)
+            .unwrap()
+            .expect("expected to find id this is an empty db")
+        {
             drive
                 .create_initial_state_structure(None, platform_version)
                 .expect("expected to create root tree successfully");
-
         }
 
         AppState {
@@ -418,7 +422,9 @@ impl AppState {
             PlatformVersion::get(CURRENT_PROTOCOL_VERSION).unwrap(),
         ) else {
             let start = SystemTime::now();
-            let since_the_epoch = start.duration_since(UNIX_EPOCH).expect("Time went backwards");
+            let since_the_epoch = start
+                .duration_since(UNIX_EPOCH)
+                .expect("Time went backwards");
             let timestamp = since_the_epoch.as_secs();
 
             let backup_path_str = format!("{}.{}.backup", path.display(), timestamp);
@@ -453,7 +459,10 @@ impl AppState {
         }
 
         if let Some(wallet) = app_state.loaded_wallet.lock().await.as_mut() {
-            wallet.reload_utxos(insight).await.expect("expected to reload utxos");
+            wallet
+                .reload_utxos(insight)
+                .await
+                .expect("expected to reload utxos");
         }
 
         app_state

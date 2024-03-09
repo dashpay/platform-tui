@@ -8,7 +8,7 @@ use crate::{
 };
 
 pub(super) struct StrategyStartIdentitiesFormController {
-    input: ComposedInput<(Field<SelectInput<u16>>, Field<SelectInput<u32>>)>,
+    input: ComposedInput<(Field<SelectInput<u8>>, Field<SelectInput<u8>>)>,
     selected_strategy: String,
 }
 
@@ -33,13 +33,13 @@ impl StrategyStartIdentitiesFormController {
 impl FormController for StrategyStartIdentitiesFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
         match self.input.on_event(event) {
-            InputStatus::Done((count, key_count)) => FormStatus::Done {
+            InputStatus::Done((count, keys_count)) => FormStatus::Done {
                 task: Task::Strategy(StrategyTask::SetStartIdentities {
                     strategy_name: self.selected_strategy.clone(),
                     count,
-                    key_count,
+                    keys_count,
                 }),
-                block: true,
+                block: false,
             },
             status => status.into(),
         }
