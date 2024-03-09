@@ -12,7 +12,7 @@ use super::{as_toml, state::KnownContractsMap, AppStateUpdate, BackendEvent, Tas
 pub(crate) enum ContractTask {
     FetchDashpayContract,
     FetchDPNSContract,
-    ClearKnownContracts,
+    RemoveContract(String),
 }
 
 const DASHPAY_CONTRACT_NAME: &str = "dashpay";
@@ -73,12 +73,12 @@ pub(super) async fn run_contract_task<'s>(
                 },
             }
         }
-        ContractTask::ClearKnownContracts => {
+        ContractTask::RemoveContract(ref contract_name) => {
             let mut contracts_lock = known_contracts.lock().await;
-            contracts_lock.clear();
+            contracts_lock.remove(contract_name);
             BackendEvent::TaskCompletedStateChange {
                 task: Task::Contract(task),
-                execution_result: Ok("Known contracts cleared".into()),
+                execution_result: Ok("Contract removed".into()),
                 app_state_update: AppStateUpdate::KnownContracts(contracts_lock),
             }
         }

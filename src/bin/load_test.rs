@@ -9,6 +9,7 @@ use std::{
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
+use std::thread::sleep;
 
 use clap::Parser;
 use dpp::{
@@ -35,6 +36,8 @@ use dpp::{
     },
     version::PlatformVersion,
 };
+use dpp::prelude::IdentityNonce;
+use dpp::state_transition::StateTransition;
 use futures::future::join_all;
 use governor::{Quota, RateLimiter};
 use rand::{rngs::StdRng, Rng, SeedableRng};
@@ -47,13 +50,10 @@ use rs_platform_explorer::{
     config::Config,
 };
 use rs_sdk::platform::transition::broadcast::BroadcastStateTransition;
-use rs_sdk::{
-    platform::{
-        transition::{put_document::PutDocument, put_settings::PutSettings},
-        Fetch, Identifier,
-    },
-    Sdk, SdkBuilder,
-};
+use rs_sdk::{Error, platform::{
+    transition::{put_document::PutDocument, put_settings::PutSettings},
+    Fetch, Identifier,
+}, Sdk, SdkBuilder};
 use simple_signer::signer::SimpleSigner;
 use tokio::{sync::Semaphore, time::Instant};
 use tokio_util::sync::CancellationToken;
@@ -87,6 +87,26 @@ struct Args {
         default_value = "1"
     )]
     contracts: u32,
+
+    #[arg(
+    long,
+    help = "The start nonce of identity contracts"
+    )]
+    start_nonce: Option<u64>,
+
+    #[arg(
+    long,
+    help = "How many contracts we want to push per block",
+    default_value = "6"
+    )]
+    contract_push_speed: u32,
+
+    #[arg(
+    long,
+    help = "How much we want to refill our wallet with in Dash if the balance is below this",
+    default_value = "15"
+    )]
+    refill_amount: u64,
 }
 
 #[tokio::main]
@@ -184,14 +204,25 @@ async fn main() {
 
         let balance = backend
             .state()
-            .loaded_wallet
+            .loaded_identity
             .lock()
             .await
             .as_ref()
             .unwrap()
             .balance();
 
-        tracing::info!("Wallet is initialized with {} Dash", balance / 100000000);
+        tracing::info!("Credits in platform wallet have {} Dash", balance / 100000000000);
+
+        if balance < args.refill_amount * 100000000000 {
+            tracing::info!("Credits too low, adding {} more", args.refill_amount);
+            let dash = args.refill_amount;
+            let amount = dash * 100000000; // Dash
+            let event = backend
+                .run_task(Task::Identity(IdentityTask::TopUpIdentity(amount)))
+                .await;
+            tracing::info!("top up result: {:?}", event);
+        }
+
     }
 
     let mut credits_balance = backend
@@ -203,24 +234,6 @@ async fn main() {
         .unwrap()
         .balance();
 
-    if credits_balance < 15 * 100000000000 {
-        tracing::info!("Credits too low {}, adding more", credits_balance);
-        let dash = 15;
-        let amount = dash * 100000000; // Dash
-        let event = backend
-            .run_task(Task::Identity(IdentityTask::TopUpIdentity(amount)))
-            .await;
-        tracing::info!("top up result: {:?}", event);
-
-        credits_balance = backend
-            .state()
-            .loaded_identity
-            .lock()
-            .await
-            .as_ref()
-            .unwrap()
-            .balance();
-    }
 
     tracing::info!("Identity is initialized with {} credits", credits_balance);
 
@@ -267,7 +280,8 @@ async fn main() {
         arc_signer.clone(),
         &data_contract,
         contract_count,
-        9875, //let's use the same seed so we don't need to reregister contracts
+        args.start_nonce,
+        args.contract_push_speed,
     )
     .await
     .into_iter()
@@ -298,16 +312,58 @@ async fn broadcast_contract_variants(
     signer: Arc<SimpleSigner>,
     data_contract: &DataContract,
     count: u32,
-    _seed: u64,
+    start_nonce: Option<IdentityNonce>,
+    contract_push_speed: u32,
 ) -> Vec<DataContract> {
-    let identity_nonce = sdk.get_identity_nonce(identity.id(), true, None)
+
+    let mut found_data_contracts = vec![];
+
+    let mut count_left = count;
+
+    let mut identity_nonce = sdk.get_identity_nonce(identity.id(), false, None)
         .await
         .expect("Couldn't get identity nonce");
 
-    tracing::info!("registering data contracts");
-    let data_contract_variants = (0..count)
+    if let Some(start_nonce) = start_nonce {
+        for nonce in start_nonce..=identity_nonce as u64 {
+            let id = DataContract::generate_data_contract_id_v0(identity.id(), nonce);
+            let maybe_contract = DataContract::fetch(
+                &sdk,
+                id,
+            )
+                .await;
+
+            match maybe_contract {
+                Ok(Some(contract)) => {
+                    tracing::info!("data contract with id {} for nonce {} provably exists", id, nonce);
+                    found_data_contracts.push(contract);
+                    count_left -= 1;
+                }
+                Ok(None) => {
+                    tracing::info!("data contract with id {} for nonce {} provably does not exist, skipping", id, nonce);
+                }
+                Err(e) => {
+                    tracing::info!("ERROR!!!: getting data contract with id {} for nonce {} generated an error {:?}, skipping", id, nonce, e);
+                }
+            }
+            
+            if count_left == 0 {
+                break;
+            }
+        }
+    };
+
+    if count_left > 0 {
+        tracing::info!("we still need to register {} contracts", count_left);
+    } else {
+        return found_data_contracts;
+    }
+
+    tracing::info!("registering data contracts, starting with nonce {}", identity_nonce + 1);
+    let data_contract_variants = (0..count_left)
         .into_iter()
         .map(|_| {
+            identity_nonce += 1;
             let new_id = DataContract::generate_data_contract_id_v0(identity.id(), identity_nonce);
 
             let mut data_contract_variant = data_contract.clone();
@@ -369,24 +425,62 @@ async fn broadcast_contract_variants(
     }
 
     for (i, transaction) in transitions_queue.iter().enumerate() {
-        tracing::info!("registering contract {}", i);
-        if i % 24 == 0 {
-            transaction
+        let StateTransition::DataContractCreate(DataContractCreateTransition::V0(v0)) = &transaction else {
+            panic!("must be a data contract create transition")
+        };
+        let id = v0.data_contract.id();
+        tracing::info!("registering contract {} with id {}", i, id);
+        if i % contract_push_speed as usize == 0 || i > (count - count % contract_push_speed) as usize {
+            match transaction
                 .broadcast_and_wait(&sdk, None)
-                .await
-                .expect("expected to register contract");
+                .await {
+                Ok(_) => {}
+                Err(e) => {
+                    tracing::info!("Experienced a failure {:?} broadcasting a contract while waiting for the response", e);
+                    sleep(Duration::from_secs(10));
+                    let contract_exists = DataContract::fetch(
+                        &sdk,
+                        id,
+                    )
+                        .await
+                        .expect("expected to get data contract")
+                        .is_some();
+                    if contract_exists {
+                        tracing::info!("contract proved to exist after 10 seconds");
+                    } else {
+                        tracing::info!("contract proved to not exist after 10 seconds");
+                    }
+                }
+            }
         } else {
-            transaction
+            match transaction
                 .broadcast(&sdk)
-                .await
-                .expect("expected to register contract");
+                .await {
+                Ok(_) => {}
+                Err(e) => {
+                    tracing::info!("Experienced a failure {:?} broadcasting a contract without waiting for the response", e);
+                    sleep(Duration::from_secs(10));
+                    let contract_exists = DataContract::fetch(
+                        &sdk,
+                        id,
+                    )
+                        .await
+                        .expect("expected to get data contract")
+                        .is_some();
+                    if contract_exists {
+                        tracing::info!("contract proved to exist after 10 seconds");
+                    } else {
+                        tracing::info!("contract proved to not exist after 10 seconds");
+                    }
+                }
+            }
         }
     }
 
-    data_contract_variants
+    found_data_contracts.extend(data_contract_variants
         .into_iter()
-        .map(|c| c.data_contract_owned())
-        .collect()
+        .map(|c| c.data_contract_owned()));
+    found_data_contracts
 }
 
 async fn broadcast_random_documents_load_test(
