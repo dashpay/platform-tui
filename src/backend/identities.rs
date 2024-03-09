@@ -486,7 +486,7 @@ impl AppState {
         //// Platform steps
 
         match identity
-            .top_up_identity(sdk, asset_lock_proof.clone(), &asset_lock_proof_private_key)
+            .top_up_identity(sdk, asset_lock_proof.clone(), &asset_lock_proof_private_key, None)
             .await
         {
             Ok(updated_identity_balance) => {
@@ -524,7 +524,7 @@ impl AppState {
                     ));
 
                     identity
-                        .top_up_identity(sdk, new_asset_lock_proof.clone(), &new_asset_lock_proof_private_key)
+                        .top_up_identity(sdk, new_asset_lock_proof.clone(), &new_asset_lock_proof_private_key, None)
                         .await?;
                 } else {
                     return Err(rs_sdk::Error::DapiClientError(error_string).into())
@@ -588,7 +588,7 @@ impl AppState {
         //// Platform steps
 
         let updated_identity_balance = identity
-            .withdraw(sdk, new_receive_address, amount, None, signer, None)
+            .withdraw(sdk, new_receive_address, amount, None, None, signer, None)
             .await?;
 
         identity.set_balance(updated_identity_balance);
@@ -764,6 +764,7 @@ async fn add_identity_key<'a>(
         Vec::new(),
         None,
         new_identity_nonce,
+        0,
         &signer,
         &platform_version,
         None,
