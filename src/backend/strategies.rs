@@ -2,7 +2,6 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
-    sync::Arc,
     time::Instant,
 };
 
@@ -48,19 +47,16 @@ use simple_signer::signer::SimpleSigner;
 use strategy_tests::{
     frequency::Frequency,
     operations::{FinalizeBlockOperation, Operation},
-    transitions::create_identities_state_transitions,
     LocalDocumentQuery, Strategy, StrategyConfig,
 };
 use tokio::sync::{Mutex, MutexGuard};
 use tracing::{error, info};
 
 use super::{
-    error::Error,
-    insight::{InsightAPIClient, InsightError},
-    state::KnownContractsMap,
-    AppState, AppStateUpdate, BackendEvent, StrategyCompletionResult, Task,
+    error::Error, insight::InsightAPIClient, state::KnownContractsMap, AppState, AppStateUpdate,
+    BackendEvent, StrategyCompletionResult,
 };
-use crate::backend::{wallet::WalletError, Wallet};
+use crate::backend::Wallet;
 
 #[derive(Debug, PartialEq, Clone)]
 pub(crate) enum StrategyTask {
@@ -230,7 +226,7 @@ pub(crate) async fn run_strategy_task<'s>(
                             error: format!("Failed to refresh identity: {:?}", e),
                         };
                     }
-                };    
+                };
                 let identity_nonce = sdk
                     .get_identity_nonce(loaded_identity_lock.id(), true, None)
                     .await
