@@ -18,7 +18,7 @@ use crate::{
 };
 
 pub(super) struct StrategyOpContractCreateFormController {
-    input: ComposedInput<(Field<SelectInput<u16>>, Field<SelectInput<f64>>)>,
+    input: ComposedInput<(Field<SelectInput<u16>>, Field<SelectInput<u16>>, Field<SelectInput<f64>>)>,
     selected_strategy: String,
 }
 
@@ -27,12 +27,16 @@ impl StrategyOpContractCreateFormController {
         StrategyOpContractCreateFormController {
             input: ComposedInput::new((
                 Field::new(
+                    "Number of document types",
+                    SelectInput::new(vec![1, 5, 10, 15, 20, 25, 30, 50, 100]),
+                ),
+                Field::new(
                     "Times per block",
-                    SelectInput::new(vec![1, 2, 5, 10, 20, 40, 100, 1000]),
+                    SelectInput::new(vec![1, 2, 5, 10, 20, 24]),
                 ),
                 Field::new(
                     "Chance per block",
-                    SelectInput::new(vec![1.0, 0.9, 0.75, 0.5, 0.25, 0.1, 0.05, 0.01]),
+                    SelectInput::new(vec![1.0, 0.9, 0.75, 0.5, 0.25, 0.1]),
                 ),
             )),
             selected_strategy,
@@ -42,15 +46,14 @@ impl StrategyOpContractCreateFormController {
 
 impl FormController for StrategyOpContractCreateFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
-        let random_number1 = rand::thread_rng().gen_range(2..=50);
-        let random_number2 = rand::thread_rng().gen_range(2..=50);
+        let random_number1 = rand::thread_rng().gen_range(3..=50);
+        let random_number2 = rand::thread_rng().gen_range(3..=50);
         let random_number3 = rand::thread_rng().gen::<i64>() - 1000000;
 
         let random_doc_type_parameters = RandomDocumentTypeParameters {
             new_fields_optional_count_range: 1..random_number1,
             new_fields_required_count_range: 1..random_number2,
-            new_indexes_count_range: 1..rand::thread_rng()
-                .gen_range(1..=(min(random_number1 + random_number2, 10))),
+            new_indexes_count_range: 1..rand::thread_rng().gen_range(2..=10),
             field_weights: FieldTypeWeights {
                 string_weight: rand::thread_rng().gen_range(1..=100),
                 float_weight: rand::thread_rng().gen_range(1..=100),
@@ -84,13 +87,13 @@ impl FormController for StrategyOpContractCreateFormController {
         };
 
         match self.input.on_event(event) {
-            InputStatus::Done((times_per_block, chance_per_block)) => FormStatus::Done {
+            InputStatus::Done((num_document_types, times_per_block, chance_per_block)) => FormStatus::Done {
                 task: Task::Strategy(StrategyTask::AddOperation {
                     strategy_name: self.selected_strategy.clone(),
                     operation: Operation {
                         op_type: OperationType::ContractCreate(
                             random_doc_type_parameters,
-                            1..rand::thread_rng().gen_range(1..=u16::MAX),
+                            1..num_document_types+1,
                         ),
                         frequency: Frequency {
                             times_per_block_range: 1..times_per_block + 1,
@@ -121,6 +124,6 @@ impl FormController for StrategyOpContractCreateFormController {
     }
 
     fn steps_number(&self) -> u8 {
-        2
+        3
     }
 }

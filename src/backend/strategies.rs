@@ -506,7 +506,14 @@ pub(crate) async fn run_strategy_task<'s>(
 
                 let mut identity_nonce_counter = BTreeMap::new();
                 let current_identity_nonce = sdk
-                    .get_identity_nonce(loaded_identity_clone.id(), false, None)
+                    .get_identity_nonce(
+                        loaded_identity_clone.id(),
+                        false,
+                        Some(rs_sdk::platform::transition::put_settings::PutSettings {
+                            request_settings: RequestSettings::default(),
+                            identity_nonce_stale_time_s: Some(0),
+                            user_fee_increase: None,
+                        }))
                     .await
                     .expect("Couldn't get current identity nonce");
                 identity_nonce_counter.insert(loaded_identity_clone.id(), current_identity_nonce);
@@ -517,7 +524,11 @@ pub(crate) async fn run_strategy_task<'s>(
                             loaded_identity_clone.id(),
                             used_contract_id,
                             false,
-                            None,
+                            Some(rs_sdk::platform::transition::put_settings::PutSettings {
+                                request_settings: RequestSettings::default(),
+                                identity_nonce_stale_time_s: Some(0),
+                                user_fee_increase: None,
+                            })
                         )
                         .await
                         .expect("Couldn't get current identity contract nonce");
@@ -686,9 +697,7 @@ pub(crate) async fn run_strategy_task<'s>(
                     let mut known_contracts_lock = app_state.known_contracts.lock().await;
 
                     // Log if you are creating start_identities, because the asset lock proofs may take a while
-                    if current_block_info.height == initial_block_info.height
-                        && strategy.start_identities.0 > 0
-                    {
+                    if current_block_info.height == initial_block_info.height && strategy.start_identities.0 > 0 {
                         info!(
                             "Creating {} asset lock proofs for start identities",
                             strategy.start_identities.0
@@ -783,6 +792,9 @@ pub(crate) async fn run_strategy_task<'s>(
                             let transition_clone = transition.clone();
                             transition_type = transition_clone.name().to_owned();
 
+                            // Dependent state transitions are those that get their revision checked. Sending multiple
+                            // in the same block causes errors because they get sent to different nodes and become disordered.
+                            // So we sleep for 1 second for dependent transitions so that they only go 1 per block.
                             let is_dependent_transition = matches!(
                                 transition_clone,
                                 StateTransition::IdentityUpdate(_)
