@@ -17,12 +17,7 @@ use tracing::error;
 use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
 use self::{
-    contract_update_doc_types::StrategyOpContractUpdateDocTypesFormController,
-    document::StrategyOpDocumentFormController,
-    identity_top_up::StrategyOpIdentityTopUpFormController,
-    identity_transfer::StrategyOpIdentityTransferFormController,
-    identity_update::StrategyOpIdentityUpdateFormController,
-    identity_withdrawal::StrategyOpIdentityWithdrawalFormController,
+    contract_create::StrategyOpContractCreateFormController, contract_update_doc_types::StrategyOpContractUpdateDocTypesFormController, document::StrategyOpDocumentFormController, identity_top_up::StrategyOpIdentityTopUpFormController, identity_transfer::StrategyOpIdentityTransferFormController, identity_update::StrategyOpIdentityUpdateFormController, identity_withdrawal::StrategyOpIdentityWithdrawalFormController
 };
 use crate::ui::form::{FormController, FormStatus, Input, InputStatus, SelectInput};
 
@@ -34,7 +29,7 @@ enum OperationType {
     IdentityDisableKeys,
     IdentityWithdrawal,
     IdentityTransfer,
-    // ContractCreateRandom,
+    ContractCreateRandom,
     ContractUpdateDocTypesRandom,
     // ContractUpdateFieldsRandom,
 }
@@ -44,12 +39,14 @@ pub(super) struct StrategyAddOperationFormController {
     op_specific_form: Option<Box<dyn FormController>>,
     strategy_name: String,
     known_contracts: BTreeMap<String, DataContract>,
+    supporting_contracts: BTreeMap<String, DataContract>,
 }
 
 impl StrategyAddOperationFormController {
     pub(super) fn new(
         strategy_name: String,
         known_contracts: BTreeMap<String, DataContract>,
+        supporting_contracts: BTreeMap<String, DataContract>,
     ) -> Self {
         let operation_types = vec![
             "Document".to_string(),
@@ -67,6 +64,7 @@ impl StrategyAddOperationFormController {
             op_specific_form: None,
             strategy_name,
             known_contracts,
+            supporting_contracts,
         }
     }
 
@@ -75,6 +73,7 @@ impl StrategyAddOperationFormController {
             OperationType::Document => Box::new(StrategyOpDocumentFormController::new(
                 self.strategy_name.clone(),
                 self.known_contracts.clone(),
+                self.supporting_contracts.clone(),
             )),
             OperationType::IdentityTopUp => Box::new(StrategyOpIdentityTopUpFormController::new(
                 self.strategy_name.clone(),
@@ -97,9 +96,9 @@ impl StrategyAddOperationFormController {
             OperationType::IdentityTransfer => Box::new(
                 StrategyOpIdentityTransferFormController::new(self.strategy_name.clone()),
             ),
-            // OperationType::ContractCreateRandom => Box::new(
-            //     StrategyOpContractCreateFormController::new(self.strategy_name.clone()),
-            // ),
+            OperationType::ContractCreateRandom => Box::new(
+                StrategyOpContractCreateFormController::new(self.strategy_name.clone()),
+            ),
             OperationType::ContractUpdateDocTypesRandom => {
                 Box::new(StrategyOpContractUpdateDocTypesFormController::new(
                     self.strategy_name.clone(),

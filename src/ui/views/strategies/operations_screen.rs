@@ -154,6 +154,7 @@ impl ScreenController for OperationsScreenController {
                     ScreenFeedback::Form(Box::new(StrategyAddOperationFormController::new(
                         strategy_name.clone(),
                         self.known_contracts.clone(),
+                        self.supporting_contracts.clone(),
                     )))
                 } else {
                     ScreenFeedback::None

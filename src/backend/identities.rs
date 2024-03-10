@@ -1,6 +1,6 @@
 //! Identities backend logic.
 
-use std::{cmp, collections::BTreeMap, time::Duration};
+use std::{collections::BTreeMap, time::Duration};
 
 use dapi_grpc::{
     core::v0::{
@@ -13,7 +13,7 @@ use dapi_grpc::{
     },
 };
 use dpp::{
-    dashcore::{psbt::serialize::Serialize, Address, Network, PrivateKey, Transaction},
+    dashcore::{psbt::serialize::Serialize, Address, PrivateKey, Transaction},
     identity::{
         accessors::{IdentityGettersV0, IdentitySettersV0},
         identity_public_key::{accessors::v0::IdentityPublicKeyGettersV0, v0::IdentityPublicKeyV0},
@@ -27,7 +27,6 @@ use dpp::{
         },
         proof_result::StateTransitionProofResult,
         public_key_in_creation::v0::IdentityPublicKeyInCreationV0,
-        StateTransition,
     },
     version::PlatformVersion,
 };
@@ -45,13 +44,11 @@ use rs_sdk::{
 };
 use simple_signer::signer::SimpleSigner;
 use tokio::sync::{MappedMutexGuard, MutexGuard};
-use tracing::info;
 
 use super::{
     insight::InsightError, state::IdentityPrivateKeysMap, wallet::WalletError, AppStateUpdate,
     CompletedTaskPayload, Wallet,
 };
-use crate::backend::error::Error::SdkError;
 use crate::backend::{error::Error, stringify_result_keep_item, AppState, BackendEvent, Task};
 
 pub(super) async fn fetch_identity_by_b58_id(
@@ -486,7 +483,7 @@ impl AppState {
         //// Platform steps
 
         match identity
-            .top_up_identity(sdk, asset_lock_proof.clone(), &asset_lock_proof_private_key)
+            .top_up_identity(sdk, asset_lock_proof.clone(), &asset_lock_proof_private_key, None)
             .await
         {
             Ok(updated_identity_balance) => {
@@ -524,7 +521,7 @@ impl AppState {
                     ));
 
                     identity
-                        .top_up_identity(sdk, new_asset_lock_proof.clone(), &new_asset_lock_proof_private_key)
+                        .top_up_identity(sdk, new_asset_lock_proof.clone(), &new_asset_lock_proof_private_key, None)
                         .await?;
                 } else {
                     return Err(rs_sdk::Error::DapiClientError(error_string).into())
@@ -588,7 +585,7 @@ impl AppState {
         //// Platform steps
 
         let updated_identity_balance = identity
-            .withdraw(sdk, new_receive_address, amount, None, signer, None)
+            .withdraw(sdk, new_receive_address, amount, None, None, signer, None)
             .await?;
 
         identity.set_balance(updated_identity_balance);
@@ -764,6 +761,7 @@ async fn add_identity_key<'a>(
         Vec::new(),
         None,
         new_identity_nonce,
+        0,
         &signer,
         &platform_version,
         None,
