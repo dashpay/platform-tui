@@ -2,7 +2,6 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
-    sync::Arc,
     time::Instant,
 };
 
@@ -44,19 +43,16 @@ use simple_signer::signer::SimpleSigner;
 use strategy_tests::{
     frequency::Frequency,
     operations::{FinalizeBlockOperation, Operation},
-    transitions::create_identities_state_transitions,
     LocalDocumentQuery, Strategy, StrategyConfig,
 };
 use tokio::sync::{Mutex, MutexGuard};
 use tracing::{error, info};
 
 use super::{
-    error::Error,
-    insight::{InsightAPIClient, InsightError},
-    state::KnownContractsMap,
-    AppState, AppStateUpdate, BackendEvent, StrategyCompletionResult, Task,
+    error::Error, insight::InsightAPIClient, state::KnownContractsMap, AppState, AppStateUpdate,
+    BackendEvent, StrategyCompletionResult,
 };
-use crate::backend::{wallet::WalletError, Wallet};
+use crate::backend::Wallet;
 
 #[derive(Debug, PartialEq, Clone)]
 pub(crate) enum StrategyTask {
@@ -71,8 +67,8 @@ pub(crate) enum StrategyTask {
     },
     SetStartIdentities {
         strategy_name: String,
-        count: u16,
-        key_count: u32,
+        count: u8,
+        keys_count: u8,
     },
     AddOperation {
         strategy_name: String,
@@ -226,7 +222,7 @@ pub(crate) async fn run_strategy_task<'s>(
                             error: format!("Failed to refresh identity: {:?}", e),
                         };
                     }
-                };    
+                };
                 let identity_nonce = sdk
                     .get_identity_nonce(loaded_identity_lock.id(), true, None)
                     .await
@@ -358,74 +354,23 @@ pub(crate) async fn run_strategy_task<'s>(
             }
         }
         StrategyTask::SetStartIdentities {
-            ref strategy_name,
+            strategy_name,
             count,
-            key_count,
+            keys_count,
         } => {
             let mut strategies_lock = app_state.available_strategies.lock().await;
-            let loaded_identity_lock = app_state.loaded_identity.lock().await;
-            let identity_private_keys_lock = app_state.identity_private_keys.lock().await;
-
-            if let Some(strategy) = strategies_lock.get_mut(strategy_name) {
-                // Ensure a signer is present, creating a new one if necessary
-                let signer = if let Some(signer) = strategy.signer.as_mut() {
-                    // Use the existing signer
-                    signer
-                } else {
-                    // Create a new signer from loaded_identity if one doesn't exist, else default
-                    let new_signer = if let Some(loaded_identity) = &*loaded_identity_lock {
-                        let mut signer = SimpleSigner::default();
-                        match loaded_identity {
-                            Identity::V0(identity_v0) => {
-                                for (key_id, public_key) in &identity_v0.public_keys {
-                                    let identity_key_tuple = (identity_v0.id, *key_id);
-                                    if let Some(private_key_bytes) =
-                                        identity_private_keys_lock.get(&identity_key_tuple)
-                                    {
-                                        signer
-                                            .private_keys
-                                            .insert(public_key.clone(), private_key_bytes.clone());
-                                    }
-                                }
-                            }
-                        }
-                        signer
-                    } else {
-                        SimpleSigner::default()
-                    };
-                    strategy.signer = Some(new_signer);
-                    strategy.signer.as_mut().unwrap()
-                };
-
-                match set_start_identities(count, key_count, signer, app_state, &sdk, insight).await
-                {
-                    Ok(identities_and_transitions) => {
-                        strategy.start_identities = identities_and_transitions;
-                        BackendEvent::TaskCompletedStateChange {
-                            task: Task::Strategy(task.clone()),
-                            execution_result: Ok("Start identities set".into()),
-                            app_state_update: AppStateUpdate::SelectedStrategy(
-                                strategy_name.to_string(),
-                                MutexGuard::map(strategies_lock, |strategies| {
-                                    strategies.get_mut(strategy_name).expect("strategy exists")
-                                }),
-                                MutexGuard::map(
-                                    app_state.available_strategies_contract_names.lock().await,
-                                    |names| {
-                                        names.get_mut(strategy_name).expect("inconsistent data")
-                                    },
-                                ),
-                            ),
-                        }
-                    }
-                    Err(e) => {
-                        error!("Error setting start identities: {:?}", e);
-                        BackendEvent::StrategyError {
-                            strategy_name: strategy_name.clone(),
-                            error: format!("Error setting start identities: {}", e),
-                        }
-                    }
-                }
+            if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
+                strategy.start_identities = (count, keys_count);
+                BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
+                    strategy_name.clone(),
+                    MutexGuard::map(strategies_lock, |strategies| {
+                        strategies.get_mut(&strategy_name).expect("strategy exists")
+                    }),
+                    MutexGuard::map(
+                        app_state.available_strategies_contract_names.lock().await,
+                        |names| names.get_mut(&strategy_name).expect("inconsistent data"),
+                    ),
+                ))
             } else {
                 BackendEvent::None
             }
@@ -560,7 +505,14 @@ pub(crate) async fn run_strategy_task<'s>(
 
                 let mut identity_nonce_counter = BTreeMap::new();
                 let current_identity_nonce = sdk
-                    .get_identity_nonce(loaded_identity_clone.id(), false, None)
+                    .get_identity_nonce(
+                        loaded_identity_clone.id(),
+                        false,
+                        Some(rs_sdk::platform::transition::put_settings::PutSettings {
+                            request_settings: RequestSettings::default(),
+                            identity_nonce_stale_time_s: Some(0),
+                            user_fee_increase: None,
+                        }))
                     .await
                     .expect("Couldn't get current identity nonce");
                 identity_nonce_counter.insert(loaded_identity_clone.id(), current_identity_nonce);
@@ -571,7 +523,11 @@ pub(crate) async fn run_strategy_task<'s>(
                             loaded_identity_clone.id(),
                             used_contract_id,
                             false,
-                            None,
+                            Some(rs_sdk::platform::transition::put_settings::PutSettings {
+                                request_settings: RequestSettings::default(),
+                                identity_nonce_stale_time_s: Some(0),
+                                user_fee_increase: None,
+                            })
                         )
                         .await
                         .expect("Couldn't get current identity contract nonce");
@@ -739,6 +695,14 @@ pub(crate) async fn run_strategy_task<'s>(
 
                     let mut known_contracts_lock = app_state.known_contracts.lock().await;
 
+                    // Log if you are creating start_identities, because the asset lock proofs may take a while
+                    if current_block_info.height == initial_block_info.height && strategy.start_identities.0 > 0 {
+                        info!(
+                            "Creating {} asset lock proofs for start identities",
+                            strategy.start_identities.0
+                        );
+                    }
+
                     // Call the function to get STs for block
                     let (transitions, finalize_operations) = strategy
                         .state_transitions_for_block_with_new_identities(
@@ -826,6 +790,9 @@ pub(crate) async fn run_strategy_task<'s>(
                             let transition_clone = transition.clone();
                             let transition_type = transition_clone.name().to_owned();
 
+                            // Dependent state transitions are those that get their revision checked. Sending multiple
+                            // in the same block causes errors because they get sent to different nodes and become disordered.
+                            // So we sleep for 1 second for dependent transitions so that they only go 1 per block.
                             let is_dependent_transition = matches!(
                                 transition_clone,
                                 StateTransition::IdentityUpdate(_)
@@ -1119,12 +1086,7 @@ pub(crate) async fn run_strategy_task<'s>(
                     current_block_info.time_ms += 1 * 1000; // plus 1 second
                 }
 
-                // Clear start_identities since they have now been registered, if any
-                if !strategy.start_identities.is_empty() {
-                    strategy.start_identities = Vec::new();
-                    info!("Strategy start_identities field cleared");
-                }
-
+                info!("-----Strategy '{}' finished running-----", strategy_name);
                 let run_time = run_start_time.elapsed();
 
                 // Refresh the identity at the end
@@ -1238,7 +1200,7 @@ pub(crate) async fn run_strategy_task<'s>(
         StrategyTask::RemoveStartIdentities(strategy_name) => {
             let mut strategies_lock = app_state.available_strategies.lock().await;
             if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
-                strategy.start_identities = vec![];
+                strategy.start_identities = (0, 0);
                 BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
                     strategy_name.clone(),
                     MutexGuard::map(strategies_lock, |strategies| {
@@ -1272,133 +1234,6 @@ pub(crate) async fn run_strategy_task<'s>(
             }
         }
     }
-}
-
-async fn set_start_identities(
-    count: u16,
-    key_count: u32,
-    signer: &mut SimpleSigner,
-    app_state: &AppState,
-    sdk: &Sdk,
-    insight: &InsightAPIClient,
-) -> Result<Vec<(Identity, StateTransition)>, Error> {
-    // Lock the loaded wallet.
-    let mut loaded_wallet = app_state.loaded_wallet.lock().await;
-
-    // Refresh UTXOs for the loaded wallet
-    if let Some(ref mut wallet) = *loaded_wallet {
-        let _ = wallet.reload_utxos(insight).await;
-    }
-
-    // Clone wallet state
-    let wallet_clone = loaded_wallet.clone().ok_or_else(|| {
-        Error::WalletError(super::wallet::WalletError::Insight(InsightError(
-            "No wallet loaded".to_string(),
-        )))
-    })?;
-
-    // Create a reference-counted, thread-safe clone of the wallet for the asset
-    // lock callback.
-    let wallet_ref = Arc::new(Mutex::new(wallet_clone));
-
-    // Define the asset lock callback.
-    let mut create_asset_lock = move |amount: u64| -> Option<(AssetLockProof, PrivateKey)> {
-        let wallet_clone = wallet_ref.clone();
-
-        // Use block_in_place to execute the async code synchronously.
-        tokio::task::block_in_place(|| {
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            rt.block_on(async move {
-                let mut wallet = wallet_clone.lock().await;
-
-                // Initialize old_utxos
-                let old_utxos = match &*wallet {
-                    Wallet::SingleKeyWallet(wallet) => wallet.utxos.clone(),
-                };
-
-                match wallet.asset_lock_transaction(None, amount) {
-                    Ok((asset_lock_transaction, asset_lock_proof_private_key)) => {
-                        match AppState::broadcast_and_retrieve_asset_lock(
-                            sdk,
-                            &asset_lock_transaction,
-                            &wallet.receive_address(),
-                        )
-                        .await
-                        {
-                            Ok(proof) => {
-                                // Implement retry logic for reloading UTXOs
-                                let max_retries = 5;
-                                let mut retries = 0;
-                                let mut found_new_utxos = false;
-
-                                while retries < max_retries {
-                                    let _ = wallet.reload_utxos(insight).await;
-
-                                    let current_utxos = match &*wallet {
-                                        Wallet::SingleKeyWallet(wallet) => &wallet.utxos,
-                                    };
-                                    if current_utxos != &old_utxos && !current_utxos.is_empty() {
-                                        found_new_utxos = true;
-                                        break;
-                                    } else {
-                                        retries += 1;
-                                        tokio::time::sleep(tokio::time::Duration::from_secs(10))
-                                            .await;
-                                    }
-                                }
-
-                                if !found_new_utxos {
-                                    error!("Failed to find new UTXOs after maximum retries");
-                                    None
-                                } else {
-                                    Some((proof, asset_lock_proof_private_key))
-                                }
-                            }
-                            Err(e) => {
-                                error!("Error during asset lock transaction: {:?}", e);
-                                None
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        error!("Error initiating asset lock transaction: {:?}", e);
-                        match e {
-                            WalletError::Balance => {
-                                error!("Insufficient balance for asset lock transaction.");
-                            }
-                            _ => error!("Other wallet error occurred."),
-                        }
-                        None
-                    }
-                }
-            })
-        })
-    };
-
-    // Create identities and state transitions.
-    let identities_and_transitions_result = create_identities_state_transitions(
-        count,
-        key_count,
-        signer,
-        &mut StdRng::from_entropy(),
-        &mut create_asset_lock,
-        PlatformVersion::latest(),
-    );
-
-    drop(loaded_wallet);
-
-    // Check and reload UTXOs after the asset lock transactions, if successful.
-    if identities_and_transitions_result.is_ok() {
-        let mut loaded_wallet = app_state.loaded_wallet.lock().await;
-        if let Some(ref mut wallet) = *loaded_wallet {
-            if let Err(e) = reload_wallet_utxos(wallet, insight).await {
-                error!("Error reloading wallet UTXOs after asset lock: {:?}", e);
-                return Err(e);
-            }
-        }
-    }
-
-    Ok(identities_and_transitions_result?)
 }
 
 async fn reload_wallet_utxos(wallet: &mut Wallet, insight: &InsightAPIClient) -> Result<(), Error> {
@@ -1467,32 +1302,3 @@ pub async fn update_known_contracts(
 
     Ok(())
 }
-
-// // Function to fetch current blockchain height
-// async fn fetch_current_blockchain_height(sdk: &Sdk) -> Result<u64, String> {
-//     let request = GetEpochsInfoRequest {
-//         version: Some(get_epochs_info_request::Version::V0(
-//             get_epochs_info_request::GetEpochsInfoRequestV0 {
-//                 start_epoch: None,
-//                 count: 1,
-//                 ascending: false,
-//                 prove: false,
-//             },
-//         )),
-//     };
-
-//     match sdk.execute(request, RequestSettings::default()).await {
-//         Ok(response) => {
-//             if let Some(get_epochs_info_response::Version::V0(response_v0)) =
-// response.version {                 if let Some(metadata) =
-// response_v0.metadata {                     Ok(metadata.height)
-//                 } else {
-//                     Err("Failed to get blockchain height: No metadata
-// available".to_string())                 }
-//             } else {
-//                 Err("Failed to get blockchain height: Incorrect response
-// format".to_string())             }
-//         },
-//         Err(e) => Err(format!("Failed to get blockchain height: {:?}", e)),
-//     }
-// }

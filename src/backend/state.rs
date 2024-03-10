@@ -2,6 +2,8 @@
 //! This kind of state does not include UI details and basically all about
 //! persistence required by backend.
 
+use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
 use std::{collections::BTreeMap, fs};
 
 use bincode::{Decode, Encode};
@@ -21,7 +23,7 @@ use dpp::{
     version::PlatformVersion,
     ProtocolError::{self, PlatformDeserializationError, PlatformSerializationError},
 };
-use drive::drive::Drive;
+use drive::drive::{Drive, RootTree};
 use strategy_tests::Strategy;
 use tokio::sync::Mutex;
 use walkdir::{DirEntry, WalkDir};
@@ -104,9 +106,16 @@ impl Default for AppState {
         let (drive, protocol_version) =
             Drive::open("explorer.drive", None).expect("expected to open Drive successfully");
 
-        drive
-            .create_initial_state_structure(None, platform_version)
-            .expect("expected to create root tree successfully");
+        if drive
+            .grove
+            .is_empty_tree(drive::grovedb_path::SubtreePath::empty(), None)
+            .unwrap()
+            .expect("expected to find id this is an empty db")
+        {
+            drive
+                .create_initial_state_structure(None, platform_version)
+                .expect("expected to create root tree successfully");
+        }
 
         AppState {
             loaded_identity: None.into(),
@@ -403,7 +412,7 @@ impl AppState {
     pub async fn load(insight: &InsightAPIClient, config: &Config) -> AppState {
         let path = config.state_file_path();
 
-        let Ok(read_result) = fs::read(path) else {
+        let Ok(read_result) = fs::read(path.clone()) else {
             return AppState::default();
         };
 
@@ -412,6 +421,19 @@ impl AppState {
             false,
             PlatformVersion::get(CURRENT_PROTOCOL_VERSION).unwrap(),
         ) else {
+            let start = SystemTime::now();
+            let since_the_epoch = start
+                .duration_since(UNIX_EPOCH)
+                .expect("Time went backwards");
+            let timestamp = since_the_epoch.as_secs();
+
+            let backup_path_str = format!("{}.{}.backup", path.display(), timestamp);
+            let backup_path = PathBuf::from(backup_path_str);
+
+            if let Err(e) = fs::rename(path, &backup_path) {
+                eprintln!("Failed to backup old file: {}", e);
+            }
+
             return AppState::default();
         };
 
@@ -437,7 +459,10 @@ impl AppState {
         }
 
         if let Some(wallet) = app_state.loaded_wallet.lock().await.as_mut() {
-            wallet.reload_utxos(insight).await;
+            wallet
+                .reload_utxos(insight)
+                .await
+                .expect("expected to reload utxos");
         }
 
         app_state

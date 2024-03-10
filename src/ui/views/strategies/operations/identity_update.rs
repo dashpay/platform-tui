@@ -14,7 +14,7 @@ use crate::{
 pub(super) struct StrategyOpIdentityUpdateFormController {
     input: ComposedInput<(
         Field<SelectInput<u16>>,
-        Field<SelectInput<u16>>,
+        // Field<SelectInput<u16>>,
         Field<SelectInput<f64>>,
     )>,
     selected_strategy: String,
@@ -38,13 +38,13 @@ impl StrategyOpIdentityUpdateFormController {
                     count_message,
                     SelectInput::new(vec![1, 2, 5, 10, 20, 40, 100, 1000]),
                 ),
-                Field::new(
-                    "Times per block",
-                    SelectInput::new(vec![1, 2, 5, 10, 20, 40, 100, 1000]),
-                ),
+                // Field::new(
+                //     "Times per block",
+                //     SelectInput::new(vec![1, 2, 5, 10, 20, 40, 100, 1000]),
+                // ),
                 Field::new(
                     "Chance per block",
-                    SelectInput::new(vec![1.0, 0.9, 0.75, 0.5, 0.25, 0.1, 0.05, 0.01]),
+                    SelectInput::new(vec![1.0, 0.9, 0.75, 0.5, 0.25, 0.1]),
                 ),
             )),
             selected_strategy,
@@ -56,7 +56,7 @@ impl StrategyOpIdentityUpdateFormController {
 impl FormController for StrategyOpIdentityUpdateFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
         match self.input.on_event(event) {
-            InputStatus::Done((count, times_per_block, chance_per_block)) => FormStatus::Done {
+            InputStatus::Done((count, chance_per_block)) => FormStatus::Done {
                 task: Task::Strategy(StrategyTask::AddOperation {
                     strategy_name: self.selected_strategy.clone(),
                     operation: Operation {
@@ -67,7 +67,7 @@ impl FormController for StrategyOpIdentityUpdateFormController {
                             }
                         }),
                         frequency: Frequency {
-                            times_per_block_range: 1..times_per_block + 1,
+                            times_per_block_range: 1..2,
                             chance_per_block: Some(chance_per_block),
                         },
                     },

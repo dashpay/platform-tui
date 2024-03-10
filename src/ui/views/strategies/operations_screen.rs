@@ -105,11 +105,8 @@ impl OperationsScreenController {
             let contract_name = path.file_stem().unwrap().to_str().unwrap().to_string();
 
             if !self.supporting_contracts.contains_key(&contract_name) {
-                if let Ok(contract) =
-                    json_document_to_contract(&path, true, platform_version)
-                {
-                    self.supporting_contracts
-                        .insert(contract_name, contract);
+                if let Ok(contract) = json_document_to_contract(&path, true, platform_version) {
+                    self.supporting_contracts.insert(contract_name, contract);
                 }
             }
         }
@@ -157,6 +154,7 @@ impl ScreenController for OperationsScreenController {
                     ScreenFeedback::Form(Box::new(StrategyAddOperationFormController::new(
                         strategy_name.clone(),
                         self.known_contracts.clone(),
+                        self.supporting_contracts.clone(),
                     )))
                 } else {
                     ScreenFeedback::None
