@@ -1,8 +1,7 @@
 //! Strategies management backend module.
 
 use std::{
-    collections::{BTreeMap, BTreeSet, VecDeque},
-    time::Instant,
+    collections::{BTreeMap, BTreeSet, VecDeque}, fs::File, io::Write, time::Instant
 };
 
 use dapi_grpc::platform::v0::{
@@ -44,14 +43,14 @@ use strategy_tests::{
     frequency::Frequency,
     operations::{FinalizeBlockOperation, Operation},
     LocalDocumentQuery, Strategy, StrategyConfig,
-    deserialize_strategy_from_json
+    deserialize_strategy_from_json, serialize_strategy_to_json
 };
 use tokio::sync::{Mutex, MutexGuard};
 use tracing::{error, info};
 
 use super::{
-    error::Error, insight::InsightAPIClient, state::KnownContractsMap, AppState, AppStateUpdate,
-    BackendEvent, StrategyCompletionResult,
+    error::Error, insight::InsightAPIClient, state::{ContractFileName, KnownContractsMap}, AppState, AppStateUpdate,
+    BackendEvent, StrategyCompletionResult, StrategyContractNames,
 };
 use crate::backend::Wallet;
 
@@ -59,6 +58,7 @@ use crate::backend::Wallet;
 pub(crate) enum StrategyTask {
     CreateStrategy(String),
     ImportStrategy(String),
+    ExportStrategy(String),
     SelectStrategy(String),
     DeleteStrategy(String),
     CloneStrategy(String),
@@ -120,20 +120,41 @@ pub(crate) async fn run_strategy_task<'s>(
                             Ok(json_str) => {
                                 match deserialize_strategy_from_json(&json_str, &platform_version) {
                                     Ok(strategy) => {
-                                        let strategy_name = url.split('/').last().map(|s| s.to_string())
+                                        let strategy_name = url.split('/').last()
+                                            .map(|s| s.rsplit_once('.').map_or(s, |(name, _)| name))
+                                            .map(|s| s.to_string())
                                             .expect("Expected to extract the filename from the imported Strategy file");
-        
+                                                                        
                                         let mut strategies_lock = app_state.available_strategies.lock().await;
-                                        strategies_lock.insert(strategy_name.clone(), strategy);
-                                        let contract_names_lock = app_state.available_strategies_contract_names.lock().await;
-        
+                                        strategies_lock.insert(strategy_name.clone(), strategy.clone());
+
+                                        // We need to add the contracts to available_strategies_contract_names so they can be displayed.
+                                        // In order to do so, we need to convert contracts_with_updates into Base58-encoded IDs
+                                        let mut strategy_contracts_with_updates_in_format: StrategyContractNames = Vec::new();
+                                        for (contract, maybe_updates) in strategy.contracts_with_updates {
+                                            let contract_name = contract.data_contract().id().to_string(Encoding::Base58);
+                                            if let Some(update_map) = maybe_updates {
+                                                let formatted_update_map = update_map.into_iter().map(|(block_number, created_contract)| {
+                                                    let contract_name = created_contract.data_contract().id().to_string(Encoding::Base58);
+                                                    (block_number, contract_name)
+                                                }).collect::<BTreeMap<u64, ContractFileName>>();
+
+                                                strategy_contracts_with_updates_in_format.push((contract_name, Some(formatted_update_map)));
+                                            } else {
+                                                strategy_contracts_with_updates_in_format.push((contract_name, None));
+                                            }
+                                        }
+
+                                        let mut contract_names_lock = app_state.available_strategies_contract_names.lock().await;
+                                        contract_names_lock.insert(strategy_name.clone(), strategy_contracts_with_updates_in_format);
+
                                         BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
                                             strategy_name.clone(),
                                             MutexGuard::map(strategies_lock, |strategies| {
-                                                strategies.get_mut(&strategy_name).expect("strategy exists")
+                                                strategies.get_mut(&strategy_name).expect("Expected to find the strategy in available_strategies")
                                             }),
                                             MutexGuard::map(contract_names_lock, |names| {
-                                                names.get_mut(&strategy_name).expect("inconsistent data")
+                                                names.get_mut(&strategy_name).expect("Expected to find the strategy in available_strategies_contract_names")
                                             }),
                                         ))
                                     },
@@ -155,6 +176,35 @@ pub(crate) async fn run_strategy_task<'s>(
                 },
                 Err(e) => {
                     error!("Failed to fetch strategy: {}", e);
+                    BackendEvent::None
+                }
+            }
+        }
+        StrategyTask::ExportStrategy(ref strategy_name) => {
+            let strategies_lock = app_state.available_strategies.lock().await;
+            let strategy = strategies_lock.get(strategy_name).expect("Strategy name doesn't exist in app_state.available_strategies");
+            let platform_version = PlatformVersion::latest();
+
+            let serialized_json = match serialize_strategy_to_json(&strategy, &platform_version) {
+                Ok(json) => json,
+                Err(e) => {
+                    error!("Failed to serialize strategy: {}", e);
+                    return BackendEvent::None;
+                }
+            };            
+            
+            let file_name = format!("supporting_files/strategy_exports/{}.json", strategy_name);
+            let path = std::path::Path::new(&file_name);
+
+            match File::create(&path) {
+                Ok(mut file) => {
+                    if let Err(e) = file.write_all(serialized_json.as_bytes()) {
+                        error!("Failed to write strategy to file: {}", e);
+                    }
+                    BackendEvent::None
+                },
+                Err(e) => {
+                    error!("Failed to create file: {}", e);
                     BackendEvent::None
                 }
             }

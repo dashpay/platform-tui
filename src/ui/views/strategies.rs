@@ -7,6 +7,7 @@ mod delete_strategy;
 mod identity_inserts;
 mod identity_inserts_screen;
 mod import_strategy;
+mod export_strategy;
 mod new_strategy;
 mod operations;
 mod operations_screen;
@@ -26,6 +27,7 @@ use tuirealm::{
 use self::{
     delete_strategy::DeleteStrategyFormController,
     import_strategy::ImportStrategyFormController,
+    export_strategy::ExportStrategyFormController,
     new_strategy::NewStrategyFormController,
     select_strategy::SelectStrategyFormController,
     selected_strategy::SelectedStrategyScreenController
@@ -39,10 +41,11 @@ use crate::{
     Event,
 };
 
-const COMMAND_KEYS: [ScreenCommandKey; 5] = [
+const COMMAND_KEYS: [ScreenCommandKey; 6] = [
     ScreenCommandKey::new("q", "Back to Main"),
     ScreenCommandKey::new("n", "New strategy"),
     ScreenCommandKey::new("i", "Import a strategy"),
+    ScreenCommandKey::new("e", "Export a strategy"),
     ScreenCommandKey::new("s", "Select a strategy"),
     ScreenCommandKey::new("d", "Delete a strategy"),
 ];
@@ -85,8 +88,7 @@ impl ScreenController for StrategiesScreenController {
 
     fn command_keys(&self) -> &[ScreenCommandKey] {
         if self.available_strategies.is_empty() {
-            &COMMAND_KEYS[..3] // Exclude Delete and Select when no strategies
-                               // loaded
+            &COMMAND_KEYS[..3] // Exclude certain operations when there are no available strategies
         } else {
             COMMAND_KEYS.as_ref()
         }
@@ -117,6 +119,16 @@ impl ScreenController for StrategiesScreenController {
                 screen: SelectedStrategyScreenController::builder(),
             },
             Event::Key(KeyEvent {
+                code: Key::Char('e'),
+                modifiers: KeyModifiers::NONE,
+            }) => {
+                if !self.available_strategies.is_empty() {
+                    ScreenFeedback::Form(Box::new(ExportStrategyFormController::new(self.available_strategies.clone())))
+                } else {
+                    ScreenFeedback::None
+                }
+            }
+            Event::Key(KeyEvent {
                 code: Key::Char('s'),
                 modifiers: KeyModifiers::NONE,
             }) => {
@@ -128,8 +140,7 @@ impl ScreenController for StrategiesScreenController {
                         screen: SelectedStrategyScreenController::builder(),
                     }
                 } else {
-                    ScreenFeedback::None // Do nothing if there are no available
-                                         // strategies
+                    ScreenFeedback::None
                 }
             }
             Event::Key(KeyEvent {
@@ -141,8 +152,7 @@ impl ScreenController for StrategiesScreenController {
                         self.available_strategies.clone(),
                     )))
                 } else {
-                    ScreenFeedback::None // Do nothing if there are no available
-                                         // strategies
+                    ScreenFeedback::None
                 }
             }
             Event::Backend(
