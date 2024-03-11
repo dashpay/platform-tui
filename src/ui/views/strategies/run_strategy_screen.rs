@@ -99,7 +99,7 @@ impl ScreenController for RunStrategyScreenController {
                         dash_spent_wallet,
                     } => {
                         format!(
-                            "Strategy '{}' completed:\nState transitions attempted: {}\nState \
+                            "Strategy '{}' completed:\n\nState transitions attempted: {}\nState \
                              transitions succeeded: {}\nNumber of blocks: {}\nRun time: \
                              {:?}\nDash spent (Identity): {}\nDash spent (Wallet): {}",
                             strategy_name,

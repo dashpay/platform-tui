@@ -644,6 +644,7 @@ async fn broadcast_random_documents_load_test(
                         Some(PutSettings {
                             request_settings: settings,
                             identity_nonce_stale_time_s: None,
+                            user_fee_increase: None,
                         }),
                     )
                     .await;

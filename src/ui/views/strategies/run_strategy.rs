@@ -8,7 +8,7 @@ use crate::{
 };
 
 pub(super) struct RunStrategyFormController {
-    input: ComposedInput<(Field<SelectInput<u64>>, Field<SelectInput<String>>)>,
+    input: ComposedInput<(Field<SelectInput<u64>>, Field<SelectInput<String>>, Field<SelectInput<String>>)>,
     selected_strategy: String,
 }
 
@@ -19,6 +19,10 @@ impl RunStrategyFormController {
                 Field::new(
                     "Number of blocks to run the strategy",
                     SelectInput::new(vec![10, 20, 50, 100, 500]),
+                ),
+                Field::new(
+                    "Verify state transition proofs?",
+                    SelectInput::new(vec!["Yes".to_string(), "No".to_string()]),
                 ),
                 Field::new(
                     "Confirm you would like to run the strategy",
@@ -33,14 +37,26 @@ impl RunStrategyFormController {
 impl FormController for RunStrategyFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
         match self.input.on_event(event) {
-            InputStatus::Done((num_blocks, confirm)) => {
+            InputStatus::Done((num_blocks, verify_proofs, confirm)) => {
                 if confirm == "Yes" {
-                    FormStatus::Done {
-                        task: Task::Strategy(StrategyTask::RunStrategy(
-                            self.selected_strategy.clone(),
-                            num_blocks,
-                        )),
-                        block: true,
+                    if verify_proofs == "Yes" {
+                        FormStatus::Done {
+                            task: Task::Strategy(StrategyTask::RunStrategy(
+                                self.selected_strategy.clone(),
+                                num_blocks,
+                                true
+                            )),
+                            block: true,
+                        }    
+                    } else {
+                        FormStatus::Done {
+                            task: Task::Strategy(StrategyTask::RunStrategy(
+                                self.selected_strategy.clone(),
+                                num_blocks,
+                                false
+                            )),
+                            block: true,
+                        }    
                     }
                 } else {
                     FormStatus::Exit
@@ -69,6 +85,6 @@ impl FormController for RunStrategyFormController {
     }
 
     fn steps_number(&self) -> u8 {
-        2
+        3
     }
 }
