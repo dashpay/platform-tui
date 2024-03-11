@@ -22,8 +22,8 @@ use dpp::{
         accessors::IdentityGettersV0, state_transition::asset_lock_proof::AssetLockProof, Identity,
         PartialIdentity,
     },
-    platform_value::{string_encoding::Encoding, Bytes32, Identifier},
-    state_transition::{data_contract_create_transition::DataContractCreateTransition, documents_batch_transition::{document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods, document_transition::DocumentTransition, DocumentCreateTransition, DocumentsBatchTransition}, StateTransition},
+    platform_value::{string_encoding::Encoding, Identifier},
+    state_transition::{data_contract_create_transition::DataContractCreateTransition, documents_batch_transition::{document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods, document_transition::DocumentTransition, DocumentCreateTransition, DocumentsBatchTransition}, StateTransition, StateTransitionLike},
     version::PlatformVersion,
 };
 use drive::{
@@ -44,6 +44,7 @@ use strategy_tests::{
     frequency::Frequency,
     operations::{FinalizeBlockOperation, Operation},
     LocalDocumentQuery, Strategy, StrategyConfig,
+    deserialize_strategy_from_json
 };
 use tokio::sync::{Mutex, MutexGuard};
 use tracing::{error, info};
@@ -57,6 +58,7 @@ use crate::backend::Wallet;
 #[derive(Debug, PartialEq, Clone)]
 pub(crate) enum StrategyTask {
     CreateStrategy(String),
+    ImportStrategy(String),
     SelectStrategy(String),
     DeleteStrategy(String),
     CloneStrategy(String),
@@ -107,6 +109,55 @@ pub(crate) async fn run_strategy_task<'s>(
                     names.get_mut(&strategy_name).expect("inconsistent data")
                 }),
             ))
+        }
+        StrategyTask::ImportStrategy(url) => {
+            let platform_version = PlatformVersion::latest();
+        
+            match reqwest::get(&url).await {
+                Ok(response) => {
+                    if response.status().is_success() {
+                        match response.text().await {
+                            Ok(json_str) => {
+                                match deserialize_strategy_from_json(&json_str, &platform_version) {
+                                    Ok(strategy) => {
+                                        let strategy_name = url.split('/').last().map(|s| s.to_string())
+                                            .expect("Expected to extract the filename from the imported Strategy file");
+        
+                                        let mut strategies_lock = app_state.available_strategies.lock().await;
+                                        strategies_lock.insert(strategy_name.clone(), strategy);
+                                        let contract_names_lock = app_state.available_strategies_contract_names.lock().await;
+        
+                                        BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
+                                            strategy_name.clone(),
+                                            MutexGuard::map(strategies_lock, |strategies| {
+                                                strategies.get_mut(&strategy_name).expect("strategy exists")
+                                            }),
+                                            MutexGuard::map(contract_names_lock, |names| {
+                                                names.get_mut(&strategy_name).expect("inconsistent data")
+                                            }),
+                                        ))
+                                    },
+                                    Err(e) => {
+                                        error!("Failed to deserialize strategy: {}", e);
+                                        BackendEvent::None
+                                    }
+                                }
+                            },
+                            Err(e) => {
+                                error!("Failed to fetch strategy text: {}", e);
+                                BackendEvent::None
+                            }
+                        }
+                    } else {
+                        error!("Failed to fetch strategy: HTTP {}", response.status());
+                        BackendEvent::None
+                    }
+                },
+                Err(e) => {
+                    error!("Failed to fetch strategy: {}", e);
+                    BackendEvent::None
+                }
+            }
         }
         StrategyTask::SelectStrategy(ref strategy_name) => {
             let mut selected_strategy_lock = app_state.selected_strategy.lock().await;
@@ -630,7 +681,6 @@ pub(crate) async fn run_strategy_task<'s>(
                         let insight_ref = insight.clone();
 
                         move |amount: u64| -> Option<(AssetLockProof, PrivateKey)> {
-                            // Use the current Tokio runtime to execute the async block
                             tokio::task::block_in_place(|| {
                                 let rt = tokio::runtime::Handle::current();
                                 rt.block_on(async {
@@ -647,6 +697,7 @@ pub(crate) async fn run_strategy_task<'s>(
                                                 // Use sdk_ref_clone for broadcasting and retrieving asset lock
                                                 match AppState::broadcast_and_retrieve_asset_lock(&sdk, &asset_lock_transaction, &wallet.receive_address()).await {
                                                     Ok(proof) => {
+                                                        // Check for new UTXOs in the wallet
                                                         let max_retries = 5;
                                                         let mut retries = 0;
                                                         let mut found_new_utxos = false;
@@ -968,7 +1019,21 @@ pub(crate) async fn run_strategy_task<'s>(
                                                             "Successfully processed state transition {} ({}) for block {} (Actual block height: {})",
                                                             index + 1, transition.name(), current_block_info.height, actual_block_height
                                                         );
-                                    
+
+                                                        // Log the Base58 encoded IDs of any created Identities
+                                                        match transition.clone() {
+                                                            StateTransition::IdentityCreate(identity_create_transition) => {
+                                                                let ids = identity_create_transition.modified_data_ids();
+                                                                for id in ids {
+                                                                    let encoded_id: String = id.into();
+                                                                    info!("Created Identity: {}", encoded_id);
+                                                                }
+                                                            },
+                                                            _ => {
+                                                                // nothing
+                                                            }
+                                                        }                                                        
+
                                                         // Verification of the proof
                                                         if let Some(wait_for_state_transition_result_response_v0::Result::Proof(proof)) = &v0_response.result {
                                                             if verify_proofs {

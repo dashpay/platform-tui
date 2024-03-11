@@ -6,6 +6,7 @@ mod contracts_with_updates_screen;
 mod delete_strategy;
 mod identity_inserts;
 mod identity_inserts_screen;
+mod import_strategy;
 mod new_strategy;
 mod operations;
 mod operations_screen;
@@ -23,9 +24,11 @@ use tuirealm::{
 };
 
 use self::{
-    delete_strategy::DeleteStrategyFormController, new_strategy::NewStrategyFormController,
+    delete_strategy::DeleteStrategyFormController,
+    import_strategy::ImportStrategyFormController,
+    new_strategy::NewStrategyFormController,
     select_strategy::SelectStrategyFormController,
-    selected_strategy::SelectedStrategyScreenController,
+    selected_strategy::SelectedStrategyScreenController
 };
 use crate::{
     backend::{AppState, AppStateUpdate, BackendEvent},
@@ -36,9 +39,10 @@ use crate::{
     Event,
 };
 
-const COMMAND_KEYS: [ScreenCommandKey; 4] = [
+const COMMAND_KEYS: [ScreenCommandKey; 5] = [
     ScreenCommandKey::new("q", "Back to Main"),
     ScreenCommandKey::new("n", "New strategy"),
+    ScreenCommandKey::new("i", "Import a strategy"),
     ScreenCommandKey::new("s", "Select a strategy"),
     ScreenCommandKey::new("d", "Delete a strategy"),
 ];
@@ -81,7 +85,7 @@ impl ScreenController for StrategiesScreenController {
 
     fn command_keys(&self) -> &[ScreenCommandKey] {
         if self.available_strategies.is_empty() {
-            &COMMAND_KEYS[..2] // Exclude Delete and Select when no strategies
+            &COMMAND_KEYS[..3] // Exclude Delete and Select when no strategies
                                // loaded
         } else {
             COMMAND_KEYS.as_ref()
@@ -103,6 +107,13 @@ impl ScreenController for StrategiesScreenController {
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::FormThenNextScreen {
                 form: Box::new(NewStrategyFormController::new()),
+                screen: SelectedStrategyScreenController::builder(),
+            },
+            Event::Key(KeyEvent {
+                code: Key::Char('i'),
+                modifiers: KeyModifiers::NONE,
+            }) => ScreenFeedback::FormThenNextScreen {
+                form: Box::new(ImportStrategyFormController::new()),
                 screen: SelectedStrategyScreenController::builder(),
             },
             Event::Key(KeyEvent {
