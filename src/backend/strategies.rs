@@ -12,18 +12,12 @@ use dapi_grpc::platform::v0::{
     GetEpochsInfoRequest,
 };
 use dpp::{
-    block::{block_info::BlockInfo, epoch::Epoch},
-    dashcore::PrivateKey,
-    data_contract::{
+    block::{block_info::BlockInfo, epoch::Epoch}, dashcore::PrivateKey, data_contract::{
         accessors::v0::DataContractV0Getters, created_data_contract::CreatedDataContract, DataContract
-    },
-    identity::{
+    }, identity::{
         accessors::IdentityGettersV0, state_transition::asset_lock_proof::AssetLockProof, Identity,
         PartialIdentity,
-    },
-    platform_value::{string_encoding::Encoding, Identifier},
-    state_transition::{data_contract_create_transition::DataContractCreateTransition, documents_batch_transition::{document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods, document_transition::DocumentTransition, DocumentCreateTransition, DocumentsBatchTransition}, StateTransition, StateTransitionLike},
-    version::PlatformVersion,
+    }, platform_value::{string_encoding::Encoding, Identifier}, serialization::{PlatformDeserializableWithPotentialValidationFromVersionedStructure, PlatformSerializableWithPlatformVersion}, state_transition::{data_contract_create_transition::DataContractCreateTransition, documents_batch_transition::{document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods, document_transition::DocumentTransition, DocumentCreateTransition, DocumentsBatchTransition}, StateTransition, StateTransitionLike}, version::PlatformVersion
 };
 use drive::{
     drive::{
@@ -43,13 +37,12 @@ use strategy_tests::{
     frequency::Frequency,
     operations::{FinalizeBlockOperation, Operation},
     LocalDocumentQuery, Strategy, StrategyConfig,
-    deserialize_strategy_from_json, serialize_strategy_to_json
 };
 use tokio::sync::{Mutex, MutexGuard};
 use tracing::{error, info};
 
 use super::{
-    error::Error, insight::InsightAPIClient, state::{ContractFileName, KnownContractsMap}, AppState, AppStateUpdate,
+    insight::InsightAPIClient, state::{ContractFileName, KnownContractsMap}, AppState, AppStateUpdate,
     BackendEvent, StrategyCompletionResult, StrategyContractNames,
 };
 use crate::backend::Wallet;
@@ -116,9 +109,9 @@ pub(crate) async fn run_strategy_task<'s>(
             match reqwest::get(&url).await {
                 Ok(response) => {
                     if response.status().is_success() {
-                        match response.text().await {
-                            Ok(json_str) => {
-                                match deserialize_strategy_from_json(&json_str, &platform_version) {
+                        match response.bytes().await {
+                            Ok(bytes) => {
+                                match Strategy::versioned_deserialize(&bytes, true, &platform_version) {
                                     Ok(strategy) => {
                                         let strategy_name = url.split('/').last()
                                             .map(|s| s.rsplit_once('.').map_or(s, |(name, _)| name))
@@ -165,7 +158,7 @@ pub(crate) async fn run_strategy_task<'s>(
                                 }
                             },
                             Err(e) => {
-                                error!("Failed to fetch strategy text: {}", e);
+                                error!("Failed to fetch strategy data: {}", e);
                                 BackendEvent::None
                             }
                         }
@@ -182,29 +175,30 @@ pub(crate) async fn run_strategy_task<'s>(
         }
         StrategyTask::ExportStrategy(ref strategy_name) => {
             let strategies_lock = app_state.available_strategies.lock().await;
-            let strategy = strategies_lock.get(strategy_name).expect("Strategy name doesn't exist in app_state.available_strategies");
+            let strategy = strategies_lock.get(strategy_name)
+                .expect("Strategy name doesn't exist in app_state.available_strategies");
             let platform_version = PlatformVersion::latest();
-
-            let serialized_json = match serialize_strategy_to_json(&strategy, &platform_version) {
-                Ok(json) => json,
-                Err(e) => {
-                    error!("Failed to serialize strategy: {}", e);
-                    return BackendEvent::None;
-                }
-            };            
-            
-            let file_name = format!("supporting_files/strategy_exports/{}.json", strategy_name);
-            let path = std::path::Path::new(&file_name);
-
-            match File::create(&path) {
-                Ok(mut file) => {
-                    if let Err(e) = file.write_all(serialized_json.as_bytes()) {
-                        error!("Failed to write strategy to file: {}", e);
+        
+            match strategy.serialize_to_bytes_with_platform_version(&platform_version) {
+                Ok(binary_data) => {
+                    let file_name = format!("supporting_files/strategy_exports/{}", strategy_name);
+                    let path = std::path::Path::new(&file_name);
+        
+                    match File::create(&path) {
+                        Ok(mut file) => {
+                            if let Err(e) = file.write_all(&binary_data) {
+                                error!("Failed to write strategy to file: {}", e);
+                            }
+                            BackendEvent::None
+                        },
+                        Err(e) => {
+                            error!("Failed to create file: {}", e);
+                            BackendEvent::None
+                        }
                     }
-                    BackendEvent::None
                 },
                 Err(e) => {
-                    error!("Failed to create file: {}", e);
+                    error!("Failed to serialize strategy: {}", e);
                     BackendEvent::None
                 }
             }
@@ -1349,35 +1343,6 @@ pub(crate) async fn run_strategy_task<'s>(
             }
         }
     }
-}
-
-async fn reload_wallet_utxos(wallet: &mut Wallet, insight: &InsightAPIClient) -> Result<(), Error> {
-    let old_utxos = match wallet {
-        Wallet::SingleKeyWallet(ref single_key_wallet) => single_key_wallet.utxos.clone(),
-    };
-
-    let max_retries = 5;
-    let mut retries = 0;
-
-    while retries < max_retries {
-        let _ = wallet.reload_utxos(insight).await;
-
-        let new_utxos = match wallet {
-            Wallet::SingleKeyWallet(ref single_key_wallet) => &single_key_wallet.utxos,
-            // Handle other wallet types if necessary
-        };
-
-        if new_utxos != &old_utxos && !new_utxos.is_empty() {
-            return Ok(());
-        } else {
-            retries += 1;
-            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-        }
-    }
-
-    Err(Error::SdkError(rs_sdk::Error::Generic(
-        "Failed to reload wallet UTXOs after maximum retries".to_string(),
-    )))
 }
 
 pub async fn update_known_contracts(

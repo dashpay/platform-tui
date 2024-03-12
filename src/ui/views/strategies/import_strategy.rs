@@ -16,7 +16,7 @@ pub(crate) struct ImportStrategyFormController {
 impl ImportStrategyFormController {
     pub(crate) fn new() -> Self {
         Self {
-            input: TextInput::new("Raw Github file URL (ex: https://raw.githubusercontent.com/pauldelucia/dash-platform-strategy-tests/main/demo.json)"),
+            input: TextInput::new("Raw Github file URL (ex: https://raw.githubusercontent.com/pauldelucia/dash-platform-strategy-tests/main/example)"),
         }
     }
 }
