@@ -55,7 +55,7 @@ use super::{
 use crate::backend::Wallet;
 
 #[derive(Debug, PartialEq, Clone)]
-pub(crate) enum StrategyTask {
+pub enum StrategyTask {
     CreateStrategy(String),
     SelectStrategy(String),
     DeleteStrategy(String),
@@ -81,7 +81,7 @@ pub(crate) enum StrategyTask {
     RemoveLastOperation(String),
 }
 
-pub(crate) async fn run_strategy_task<'s>(
+pub async fn run_strategy_task<'s>(
     sdk: &Sdk,
     app_state: &'s AppState,
     task: StrategyTask,

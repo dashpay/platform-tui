@@ -8,7 +8,7 @@ pub mod identities;
 pub mod insight;
 pub mod platform_info;
 pub mod state;
-mod strategies;
+pub mod strategies;
 pub mod wallet;
 
 use std::{

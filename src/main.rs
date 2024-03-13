@@ -1,30 +1,61 @@
 use std::{fs::File, panic, time::Duration};
 
+use clap::{Arg, ArgAction, Command};
 use crossterm::event::{Event as TuiEvent, EventStream};
 use dpp::{identity::accessors::IdentityGettersV0, version::PlatformVersion};
 use futures::{future::OptionFuture, select, FutureExt, StreamExt};
 use rs_platform_explorer::{
-    backend::{insight::InsightAPIClient, Backend},
+    backend::{self, insight::InsightAPIClient, Backend},
     config::Config,
     ui::{IdentityBalance, Ui, UiFeedback},
     Event,
 };
 use rs_sdk::{RequestSettings, SdkBuilder};
-use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() {
+    // Parse CLI command if any
+    let matches = Command::new("rs-platform-explorer")
+        .version("0.1.0")
+        .about("Interact with Dash Platform from the terminal")
+        .arg(Arg::new("test")
+            .short('t')
+            .long("test")
+            .value_name("TEST_NAME")
+            .help("Specifies the stress test to run."))
+        .arg(Arg::new("prove")
+            .short('p')
+            .long("prove")
+            .action(ArgAction::SetTrue)
+            .help("Specifies whether or not to verify state transition proofs. Default false."))
+        .arg(Arg::new("blocks")
+            .short('b')
+            .long("blocks")
+            .value_name("NUM_BLOCKS")
+            .help("Specifies how many blocks to run the test. Default 20."))
+        .get_matches();
+
     // Initialize logger
-    let log_file = File::create("explorer.log").expect("create log file");
+    let cli_action_taken = matches.contains_id("test");
+    if cli_action_taken {
+        let subscriber = tracing_subscriber::fmt()
+            .with_env_filter("info")
+            .with_writer(std::io::stdout)
+            .with_ansi(false)
+            .finish();
 
-    let subscriber = tracing_subscriber::fmt()
-        .with_env_filter("info")
-        .with_writer(log_file)
-        .with_ansi(false)
-        .finish();
+        tracing::subscriber::set_global_default(subscriber).expect("Setting default subscriber failed");
+    } else {
+        let log_file = File::create("explorer.log").expect("create log file");
 
-    tracing::subscriber::set_global_default(subscriber)
-        .expect("Unable to set global default subscriber");
+        let subscriber = tracing_subscriber::fmt()
+            .with_env_filter("info")
+            .with_writer(log_file)
+            .with_ansi(false)
+            .finish();
+    
+        tracing::subscriber::set_global_default(subscriber).expect("Setting default subscriber failed");    
+    }
 
     // Test log statement
     tracing::info!("Logger initialized successfully");
@@ -76,7 +107,7 @@ async fn main() {
 
     let insight = InsightAPIClient::new(config.insight_api_uri());
 
-    let backend = Backend::new(sdk.as_ref(), insight, config).await;
+    let backend = Backend::new(sdk.as_ref(), insight.clone(), config).await;
 
     // Add loaded identity to known identities if it's not already there
     // And set selected_strategy to None
@@ -93,6 +124,56 @@ async fn main() {
         }
 
         *selected_strategy = None;
+    }
+
+    // Parse CLI command if any
+    let matches = Command::new("rs-platform-explorer")
+        .version("0.1.0")
+        .about("Interact with Dash Platform from the terminal")
+        .arg(Arg::new("test")
+            .short('t')
+            .long("test")
+            .value_name("TEST_NAME")
+            .help("Specifies the stress test to run."))
+        .arg(Arg::new("prove")
+            .short('p')
+            .long("prove")
+            .action(ArgAction::SetTrue)
+            .help("Specifies whether or not to verify state transition proofs. Default false."))
+        .arg(Arg::new("blocks")
+            .short('b')
+            .long("blocks")
+            .value_name("NUM_BLOCKS")
+            .help("Specifies how many blocks to run the test. Default 20."))
+        .get_matches();
+
+    // Set default parameters
+    let mut num_blocks = 20;
+    let mut cli_action_taken = false;
+
+    // Handle CLI commands
+    let prove = matches.get_flag("prove");
+    if let Some(blocks_str) = matches.get_one::<String>("blocks") {
+        match blocks_str.parse::<u64>() {
+            Ok(num) => num_blocks = num,
+            Err(_) => eprintln!("Warning: Unable to parse blocks as a number. Using default value of {}", num_blocks),
+        }
+    }
+    if let Some(test_name) = matches.get_one::<String>("test") {
+        println!("Running strategy test: {}", test_name);
+        backend::strategies::run_strategy_task(
+            &sdk,
+            &backend.state(),
+            backend::strategies::StrategyTask::RunStrategy(test_name.to_string(), num_blocks, prove),
+            &insight,
+        ).await;
+        println!("Finished. See `explorer.log` for results.");
+        cli_action_taken = true;
+    }
+
+    // Don't launch UI if CLI action taken
+    if cli_action_taken {
+        return;
     }
 
     let initial_identity_balance = backend
