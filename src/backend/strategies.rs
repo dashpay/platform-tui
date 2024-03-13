@@ -996,7 +996,7 @@ pub(crate) async fn run_strategy_task<'s>(
 
                                                                 match verified {
                                                                     Ok(_) => {
-                                                                        info!("Verified proof for state transition {} ({}) for block {} (Actual block height: {})", st_queue_index, transition_type, current_block_info.height, actual_block_height);
+                                                                        info!("Verified proof for state transition {} ({}) for block {} (Actual block height: {})", index + 1, transition_type, current_block_info.height, actual_block_height);
                                                                         
                                                                         // If a data contract was registered, add it to
                                                                         // known_contracts
