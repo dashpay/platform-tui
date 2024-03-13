@@ -16,7 +16,6 @@ use rs_sdk::{RequestSettings, SdkBuilder};
 async fn main() {
     // Parse CLI command if any
     let matches = Command::new("rs-platform-explorer")
-        .version("0.1.0")
         .about("Interact with Dash Platform from the terminal")
         .arg(Arg::new("test")
             .short('t')
@@ -27,7 +26,7 @@ async fn main() {
             .short('p')
             .long("prove")
             .action(ArgAction::SetTrue)
-            .help("Specifies whether or not to verify state transition proofs. Default false."))
+            .help("Enables state transition proof verification."))
         .arg(Arg::new("blocks")
             .short('b')
             .long("blocks")
@@ -126,32 +125,10 @@ async fn main() {
         *selected_strategy = None;
     }
 
-    // Parse CLI command if any
-    let matches = Command::new("rs-platform-explorer")
-        .version("0.1.0")
-        .about("Interact with Dash Platform from the terminal")
-        .arg(Arg::new("test")
-            .short('t')
-            .long("test")
-            .value_name("TEST_NAME")
-            .help("Specifies the stress test to run."))
-        .arg(Arg::new("prove")
-            .short('p')
-            .long("prove")
-            .action(ArgAction::SetTrue)
-            .help("Specifies whether or not to verify state transition proofs. Default false."))
-        .arg(Arg::new("blocks")
-            .short('b')
-            .long("blocks")
-            .value_name("NUM_BLOCKS")
-            .help("Specifies how many blocks to run the test. Default 20."))
-        .get_matches();
-
-    // Set default parameters
+    // Handle CLI commands
     let mut num_blocks = 20;
     let mut cli_action_taken = false;
 
-    // Handle CLI commands
     let prove = matches.get_flag("prove");
     if let Some(blocks_str) = matches.get_one::<String>("blocks") {
         match blocks_str.parse::<u64>() {
