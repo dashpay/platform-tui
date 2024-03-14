@@ -1,58 +1,29 @@
 use std::{fs::File, panic, time::Duration};
 
-use clap::{ArgAction, Parser};
 use crossterm::event::{Event as TuiEvent, EventStream};
 use dpp::{identity::accessors::IdentityGettersV0, version::PlatformVersion};
 use futures::{future::OptionFuture, select, FutureExt, StreamExt};
 use rs_platform_explorer::{
-    backend::{self, identities::IdentityTask::{self}, insight::InsightAPIClient, wallet::WalletTask, Backend, Task},
+    backend::{insight::InsightAPIClient, Backend},
     config::Config,
     ui::{IdentityBalance, Ui, UiFeedback},
     Event,
 };
 use rs_sdk::{RequestSettings, SdkBuilder};
 
-#[derive(Parser, Debug)]
-#[clap(about, long_about = None)]
-struct Args {
-    #[arg(short, long, help = "Specifies the stress test to run.")]
-    test: Option<String>,
-
-    #[arg(short, long, action = ArgAction::SetTrue, help = "Enables state transition proof verification.")]
-    prove: bool,
-
-    #[arg(short, long, default_value_t = 20, help = "Specifies how many blocks to run the test. Default 20.")]
-    blocks: u64,
-
-    #[arg(short, long, help = "Specifies the minimum amount of Dash the loaded identity should have.")]
-    dash: Option<u64>,
-}
-
 #[tokio::main]
 async fn main() {
-    let args = Args::parse();
-
     // Initialize logger
-    let cli_action_taken = args.test.is_some();
-    if cli_action_taken {
-        let subscriber = tracing_subscriber::fmt()
-            .with_env_filter("info")
-            .with_writer(std::io::stdout)
-            .with_ansi(false)
-            .finish();
+    let log_file = File::create("explorer.log").expect("create log file");
 
-        tracing::subscriber::set_global_default(subscriber).expect("Setting default subscriber failed");
-    } else {
-        let log_file = File::create("explorer.log").expect("create log file");
+    let subscriber = tracing_subscriber::fmt()
+        .with_env_filter("info")
+        .with_writer(log_file)
+        .with_ansi(false)
+        .finish();
 
-        let subscriber = tracing_subscriber::fmt()
-            .with_env_filter("info")
-            .with_writer(log_file)
-            .with_ansi(false)
-            .finish();
-    
-        tracing::subscriber::set_global_default(subscriber).expect("Setting default subscriber failed");    
-    }
+    tracing::subscriber::set_global_default(subscriber)
+        .expect("Unable to set global default subscriber");
 
     // Test log statement
     tracing::info!("Logger initialized successfully");
@@ -104,7 +75,7 @@ async fn main() {
 
     let insight = InsightAPIClient::new(config.insight_api_uri());
 
-    let backend = Backend::new(sdk.as_ref(), insight.clone(), config).await;
+    let backend = Backend::new(sdk.as_ref(), insight, config).await;
 
     // Add loaded identity to known identities if it's not already there
     // And set selected_strategy to None
@@ -130,64 +101,7 @@ async fn main() {
         .await
         .as_ref()
         .map(|identity| IdentityBalance::from_credits(identity.balance()));
-    
-    // Handle CLI commands
-    if let Some(start_dash) = args.dash {
-        // Register identity with `dash` balance if there is none yet
-        if backend.state().loaded_identity.lock().await.is_none() {
-            let amount = start_dash * 100000000; // duffs to go into asset lock transaction
 
-            tracing::info!(
-                "Identity not registered, registering new identity with {} Dash",
-                start_dash
-            );
-
-            backend
-                .run_task(Task::Identity(IdentityTask::RegisterIdentity(amount)))
-                .await;
-        // Else, if there is a loaded identity, if the balance is less than start_dash, top it up
-        } else {
-            backend.run_task(Task::Wallet(WalletTask::Refresh)).await;
-            backend
-                .run_task(Task::Identity(IdentityTask::Refresh))
-                .await;
-
-            let balance = backend
-                .state()
-                .loaded_identity
-                .lock()
-                .await
-                .as_ref()
-                .unwrap()
-                .balance();
-
-            tracing::info!(
-                "Platform wallet has {} Dash",
-                balance as f64 / 100000000000.0
-            );
-
-            if balance < start_dash * 100000000000 {
-                tracing::info!("Balance too low, adding {} more Dash", (start_dash as f64 * 100000000000.0 - balance as f64) / 100000000000.0);
-                let amount = (start_dash * 100000000000 - balance) / 1000; // duffs to go into asset lock transaction
-                backend.run_task(Task::Identity(IdentityTask::TopUpIdentity(amount))).await;
-            }
-        }
-    }
-    if let Some(test_name) = args.test {
-        backend::strategies::run_strategy_task(
-            &sdk,
-            &backend.state(),
-            backend::strategies::StrategyTask::RunStrategy(test_name.to_string(), args.blocks, args.prove),
-            &insight,
-        ).await;
-    }
-
-    // Don't launch UI if CLI action taken
-    if cli_action_taken {
-        return;
-    }
-
-    // Set up UI
     let mut ui = Ui::new(initial_identity_balance);
 
     let mut active = true;
