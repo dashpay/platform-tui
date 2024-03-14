@@ -1,8 +1,7 @@
 //! Strategies management backend module.
 
 use std::{
-    collections::{BTreeMap, BTreeSet, VecDeque},
-    time::Instant,
+    collections::{BTreeMap, BTreeSet, VecDeque}, fs::File, io::Write, time::Instant
 };
 
 use dapi_grpc::platform::v0::{
@@ -13,18 +12,12 @@ use dapi_grpc::platform::v0::{
     GetEpochsInfoRequest,
 };
 use dpp::{
-    block::{block_info::BlockInfo, epoch::Epoch},
-    dashcore::PrivateKey,
-    data_contract::{
+    block::{block_info::BlockInfo, epoch::Epoch}, dashcore::PrivateKey, data_contract::{
         accessors::v0::DataContractV0Getters, created_data_contract::CreatedDataContract, DataContract
-    },
-    identity::{
+    }, identity::{
         accessors::IdentityGettersV0, state_transition::asset_lock_proof::AssetLockProof, Identity,
         PartialIdentity,
-    },
-    platform_value::{string_encoding::Encoding, Bytes32, Identifier},
-    state_transition::{data_contract_create_transition::DataContractCreateTransition, documents_batch_transition::{document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods, document_transition::DocumentTransition, DocumentCreateTransition, DocumentsBatchTransition}, StateTransition},
-    version::PlatformVersion,
+    }, platform_value::{string_encoding::Encoding, Identifier}, serialization::{PlatformDeserializableWithPotentialValidationFromVersionedStructure, PlatformSerializableWithPlatformVersion}, state_transition::{data_contract_create_transition::DataContractCreateTransition, documents_batch_transition::{document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods, document_transition::DocumentTransition, DocumentCreateTransition, DocumentsBatchTransition}, StateTransition, StateTransitionLike}, version::PlatformVersion
 };
 use drive::{
     drive::{
@@ -47,14 +40,16 @@ use tokio::sync::{Mutex, MutexGuard};
 use tracing::{error, info};
 
 use super::{
-    error::Error, insight::InsightAPIClient, state::KnownContractsMap, AppState, AppStateUpdate,
-    BackendEvent, StrategyCompletionResult,
+    insight::InsightAPIClient, state::{ContractFileName, KnownContractsMap}, AppState, AppStateUpdate,
+    BackendEvent, StrategyCompletionResult, StrategyContractNames,
 };
 use crate::backend::Wallet;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum StrategyTask {
     CreateStrategy(String),
+    ImportStrategy(String),
+    ExportStrategy(String),
     SelectStrategy(String),
     DeleteStrategy(String),
     CloneStrategy(String),
@@ -105,6 +100,106 @@ pub async fn run_strategy_task<'s>(
                     names.get_mut(&strategy_name).expect("inconsistent data")
                 }),
             ))
+        }
+        StrategyTask::ImportStrategy(url) => {
+            let platform_version = PlatformVersion::latest();
+        
+            match reqwest::get(&url).await {
+                Ok(response) => {
+                    if response.status().is_success() {
+                        match response.bytes().await {
+                            Ok(bytes) => {
+                                match Strategy::versioned_deserialize(&bytes, true, &platform_version) {
+                                    Ok(strategy) => {
+                                        let strategy_name = url.split('/').last()
+                                            .map(|s| s.rsplit_once('.').map_or(s, |(name, _)| name))
+                                            .map(|s| s.to_string())
+                                            .expect("Expected to extract the filename from the imported Strategy file");
+                                                                        
+                                        let mut strategies_lock = app_state.available_strategies.lock().await;
+                                        strategies_lock.insert(strategy_name.clone(), strategy.clone());
+
+                                        // We need to add the contracts to available_strategies_contract_names so they can be displayed.
+                                        // In order to do so, we need to convert contracts_with_updates into Base58-encoded IDs
+                                        let mut strategy_contracts_with_updates_in_format: StrategyContractNames = Vec::new();
+                                        for (contract, maybe_updates) in strategy.contracts_with_updates {
+                                            let contract_name = contract.data_contract().id().to_string(Encoding::Base58);
+                                            if let Some(update_map) = maybe_updates {
+                                                let formatted_update_map = update_map.into_iter().map(|(block_number, created_contract)| {
+                                                    let contract_name = created_contract.data_contract().id().to_string(Encoding::Base58);
+                                                    (block_number, contract_name)
+                                                }).collect::<BTreeMap<u64, ContractFileName>>();
+
+                                                strategy_contracts_with_updates_in_format.push((contract_name, Some(formatted_update_map)));
+                                            } else {
+                                                strategy_contracts_with_updates_in_format.push((contract_name, None));
+                                            }
+                                        }
+
+                                        let mut contract_names_lock = app_state.available_strategies_contract_names.lock().await;
+                                        contract_names_lock.insert(strategy_name.clone(), strategy_contracts_with_updates_in_format);
+
+                                        BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
+                                            strategy_name.clone(),
+                                            MutexGuard::map(strategies_lock, |strategies| {
+                                                strategies.get_mut(&strategy_name).expect("Expected to find the strategy in available_strategies")
+                                            }),
+                                            MutexGuard::map(contract_names_lock, |names| {
+                                                names.get_mut(&strategy_name).expect("Expected to find the strategy in available_strategies_contract_names")
+                                            }),
+                                        ))
+                                    },
+                                    Err(e) => {
+                                        error!("Failed to deserialize strategy: {}", e);
+                                        BackendEvent::None
+                                    }
+                                }
+                            },
+                            Err(e) => {
+                                error!("Failed to fetch strategy data: {}", e);
+                                BackendEvent::None
+                            }
+                        }
+                    } else {
+                        error!("Failed to fetch strategy: HTTP {}", response.status());
+                        BackendEvent::None
+                    }
+                },
+                Err(e) => {
+                    error!("Failed to fetch strategy: {}", e);
+                    BackendEvent::None
+                }
+            }
+        }
+        StrategyTask::ExportStrategy(ref strategy_name) => {
+            let strategies_lock = app_state.available_strategies.lock().await;
+            let strategy = strategies_lock.get(strategy_name)
+                .expect("Strategy name doesn't exist in app_state.available_strategies");
+            let platform_version = PlatformVersion::latest();
+        
+            match strategy.serialize_to_bytes_with_platform_version(&platform_version) {
+                Ok(binary_data) => {
+                    let file_name = format!("supporting_files/strategy_exports/{}", strategy_name);
+                    let path = std::path::Path::new(&file_name);
+        
+                    match File::create(&path) {
+                        Ok(mut file) => {
+                            if let Err(e) = file.write_all(&binary_data) {
+                                error!("Failed to write strategy to file: {}", e);
+                            }
+                            BackendEvent::None
+                        },
+                        Err(e) => {
+                            error!("Failed to create file: {}", e);
+                            BackendEvent::None
+                        }
+                    }
+                },
+                Err(e) => {
+                    error!("Failed to serialize strategy: {}", e);
+                    BackendEvent::None
+                }
+            }
         }
         StrategyTask::SelectStrategy(ref strategy_name) => {
             let mut selected_strategy_lock = app_state.selected_strategy.lock().await;
@@ -633,7 +728,6 @@ pub async fn run_strategy_task<'s>(
                         let insight_ref = insight.clone();
 
                         move |amount: u64| -> Option<(AssetLockProof, PrivateKey)> {
-                            // Use the current Tokio runtime to execute the async block
                             tokio::task::block_in_place(|| {
                                 let rt = tokio::runtime::Handle::current();
                                 rt.block_on(async {
@@ -650,6 +744,7 @@ pub async fn run_strategy_task<'s>(
                                                 // Use sdk_ref_clone for broadcasting and retrieving asset lock
                                                 match AppState::broadcast_and_retrieve_asset_lock(&sdk, &asset_lock_transaction, &wallet.receive_address()).await {
                                                     Ok(proof) => {
+                                                        // Check for new UTXOs in the wallet
                                                         let max_retries = 5;
                                                         let mut retries = 0;
                                                         let mut found_new_utxos = false;
@@ -971,7 +1066,21 @@ pub async fn run_strategy_task<'s>(
                                                             "Successfully processed state transition {} ({}) for block {} (Actual block height: {})",
                                                             index + 1, transition.name(), current_block_info.height, actual_block_height
                                                         );
-                                    
+
+                                                        // Log the Base58 encoded IDs of any created Identities
+                                                        match transition.clone() {
+                                                            StateTransition::IdentityCreate(identity_create_transition) => {
+                                                                let ids = identity_create_transition.modified_data_ids();
+                                                                for id in ids {
+                                                                    let encoded_id: String = id.into();
+                                                                    info!("Created Identity: {}", encoded_id);
+                                                                }
+                                                            },
+                                                            _ => {
+                                                                // nothing
+                                                            }
+                                                        }                                                        
+
                                                         // Verification of the proof
                                                         if let Some(wait_for_state_transition_result_response_v0::Result::Proof(proof)) = &v0_response.result {
                                                             if verify_proofs {
@@ -1237,35 +1346,6 @@ pub async fn run_strategy_task<'s>(
             }
         }
     }
-}
-
-async fn reload_wallet_utxos(wallet: &mut Wallet, insight: &InsightAPIClient) -> Result<(), Error> {
-    let old_utxos = match wallet {
-        Wallet::SingleKeyWallet(ref single_key_wallet) => single_key_wallet.utxos.clone(),
-    };
-
-    let max_retries = 5;
-    let mut retries = 0;
-
-    while retries < max_retries {
-        let _ = wallet.reload_utxos(insight).await;
-
-        let new_utxos = match wallet {
-            Wallet::SingleKeyWallet(ref single_key_wallet) => &single_key_wallet.utxos,
-            // Handle other wallet types if necessary
-        };
-
-        if new_utxos != &old_utxos && !new_utxos.is_empty() {
-            return Ok(());
-        } else {
-            retries += 1;
-            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-        }
-    }
-
-    Err(Error::SdkError(rs_sdk::Error::Generic(
-        "Failed to reload wallet UTXOs after maximum retries".to_string(),
-    )))
 }
 
 pub async fn update_known_contracts(

@@ -23,7 +23,7 @@ use dpp::{
     version::PlatformVersion,
     ProtocolError::{self, PlatformDeserializationError, PlatformSerializationError},
 };
-use drive::drive::{Drive, RootTree};
+use drive::drive::Drive;
 use strategy_tests::Strategy;
 use tokio::sync::Mutex;
 use walkdir::{DirEntry, WalkDir};
@@ -33,7 +33,7 @@ use crate::{backend::insight::InsightAPIClient, config::Config};
 
 const CURRENT_PROTOCOL_VERSION: ProtocolVersion = 1;
 
-const USE_LOCAL: bool = false;
+const _USE_LOCAL: bool = false;
 
 pub(crate) type ContractFileName = String;
 
@@ -103,7 +103,7 @@ impl Default for AppState {
             }
         }
 
-        let (drive, protocol_version) =
+        let (drive, _protocol_version) =
             Drive::open("explorer.drive", None).expect("expected to open Drive successfully");
 
         if drive
@@ -381,7 +381,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
                 )
             });
 
-        let (drive, protocol_version) =
+        let (drive, _protocol_version) =
             Drive::open("explorer.drive", None).expect("expected to open Drive successfully");
 
         // Deserialize the wallet state and wrap it in Arc<Mutex<_>>

@@ -14,7 +14,6 @@ pub mod wallet;
 use std::{
     collections::BTreeMap,
     fmt::{self, Display},
-    sync::Arc,
     time::Duration,
 };
 
@@ -27,7 +26,7 @@ use rs_sdk::Sdk;
 use serde::Serialize;
 pub(crate) use state::AppState;
 use strategy_tests::Strategy;
-use tokio::sync::{MappedMutexGuard, Mutex, MutexGuard};
+use tokio::sync::{MappedMutexGuard, MutexGuard};
 
 use self::state::KnownContractsMap;
 pub(crate) use self::{
