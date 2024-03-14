@@ -100,8 +100,32 @@ async fn main() {
 
     let insight = InsightAPIClient::new(config.insight_api_uri());
 
-    let backend = Backend::new(sdk.as_ref(), insight.clone(), config).await;
+    let backend = Backend::new(sdk.as_ref(), insight.clone(), config.clone()).await;
 
+    // Create wallet if not initialized
+    if backend.state().loaded_wallet.lock().await.is_none() {
+        let Some(private_key) = config.wallet_private_key else {
+            panic!("Wallet not initialized and no private key provided");
+        };
+
+        tracing::info!("Wallet not initialized, creating new wallet with configured private key");
+
+        backend
+            .run_task(Task::Wallet(WalletTask::AddByPrivateKey(
+                private_key.clone(),
+            )))
+            .await;
+    }
+
+    // Refresh wallet core balance
+    backend.run_task(Task::Wallet(WalletTask::Refresh)).await;
+
+    // Return if there's no loaded identity and the --dash flag is not set
+    if backend.state().loaded_identity.lock().await.is_none() && args.dash.is_none() {
+        tracing::error!("There's no loaded identity and the --dash argument is not passed");
+        return
+    }
+    
     // Add loaded identity to known identities if it's not already there
     // And set selected_strategy to None
     {
