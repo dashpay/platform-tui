@@ -1156,6 +1156,11 @@ pub async fn run_strategy_task<'s>(
                                                                     Err(e) => error!("Error verifying state transition execution proof: {}", e),
                                                                 }
                                                             }
+
+                                                        // If it's the first block, sleep for one second so we don't, for example, register a doc to a new contract
+                                                        if current_block_info.height == initial_block_info.height {
+                                                            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                                                        }
                                                         }
                                                     }
                                                 })
