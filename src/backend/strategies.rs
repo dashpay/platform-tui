@@ -41,9 +41,7 @@ use rs_sdk::{
 };
 use simple_signer::signer::SimpleSigner;
 use strategy_tests::{
-    frequency::Frequency,
-    operations::{FinalizeBlockOperation, Operation},
-    LocalDocumentQuery, Strategy, StrategyConfig,
+    frequency::Frequency, operations::{FinalizeBlockOperation, Operation}, LocalDocumentQuery, StartIdentities, Strategy, StrategyConfig
 };
 use tokio::sync::{Mutex, MutexGuard};
 use tracing::{error, info};
@@ -362,7 +360,11 @@ pub async fn run_strategy_task<'s>(
         } => {
             let mut strategies_lock = app_state.available_strategies.lock().await;
             if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
-                strategy.start_identities = (count, keys_count);
+                strategy.start_identities = StartIdentities {
+                    number_of_identities: count,
+                    keys_per_identity: keys_count,
+                    starting_balances: None,
+                };
                 BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
                     strategy_name.clone(),
                     MutexGuard::map(strategies_lock, |strategies| {
@@ -697,10 +699,10 @@ pub async fn run_strategy_task<'s>(
                     let mut known_contracts_lock = app_state.known_contracts.lock().await;
 
                     // Log if you are creating start_identities, because the asset lock proofs may take a while
-                    if current_block_info.height == initial_block_info.height && strategy.start_identities.0 > 0 {
+                    if current_block_info.height == initial_block_info.height && strategy.start_identities.number_of_identities > 0 {
                         info!(
                             "Creating {} asset lock proofs for start identities",
-                            strategy.start_identities.0
+                            strategy.start_identities.number_of_identities
                         );
                     }
 
@@ -1201,7 +1203,7 @@ pub async fn run_strategy_task<'s>(
         StrategyTask::RemoveStartIdentities(strategy_name) => {
             let mut strategies_lock = app_state.available_strategies.lock().await;
             if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
-                strategy.start_identities = (0, 0);
+                strategy.start_identities = StartIdentities::default();
                 BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
                     strategy_name.clone(),
                     MutexGuard::map(strategies_lock, |strategies| {
