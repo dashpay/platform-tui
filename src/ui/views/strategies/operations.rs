@@ -55,7 +55,7 @@ impl StrategyAddOperationFormController {
             "IdentityDisableKeys".to_string(),
             "IdentityWithdrawal".to_string(),
             "IdentityTransfer (requires start_identities > 0)".to_string(),
-            // "ContractCreateRandom".to_string(),
+            "ContractCreateRandom".to_string(),
             "ContractUpdateDocTypesRandom".to_string(),
             // "ContractUpdateFieldsRandom".to_string(),        
         ];
@@ -125,7 +125,7 @@ impl FormController for StrategyAddOperationFormController {
                         "IdentityDisableKeys" => OperationType::IdentityDisableKeys,
                         "IdentityWithdrawal" => OperationType::IdentityWithdrawal,
                         "IdentityTransfer (requires start_identities > 0)" => OperationType::IdentityTransfer,
-                        // "ContractCreateRandom" => OperationType::ContractCreateRandom,
+                        "ContractCreateRandom" => OperationType::ContractCreateRandom,
                         "ContractUpdateDocTypesRandom" => OperationType::ContractUpdateDocTypesRandom,
                         // "ContractUpdateFieldsRandom" => OperationType::ContractUpdateFields,
                         _ => {
