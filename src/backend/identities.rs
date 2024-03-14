@@ -483,7 +483,12 @@ impl AppState {
         //// Platform steps
 
         match identity
-            .top_up_identity(sdk, asset_lock_proof.clone(), &asset_lock_proof_private_key, None)
+            .top_up_identity(
+                sdk,
+                asset_lock_proof.clone(),
+                &asset_lock_proof_private_key,
+                None,
+            )
             .await
         {
             Ok(updated_identity_balance) => {
@@ -759,7 +764,6 @@ async fn add_identity_key<'a>(
         master_public_key_id,
         vec![Into::<IdentityPublicKeyInCreationV0>::into(identity_public_key.clone()).into()],
         Vec::new(),
-        None,
         new_identity_nonce,
         0,
         &signer,
