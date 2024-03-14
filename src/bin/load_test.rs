@@ -54,7 +54,7 @@ use rs_sdk::{
         transition::{put_document::PutDocument, put_settings::PutSettings},
         Fetch, Identifier,
     },
-    Error, Sdk, SdkBuilder,
+    Sdk, SdkBuilder,
 };
 use simple_signer::signer::SimpleSigner;
 use tokio::{sync::Semaphore, time::Instant};
@@ -226,7 +226,7 @@ async fn main() {
         }
     }
 
-    let mut credits_balance = backend
+    let credits_balance = backend
         .state()
         .loaded_identity
         .lock()
@@ -644,6 +644,7 @@ async fn broadcast_random_documents_load_test(
                         Some(PutSettings {
                             request_settings: settings,
                             identity_nonce_stale_time_s: None,
+                            user_fee_increase: None,
                         }),
                     )
                     .await;
