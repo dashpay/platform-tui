@@ -29,7 +29,7 @@ use crate::{
 };
 
 pub struct IdentityBalance {
-    credits: u64,
+    pub credits: u64,
 }
 
 impl IdentityBalance {

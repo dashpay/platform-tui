@@ -213,21 +213,23 @@ pub async fn run_strategy_task<'s>(
                 };
 
                 // Get the loaded identity nonce
-                let loaded_identity_lock = match app_state.refresh_identity(&sdk).await {
-                    Ok(lock) => lock,
-                    Err(e) => {
-                        error!("Failed to refresh identity: {:?}", e);
-                        return BackendEvent::StrategyError {
-                            strategy_name: strategy_name.clone(),
-                            error: format!("Failed to refresh identity: {:?}", e),
-                        };
-                    }
-                };
+                let mut loaded_identity_lock = app_state.loaded_identity.lock().await;
+                if loaded_identity_lock.is_some() {
+                    drop(loaded_identity_lock);
+            
+                    let _ = app_state.refresh_identity(&sdk).await;
+            
+                    loaded_identity_lock = app_state.loaded_identity.lock().await;
+                } else {
+                    error!("Can't create contracts_with_updates because there's no loaded identity.");
+                    return BackendEvent::None;
+                }
+                let identity_id = loaded_identity_lock.as_ref().expect("Expected a loaded identity").id();
                 let identity_nonce = sdk
-                    .get_identity_nonce(loaded_identity_lock.id(), true, None)
+                    .get_identity_nonce(identity_id, true, None)
                     .await
                     .expect("Couldn't get current identity nonce");
-
+            
                 if let Some(first_contract_name) = selected_contract_names.first() {
                     if let Some(data_contract) = get_contract(first_contract_name) {
                         match CreatedDataContract::from_contract_and_identity_nonce(
@@ -386,7 +388,9 @@ pub async fn run_strategy_task<'s>(
             // Fetch known_contracts from the chain to assure local copies match actual
             // state.
             match update_known_contracts(sdk, &app_state.known_contracts).await {
-                Ok(_) => info!("Known contracts updated successfully."),
+                Ok(_) => {
+                    // nothing
+                }
                 Err(e) => {
                     error!("Failed to update known contracts: {:?}", e);
                     return BackendEvent::StrategyError {
@@ -397,10 +401,7 @@ pub async fn run_strategy_task<'s>(
             };
 
             let mut loaded_identity_lock = match app_state.refresh_identity(&sdk).await {
-                Ok(lock) => {
-                    info!("Refreshed loaded identity.");
-                    lock
-                },                
+                Ok(lock) => lock,                
                 Err(e) => {
                     error!("Failed to refresh identity: {:?}", e);
                     return BackendEvent::StrategyError {

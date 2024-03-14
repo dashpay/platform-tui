@@ -5,7 +5,7 @@ use crossterm::event::{Event as TuiEvent, EventStream};
 use dpp::{identity::accessors::IdentityGettersV0, version::PlatformVersion};
 use futures::{future::OptionFuture, select, FutureExt, StreamExt};
 use rs_platform_explorer::{
-    backend::{self, insight::InsightAPIClient, Backend},
+    backend::{self, identities::IdentityTask::{self}, insight::InsightAPIClient, wallet::WalletTask, Backend, Task},
     config::Config,
     ui::{IdentityBalance, Ui, UiFeedback},
     Event,
@@ -32,6 +32,12 @@ async fn main() {
             .long("blocks")
             .value_name("NUM_BLOCKS")
             .help("Specifies how many blocks to run the test. Default 20."))
+        .arg(Arg::new("dash")
+            .short('d')
+            .long("dash")
+            .value_name("DASH")
+            .help("Specifies the minimum amount of Dash the loaded identity should have."))
+
         .get_matches();
 
     // Initialize logger
@@ -125,26 +131,78 @@ async fn main() {
         *selected_strategy = None;
     }
 
+    let initial_identity_balance = backend
+        .state()
+        .loaded_identity
+        .lock()
+        .await
+        .as_ref()
+        .map(|identity| IdentityBalance::from_credits(identity.balance()));
+    
     // Handle CLI commands
     let mut num_blocks = 20;
+    let mut start_dash = 0;
     let mut cli_action_taken = false;
 
     let prove = matches.get_flag("prove");
     if let Some(blocks_str) = matches.get_one::<String>("blocks") {
         match blocks_str.parse::<u64>() {
             Ok(num) => num_blocks = num,
-            Err(_) => eprintln!("Warning: Unable to parse blocks as a number. Using default value of {}", num_blocks),
+            Err(_) => tracing::error!("Warning: Unable to parse blocks as a number. Using default value of {}", num_blocks),
+        }
+    }
+    if let Some(dash_str) = matches.get_one::<String>("dash") {
+        match dash_str.parse::<u64>() {
+            Ok(dash) => start_dash = dash,
+            Err(_) => tracing::error!("Warning: Unable to parse dash as a number. Using default value of {}", start_dash),
+        }
+        // Register identity if there is none yet
+        if backend.state().loaded_identity.lock().await.is_none() {
+            let dash = start_dash;
+            let amount = dash * 100000000; // duffs to go into asset lock transaction
+
+            tracing::info!(
+                "Identity not registered, registering new identity with {} Dash",
+                dash
+            );
+
+            backend
+                .run_task(Task::Identity(IdentityTask::RegisterIdentity(amount)))
+                .await;
+        } else {
+            backend.run_task(Task::Wallet(WalletTask::Refresh)).await;
+            backend
+                .run_task(Task::Identity(IdentityTask::Refresh))
+                .await;
+
+            let balance = backend
+                .state()
+                .loaded_identity
+                .lock()
+                .await
+                .as_ref()
+                .unwrap()
+                .balance();
+
+            tracing::info!(
+                "Platform wallet has {} Dash",
+                balance as f64 / 100000000000.0
+            );
+
+            if balance < start_dash * 100000000000 {
+                tracing::info!("Balance too low, adding {} more Dash", (start_dash as f64 * 100000000000.0 - balance as f64) / 100000000000.0);
+                let amount = (start_dash * 100000000000 - balance) / 1000; // duffs to go into asset lock transaction
+                backend.run_task(Task::Identity(IdentityTask::TopUpIdentity(amount))).await;
+            }
         }
     }
     if let Some(test_name) = matches.get_one::<String>("test") {
-        println!("Running strategy test: {}", test_name);
         backend::strategies::run_strategy_task(
             &sdk,
             &backend.state(),
             backend::strategies::StrategyTask::RunStrategy(test_name.to_string(), num_blocks, prove),
             &insight,
         ).await;
-        println!("Finished. See `explorer.log` for results.");
         cli_action_taken = true;
     }
 
@@ -153,14 +211,7 @@ async fn main() {
         return;
     }
 
-    let initial_identity_balance = backend
-        .state()
-        .loaded_identity
-        .lock()
-        .await
-        .as_ref()
-        .map(|identity| IdentityBalance::from_credits(identity.balance()));
-
+    // Set up UI
     let mut ui = Ui::new(initial_identity_balance);
 
     let mut active = true;

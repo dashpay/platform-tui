@@ -77,7 +77,7 @@ pub enum IdentityTask {
 }
 
 impl AppState {
-    pub(crate) async fn run_identity_task(&self, sdk: &Sdk, task: IdentityTask) -> BackendEvent {
+    pub async fn run_identity_task(&self, sdk: &Sdk, task: IdentityTask) -> BackendEvent {
         match task {
             IdentityTask::RegisterIdentity(amount) => {
                 let result = self.register_new_identity(sdk, amount).await;
