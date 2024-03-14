@@ -1,6 +1,6 @@
 use std::{fs::File, panic, time::Duration};
 
-use clap::{Arg, ArgAction, Command};
+use clap::{ArgAction, Parser};
 use crossterm::event::{Event as TuiEvent, EventStream};
 use dpp::{identity::accessors::IdentityGettersV0, version::PlatformVersion};
 use futures::{future::OptionFuture, select, FutureExt, StreamExt};
@@ -12,36 +12,28 @@ use rs_platform_explorer::{
 };
 use rs_sdk::{RequestSettings, SdkBuilder};
 
+#[derive(Parser, Debug)]
+#[clap(about, long_about = None)]
+struct Args {
+    #[arg(short, long, help = "Specifies the stress test to run.")]
+    test: Option<String>,
+
+    #[arg(short, long, action = ArgAction::SetTrue, help = "Enables state transition proof verification.")]
+    prove: bool,
+
+    #[arg(short, long, default_value_t = 20, help = "Specifies how many blocks to run the test. Default 20.")]
+    blocks: u64,
+
+    #[arg(short, long, help = "Specifies the minimum amount of Dash the loaded identity should have.")]
+    dash: Option<u64>,
+}
+
 #[tokio::main]
 async fn main() {
-    // Parse CLI command if any
-    let matches = Command::new("rs-platform-explorer")
-        .about("Interact with Dash Platform from the terminal")
-        .arg(Arg::new("test")
-            .short('t')
-            .long("test")
-            .value_name("TEST_NAME")
-            .help("Specifies the stress test to run."))
-        .arg(Arg::new("prove")
-            .short('p')
-            .long("prove")
-            .action(ArgAction::SetTrue)
-            .help("Enables state transition proof verification."))
-        .arg(Arg::new("blocks")
-            .short('b')
-            .long("blocks")
-            .value_name("NUM_BLOCKS")
-            .help("Specifies how many blocks to run the test. Default 20."))
-        .arg(Arg::new("dash")
-            .short('d')
-            .long("dash")
-            .value_name("DASH")
-            .help("Specifies the minimum amount of Dash the loaded identity should have."))
-
-        .get_matches();
+    let args = Args::parse();
 
     // Initialize logger
-    let cli_action_taken = matches.contains_id("test");
+    let cli_action_taken = args.test.is_some();
     if cli_action_taken {
         let subscriber = tracing_subscriber::fmt()
             .with_env_filter("info")
@@ -140,35 +132,20 @@ async fn main() {
         .map(|identity| IdentityBalance::from_credits(identity.balance()));
     
     // Handle CLI commands
-    let mut num_blocks = 20;
-    let mut start_dash = 0;
-    let mut cli_action_taken = false;
-
-    let prove = matches.get_flag("prove");
-    if let Some(blocks_str) = matches.get_one::<String>("blocks") {
-        match blocks_str.parse::<u64>() {
-            Ok(num) => num_blocks = num,
-            Err(_) => tracing::error!("Warning: Unable to parse blocks as a number. Using default value of {}", num_blocks),
-        }
-    }
-    if let Some(dash_str) = matches.get_one::<String>("dash") {
-        match dash_str.parse::<u64>() {
-            Ok(dash) => start_dash = dash,
-            Err(_) => tracing::error!("Warning: Unable to parse dash as a number. Using default value of {}", start_dash),
-        }
-        // Register identity if there is none yet
+    if let Some(start_dash) = args.dash {
+        // Register identity with `dash` balance if there is none yet
         if backend.state().loaded_identity.lock().await.is_none() {
-            let dash = start_dash;
-            let amount = dash * 100000000; // duffs to go into asset lock transaction
+            let amount = start_dash * 100000000; // duffs to go into asset lock transaction
 
             tracing::info!(
                 "Identity not registered, registering new identity with {} Dash",
-                dash
+                start_dash
             );
 
             backend
                 .run_task(Task::Identity(IdentityTask::RegisterIdentity(amount)))
                 .await;
+        // Else, if there is a loaded identity, if the balance is less than start_dash, top it up
         } else {
             backend.run_task(Task::Wallet(WalletTask::Refresh)).await;
             backend
@@ -196,14 +173,13 @@ async fn main() {
             }
         }
     }
-    if let Some(test_name) = matches.get_one::<String>("test") {
+    if let Some(test_name) = args.test {
         backend::strategies::run_strategy_task(
             &sdk,
             &backend.state(),
-            backend::strategies::StrategyTask::RunStrategy(test_name.to_string(), num_blocks, prove),
+            backend::strategies::StrategyTask::RunStrategy(test_name.to_string(), args.blocks, args.prove),
             &insight,
         ).await;
-        cli_action_taken = true;
     }
 
     // Don't launch UI if CLI action taken
