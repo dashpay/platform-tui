@@ -122,8 +122,7 @@ async fn main() {
 
     // Return if there's no loaded identity and the --dash flag is not set
     if backend.state().loaded_identity.lock().await.is_none() && args.dash.is_none() {
-        tracing::error!("There's no loaded identity and the --dash argument is not passed");
-        return
+        panic!("There's no loaded identity and the --dash argument is not passed");
     }
     
     // Add loaded identity to known identities if it's not already there
