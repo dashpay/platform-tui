@@ -1078,7 +1078,21 @@ pub(crate) async fn run_strategy_task<'s>(
                                                             _ => {
                                                                 // nothing
                                                             }
-                                                        }                                                        
+                                                        }
+                                                        
+                                                        // Log the Base58 encoded IDs of any created Contracts
+                                                        match transition.clone() {
+                                                            StateTransition::DataContractCreate(contract_create_transition) => {
+                                                                let ids = contract_create_transition.modified_data_ids();
+                                                                for id in ids {
+                                                                    let encoded_id: String = id.into();
+                                                                    info!("Created Contract: {}", encoded_id);
+                                                                }
+                                                            },
+                                                            _ => {
+                                                                // nothing
+                                                            }
+                                                        }
 
                                                         // Verification of the proof
                                                         if let Some(wait_for_state_transition_result_response_v0::Result::Proof(proof)) = &v0_response.result {
