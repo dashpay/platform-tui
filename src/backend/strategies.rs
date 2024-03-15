@@ -936,6 +936,7 @@ pub(crate) async fn run_strategy_task<'s>(
                                                                     if verify_proofs {
                                                                         let verified = Drive::verify_state_transition_was_executed_with_proof(
                                                                             &transition_clone,
+                                                                            0,// TODO: Replace with a proper block time
                                                                             proof.grovedb_proof.as_slice(),
                                                                             &|_| Ok(None),
                                                                             sdk.version(),                                                            
@@ -1089,6 +1090,7 @@ pub(crate) async fn run_strategy_task<'s>(
                                                                         Some(data_contract) => {
                                                                             Drive::verify_state_transition_was_executed_with_proof(
                                                                                 &transition,
+                                                                                0,// TODO: Replace with a proper block time
                                                                                 proof.grovedb_proof.as_slice(),
                                                                                 &|_| Ok(Some(data_contract.clone().into())),
                                                                                 sdk.version(),
@@ -1099,6 +1101,7 @@ pub(crate) async fn run_strategy_task<'s>(
                                                                 } else {
                                                                     Drive::verify_state_transition_was_executed_with_proof(
                                                                         &transition,
+                                                                        0,// TODO: Replace with a proper block time
                                                                         proof.grovedb_proof.as_slice(),
                                                                         &|_| Ok(None),
                                                                         sdk.version(),
