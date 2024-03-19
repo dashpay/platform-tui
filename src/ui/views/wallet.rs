@@ -37,11 +37,12 @@ const WALLET_LOADED_COMMANDS: [ScreenCommandKey; 2] = [
     ScreenCommandKey::new("c", "Copy Receive Address"),
 ];
 
-const IDENTITY_LOADED_COMMANDS: [ScreenCommandKey; 4] = [
+const IDENTITY_LOADED_COMMANDS: [ScreenCommandKey; 5] = [
     ScreenCommandKey::new("r", "Identity refresh"),
     ScreenCommandKey::new("w", "Withdraw balance"),
     ScreenCommandKey::new("d", "Copy Identity ID"),
     ScreenCommandKey::new("k", "Add Identity key"),
+    ScreenCommandKey::new("i", "Register identity"),
 ];
 
 #[memoize::memoize]
@@ -65,8 +66,6 @@ fn join_commands(
         } else {
             if identity_registration_in_progress {
                 commands.push(ScreenCommandKey::new("i", "Continue identity registration"));
-            } else {
-                commands.push(ScreenCommandKey::new("i", "Register identity"));
             }
         }
     } else {
