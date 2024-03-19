@@ -62,9 +62,9 @@ pub(crate) enum StrategyTask {
         strategy_name: String,
         count: u8,
         keys_count: u8,
-        balance: f64,
+        balance: u64,
     },
-    SetStartIdentitiesBalance(String, f64),
+    SetStartIdentitiesBalance(String, u64),
     AddOperation {
         strategy_name: String,
         operation: Operation,
@@ -463,7 +463,7 @@ pub(crate) async fn run_strategy_task<'s>(
                 strategy.start_identities = StartIdentities {
                     number_of_identities: count,
                     keys_per_identity: keys_count,
-                    starting_balances: Some(balance),
+                    starting_balances: balance,
                 };
                 BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
                     strategy_name.clone(),
@@ -485,7 +485,7 @@ pub(crate) async fn run_strategy_task<'s>(
                 strategy.start_identities = StartIdentities {
                     number_of_identities: strategy.start_identities.number_of_identities,
                     keys_per_identity: strategy.start_identities.keys_per_identity,
-                    starting_balances: Some(balance),
+                    starting_balances: balance,
                 };
                 BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
                     strategy_name.clone(),
@@ -1286,7 +1286,7 @@ pub(crate) async fn run_strategy_task<'s>(
                 info!(
                     "-----Strategy '{}' completed-----\n\nState transitions attempted: {}\nState \
                     transitions succeeded: {}\nNumber of blocks: {}\nRun time: \
-                    {:?}\nDash spent (Identity): {}\nDash spent (Wallet): {}\n",
+                    {:?}\nDash spent (Loaded Identity): {}\nDash spent (Wallet): {}\n",
                     strategy_name,
                     transition_count,
                     success_count,

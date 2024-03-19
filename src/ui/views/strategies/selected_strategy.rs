@@ -226,7 +226,7 @@ fn display_strategy(
     };
 
     let identity_inserts_line = format!(
-        "{:indent$}Times per block: {}; chance per block: {}\n",
+        "{:indent$}Times per block: 1..{}; chance per block: {}\n",
         "",
         times_per_block_display,
         strategy
@@ -279,18 +279,13 @@ fn display_strategy(
             };
 
         operations_lines.push_str(&format!(
-            "{:indent$}{}; Times per block: {}, chance per block: {}\n",
+            "{:indent$}{}; Times per block: 1..{}, chance per block: {}\n",
             "",
             op_name,
             times_per_block_display,
             op.frequency.chance_per_block.unwrap_or(0.0),
             indent = 8
         ));
-    }
-
-    let mut start_identities_balance = 1.0; // default is 1.0
-    if let Some(balance) = strategy.start_identities.starting_balances {
-        start_identities_balance = balance;
     }
 
     format!(
@@ -301,9 +296,9 @@ fn display_strategy(
 {identity_inserts_line}
     Operations:
 {operations_lines}
-    Start identities: {} (Keys: {}, Balance: {})"#,
+    Start identities: {} (Keys: {}, Balance: {:.2} dash)"#,
         strategy.start_identities.number_of_identities,
         strategy.start_identities.keys_per_identity,
-        start_identities_balance,
+        strategy.start_identities.starting_balances as f64 / 100_000_000_000.0,
     )
 }

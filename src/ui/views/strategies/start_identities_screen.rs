@@ -152,17 +152,12 @@ impl ScreenController for StartIdentitiesScreenController {
 
     fn view(&mut self, frame: &mut Frame, area: Rect) {
         let display_text = if let Some(strategy) = &self.selected_strategy {
-            let mut start_identities_balance = 1.0; // default is 1.0
-            if let Some(balance) = strategy.start_identities.starting_balances {
-                start_identities_balance = balance;
-            }
-
             // Construct the text to display start identities
             let start_identities_text = format!(
-                "Start identities: {} (Keys: {}, Balance: {})",
+                "Start identities: {} (Keys: {}, Balance: {:.2} dash)",
                 strategy.start_identities.number_of_identities,
                 strategy.start_identities.keys_per_identity,
-                start_identities_balance,
+                strategy.start_identities.starting_balances as f64 / 100_000_000_000.0,
             );
 
             format!(
