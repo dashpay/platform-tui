@@ -597,7 +597,9 @@ async fn broadcast_random_documents_load_test(
                     .random_document_with_params(
                         identity_id,
                         document_state_transition_entropy.into(),
-                        created_at_ms as u64,
+                        Some(created_at_ms as u64),
+                        None,
+                        None,
                         DocumentFieldFillType::FillIfNotRequired,
                         DocumentFieldFillSize::AnyDocumentFillSize,
                         &mut std_rng,

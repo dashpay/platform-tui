@@ -578,7 +578,7 @@ pub(crate) async fn run_strategy_task<'s>(
                 // Get signer from loaded_identity
                 // Convert loaded_identity to SimpleSigner
                 let mut signer = {
-                    let strategy_signer = strategy.signer.get_or_insert_with(|| {
+                    let strategy_signer = strategy.signer.insert({
                         let mut new_signer = SimpleSigner::default();
                         let Identity::V0(identity_v0) = &*loaded_identity_lock;
                         for (key_id, public_key) in &identity_v0.public_keys {
@@ -597,6 +597,7 @@ pub(crate) async fn run_strategy_task<'s>(
                 };
 
                 // Set initial current_identities to loaded_identity
+                // On the first block of execution, start_identities will be added to current_identities
                 let mut loaded_identity_clone = loaded_identity_lock.clone();
                 let mut current_identities: Vec<Identity> = vec![loaded_identity_clone.clone()];
 
@@ -801,8 +802,8 @@ pub(crate) async fn run_strategy_task<'s>(
                     }
 
                     // Call the function to get STs for block
-                    let (transitions, finalize_operations) = strategy
-                        .state_transitions_for_block_with_new_identities(
+                    let (transitions, finalize_operations, mut new_identities) = strategy
+                        .state_transitions_for_block(
                             &mut document_query_callback,
                             &mut identity_fetch_callback,
                             &mut create_asset_lock,
@@ -822,6 +823,8 @@ pub(crate) async fn run_strategy_task<'s>(
                         .await;
 
                     drop(known_contracts_lock);
+
+                    current_identities.append(&mut new_identities);
 
                     // TO-DO: add documents from state transitions to explorer.drive here
                     // this is required for DocumentDelete and DocumentReplace strategy operations
@@ -918,42 +921,45 @@ pub(crate) async fn run_strategy_task<'s>(
                                                 {
                                                     Ok(wait_response) => {
                                                         if let Some(wait_for_state_transition_result_response::Version::V0(v0_response)) = &wait_response.version {
-                                                            let mut actual_block_height: u64 = 0;
-                                                            let mut actual_block_time: u64 = 0;
                                                             if let Some(metadata) = &v0_response.metadata {
-                                                                actual_block_height = metadata.height;
-                                                                actual_block_time = metadata.time_ms;
                                                                 success_count += 1;
-                                                                info!("Successfully processed state transition {} ({}) for block {} (Actual block height: {})", st_queue_index, transition_type, current_block_info.height, actual_block_height);
+                                                                info!("Successfully processed state transition {} ({}) for block {} (Actual block height: {})", st_queue_index, transition_type, current_block_info.height, metadata.height);
                                                                 // Sleep because we need to give the chain state time to update revisions
                                                                 // It seems this is only necessary for certain STs. Like AddKeys and DisableKeys seem to need it, but Transfer does not. Not sure about Withdraw or ContractUpdate yet.
                                                                 tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-                                                            }
-                                                            // Additional logging to inspect the result regardless of metadata presence
-                                                            match &v0_response.result {
-                                                                Some(wait_for_state_transition_result_response_v0::Result::Error(error)) => {
-                                                                    error!("WaitForStateTransitionResultResponse error: {:?}", error);
-                                                                }
-                                                                Some(wait_for_state_transition_result_response_v0::Result::Proof(proof)) => {
-                                                                    if verify_proofs {
-                                                                        let verified = Drive::verify_state_transition_was_executed_with_proof(
-                                                                            &transition_clone,
-                                                                            actual_block_time,
-                                                                            proof.grovedb_proof.as_slice(),
-                                                                            &|_| Ok(None),
-                                                                            sdk.version(),                                                            
-                                                                        );
-                                                                        match verified {
-                                                                            Ok(_) => {
-                                                                                info!("Verified proof for state transition {} ({}) for block {} (Actual block height: {})", st_queue_index, transition_type, current_block_info.height, actual_block_height);
-                                                                            }
-                                                                            Err(e) => {
-                                                                                error!("Error verifying state transition execution proof: {}", e);
-                                                                            }
-                                                                        }    
+
+                                                                // Additional logging to inspect the result regardless of metadata presence
+                                                                match &v0_response.result {
+                                                                    Some(wait_for_state_transition_result_response_v0::Result::Error(error)) => {
+                                                                        error!("WaitForStateTransitionResultResponse error: {:?}", error);
                                                                     }
+                                                                    Some(wait_for_state_transition_result_response_v0::Result::Proof(proof)) => {
+                                                                        if verify_proofs {
+                                                                            let epoch = Epoch::new(metadata.epoch as u16).expect("Expected to get epoch from metadata in proof verification");
+                                                                            let verified = Drive::verify_state_transition_was_executed_with_proof(
+                                                                                &transition_clone,
+                                                                                &BlockInfo {
+                                                                                    time_ms: metadata.time_ms,
+                                                                                    height: metadata.height,
+                                                                                    core_height: metadata.core_chain_locked_height,
+                                                                                    epoch,
+                                                                                },
+                                                                                proof.grovedb_proof.as_slice(),
+                                                                                &|_| Ok(None),
+                                                                                sdk.version(),                                                            
+                                                                            );
+                                                                            match verified {
+                                                                                Ok(_) => {
+                                                                                    info!("Verified proof for state transition {} ({}) for block {} (Actual block height: {})", st_queue_index, transition_type, current_block_info.height, metadata.height);
+                                                                                }
+                                                                                Err(e) => {
+                                                                                    error!("Error verifying state transition execution proof: {}", e);
+                                                                                }
+                                                                            }    
+                                                                        }
+                                                                    }
+                                                                    _ => {}
                                                                 }
-                                                                _ => {}
                                                             }
                                                         } else {
                                                             info!("Response version other than V0 received or absent for state transition {} ({})", st_queue_index, transition_type);
@@ -1085,13 +1091,19 @@ pub(crate) async fn run_strategy_task<'s>(
                                                         // Verification of the proof
                                                         if let Some(wait_for_state_transition_result_response_v0::Result::Proof(proof)) = &v0_response.result {
                                                             if verify_proofs {
+                                                                let epoch = Epoch::new(metadata.epoch as u16).expect("Expected to get epoch from metadata in proof verification");
                                                                 // For proof verification, if it's a DocumentsBatch, include the data contract, else don't
                                                                 let verified = if transition.name() == "DocumentsBatch" {
                                                                     match data_contract_clone.as_ref() {
                                                                         Some(data_contract) => {
                                                                             Drive::verify_state_transition_was_executed_with_proof(
                                                                                 &transition,
-                                                                                metadata.time_ms,
+                                                                                &BlockInfo {
+                                                                                    time_ms: metadata.time_ms,
+                                                                                    height: metadata.height,
+                                                                                    core_height: metadata.core_chain_locked_height,
+                                                                                    epoch,
+                                                                                },
                                                                                 proof.grovedb_proof.as_slice(),
                                                                                 &|_| Ok(Some(data_contract.clone().into())),
                                                                                 sdk.version(),
@@ -1102,7 +1114,12 @@ pub(crate) async fn run_strategy_task<'s>(
                                                                 } else {
                                                                     Drive::verify_state_transition_was_executed_with_proof(
                                                                         &transition,
-                                                                        metadata.time_ms,
+                                                                        &BlockInfo {
+                                                                            time_ms: metadata.time_ms,
+                                                                            height: metadata.height,
+                                                                            core_height: metadata.core_chain_locked_height,
+                                                                            epoch,
+                                                                        },
                                                                         proof.grovedb_proof.as_slice(),
                                                                         &|_| Ok(None),
                                                                         sdk.version(),
