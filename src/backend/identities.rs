@@ -100,6 +100,8 @@ impl AppState {
             IdentityTask::ClearLoadedIdentity => {
                 let mut loaded_identity = self.loaded_identity.lock().await;
                 *loaded_identity = None;
+                let mut identity_private_keys = self.identity_private_keys.lock().await;
+                identity_private_keys.clear();
                 BackendEvent::TaskCompletedStateChange {
                     task: Task::Identity(task),
                     execution_result: Ok(CompletedTaskPayload::String(

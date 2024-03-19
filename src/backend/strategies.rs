@@ -578,7 +578,7 @@ pub(crate) async fn run_strategy_task<'s>(
                 // Get signer from loaded_identity
                 // Convert loaded_identity to SimpleSigner
                 let mut signer = {
-                    let strategy_signer = strategy.signer.get_or_insert_with(|| {
+                    let strategy_signer = strategy.signer.insert({
                         let mut new_signer = SimpleSigner::default();
                         let Identity::V0(identity_v0) = &*loaded_identity_lock;
                         for (key_id, public_key) in &identity_v0.public_keys {
