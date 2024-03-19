@@ -32,9 +32,10 @@ use crate::{
     Event,
 };
 
-const WALLET_LOADED_COMMANDS: [ScreenCommandKey; 2] = [
+const WALLET_LOADED_COMMANDS: [ScreenCommandKey; 3] = [
     ScreenCommandKey::new("b", "Refresh wallet utxos and balance"),
     ScreenCommandKey::new("c", "Copy Receive Address"),
+    ScreenCommandKey::new("i", "Register identity"),
 ];
 
 const IDENTITY_LOADED_COMMANDS: [ScreenCommandKey; 5] = [
@@ -42,7 +43,7 @@ const IDENTITY_LOADED_COMMANDS: [ScreenCommandKey; 5] = [
     ScreenCommandKey::new("w", "Withdraw balance"),
     ScreenCommandKey::new("d", "Copy Identity ID"),
     ScreenCommandKey::new("k", "Add Identity key"),
-    ScreenCommandKey::new("i", "Register identity"),
+    ScreenCommandKey::new("e", "Clear loaded identity"),
 ];
 
 #[memoize::memoize]
@@ -275,7 +276,7 @@ impl WalletScreenController {
             )
         };
 
-        WalletScreenController {
+        Self {
             wallet_info,
             identity_info,
             wallet_loaded,
@@ -383,6 +384,17 @@ impl ScreenController for WalletScreenController {
                 ScreenFeedback::Form(Box::new(AddIdentityKeyFormController::new()))
             }
 
+            Event::Key(KeyEvent {
+                code: Key::Char('e'),
+                modifiers: KeyModifiers::NONE,
+            }) if self.identity_loaded => {
+                self.identity_loaded = false;
+                ScreenFeedback::Task {
+                    task: Task::Identity(IdentityTask::ClearLoadedIdentity),
+                    block: false,
+                }
+            }
+
             Event::Backend(
                 BackendEvent::AppStateUpdated(AppStateUpdate::LoadedWallet(wallet))
                 | BackendEvent::TaskCompletedStateChange {
@@ -403,6 +415,16 @@ impl ScreenController for WalletScreenController {
                 self.identity_info = Info::new_from_result(execution_result);
                 self.identity_loaded = false;
                 self.identity_registration_in_progress = true;
+                ScreenFeedback::Redraw
+            }
+
+            Event::Backend(BackendEvent::TaskCompletedStateChange {
+                task: Task::Identity(IdentityTask::ClearLoadedIdentity),
+                execution_result,
+                app_state_update: AppStateUpdate::ClearedLoadedIdentity,
+            }) => {
+                self.identity_info = Info::new_fixed("");
+                self.identity_loaded = false;
                 ScreenFeedback::Redraw
             }
 
