@@ -34,7 +34,7 @@ use rs_sdk::{
 };
 use simple_signer::signer::SimpleSigner;
 use strategy_tests::{
-    frequency::Frequency, operations::{FinalizeBlockOperation, Operation}, LocalDocumentQuery, StartIdentities, Strategy, StrategyConfig
+    frequency::Frequency, operations::{FinalizeBlockOperation, Operation}, IdentityInsertInfo, LocalDocumentQuery, StartIdentities, Strategy, StrategyConfig
 };
 use tokio::sync::{Mutex, MutexGuard};
 use tracing::{error, info};
@@ -62,7 +62,9 @@ pub(crate) enum StrategyTask {
         strategy_name: String,
         count: u8,
         keys_count: u8,
+        balance: f64,
     },
+    SetStartIdentitiesBalance(String, f64),
     AddOperation {
         strategy_name: String,
         operation: Operation,
@@ -431,7 +433,11 @@ pub(crate) async fn run_strategy_task<'s>(
         } => {
             let mut strategies_lock = app_state.available_strategies.lock().await;
             if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
-                strategy.identities_inserts = identity_inserts_frequency;
+                strategy.identities_inserts = IdentityInsertInfo {
+                    frequency: identity_inserts_frequency,
+                    start_keys: 3,
+                    extra_keys: BTreeMap::new(),
+                };
                 BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
                     strategy_name.clone(),
                     MutexGuard::map(strategies_lock, |strategies| {
@@ -450,13 +456,36 @@ pub(crate) async fn run_strategy_task<'s>(
             strategy_name,
             count,
             keys_count,
+            balance,
         } => {
             let mut strategies_lock = app_state.available_strategies.lock().await;
             if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
                 strategy.start_identities = StartIdentities {
                     number_of_identities: count,
                     keys_per_identity: keys_count,
-                    starting_balances: None,
+                    starting_balances: Some(balance),
+                };
+                BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
+                    strategy_name.clone(),
+                    MutexGuard::map(strategies_lock, |strategies| {
+                        strategies.get_mut(&strategy_name).expect("strategy exists")
+                    }),
+                    MutexGuard::map(
+                        app_state.available_strategies_contract_names.lock().await,
+                        |names| names.get_mut(&strategy_name).expect("inconsistent data"),
+                    ),
+                ))
+            } else {
+                BackendEvent::None
+            }
+        }
+        StrategyTask::SetStartIdentitiesBalance(strategy_name, balance) => {
+            let mut strategies_lock = app_state.available_strategies.lock().await;
+            if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
+                strategy.start_identities = StartIdentities {
+                    number_of_identities: strategy.start_identities.number_of_identities,
+                    keys_per_identity: strategy.start_identities.keys_per_identity,
+                    starting_balances: Some(balance),
                 };
                 BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
                     strategy_name.clone(),
@@ -1052,7 +1081,7 @@ pub(crate) async fn run_strategy_task<'s>(
                                     };
 
                                     drop(known_contracts_lock);
-            
+
                                     let wait_future = async move {
                                         let wait_result = match transition.wait_for_state_transition_result_request() {
                                             Ok(wait_request) => wait_request.execute(sdk, RequestSettings::default()).await,
@@ -1064,7 +1093,7 @@ pub(crate) async fn run_strategy_task<'s>(
                                                 return None;
                                             }
                                         };
-                                    
+
                                         match wait_result {
                                             Ok(wait_response) => {
                                                 Some(if let Some(wait_for_state_transition_result_response::Version::V0(v0_response)) = &wait_response.version {
@@ -1311,10 +1340,7 @@ pub(crate) async fn run_strategy_task<'s>(
         StrategyTask::RemoveIdentityInserts(strategy_name) => {
             let mut strategies_lock = app_state.available_strategies.lock().await;
             if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
-                strategy.identities_inserts = Frequency {
-                    times_per_block_range: Default::default(),
-                    chance_per_block: None,
-                };
+                strategy.identities_inserts = IdentityInsertInfo::default();
                 BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
                     strategy_name.clone(),
                     MutexGuard::map(strategies_lock, |strategies| {

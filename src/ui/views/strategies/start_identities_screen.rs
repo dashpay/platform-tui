@@ -7,7 +7,9 @@ use tuirealm::{
     Frame,
 };
 
-use super::start_identities::StrategyStartIdentitiesFormController;
+use super::start_identities::{
+    StrategyStartIdentitiesBalanceFormController, StrategyStartIdentitiesFormController,
+};
 use crate::{
     backend::{AppState, AppStateUpdate, BackendEvent, StrategyTask, Task},
     ui::screen::{
@@ -17,10 +19,11 @@ use crate::{
     Event,
 };
 
-const COMMAND_KEYS: [ScreenCommandKey; 3] = [
+const COMMAND_KEYS: [ScreenCommandKey; 4] = [
     ScreenCommandKey::new("q", "Back to Strategy"),
     ScreenCommandKey::new("a", "Add/edit"),
     ScreenCommandKey::new("r", "Remove"),
+    ScreenCommandKey::new("b", "Set balance"),
 ];
 
 pub(crate) struct StartIdentitiesScreenController {
@@ -98,6 +101,18 @@ impl ScreenController for StartIdentitiesScreenController {
                 )),
                 block: false,
             },
+            Event::Key(KeyEvent {
+                code: Key::Char('b'),
+                modifiers: KeyModifiers::NONE,
+            }) => {
+                if let Some(strategy_name) = &self.strategy_name {
+                    ScreenFeedback::Form(Box::new(
+                        StrategyStartIdentitiesBalanceFormController::new(strategy_name.clone()),
+                    ))
+                } else {
+                    ScreenFeedback::None
+                }
+            }
             Event::Backend(BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
                 strategy_name,
                 strategy,
@@ -138,8 +153,10 @@ impl ScreenController for StartIdentitiesScreenController {
     fn view(&mut self, frame: &mut Frame, area: Rect) {
         let display_text = if let Some(strategy) = &self.selected_strategy {
             // Construct the text to display start identities
-            let start_identities_text =
-                format!("Start identities: {}", strategy.start_identities.number_of_identities);
+            let start_identities_text = format!(
+                "Start identities: {}",
+                strategy.start_identities.number_of_identities
+            );
 
             format!(
                 "Strategy: {}\n{}",

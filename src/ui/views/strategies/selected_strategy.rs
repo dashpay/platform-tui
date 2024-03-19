@@ -197,19 +197,40 @@ fn display_strategy(
         }
     }
 
-    let times_per_block_display = if strategy.identities_inserts.times_per_block_range.end
-        > strategy.identities_inserts.times_per_block_range.start
+    let times_per_block_display = if strategy
+        .identities_inserts
+        .frequency
+        .times_per_block_range
+        .end
+        > strategy
+            .identities_inserts
+            .frequency
+            .times_per_block_range
+            .start
     {
-        strategy.identities_inserts.times_per_block_range.end - 1
+        strategy
+            .identities_inserts
+            .frequency
+            .times_per_block_range
+            .end
+            - 1
     } else {
-        strategy.identities_inserts.times_per_block_range.end
+        strategy
+            .identities_inserts
+            .frequency
+            .times_per_block_range
+            .end
     };
 
     let identity_inserts_line = format!(
         "{:indent$}Times per block: {}; chance per block: {}\n",
         "",
         times_per_block_display,
-        strategy.identities_inserts.chance_per_block.unwrap_or(0.0),
+        strategy
+            .identities_inserts
+            .frequency
+            .chance_per_block
+            .unwrap_or(0.0),
         indent = 8,
     );
 

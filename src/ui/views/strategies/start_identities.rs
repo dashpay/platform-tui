@@ -38,6 +38,7 @@ impl FormController for StrategyStartIdentitiesFormController {
                     strategy_name: self.selected_strategy.clone(),
                     count,
                     keys_count,
+                    balance: 1.0,
                 }),
                 block: false,
             },
@@ -63,5 +64,54 @@ impl FormController for StrategyStartIdentitiesFormController {
 
     fn steps_number(&self) -> u8 {
         2
+    }
+}
+
+pub(super) struct StrategyStartIdentitiesBalanceFormController {
+    input: SelectInput<f64>,
+    selected_strategy: String,
+}
+
+impl StrategyStartIdentitiesBalanceFormController {
+    pub(super) fn new(selected_strategy: String) -> Self {
+        Self {
+            input: SelectInput::new(vec![0.01, 0.1, 0.5, 1.0, 3.0, 5.0, 10.0, 15.0, 20.0]),
+            selected_strategy,
+        }
+    }
+}
+
+impl FormController for StrategyStartIdentitiesBalanceFormController {
+    fn on_event(&mut self, event: KeyEvent) -> FormStatus {
+        match self.input.on_event(event) {
+            InputStatus::Done(balance) => FormStatus::Done {
+                task: Task::Strategy(StrategyTask::SetStartIdentitiesBalance(
+                    self.selected_strategy.clone(),
+                    balance,
+                )),
+                block: false,
+            },
+            status => status.into(),
+        }
+    }
+
+    fn form_name(&self) -> &'static str {
+        "Set initial identities balances"
+    }
+
+    fn step_view(&mut self, frame: &mut Frame, area: Rect) {
+        self.input.view(frame, area)
+    }
+
+    fn step_name(&self) -> &'static str {
+        ""
+    }
+
+    fn step_index(&self) -> u8 {
+        1
+    }
+
+    fn steps_number(&self) -> u8 {
+        1
     }
 }
