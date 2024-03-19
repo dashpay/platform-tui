@@ -952,11 +952,9 @@ pub(crate) async fn run_strategy_task<'s>(
                                                         if let Some(wait_for_state_transition_result_response::Version::V0(v0_response)) = &wait_response.version {
                                                             if let Some(metadata) = &v0_response.metadata {
                                                                 success_count += 1;
-                                                                info!("Successfully processed state transition {} ({}) for block {} (Actual block height: {})", st_queue_index, transition_type, current_block_info.height, metadata.height);
-                                                                // Sleep because we need to give the chain state time to update revisions
-                                                                // It seems this is only necessary for certain STs. Like AddKeys and DisableKeys seem to need it, but Transfer does not. Not sure about Withdraw or ContractUpdate yet.
-                                                                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-
+                                                                if !verify_proofs {
+                                                                    info!("Successfully processed state transition {} ({}) for block {} (Actual block height: {})", st_queue_index, transition_type, current_block_info.height, metadata.height);
+                                                                }
                                                                 // Additional logging to inspect the result regardless of metadata presence
                                                                 match &v0_response.result {
                                                                     Some(wait_for_state_transition_result_response_v0::Result::Error(error)) => {
@@ -979,7 +977,7 @@ pub(crate) async fn run_strategy_task<'s>(
                                                                             );
                                                                             match verified {
                                                                                 Ok(_) => {
-                                                                                    info!("Verified proof for state transition {} ({}) for block {} (Actual block height: {})", st_queue_index, transition_type, current_block_info.height, metadata.height);
+                                                                                    info!("Successfully processed and verified proof for state transition {} ({}), block {} (Actual block height: {})", st_queue_index, transition_type, current_block_info.height, metadata.height);
                                                                                 }
                                                                                 Err(e) => {
                                                                                     error!("Error verifying state transition execution proof: {}", e);
@@ -989,6 +987,10 @@ pub(crate) async fn run_strategy_task<'s>(
                                                                     }
                                                                     _ => {}
                                                                 }
+
+                                                                // Sleep because we need to give the chain state time to update revisions
+                                                                // It seems this is only necessary for certain STs. Like AddKeys and DisableKeys seem to need it, but Transfer does not. Not sure about Withdraw or ContractUpdate yet.
+                                                                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
                                                             }
                                                         } else {
                                                             info!("Response version other than V0 received or absent for state transition {} ({})", st_queue_index, transition_type);
@@ -1098,24 +1100,12 @@ pub(crate) async fn run_strategy_task<'s>(
                                             Ok(wait_response) => {
                                                 Some(if let Some(wait_for_state_transition_result_response::Version::V0(v0_response)) = &wait_response.version {
                                                     if let Some(metadata) = &v0_response.metadata {
-                                                        info!(
-                                                            "Successfully processed state transition {} ({}) for block {} (Actual block height: {})",
-                                                            index + 1, transition.name(), current_block_info.height, metadata.height
-                                                        );
-
-                                                        // Log the Base58 encoded IDs of any created Identities
-                                                        match transition.clone() {
-                                                            StateTransition::IdentityCreate(identity_create_transition) => {
-                                                                let ids = identity_create_transition.modified_data_ids();
-                                                                for id in ids {
-                                                                    let encoded_id: String = id.into();
-                                                                    info!("Created Identity: {}", encoded_id);
-                                                                }
-                                                            },
-                                                            _ => {
-                                                                // nothing
-                                                            }
-                                                        }                                                        
+                                                        if !verify_proofs {
+                                                            info!(
+                                                                "Successfully processed state transition {} ({}) for block {} (Actual block height: {})",
+                                                                index + 1, transition.name(), current_block_info.height, metadata.height
+                                                            );    
+                                                        }
 
                                                         // Verification of the proof
                                                         if let Some(wait_for_state_transition_result_response_v0::Result::Proof(proof)) = &v0_response.result {
@@ -1157,7 +1147,7 @@ pub(crate) async fn run_strategy_task<'s>(
 
                                                                 match verified {
                                                                     Ok(_) => {
-                                                                        info!("Verified proof for state transition {} ({}) for block {} (Actual block height: {})", index + 1, transition_type, current_block_info.height, metadata.height);
+                                                                        info!("Successfully processed and verified proof for state transition {} ({}), block {} (Actual block height: {})", index + 1, transition_type, current_block_info.height, metadata.height);
                                                                         
                                                                         // If a data contract was registered, add it to
                                                                         // known_contracts
@@ -1204,6 +1194,20 @@ pub(crate) async fn run_strategy_task<'s>(
                                                                     }
                                                                     Err(e) => error!("Error verifying state transition execution proof: {}", e),
                                                                 }
+                                                            }
+                                                        }
+
+                                                        // Log the Base58 encoded IDs of any created Identities
+                                                        match transition.clone() {
+                                                            StateTransition::IdentityCreate(identity_create_transition) => {
+                                                                let ids = identity_create_transition.modified_data_ids();
+                                                                for id in ids {
+                                                                    let encoded_id: String = id.into();
+                                                                    info!("Created Identity: {}", encoded_id);
+                                                                }
+                                                            },
+                                                            _ => {
+                                                                // nothing
                                                             }
                                                         }
                                                     }
