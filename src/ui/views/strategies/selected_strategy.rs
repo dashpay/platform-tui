@@ -2,6 +2,9 @@
 
 use std::collections::BTreeMap;
 
+use dpp::{
+    data_contract::accessors::v0::DataContractV0Getters, platform_value::string_encoding::Encoding,
+};
 use strategy_tests::{
     operations::{
         DataContractUpdateAction::{DataContractNewDocumentTypes, DataContractNewOptionalFields},
@@ -244,7 +247,11 @@ fn display_strategy(
                     DocumentAction::DocumentActionReplace => "Replace".to_string(),
                     _ => panic!("invalid document action selected"),
                 };
-                format!("Document({})", op_type)
+                format!(
+                    "Document({}): Contract: {}",
+                    op_type,
+                    op.contract.id().to_string(Encoding::Base58)
+                )
             }
             OperationType::IdentityTopUp => "IdentityTopUp".to_string(),
             OperationType::IdentityUpdate(op) => format!("IdentityUpdate({:?})", op),
@@ -255,7 +262,11 @@ fn display_strategy(
                     DataContractNewDocumentTypes(_) => "NewDocTypesRandom".to_string(),
                     DataContractNewOptionalFields(..) => "NewFieldsRandom".to_string(),
                 };
-                format!("ContractUpdate({})", op_type)
+                format!(
+                    "ContractUpdate({}): Contract: {}",
+                    op_type,
+                    op.contract.id().to_string(Encoding::Base58)
+                )
             }
             OperationType::IdentityTransfer => "IdentityTransfer".to_string(),
         };
@@ -277,6 +288,11 @@ fn display_strategy(
         ));
     }
 
+    let mut start_identities_balance = 1.0; // default is 1.0
+    if let Some(balance) = strategy.start_identities.starting_balances {
+        start_identities_balance = balance;
+    }
+
     format!(
         r#"{strategy_name}:
     Contracts with updates:
@@ -285,7 +301,9 @@ fn display_strategy(
 {identity_inserts_line}
     Operations:
 {operations_lines}
-    Start identities: {}"#,
-        strategy.start_identities.number_of_identities
+    Start identities: {} (Keys: {}, Balance: {})"#,
+        strategy.start_identities.number_of_identities,
+        strategy.start_identities.keys_per_identity,
+        start_identities_balance,
     )
 }
