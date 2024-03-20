@@ -1,6 +1,7 @@
 //! Contracts views.
 
 mod document_type;
+mod fetch_system_contract;
 mod fetch_contract;
 
 use std::{collections::BTreeMap, fmt::{self, Display}};
@@ -9,7 +10,6 @@ use dpp::{
     data_contract::accessors::v0::DataContractV0Getters, platform_value::string_encoding::Encoding,
     prelude::DataContract,
 };
-use itertools::Itertools;
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
     tui::prelude::Rect,
@@ -18,7 +18,8 @@ use tuirealm::{
 
 use self::{
     document_type::SelectDocumentTypeFormController,
-    fetch_contract::FetchSystemContractScreenController,
+    fetch_contract::FetchContractScreenController,
+    fetch_system_contract::FetchSystemContractScreenController,
 };
 use crate::{
     backend::{AppState, AppStateUpdate, BackendEvent, ContractTask, Task},
@@ -32,9 +33,10 @@ use crate::{
     Event,
 };
 
-const COMMAND_KEYS: [ScreenCommandKey; 6] = [
+const COMMAND_KEYS: [ScreenCommandKey; 7] = [
     ScreenCommandKey::new("q", "Back to Main"),
     ScreenCommandKey::new("s", "Fetch system contract"),
+    ScreenCommandKey::new("f", "Fetch contract"),
     ScreenCommandKey::new("↓ / C-n", "Next contract"),
     ScreenCommandKey::new("↑ / C-p", "Prev contract"),
     ScreenCommandKey::new("Enter", "Select contract"),
@@ -134,6 +136,11 @@ impl ScreenController for ContractsScreenController {
                 code: Key::Char('s'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::NextScreen(FetchSystemContractScreenController::builder()),
+
+            Event::Key(KeyEvent {
+                code: Key::Char('f'),
+                modifiers: KeyModifiers::NONE,
+            }) => ScreenFeedback::NextScreen(FetchContractScreenController::builder()),
 
             Event::Key(KeyEvent {
                 code: Key::Char('r'),
