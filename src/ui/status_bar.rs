@@ -57,6 +57,10 @@ impl StatusBarState {
         self.identity_loaded_balance = IdentityBalanceStatus::Balance(balance);
     }
 
+    pub(crate) fn clear_balance(&mut self) {
+        self.identity_loaded_balance = IdentityBalanceStatus::NoIdentity;
+    }
+
     pub(crate) fn set_balance_error(&mut self) {
         self.identity_loaded_balance = IdentityBalanceStatus::RefreshError;
     }

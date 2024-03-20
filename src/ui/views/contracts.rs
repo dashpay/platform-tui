@@ -4,7 +4,10 @@ mod document_type;
 mod fetch_system_contract;
 mod fetch_contract;
 
-use std::{collections::BTreeMap, fmt::{self, Display}};
+use std::{
+    collections::BTreeMap,
+    fmt::{self, Display},
+};
 
 use dpp::{
     data_contract::accessors::v0::DataContractV0Getters, platform_value::string_encoding::Encoding,
@@ -91,7 +94,10 @@ impl ContractsScreenController {
             None
         };
         let known_contracts = known_contracts_lock.clone();
-        ContractsScreenController { select, known_contracts }
+        ContractsScreenController {
+            select,
+            known_contracts,
+        }
     }
 
     fn contract_entries_vec<'a>(
@@ -146,13 +152,14 @@ impl ScreenController for ContractsScreenController {
                 code: Key::Char('r'),
                 modifiers: KeyModifiers::NONE,
             }) => {
-                let contract_names = self.known_contracts
+                let contract_names = self
+                    .known_contracts
                     .iter()
                     .map(|(name, _)| name.clone())
                     .collect::<Vec<String>>();
 
                 ScreenFeedback::Form(Box::new(RemoveContractFormController::new(contract_names)))
-            },
+            }
 
             Event::Key(event) => {
                 if let Some(select) = &mut self.select {
@@ -189,7 +196,7 @@ impl ScreenController for ContractsScreenController {
                 self.known_contracts = (*known_contracts).clone();
                 ScreenFeedback::Redraw
             }
-                        
+
             _ => ScreenFeedback::None,
         }
     }
