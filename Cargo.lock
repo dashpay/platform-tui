@@ -961,11 +961,7 @@ dependencies = [
 
 [[package]]
 name = "dapi-grpc"
-<<<<<<< HEAD
 version = "1.0.0-dev.9"
-=======
-version = "1.0.0-dev.8"
->>>>>>> fetch-contracts-by-id
 dependencies = [
  "dapi-grpc-macros",
  "futures-core",
@@ -981,11 +977,7 @@ dependencies = [
 
 [[package]]
 name = "dapi-grpc-macros"
-<<<<<<< HEAD
 version = "1.0.0-dev.9"
-=======
-version = "1.0.0-dev.8"
->>>>>>> fetch-contracts-by-id
 dependencies = [
  "heck",
  "quote",
@@ -1103,11 +1095,7 @@ dependencies = [
 
 [[package]]
 name = "dashpay-contract"
-<<<<<<< HEAD
 version = "1.0.0-dev.9"
-=======
-version = "1.0.0-dev.8"
->>>>>>> fetch-contracts-by-id
 dependencies = [
  "platform-value",
  "platform-version",
@@ -1117,11 +1105,7 @@ dependencies = [
 
 [[package]]
 name = "data-contracts"
-<<<<<<< HEAD
 version = "1.0.0-dev.9"
-=======
-version = "1.0.0-dev.8"
->>>>>>> fetch-contracts-by-id
 dependencies = [
  "dashpay-contract",
  "dpns-contract",
@@ -1202,11 +1186,7 @@ checksum = "9ea835d29036a4087793836fa931b08837ad5e957da9e23886b29586fb9b6650"
 
 [[package]]
 name = "dpns-contract"
-<<<<<<< HEAD
 version = "1.0.0-dev.9"
-=======
-version = "1.0.0-dev.8"
->>>>>>> fetch-contracts-by-id
 dependencies = [
  "platform-value",
  "platform-version",
@@ -1216,11 +1196,7 @@ dependencies = [
 
 [[package]]
 name = "dpp"
-<<<<<<< HEAD
 version = "1.0.0-dev.9"
-=======
-version = "1.0.0-dev.8"
->>>>>>> fetch-contracts-by-id
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1267,11 +1243,7 @@ dependencies = [
 
 [[package]]
 name = "drive"
-<<<<<<< HEAD
 version = "1.0.0-dev.9"
-=======
-version = "1.0.0-dev.8"
->>>>>>> fetch-contracts-by-id
 dependencies = [
  "arc-swap",
  "base64 0.21.7",
@@ -1306,11 +1278,7 @@ dependencies = [
 
 [[package]]
 name = "drive-proof-verifier"
-<<<<<<< HEAD
 version = "1.0.0-dev.9"
-=======
-version = "1.0.0-dev.8"
->>>>>>> fetch-contracts-by-id
 dependencies = [
  "dapi-grpc",
  "dpp",
@@ -1529,11 +1497,7 @@ checksum = "25cbce373ec4653f1a01a31e8a5e5ec0c622dc27ff9c4e6606eefef5cbbed4a5"
 
 [[package]]
 name = "feature-flags-contract"
-<<<<<<< HEAD
 version = "1.0.0-dev.9"
-=======
-version = "1.0.0-dev.8"
->>>>>>> fetch-contracts-by-id
 dependencies = [
  "platform-value",
  "platform-version",
@@ -2461,11 +2425,7 @@ dependencies = [
 
 [[package]]
 name = "masternode-reward-shares-contract"
-<<<<<<< HEAD
 version = "1.0.0-dev.9"
-=======
-version = "1.0.0-dev.8"
->>>>>>> fetch-contracts-by-id
 dependencies = [
  "platform-value",
  "platform-version",
@@ -3005,11 +2965,7 @@ checksum = "d231b230927b5e4ad203db57bbcbee2802f6bce620b1e4a9024a07d94e2907ec"
 
 [[package]]
 name = "platform-serialization"
-<<<<<<< HEAD
 version = "1.0.0-dev.9"
-=======
-version = "1.0.0-dev.8"
->>>>>>> fetch-contracts-by-id
 dependencies = [
  "bincode 2.0.0-rc.3",
  "platform-version",
@@ -3017,11 +2973,7 @@ dependencies = [
 
 [[package]]
 name = "platform-serialization-derive"
-<<<<<<< HEAD
 version = "1.0.0-dev.9"
-=======
-version = "1.0.0-dev.8"
->>>>>>> fetch-contracts-by-id
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3031,11 +2983,7 @@ dependencies = [
 
 [[package]]
 name = "platform-value"
-<<<<<<< HEAD
 version = "1.0.0-dev.9"
-=======
-version = "1.0.0-dev.8"
->>>>>>> fetch-contracts-by-id
 dependencies = [
  "base64 0.13.1",
  "bincode 2.0.0-rc.3",
@@ -3056,22 +3004,14 @@ dependencies = [
 
 [[package]]
 name = "platform-version"
-<<<<<<< HEAD
 version = "1.0.0-dev.9"
-=======
-version = "1.0.0-dev.8"
->>>>>>> fetch-contracts-by-id
 dependencies = [
  "thiserror",
 ]
 
 [[package]]
 name = "platform-versioning"
-<<<<<<< HEAD
 version = "1.0.0-dev.9"
-=======
-version = "1.0.0-dev.8"
->>>>>>> fetch-contracts-by-id
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3597,11 +3537,7 @@ dependencies = [
 
 [[package]]
 name = "rs-dapi-client"
-<<<<<<< HEAD
 version = "1.0.0-dev.9"
-=======
-version = "1.0.0-dev.8"
->>>>>>> fetch-contracts-by-id
 dependencies = [
  "backon",
  "chrono",
@@ -3659,11 +3595,7 @@ dependencies = [
 
 [[package]]
 name = "rs-sdk"
-<<<<<<< HEAD
 version = "1.0.0-dev.9"
-=======
-version = "1.0.0-dev.8"
->>>>>>> fetch-contracts-by-id
 dependencies = [
  "async-trait",
  "bincode 2.0.0-rc.3",
@@ -4117,11 +4049,7 @@ checksum = "f27f6278552951f1f2b8cf9da965d10969b2efdea95a6ec47987ab46edfe263a"
 
 [[package]]
 name = "simple-signer"
-<<<<<<< HEAD
 version = "1.0.0-dev.9"
-=======
-version = "1.0.0-dev.8"
->>>>>>> fetch-contracts-by-id
 dependencies = [
  "anyhow",
  "bincode 2.0.0-rc.3",
@@ -4227,11 +4155,7 @@ checksum = "9e08d8363704e6c71fc928674353e6b7c23dcea9d82d7012c8faf2a3a025f8d0"
 
 [[package]]
 name = "strategy-tests"
-<<<<<<< HEAD
 version = "1.0.0-dev.9"
-=======
-version = "1.0.0-dev.8"
->>>>>>> fetch-contracts-by-id
 dependencies = [
  "bincode 2.0.0-rc.3",
  "dpp",
@@ -5526,11 +5450,7 @@ dependencies = [
 
 [[package]]
 name = "withdrawals-contract"
-<<<<<<< HEAD
 version = "1.0.0-dev.9"
-=======
-version = "1.0.0-dev.8"
->>>>>>> fetch-contracts-by-id
 dependencies = [
  "num_enum",
  "platform-value",
