@@ -287,11 +287,11 @@ pub(crate) async fn run_strategy_task<'s>(
             }
         }
         StrategyTask::SetContractsWithUpdates(strategy_name, selected_contract_names) => {
+            // Attain state locks
             let mut strategies_lock = app_state.available_strategies.lock().await;
             let known_contracts_lock = app_state.known_contracts.lock().await;
             let supporting_contracts_lock = app_state.supporting_contracts.lock().await;
-            let mut contract_names_lock =
-                app_state.available_strategies_contract_names.lock().await;
+            let mut contract_names_lock = app_state.available_strategies_contract_names.lock().await;
 
             if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
                 let platform_version = PlatformVersion::latest();
@@ -305,27 +305,11 @@ pub(crate) async fn run_strategy_task<'s>(
                         .cloned()
                 };
 
-                // Get the loaded identity nonce
-                let loaded_identity_lock = match app_state.refresh_identity(&sdk).await {
-                    Ok(lock) => lock,
-                    Err(e) => {
-                        error!("Failed to refresh identity: {:?}", e);
-                        return BackendEvent::StrategyError {
-                            strategy_name: strategy_name.clone(),
-                            error: format!("Failed to refresh identity: {:?}", e),
-                        };
-                    }
-                };
-                let identity_nonce = sdk
-                    .get_identity_nonce(loaded_identity_lock.id(), true, None)
-                    .await
-                    .expect("Couldn't get current identity nonce");
-
                 if let Some(first_contract_name) = selected_contract_names.first() {
                     if let Some(data_contract) = get_contract(first_contract_name) {
                         match CreatedDataContract::from_contract_and_identity_nonce(
                             data_contract,
-                            identity_nonce,
+                            u64::default(),
                             platform_version,
                         ) {
                             Ok(initial_contract) => {
@@ -337,7 +321,7 @@ pub(crate) async fn run_strategy_task<'s>(
                                     if let Some(update_contract) = get_contract(contract_name) {
                                         match CreatedDataContract::from_contract_and_identity_nonce(
                                             update_contract,
-                                            identity_nonce,
+                                            u64::default(),
                                             platform_version,
                                         ) {
                                             Ok(created_update_contract) => {
@@ -1032,7 +1016,6 @@ pub(crate) async fn run_strategy_task<'s>(
                                                 }
                                             })
                                         },
-                                        // Handle other state transition types that involve data contracts here
                                         _ => None,
                                     };
 
@@ -1080,7 +1063,50 @@ pub(crate) async fn run_strategy_task<'s>(
                                                             _ => {
                                                                 // nothing
                                                             }
-                                                        }                                                        
+                                                        }
+
+                                                        // If a data contract was registered, add it to
+                                                        // known_contracts
+                                                        if let StateTransition::DataContractCreate(
+                                                            DataContractCreateTransition::V0(
+                                                                data_contract_create_transition,
+                                                            ),
+                                                        ) = &transition
+                                                        {
+                                                            // Extract the data contract from the transition
+                                                            let data_contract_serialized =
+                                                                &data_contract_create_transition
+                                                                    .data_contract;
+                                                            let data_contract_result =
+                                                                DataContract::try_from_platform_versioned(
+                                                                    data_contract_serialized.clone(),
+                                                                    false,
+                                                                    PlatformVersion::latest(),
+                                                                );
+
+                                                            match data_contract_result {
+                                                                Ok(data_contract) => {
+                                                                    let mut known_contracts_lock =
+                                                                        app_state
+                                                                            .known_contracts
+                                                                            .lock()
+                                                                            .await;
+                                                                    known_contracts_lock.insert(
+                                                                        data_contract
+                                                                            .id()
+                                                                            .to_string(Encoding::Base58),
+                                                                        data_contract,
+                                                                    );
+                                                                }
+                                                                Err(e) => {
+                                                                    error!(
+                                                                        "Error deserializing data \
+                                                                        contract: {:?}",
+                                                                        e
+                                                                    );
+                                                                }
+                                                            }
+                                                        }
 
                                                         // Verification of the proof
                                                         if let Some(wait_for_state_transition_result_response_v0::Result::Proof(proof)) = &v0_response.result {
