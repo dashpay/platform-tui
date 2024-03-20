@@ -566,7 +566,7 @@ impl AppState {
 
         let identity_public_key = identity
             .get_first_public_key_matching(
-                KeyPurpose::WITHDRAW,
+                KeyPurpose::TRANSFER,
                 KeySecurityLevel::full_range().into(),
                 KeyType::all_key_types().into(),
             )

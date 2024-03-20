@@ -27,7 +27,7 @@ impl AddIdentityKeyFormController {
                 KeyPurpose::AUTHENTICATION,
                 KeyPurpose::ENCRYPTION,
                 KeyPurpose::DECRYPTION,
-                KeyPurpose::WITHDRAW,
+                KeyPurpose::TRANSFER,
             ])),
             purpose_result: None,
             security_result: None,
@@ -52,7 +52,7 @@ impl FormController for AddIdentityKeyFormController {
                     FormStatus::Redraw
                 }
                 // Withdraw keys form adjustments
-                InputStatus::Done(purpose @ KeyPurpose::WITHDRAW) => {
+                InputStatus::Done(purpose @ KeyPurpose::TRANSFER) => {
                     self.purpose_result = Some(purpose);
                     // Withdraw keys have critical security so the field will be skipped
                     self.security_result = Some(KeySecurityLevel::CRITICAL);
