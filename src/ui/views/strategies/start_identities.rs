@@ -22,7 +22,7 @@ impl StrategyStartIdentitiesFormController {
                 ),
                 Field::new(
                     "Keys per identity",
-                    SelectInput::new(vec![3, 4, 5, 10, 15, 20, 32]),
+                    SelectInput::new(vec![4, 5, 10, 15, 20, 32]),
                 ),
             )),
             selected_strategy,
@@ -38,7 +38,7 @@ impl FormController for StrategyStartIdentitiesFormController {
                     strategy_name: self.selected_strategy.clone(),
                     count,
                     keys_count,
-                    balance: 100_000_000,
+                    balance: 10_000_000,
                 }),
                 block: false,
             },

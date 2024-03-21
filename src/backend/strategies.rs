@@ -308,23 +308,16 @@ pub async fn run_strategy_task<'s>(
                 };
 
                 // Get the loaded identity nonce
-                let mut loaded_identity_lock = app_state.loaded_identity.lock().await;
+                let loaded_identity_lock = app_state.loaded_identity.lock().await;
                 if loaded_identity_lock.is_some() {
                     drop(loaded_identity_lock);
             
                     let _ = app_state.refresh_identity(&sdk).await;
-            
-                    loaded_identity_lock = app_state.loaded_identity.lock().await;
                 } else {
                     error!("Can't create contracts_with_updates because there's no loaded identity.");
                     return BackendEvent::None;
                 }
-                let identity_id = loaded_identity_lock.as_ref().expect("Expected a loaded identity").id();
-                let identity_nonce = sdk
-                    .get_identity_nonce(identity_id, true, None)
-                    .await
-                    .expect("Couldn't get current identity nonce");
-            
+
                 if let Some(first_contract_name) = selected_contract_names.first() {
                     if let Some(data_contract) = get_contract(first_contract_name) {
                         match CreatedDataContract::from_contract_and_identity_nonce(
@@ -993,6 +986,13 @@ pub async fn run_strategy_task<'s>(
                                                                 // Sleep because we need to give the chain state time to update revisions
                                                                 // It seems this is only necessary for certain STs. Like AddKeys and DisableKeys seem to need it, but Transfer does not. Not sure about Withdraw or ContractUpdate yet.
                                                                 tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                                                            } else {
+                                                                if let Some(result) = &v0_response.result {
+                                                                    match result {
+                                                                        wait_for_state_transition_result_response_v0::Result::Error(e) => tracing::error!("{:?}", e),
+                                                                        wait_for_state_transition_result_response_v0::Result::Proof(_) => tracing::info!("Proof received but no metadata present so we can't verify it."),
+                                                                    }
+                                                                }
                                                             }
                                                         } else {
                                                             info!("Response version other than V0 received or absent for state transition {} ({})", st_queue_index, transition_type);
@@ -1030,7 +1030,15 @@ pub async fn run_strategy_task<'s>(
                                                 .await;
                                             Ok((transition_clone, broadcast_result))
                                         }
-                                        Err(e) => Err(e),
+                                        Err(e) => {
+                                            tracing::error!(
+                                                "Error preparing broadcast request for state transition {} block height {}: {:?}",
+                                                st_queue_index,
+                                                current_block_info.height,
+                                                e
+                                            );
+                                            Err(e)
+                                        },
                                     }
                                 };
                                 broadcast_futures.push(future);
@@ -1111,7 +1119,6 @@ pub async fn run_strategy_task<'s>(
                                                         // Verification of the proof
                                                         if let Some(wait_for_state_transition_result_response_v0::Result::Proof(proof)) = &v0_response.result {
                                                             if verify_proofs {
-                                                                let epoch = Epoch::new(metadata.epoch as u16).expect("Expected to get epoch from metadata in proof verification");
                                                                 // For proof verification, if it's a DocumentsBatch, include the data contract, else don't
                                                                 let verified = if transition.name() == "DocumentsBatch" {
                                                                     match data_contract_clone.as_ref() {
@@ -1204,20 +1211,6 @@ pub async fn run_strategy_task<'s>(
                                                                 }
                                                             }
                                                         }
-
-                                                        // Log the Base58 encoded IDs of any created Identities
-                                                        match transition.clone() {
-                                                            StateTransition::IdentityCreate(identity_create_transition) => {
-                                                                let ids = identity_create_transition.modified_data_ids();
-                                                                for id in ids {
-                                                                    let encoded_id: String = id.into();
-                                                                    info!("Created Identity: {}", encoded_id);
-                                                                }
-                                                            },
-                                                            _ => {
-                                                                // nothing
-                                                            }
-                                                        }
                                                         
                                                         // Log the Base58 encoded IDs of any created Contracts
                                                         match transition.clone() {
@@ -1232,7 +1225,30 @@ pub async fn run_strategy_task<'s>(
                                                                 // nothing
                                                             }
                                                         }
+
+                                                        // Log the Base58 encoded IDs of any created Identities
+                                                        match transition.clone() {
+                                                            StateTransition::IdentityCreate(identity_create_transition) => {
+                                                                let ids = identity_create_transition.modified_data_ids();
+                                                                for id in ids {
+                                                                    let encoded_id: String = id.into();
+                                                                    info!("Created Identity: {}", encoded_id);
+                                                                }
+                                                            },
+                                                            _ => {
+                                                                // nothing
+                                                            }
+                                                        }
+                                                    } else {
+                                                        if let Some(result) = &v0_response.result {
+                                                            match result {
+                                                                wait_for_state_transition_result_response_v0::Result::Error(e) => tracing::error!("{:?}", e),
+                                                                wait_for_state_transition_result_response_v0::Result::Proof(_) => tracing::info!("Proof received but no metadata present so we can't verify it."),
+                                                            }
+                                                        }
                                                     }
+                                                } else {
+                                                    tracing::error!("wait_response.version is None");
                                                 })
                                             },
                                             Err(e) => {
