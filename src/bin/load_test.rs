@@ -650,7 +650,7 @@ async fn broadcast_random_documents_load_test(
     // Put document varians into an mpsc channel
     // When variant is used by a task, it is read from the channel.
     // When it's freed, it is put back into the channel.
-    let (doctype_variants_done, doctype_variants) =
+    let (doctype_variants_done, mut doctype_variants) =
         mpsc::channel::<Arc<DocumentType>>(document_type_variants.len());
     for v in document_type_variants {
         // initially, all doctype variants are available
@@ -659,7 +659,6 @@ async fn broadcast_random_documents_load_test(
             .await
             .expect("expected to send a variant");
     }
-    let variants_lock = Arc::new(Mutex::new(doctype_variants));
 
     // Get identity public key
     let identity_public_key = identity
@@ -722,6 +721,7 @@ async fn broadcast_random_documents_load_test(
         included.clone(),
         doctype_variants_done,
     ));
+    let mut std_rng = StdRng::from_entropy();
 
     while !cancel.is_cancelled() {
         if cancel.is_cancelled() {
@@ -745,40 +745,33 @@ async fn broadcast_random_documents_load_test(
         let cancel_task = cancel.clone();
         let sdk = Arc::clone(&sdk);
 
-        let variants_reserve = Arc::clone(&variants_lock);
+        // get some variant; it will be disposed (re-entered) when document is mined
+        let document_type_variant = doctype_variants
+            .recv()
+            .await
+            .expect("expected a document type variant");
+
+        let document_type_to_use = document_type_variant.clone();
+
+        let document_state_transition_entropy: [u8; 32] = std_rng.gen();
+
+        let random_document = document_type_to_use
+            .random_document_with_params(
+                identity_id,
+                document_state_transition_entropy.into(),
+                Some(created_at_ms as u64),
+                None,
+                None,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                &mut std_rng,
+                version,
+            )
+            .expect("expected a random document");
 
         let checker = checker.clone();
 
         let task = tokio::task::spawn(async move {
-            let mut std_rng = StdRng::from_entropy();
-            let document_state_transition_entropy: [u8; 32] = std_rng.gen();
-
-            // Generate a random document
-
-            // get some variant; it will be disposed (re-entered) when document is mined
-            let mut document_type_variant_guard = variants_reserve.lock().await;
-            let document_type_variant = document_type_variant_guard
-                .recv()
-                .await
-                .expect("expected a document type variant");
-            drop(document_type_variant_guard);
-
-            let document_type_to_use = document_type_variant.clone();
-
-            let random_document = document_type_to_use
-                .random_document_with_params(
-                    identity_id,
-                    document_state_transition_entropy.into(),
-                    Some(created_at_ms as u64),
-                    None,
-                    None,
-                    DocumentFieldFillType::FillIfNotRequired,
-                    DocumentFieldFillSize::AnyDocumentFillSize,
-                    &mut std_rng,
-                    version,
-                )
-                .expect("expected a random document");
-
             // Wait for the rate limiter to allow further processing
             tokio::select! {
                _ = rate_limiter.until_ready() => {},
