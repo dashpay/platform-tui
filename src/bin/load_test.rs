@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::thread::sleep;
 use std::{
     collections::HashSet,
     num::NonZeroU32,
@@ -9,7 +10,6 @@ use std::{
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use tokio::time::sleep;
 
 use clap::Parser;
 use dpp::prelude::IdentityNonce;
@@ -431,83 +431,50 @@ async fn broadcast_contract_variants(
         }
     }
 
-    let mut broadasts = tokio::task::JoinSet::new();
-    let rate_limit = Arc::new(RateLimiter::direct(Quota::per_second(
-        contract_push_speed
-            .try_into()
-            .expect("contract push speed cannot be 0"),
-    )));
-
-    // we will broadcast all transactions first and then check if they exist
     for (i, transaction) in transitions_queue.iter().enumerate() {
-        let transaction = transaction.clone();
-
-        // Broadcast all transactions first, we'll check result later on
-        let rate_limit = rate_limit.clone();
-        let sdk = sdk.clone();
-
-        broadasts.spawn(async move {
-            rate_limit.until_ready().await;
-            let StateTransition::DataContractCreate(DataContractCreateTransition::V0(v0)) =
-                &transaction
-            else {
-                panic!("must be a data contract create transition")
-            };
-            let id = v0.data_contract.id();
-            tracing::info!("registering contract {} with id {}", i, id);
-            let start = tokio::time::Instant::now();
+        let StateTransition::DataContractCreate(DataContractCreateTransition::V0(v0)) =
+            &transaction
+        else {
+            panic!("must be a data contract create transition")
+        };
+        let id = v0.data_contract.id();
+        tracing::info!("registering contract {} with id {}", i, id);
+        if i % contract_push_speed as usize == 0
+            || i > (count - count % contract_push_speed) as usize
+        {
             match transaction.broadcast_and_wait(&sdk, None).await {
                 Ok(_) => {}
                 Err(e) => {
-                    tracing::info!(
-                        id = id.to_string(Encoding::Hex),
-                        "Experienced a broadcast {} failure: {:?}",
-                        i,
-                        e
-                    );
-                }
-            }
-
-            (i, id, start)
-        });
-    }
-    // ensure everything had a chance to be processed
-    tracing::info!("Waiting 10 seconds before checking if contracts exist");
-    sleep(Duration::from_secs(10)).await;
-
-    loop {
-        let mut timeout = tokio::time::interval(Duration::from_secs(120));
-        timeout.tick().await; // first tick is immediate
-        tokio::select! {
-                _ = timeout.tick() => {
-                    tracing::error!("timeout waiting for state transitions to be broadcasted");
-                    break;
-                },
-
-                result = broadasts.join_next() => {
-                    let result = match result {
-                        Some(result) => result,
-                        None => break,
-                    };
-                    let (i, identifier, start) = result.expect("cannot join broadcast task");
-                    let contract_exists = DataContract::fetch(&sdk, identifier)
+                    tracing::info!("Experienced a failure {:?} broadcasting a contract while waiting for the response", e);
+                    sleep(Duration::from_secs(10));
+                    let contract_exists = DataContract::fetch(&sdk, id)
                         .await
                         .expect("expected to get data contract")
                         .is_some();
                     if contract_exists {
-                        tracing::info!(
-                            id = identifier.to_string(Encoding::Hex),
-                            took = ?start.elapsed(),
-                            "contract {} proved to exist", i
-                        );
+                        tracing::info!("contract proved to exist after 10 seconds");
                     } else {
-                        tracing::error!(
-                            id = identifier.to_string(Encoding::Hex),
-                            took = ?start.elapsed(),
-                            "contract {} proved to not exist", i
-                        );
+                        tracing::info!("contract proved to not exist after 10 seconds");
                     }
                 }
+            }
+        } else {
+            match transaction.broadcast(&sdk).await {
+                Ok(_) => {}
+                Err(e) => {
+                    tracing::info!("Experienced a failure {:?} broadcasting a contract without waiting for the response", e);
+                    sleep(Duration::from_secs(10));
+                    let contract_exists = DataContract::fetch(&sdk, id)
+                        .await
+                        .expect("expected to get data contract")
+                        .is_some();
+                    if contract_exists {
+                        tracing::info!("contract proved to exist after 10 seconds");
+                    } else {
+                        tracing::info!("contract proved to not exist after 10 seconds");
+                    }
+                }
+            }
         }
     }
 
