@@ -1,5 +1,6 @@
+use rs_sdk::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
 use std::collections::VecDeque;
-use std::thread::sleep;
+use std::ops::Deref;
 use std::{
     collections::HashSet,
     num::NonZeroU32,
@@ -10,6 +11,7 @@ use std::{
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
+use tokio::time::sleep;
 
 use clap::Parser;
 use dpp::prelude::IdentityNonce;
@@ -41,7 +43,7 @@ use dpp::{
 use futures::future::join_all;
 use governor::{Quota, RateLimiter};
 use rand::{rngs::StdRng, Rng, SeedableRng};
-use rs_dapi_client::RequestSettings;
+use rs_dapi_client::{DapiRequest, RequestSettings};
 use rs_platform_explorer::{
     backend::{
         identities::IdentityTask, insight::InsightAPIClient, wallet::WalletTask, Backend, Task,
@@ -57,6 +59,7 @@ use rs_sdk::{
     Sdk, SdkBuilder,
 };
 use simple_signer::signer::SimpleSigner;
+use tokio::sync::{Mutex, MutexGuard};
 use tokio::{sync::Semaphore, time::Instant};
 use tokio_util::sync::CancellationToken;
 use tracing::level_filters::LevelFilter;
@@ -446,7 +449,7 @@ async fn broadcast_contract_variants(
                 Ok(_) => {}
                 Err(e) => {
                     tracing::info!("Experienced a failure {:?} broadcasting a contract while waiting for the response", e);
-                    sleep(Duration::from_secs(10));
+                    sleep(Duration::from_secs(10)).await;
                     let contract_exists = DataContract::fetch(&sdk, id)
                         .await
                         .expect("expected to get data contract")
@@ -463,7 +466,7 @@ async fn broadcast_contract_variants(
                 Ok(_) => {}
                 Err(e) => {
                     tracing::info!("Experienced a failure {:?} broadcasting a contract without waiting for the response", e);
-                    sleep(Duration::from_secs(10));
+                    sleep(Duration::from_secs(10)).await;
                     let contract_exists = DataContract::fetch(&sdk, id)
                         .await
                         .expect("expected to get data contract")
@@ -486,6 +489,88 @@ async fn broadcast_contract_variants(
     found_data_contracts
 }
 
+// Variants stores a lockable list of items. When next is called, it will find the next non-locked
+// item, lock it and return it. If no item is available, it will return None.
+struct LockableItems<T: Send> {
+    data: VecDeque<Mutex<T>>,
+    cursor: Mutex<usize>,
+}
+
+impl<'a, T: Send + 'a> LockableItems<T> {
+    pub fn new() -> Self {
+        LockableItems {
+            data: VecDeque::new(),
+            cursor: Mutex::new(0),
+        }
+    }
+
+    pub fn push(&mut self, item: T) {
+        let item = Mutex::new(item);
+        self.data.push_back(item);
+    }
+
+    // Find next non-locked item, lock and return it.
+    //
+    // None is returned if no item is available.
+    pub async fn next(&'a self) -> Option<MutexGuard<'a, T>> {
+        if self.data.is_empty() {
+            return None;
+        }
+        let mut count = self.data.len();
+        let mut cursor = self.cursor.lock().await;
+        while count > 0 {
+            let item = self.data.get(*cursor)?;
+            *cursor = (*cursor + 1) % self.data.len();
+
+            if let Ok(locked) = item.try_lock() {
+                return Some(locked);
+            }
+            count -= 1;
+        }
+
+        // we didn't find any data contracts to lock
+        None
+    }
+
+    // Find next non-locked item, lock and return it.
+    // Blocks if there are no unlocked items.
+    //
+    // # Panics
+    //
+    // Panics on empty list
+    //
+    pub async fn next_blocking(&'a self, cancel: CancellationToken) -> MutexGuard<'a, T> {
+        if self.data.is_empty() {
+            panic!("no items available");
+        }
+
+        loop {
+            if let Some(item) = self.next().await {
+                return item;
+            }
+
+            tracing::debug!(
+                "no unlocked {} available, waiting for an item",
+                std::any::type_name::<T>()
+            );
+            tokio::select! {
+                _ = sleep(Duration::from_millis(10)) => {},
+                _ = cancel.cancelled() => {}
+            }
+        }
+    }
+}
+
+impl<'a> From<Vec<Arc<DocumentType>>> for LockableItems<Arc<DocumentType>> {
+    fn from(data: Vec<Arc<DocumentType>>) -> Self {
+        let mut variants = LockableItems::new();
+        for item in data {
+            variants.push(item);
+        }
+        variants
+    }
+}
+
 async fn broadcast_random_documents_load_test(
     sdk: Arc<Sdk>,
     identity: &Identity,
@@ -506,6 +591,8 @@ async fn broadcast_random_documents_load_test(
     );
 
     let identity_id = identity.id();
+
+    let document_type_variants = Arc::new(LockableItems::from(document_type_variants));
 
     // Get identity public key
 
@@ -534,6 +621,7 @@ async fn broadcast_random_documents_load_test(
 
     // what the hell
     let oks = Arc::new(AtomicUsize::new(0)); // Atomic counter for tasks
+    let included = Arc::new(AtomicUsize::new(0)); // Txs included in a block
     let errs = Arc::new(AtomicUsize::new(0)); // Atomic counter for tasks
     let pending = Arc::new(AtomicUsize::new(0));
     let last_report = Arc::new(AtomicU64::new(0));
@@ -564,121 +652,139 @@ async fn broadcast_random_documents_load_test(
     let version = sdk.version();
 
     while !cancel.is_cancelled() {
-        for document_type_variant in document_type_variants.iter() {
-            if cancel.is_cancelled() {
-                break;
-            }
-            // Acquire a permit
-            let permits = Arc::clone(&permits);
-            let permit = permits.acquire_owned().await.unwrap();
+        if cancel.is_cancelled() {
+            break;
+        }
+        // Acquire a permit
+        let permits = Arc::clone(&permits);
+        let permit = permits.acquire_owned().await.unwrap();
 
-            let oks = Arc::clone(&oks);
-            let errs = Arc::clone(&errs);
-            let pending = Arc::clone(&pending);
-            let last_report = Arc::clone(&last_report);
+        let oks = Arc::clone(&oks);
+        let included = Arc::clone(&included);
 
-            let identity_public_key = identity_public_key.clone();
+        let errs = Arc::clone(&errs);
+        let pending = Arc::clone(&pending);
+        let last_report = Arc::clone(&last_report);
 
-            let signer = Arc::clone(&signer);
+        let identity_public_key = identity_public_key.clone();
+
+        let signer = Arc::clone(&signer);
+
+        let rate_limiter = rate_limit.clone();
+        let cancel_task = cancel.clone();
+        let sdk = Arc::clone(&sdk);
+        let document_type_variants = document_type_variants.clone();
+
+        let task = tokio::task::spawn(async move {
+            let mut std_rng = StdRng::from_entropy();
+            let document_state_transition_entropy: [u8; 32] = std_rng.gen();
+
+            // Generate a random document
+            let document_type_variant = document_type_variants
+                .next_blocking(cancel_task.child_token())
+                .await;
 
             let document_type_to_use = document_type_variant.clone();
 
-            let rate_limiter = rate_limit.clone();
-            let cancel_task = cancel.clone();
-            let sdk = Arc::clone(&sdk);
+            let random_document = document_type_to_use
+                .random_document_with_params(
+                    identity_id,
+                    document_state_transition_entropy.into(),
+                    Some(created_at_ms as u64),
+                    None,
+                    None,
+                    DocumentFieldFillType::FillIfNotRequired,
+                    DocumentFieldFillSize::AnyDocumentFillSize,
+                    &mut std_rng,
+                    version,
+                )
+                .expect("expected a random document");
 
-            let task = tokio::task::spawn(async move {
-                let mut std_rng = StdRng::from_entropy();
-                let document_state_transition_entropy: [u8; 32] = std_rng.gen();
+            // Wait for the rate limiter to allow further processing
+            tokio::select! {
+               _ = rate_limiter.until_ready() => {},
+               _ = cancel_task.cancelled() => return,
+            };
 
-                // Generate a random document
+            // Broadcast the document
+            tracing::trace!(
+                "broadcasting document {}",
+                random_document.id().to_string(Encoding::Base58),
+            );
 
-                let random_document = document_type_to_use
-                    .random_document_with_params(
-                        identity_id,
-                        document_state_transition_entropy.into(),
-                        Some(created_at_ms as u64),
-                        None,
-                        None,
-                        DocumentFieldFillType::FillIfNotRequired,
-                        DocumentFieldFillSize::AnyDocumentFillSize,
-                        &mut std_rng,
-                        version,
-                    )
-                    .expect("expected a random document");
+            pending.fetch_add(1, Ordering::SeqCst);
 
-                // Wait for the rate limiter to allow further processing
-                tokio::select! {
-                   _ = rate_limiter.until_ready() => {},
-                   _ = cancel_task.cancelled() => return,
-                };
+            let elapsed_secs = start_time.elapsed().as_secs();
 
-                // Broadcast the document
-                tracing::trace!(
-                    "broadcasting document {}",
-                    random_document.id().to_string(Encoding::Base58),
+            if start_time.elapsed().as_secs() % 10 == 0
+                && elapsed_secs != last_report.load(Ordering::SeqCst)
+            {
+                tracing::info!(
+                    "{} secs passed: {} pending, {} successful, {} failed",
+                    elapsed_secs,
+                    pending.load(Ordering::SeqCst),
+                    oks.load(Ordering::SeqCst),
+                    errs.load(Ordering::SeqCst),
                 );
+                last_report.swap(elapsed_secs, Ordering::SeqCst);
+            }
 
-                pending.fetch_add(1, Ordering::SeqCst);
+            let result = random_document
+                .put_to_platform(
+                    &sdk,
+                    document_type_to_use.as_ref().clone(),
+                    document_state_transition_entropy,
+                    identity_public_key,
+                    signer.as_ref(),
+                    Some(PutSettings {
+                        request_settings: settings,
+                        identity_nonce_stale_time_s: None,
+                        user_fee_increase: None,
+                    }),
+                )
+                .await;
 
-                let elapsed_secs = start_time.elapsed().as_secs();
+            // note we still hold the contract variant until we confirm the tx is included in a block
+            drop(permit);
 
-                if start_time.elapsed().as_secs() % 10 == 0
-                    && elapsed_secs != last_report.load(Ordering::SeqCst)
-                {
-                    tracing::info!(
-                        "{} secs passed: {} pending, {} successful, {} failed",
-                        elapsed_secs,
-                        pending.load(Ordering::SeqCst),
-                        oks.load(Ordering::SeqCst),
-                        errs.load(Ordering::SeqCst),
+            pending.fetch_sub(1, Ordering::SeqCst);
+
+            match result {
+                Ok(st) => {
+                    oks.fetch_add(1, Ordering::SeqCst);
+
+                    tracing::trace!(
+                        "document {} successfully broadcast",
+                        random_document.id().to_string(Encoding::Base58),
                     );
-                    last_report.swap(elapsed_secs, Ordering::SeqCst);
+
+                    st.wait_for_state_transition_result_request()
+                        .expect("expected to get request")
+                        .execute(&sdk.deref(), settings)
+                        .await
+                        .expect("expected to get response");
+
+                    tracing::trace!(
+                        "document {} included in a block",
+                        random_document.id().to_string(Encoding::Base58),
+                    );
+
+                    included.fetch_add(1, Ordering::SeqCst);
                 }
+                Err(error) => {
+                    tracing::error!(
+                        ?error,
+                        "failed to broadcast document {}: {}",
+                        random_document.id().to_string(Encoding::Base58),
+                        error
+                    );
 
-                let result = random_document
-                    .put_to_platform(
-                        &sdk,
-                        document_type_to_use.as_ref().clone(),
-                        document_state_transition_entropy,
-                        identity_public_key,
-                        signer.as_ref(),
-                        Some(PutSettings {
-                            request_settings: settings,
-                            identity_nonce_stale_time_s: None,
-                            user_fee_increase: None,
-                        }),
-                    )
-                    .await;
+                    errs.fetch_add(1, Ordering::SeqCst);
+                }
+            };
+        });
 
-                pending.fetch_sub(1, Ordering::SeqCst);
-
-                match result {
-                    Ok(_) => {
-                        oks.fetch_add(1, Ordering::SeqCst);
-
-                        tracing::trace!(
-                            "document {} successfully broadcast",
-                            random_document.id().to_string(Encoding::Base58),
-                        );
-                    }
-                    Err(error) => {
-                        tracing::error!(
-                            ?error,
-                            "failed to broadcast document {}: {}",
-                            random_document.id().to_string(Encoding::Base58),
-                            error
-                        );
-
-                        errs.fetch_add(1, Ordering::SeqCst);
-                    }
-                };
-
-                drop(permit);
-            });
-
-            tasks.push(task)
-        }
+        tasks.push(task)
     }
 
     join_all(tasks).await;
@@ -688,12 +794,13 @@ async fn broadcast_random_documents_load_test(
 
     tracing::info!(
         document_type = document_type.name(),
-        "broadcasting {} random documents during {} secs. successfully: {}, failed: {}, rate: {} \
+        "broadcasting {} random documents during {} secs. successfully: {}, failed: {}, mined: {}, rate: {} \
          docs/sec",
         oks + errs,
         duration.as_secs_f32(),
         oks,
         errs,
+        included.load(Ordering::SeqCst),
         (oks + errs) as f32 / duration.as_secs_f32()
     );
 }
