@@ -1,5 +1,9 @@
+use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use dpp::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
+use dpp::state_transition::documents_batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use rs_sdk::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
 use std::collections::VecDeque;
+use std::fmt::Debug;
 use std::ops::Deref;
 use std::{
     collections::HashSet,
@@ -11,6 +15,7 @@ use std::{
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
+use tokio::task::JoinSet;
 use tokio::time::sleep;
 
 use clap::Parser;
@@ -59,8 +64,8 @@ use rs_sdk::{
     Sdk, SdkBuilder,
 };
 use simple_signer::signer::SimpleSigner;
-use tokio::sync::{Mutex, MutexGuard};
-use tokio::{sync::Semaphore, time::Instant};
+use tokio::sync::{mpsc, Mutex, Semaphore};
+use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::EnvFilter;
@@ -488,7 +493,7 @@ async fn broadcast_contract_variants(
     );
     found_data_contracts
 }
-
+/*
 // Variants stores a lockable list of items. When next is called, it will find the next non-locked
 // item, lock it and return it. If no item is available, it will return None.
 struct LockableItems<T: Send> {
@@ -496,7 +501,7 @@ struct LockableItems<T: Send> {
     cursor: Mutex<usize>,
 }
 
-impl<'a, T: Send + 'a> LockableItems<T> {
+impl<T: Send + Sync + Clone> LockableItems<T> {
     pub fn new() -> Self {
         LockableItems {
             data: VecDeque::new(),
@@ -512,7 +517,7 @@ impl<'a, T: Send + 'a> LockableItems<T> {
     // Find next non-locked item, lock and return it.
     //
     // None is returned if no item is available.
-    pub async fn next(&'a self) -> Option<MutexGuard<'a, T>> {
+    pub async fn next<'a>(&'a self) -> Option<MutexGuard<'a, T>> {
         if self.data.is_empty() {
             return None;
         }
@@ -539,7 +544,7 @@ impl<'a, T: Send + 'a> LockableItems<T> {
     //
     // Panics on empty list
     //
-    pub async fn next_blocking(&'a self, cancel: CancellationToken) -> MutexGuard<'a, T> {
+    pub async fn next_blocking<'a>(&'a self, cancel: CancellationToken) -> MutexGuard<'a, T> {
         if self.data.is_empty() {
             panic!("no items available");
         }
@@ -559,6 +564,55 @@ impl<'a, T: Send + 'a> LockableItems<T> {
             }
         }
     }
+
+    // pub async fn chan<'a>(
+    //     self,
+    //     cancel: CancellationToken,
+    // ) -> mpsc::Receiver<Arc<MutexGuard<'static, T>>>
+    // where
+    //     T: 'static,
+    //     Self: 'static,
+    // {
+    //     let (tx, rx) = mpsc::channel::<Arc<MutexGuard<'static, T>>>(1);
+
+    //     tokio::task::spawn(async move {
+    //         while !cancel.is_cancelled() {
+    //             let doc = self.next_blocking::<'static>(cancel.child_token()).await;
+
+    //             if tx.send(Arc::new(doc)).await.is_err() {
+    //                 break;
+    //             }
+    //         }
+    //     });
+
+    //     rx
+    // }
+}
+impl<T: Send + Clone> Clone for LockableItems<T> {
+    fn clone(&self) -> Self {
+        // we can't use blocking lock here, so we fallback to non-blocking try_lock()
+        let mut cursor = self.cursor.try_lock();
+        while cursor.is_err() {
+            std::thread::sleep(Duration::from_millis(10));
+            cursor = self.cursor.try_lock();
+        }
+        let cursor = cursor.expect("expected to lock cursor");
+
+        let mut data = VecDeque::new();
+        for item in self.data {
+            let mut guard = item.try_lock();
+            while guard.is_err() {
+                std::thread::sleep(Duration::from_millis(10));
+                guard = item.try_lock();
+            }
+            data.push_back(Mutex::new(guard.expect("expected to lock cursor").clone()));
+        }
+
+        LockableItems {
+            data,
+            cursor: Mutex::new(*cursor),
+        }
+    }
 }
 
 impl<'a> From<Vec<Arc<DocumentType>>> for LockableItems<Arc<DocumentType>> {
@@ -570,7 +624,7 @@ impl<'a> From<Vec<Arc<DocumentType>>> for LockableItems<Arc<DocumentType>> {
         variants
     }
 }
-
+ */
 async fn broadcast_random_documents_load_test(
     sdk: Arc<Sdk>,
     identity: &Identity,
@@ -591,11 +645,23 @@ async fn broadcast_random_documents_load_test(
     );
 
     let identity_id = identity.id();
+    let cancel = CancellationToken::new();
 
-    let document_type_variants = Arc::new(LockableItems::from(document_type_variants));
+    // Put document varians into an mpsc channel
+    // When variant is used by a task, it is read from the channel.
+    // When it's freed, it is put back into the channel.
+    let (doctype_variants_done, doctype_variants) =
+        mpsc::channel::<Arc<DocumentType>>(document_type_variants.len());
+    for v in document_type_variants {
+        // initially, all doctype variants are available
+        doctype_variants_done
+            .send(v)
+            .await
+            .expect("expected to send a variant");
+    }
+    let variants_lock = Arc::new(Mutex::new(doctype_variants));
 
     // Get identity public key
-
     let identity_public_key = identity
         .get_first_public_key_matching(
             Purpose::AUTHENTICATION,
@@ -616,8 +682,6 @@ async fn broadcast_random_documents_load_test(
     let permits = Arc::new(Semaphore::new(concurrent_requests as usize));
 
     let rate_limit = Arc::new(RateLimiter::direct(Quota::per_second(rate_limit_per_sec)));
-
-    let cancel = CancellationToken::new();
 
     // what the hell
     let oks = Arc::new(AtomicUsize::new(0)); // Atomic counter for tasks
@@ -651,6 +715,14 @@ async fn broadcast_random_documents_load_test(
 
     let version = sdk.version();
 
+    let checker = Arc::new(CheckWorker::new(
+        sdk.clone(),
+        settings.clone(),
+        cancel.child_token(),
+        included.clone(),
+        doctype_variants_done,
+    ));
+
     while !cancel.is_cancelled() {
         if cancel.is_cancelled() {
             break;
@@ -660,7 +732,6 @@ async fn broadcast_random_documents_load_test(
         let permit = permits.acquire_owned().await.unwrap();
 
         let oks = Arc::clone(&oks);
-        let included = Arc::clone(&included);
 
         let errs = Arc::clone(&errs);
         let pending = Arc::clone(&pending);
@@ -673,16 +744,24 @@ async fn broadcast_random_documents_load_test(
         let rate_limiter = rate_limit.clone();
         let cancel_task = cancel.clone();
         let sdk = Arc::clone(&sdk);
-        let document_type_variants = document_type_variants.clone();
+
+        let variants_reserve = Arc::clone(&variants_lock);
+
+        let checker = checker.clone();
 
         let task = tokio::task::spawn(async move {
             let mut std_rng = StdRng::from_entropy();
             let document_state_transition_entropy: [u8; 32] = std_rng.gen();
 
             // Generate a random document
-            let document_type_variant = document_type_variants
-                .next_blocking(cancel_task.child_token())
-                .await;
+
+            // get some variant; it will be disposed (re-entered) when document is mined
+            let mut document_type_variant_guard = variants_reserve.lock().await;
+            let document_type_variant = document_type_variant_guard
+                .recv()
+                .await
+                .expect("expected a document type variant");
+            drop(document_type_variant_guard);
 
             let document_type_to_use = document_type_variant.clone();
 
@@ -732,7 +811,7 @@ async fn broadcast_random_documents_load_test(
             let result = random_document
                 .put_to_platform(
                     &sdk,
-                    document_type_to_use.as_ref().clone(),
+                    document_type_to_use.deref().clone(),
                     document_state_transition_entropy,
                     identity_public_key,
                     signer.as_ref(),
@@ -758,18 +837,7 @@ async fn broadcast_random_documents_load_test(
                         random_document.id().to_string(Encoding::Base58),
                     );
 
-                    st.wait_for_state_transition_result_request()
-                        .expect("expected to get request")
-                        .execute(&sdk.deref(), settings)
-                        .await
-                        .expect("expected to get response");
-
-                    tracing::trace!(
-                        "document {} included in a block",
-                        random_document.id().to_string(Encoding::Base58),
-                    );
-
-                    included.fetch_add(1, Ordering::SeqCst);
+                    checker.check(st, document_type_variant).await;
                 }
                 Err(error) => {
                     tracing::error!(
@@ -803,4 +871,96 @@ async fn broadcast_random_documents_load_test(
         included.load(Ordering::SeqCst),
         (oks + errs) as f32 / duration.as_secs_f32()
     );
+}
+
+struct CheckWorker {
+    // done checks
+    done: tokio::sync::mpsc::Sender<Arc<DocumentType>>,
+    tasks: Mutex<JoinSet<()>>,
+    sdk: Arc<Sdk>,
+    settings: RequestSettings,
+    cancel: CancellationToken,
+    included: Arc<AtomicUsize>,
+}
+
+impl CheckWorker {
+    fn new(
+        sdk: Arc<Sdk>,
+        settings: RequestSettings,
+        cancel: CancellationToken,
+        included: Arc<AtomicUsize>,
+        done: tokio::sync::mpsc::Sender<Arc<DocumentType>>,
+    ) -> Self {
+        // let (sender, receiver) = tokio::sync::mpsc::channel(queue);
+
+        CheckWorker {
+            done,
+            cancel,
+            sdk,
+            settings,
+            // sender,
+            tasks: Mutex::new(JoinSet::new()),
+            included,
+        }
+    }
+
+    // Check if the state transition finished successfully.
+    // Then drop the guard to release the lock on the document type variant.
+    async fn check(&self, st: StateTransition, doctype: Arc<DocumentType>) {
+        // self.sender
+        //     .send(value)
+        //     .await
+        //     .expect("expected to send a message");
+        let sdk = self.sdk.clone();
+        let settings = self.settings.clone();
+        let cancel = self.cancel.child_token();
+        let included = self.included.clone();
+
+        let mut tasks = self.tasks.lock().await;
+        let done = self.done.clone();
+        tasks.spawn(async move {
+            Self::worker(&st, sdk, settings, cancel).await;
+            done.send(doctype)
+                .await
+                .expect("failed to set doc type as done");
+            included.fetch_add(1, Ordering::SeqCst);
+        });
+    }
+
+    async fn worker(
+        st: &StateTransition,
+        sdk: Arc<Sdk>,
+        settings: RequestSettings,
+        cancel: CancellationToken,
+    ) {
+        let req = st
+            .wait_for_state_transition_result_request()
+            .expect("expected to get request");
+
+        let sdk = sdk.deref();
+        tokio::select! {
+            _ = cancel.cancelled() => return,
+            resp = req.execute(sdk, settings) => {
+                if resp.is_err() {
+                    tracing::error!("failed to get state transition response");
+                }
+            }
+        }
+
+        match st {
+            StateTransition::DocumentsBatch(batch) => {
+                let docs = batch.transitions();
+                let doc = docs
+                    .first()
+                    .expect("expected a document")
+                    .as_transition_create()
+                    .expect("expected a create transition");
+
+                tracing::trace!("document {} successfully broadcast", doc.base().id());
+            }
+            _ => {
+                tracing::error!("unexpected state transition type : {:?}", st.name());
+            }
+        }
+    }
 }
