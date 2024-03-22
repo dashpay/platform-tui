@@ -1,5 +1,4 @@
 use std::collections::VecDeque;
-use std::thread::sleep;
 use std::{
     collections::HashSet,
     num::NonZeroU32,
@@ -10,6 +9,7 @@ use std::{
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
+use tokio::time::sleep;
 
 use clap::Parser;
 use dpp::prelude::IdentityNonce;
@@ -467,7 +467,8 @@ async fn broadcast_contract_variants(
         });
     }
     // ensure everything had a chance to be processed
-    sleep(Duration::from_secs(10));
+    tracing::info!("Waiting 10 seconds before checking if contracts exist");
+    sleep(Duration::from_secs(10)).await;
 
     // check if state transitions exist
     while let Some(result) = broadasts.join_next().await {
