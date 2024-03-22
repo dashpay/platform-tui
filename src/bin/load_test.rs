@@ -722,6 +722,7 @@ async fn broadcast_random_documents_load_test(
         doctype_variants_done,
     ));
     let mut std_rng = StdRng::from_entropy();
+    let mut warned_not_enough_contracts = Instant::now();
 
     while !cancel.is_cancelled() {
         if cancel.is_cancelled() {
@@ -746,10 +747,18 @@ async fn broadcast_random_documents_load_test(
         let sdk = Arc::clone(&sdk);
 
         // get some variant; it will be disposed (re-entered) when document is mined
-        let document_type_variant = doctype_variants
-            .recv()
-            .await
-            .expect("expected a document type variant");
+        let mut document_type_variant = doctype_variants.try_recv();
+        while document_type_variant.is_err() {
+            sleep(Duration::from_millis(10)).await;
+            document_type_variant = doctype_variants.try_recv();
+            if warned_not_enough_contracts.elapsed() > Duration::from_secs(1) {
+                tracing::warn!("no document type variant available, waiting for one, maybe increase --contracts argument?");
+                warned_not_enough_contracts = Instant::now();
+            }
+        }
+
+        let document_type_variant =
+            document_type_variant.expect("expected a document type variant");
 
         let document_type_to_use = document_type_variant.clone();
 
