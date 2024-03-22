@@ -69,7 +69,7 @@ pub(crate) enum StrategyTask {
         strategy_name: String,
         operation: Operation,
     },
-    RunStrategy(String, u64, bool),
+    RunStrategy(String, u64, bool, bool),
     RemoveLastContract(String),
     RemoveIdentityInserts(String),
     RemoveStartIdentities(String),
@@ -501,7 +501,7 @@ pub(crate) async fn run_strategy_task<'s>(
                 BackendEvent::None
             }
         }
-        StrategyTask::RunStrategy(strategy_name, num_blocks, verify_proofs) => {
+        StrategyTask::RunStrategy(strategy_name, num_blocks_or_seconds, verify_proofs, block_mode) => {
             info!("-----Starting strategy '{}'-----", strategy_name);
             let run_start_time = Instant::now();
 
@@ -669,7 +669,21 @@ pub(crate) async fn run_strategy_task<'s>(
                 let mut transition_count = 0;
                 let mut success_count = 0;
 
-                while current_block_info.height < (initial_block_info.height + num_blocks) {
+                let execution_start_time = Instant::now();
+
+                tracing::info!("Initialization finished after {} seconds. Beginning execution.", run_start_time.elapsed().as_secs());
+                
+                while (block_mode && current_block_info.height < (initial_block_info.height + num_blocks_or_seconds))
+                    || (!block_mode && execution_start_time.elapsed().as_secs() < num_blocks_or_seconds) {
+                    
+                    // Get the mode as a string for logging
+                    let mut mode_string = String::new();
+                    if block_mode {
+                        mode_string.push_str("block");
+                    } else {
+                        mode_string.push_str("second");
+                    }
+
                     let mut document_query_callback = |query: LocalDocumentQuery| {
                         match query {
                             LocalDocumentQuery::RandomDocumentQuery(random_query) => {
@@ -825,7 +839,7 @@ pub(crate) async fn run_strategy_task<'s>(
                     // Log if you are creating start_identities, because the asset lock proofs may take a while
                     if current_block_info.height == initial_block_info.height && strategy.start_identities.number_of_identities > 0 {
                         info!(
-                            "Creating {} asset lock proofs for start identities",
+                            "Creating {} asset lock proofs for start identities...",
                             strategy.start_identities.number_of_identities
                         );
                     }
@@ -845,7 +859,7 @@ pub(crate) async fn run_strategy_task<'s>(
                             &mut rng,
                             &StrategyConfig {
                                 start_block_height: initial_block_info.height,
-                                number_of_blocks: num_blocks,
+                                number_of_blocks: num_blocks_or_seconds,
                             },
                             PlatformVersion::latest(),
                         )
@@ -891,21 +905,24 @@ pub(crate) async fn run_strategy_task<'s>(
                     if !transitions.is_empty() {
                         st_queue = transitions.into();
                         info!(
-                            "Prepared {} state transitions for block {}",
+                            "Prepared {} state transitions for {} {}",
                             st_queue.len(),
+                            mode_string,
                             current_block_info.height
                         );
                     } else {
                         // Log when no state transitions are found for a block
                         info!(
-                            "No state transitions prepared for block {}",
+                            "No state transitions prepared for {} {}",
+                            mode_string,
                             current_block_info.height
                         );
                     }
 
                     if st_queue.is_empty() {
                         info!(
-                            "No state transitions to process for block {}",
+                            "No state transitions to process for {} {}",
+                            mode_string,
                             current_block_info.height
                         );
                     } else {
@@ -953,7 +970,7 @@ pub(crate) async fn run_strategy_task<'s>(
                                                             if let Some(metadata) = &v0_response.metadata {
                                                                 success_count += 1;
                                                                 if !verify_proofs {
-                                                                    info!("Successfully processed state transition {} ({}) for block {} (Actual block height: {})", st_queue_index, transition_type, current_block_info.height, metadata.height);
+                                                                    info!("Successfully processed state transition {} ({}) for {} {} (Actual block height: {})", st_queue_index, transition_type, mode_string, current_block_info.height, metadata.height);
                                                                 }
                                                                 // Additional logging to inspect the result regardless of metadata presence
                                                                 match &v0_response.result {
@@ -977,7 +994,7 @@ pub(crate) async fn run_strategy_task<'s>(
                                                                             );
                                                                             match verified {
                                                                                 Ok(_) => {
-                                                                                    info!("Successfully processed and verified proof for state transition {} ({}), block {} (Actual block height: {})", st_queue_index, transition_type, current_block_info.height, metadata.height);
+                                                                                    info!("Successfully processed and verified proof for state transition {} ({}), {} {} (Actual block height: {})", st_queue_index, transition_type, mode_string, current_block_info.height, metadata.height);
                                                                                 }
                                                                                 Err(e) => {
                                                                                     error!("Error verifying state transition execution proof: {}", e);
@@ -1047,9 +1064,10 @@ pub(crate) async fn run_strategy_task<'s>(
 
                                     if broadcast_result.is_err() {
                                         error!(
-                                            "Error broadcasting state transition {} ({}) for block height {}: {:?}",
+                                            "Error broadcasting state transition {} ({}) for {} {}: {:?}",
                                             index + 1,
                                             transition_type,
+                                            mode_string,
                                             current_block_info.height,
                                             broadcast_result.err().unwrap()
                                         );
@@ -1085,12 +1103,18 @@ pub(crate) async fn run_strategy_task<'s>(
                                     drop(known_contracts_lock);
 
                                     let wait_future = async move {
+                                        let mut mode_string = String::new();
+                                        if block_mode {
+                                            mode_string.push_str("block");
+                                        } else {
+                                            mode_string.push_str("second");
+                                        }
                                         let wait_result = match transition.wait_for_state_transition_result_request() {
                                             Ok(wait_request) => wait_request.execute(sdk, RequestSettings::default()).await,
                                             Err(e) => {
                                                 error!(
-                                                    "Error creating wait request for state transition {} block height {}: {:?}",
-                                                    index + 1, current_block_info.height, e
+                                                    "Error creating wait request for state transition {} {} {}: {:?}",
+                                                    index + 1, mode_string, current_block_info.height, e
                                                 );
                                                 return None;
                                             }
@@ -1102,8 +1126,8 @@ pub(crate) async fn run_strategy_task<'s>(
                                                     if let Some(metadata) = &v0_response.metadata {
                                                         if !verify_proofs {
                                                             info!(
-                                                                "Successfully processed state transition {} ({}) for block {} (Actual block height: {})",
-                                                                index + 1, transition.name(), current_block_info.height, metadata.height
+                                                                "Successfully processed state transition {} ({}) for {} {} (Actual block height: {})",
+                                                                index + 1, transition.name(), mode_string, current_block_info.height, metadata.height
                                                             );    
                                                         }
 
@@ -1147,7 +1171,7 @@ pub(crate) async fn run_strategy_task<'s>(
 
                                                                 match verified {
                                                                     Ok(_) => {
-                                                                        info!("Successfully processed and verified proof for state transition {} ({}), block {} (Actual block height: {})", index + 1, transition_type, current_block_info.height, metadata.height);
+                                                                        info!("Successfully processed and verified proof for state transition {} ({}), {} {} (Actual block height: {})", index + 1, transition_type, mode_string, current_block_info.height, metadata.height);
                                                                         
                                                                         // If a data contract was registered, add it to
                                                                         // known_contracts
@@ -1223,8 +1247,9 @@ pub(crate) async fn run_strategy_task<'s>(
                                 },
                                 Err(e) => {
                                     error!(
-                                        "Error preparing broadcast request for state transition {} block height {}: {:?}",
+                                        "Error preparing broadcast request for state transition {} {} {}: {:?}",
                                         index + 1,
+                                        mode_string,
                                         current_block_info.height,
                                         e
                                     );
@@ -1246,12 +1271,23 @@ pub(crate) async fn run_strategy_task<'s>(
                         }
                     }
 
+                    // sleep for one second after the first block in time mode
+                    if !block_mode && current_block_info.height == initial_block_info.height {
+                        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                        current_block_info.time_ms += 1 * 1000; // plus 1 second
+                    }
+
                     // Update block_info
                     current_block_info.height += 1;
                     current_block_info.time_ms += 1 * 1000; // plus 1 second
                 }
 
-                info!("-----Strategy '{}' finished running-----", strategy_name);
+                tracing::info!("-----Strategy '{}' finished running-----", strategy_name);
+                let execution_run_time = execution_start_time.elapsed().as_secs();
+                if !block_mode {
+                    tracing::info!("Time-based strategy execution ran for {} seconds and intended to run for {} seconds.", execution_run_time, num_blocks_or_seconds);
+                }
+
                 let run_time = run_start_time.elapsed();
 
                 // Refresh the identity at the end
