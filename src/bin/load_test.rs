@@ -732,7 +732,7 @@ async fn broadcast_random_documents_load_test(
         let permit = permits.acquire_owned().await.unwrap();
 
         let oks = Arc::clone(&oks);
-
+        let included = Arc::clone(&included);
         let errs = Arc::clone(&errs);
         let pending = Arc::clone(&pending);
         let last_report = Arc::clone(&last_report);
@@ -799,10 +799,11 @@ async fn broadcast_random_documents_load_test(
                 && elapsed_secs != last_report.load(Ordering::SeqCst)
             {
                 tracing::info!(
-                    "{} secs passed: {} pending, {} successful, {} failed",
+                    "{} secs passed: {} pending, {} successful, {} mined, {} failed",
                     elapsed_secs,
                     pending.load(Ordering::SeqCst),
                     oks.load(Ordering::SeqCst),
+                    included.load(Ordering::SeqCst),
                     errs.load(Ordering::SeqCst),
                 );
                 last_report.swap(elapsed_secs, Ordering::SeqCst);
@@ -933,6 +934,11 @@ impl CheckWorker {
         settings: RequestSettings,
         cancel: CancellationToken,
     ) {
+        let settings = RequestSettings {
+            timeout: Some(Duration::from_secs(300)),
+            ..settings
+        };
+
         let req = st
             .wait_for_state_transition_result_request()
             .expect("expected to get request");
