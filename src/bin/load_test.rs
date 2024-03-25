@@ -592,7 +592,7 @@ async fn broadcast_random_documents_load_test(
         cancel.child_token(),
         signer.clone(),
     ));
-    let mut std_rng = StdRng::from_entropy();
+    let std_rng = Arc::new(Mutex::new(StdRng::from_entropy()));
 
     while !cancel.is_cancelled() {
         if cancel.is_cancelled() {
@@ -615,47 +615,8 @@ async fn broadcast_random_documents_load_test(
         let cancel_task = cancel.clone();
         let sdk = Arc::clone(&sdk);
 
-        // get some variant; it will be disposed (re-entered) when document is mined
-
-        let mut contract: Option<Arc<DataContract>> = None;
-        while contract.is_none() {
-            contract = match timeout(Duration::from_secs(1), checker.next()).await {
-                Ok(variant) => Some(variant.expect("contract reservation failed")),
-                Err(err) => {
-                    tracing::warn!(?err,"no document type variant available, waiting for one, maybe increase --contracts argument?");
-                    None
-                }
-            };
-
-            if cancel_task.is_cancelled() {
-                return;
-            }
-        }
-        let contract = contract.expect("data contract must be available");
-
-        let document_type_to_use = Arc::new(
-            contract
-                .document_type_cloned_for_name("preorder")
-                .expect("expected preorder document"),
-        );
-
-        let document_state_transition_entropy: [u8; 32] = std_rng.gen();
-
-        let random_document = document_type_to_use
-            .random_document_with_params(
-                identity_id,
-                document_state_transition_entropy.into(),
-                Some(created_at_ms as u64),
-                None,
-                None,
-                DocumentFieldFillType::FillIfNotRequired,
-                DocumentFieldFillSize::AnyDocumentFillSize,
-                &mut std_rng,
-                version,
-            )
-            .expect("expected a random document");
-
         let checker = checker.clone();
+        let std_rng = std_rng.clone();
 
         let task = tokio::task::spawn(async move {
             // Wait for the rate limiter to allow further processing
@@ -663,6 +624,48 @@ async fn broadcast_random_documents_load_test(
                _ = rate_limiter.until_ready() => {},
                _ = cancel_task.cancelled() => return,
             };
+
+            // get some variant; it will be disposed (re-entered) when document is mined
+            let mut contract: Option<Arc<DataContract>> = None;
+            let start = Instant::now();
+            while contract.is_none() {
+                contract = match timeout(Duration::from_secs(1), checker.next()).await {
+                    Ok(variant) => Some(variant.expect("contract reservation failed")),
+                    Err(err) => {
+                        tracing::warn!(?err,"no document type variant available, waiting for one, maybe increase --contracts argument?");
+                        None
+                    }
+                };
+
+                if cancel_task.is_cancelled() {
+                    return;
+                }
+            }
+            tracing::info!("acquired contract in {:?}", start.elapsed());
+            let contract = contract.expect("data contract must be available");
+
+            let document_type_to_use = Arc::new(
+                contract
+                    .document_type_cloned_for_name("preorder")
+                    .expect("expected preorder document"),
+            );
+
+            let mut rng = std_rng.lock().await;
+            let document_state_transition_entropy: [u8; 32] = rng.gen();
+            let random_document = document_type_to_use
+                .random_document_with_params(
+                    identity_id,
+                    document_state_transition_entropy.into(),
+                    Some(created_at_ms as u64),
+                    None,
+                    None,
+                    DocumentFieldFillType::FillIfNotRequired,
+                    DocumentFieldFillSize::AnyDocumentFillSize,
+                    &mut rng,
+                    version,
+                )
+                .expect("expected a random document");
+            drop(rng);
 
             // Broadcast the document
             tracing::trace!(
