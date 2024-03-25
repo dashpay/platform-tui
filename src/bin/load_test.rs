@@ -680,7 +680,7 @@ async fn broadcast_random_documents_load_test(
                     oks.load(Ordering::SeqCst),
                     mined,
                     errs.load(Ordering::SeqCst),
-                    available_contracts              
+                    available_contracts
                   );
                 last_report.swap(elapsed_secs, Ordering::SeqCst);
             }
@@ -752,19 +752,27 @@ async fn broadcast_random_documents_load_test(
     );
 }
 
+struct CheckRequest {
+    doc: Document,
+    st: StateTransition,
+    dc: Arc<DataContract>,
+    deadline: Instant,
+}
+
 /// Delayed verification of a document create state transition
 struct CheckWorker<S: Signer> {
     done: mpsc::Sender<Arc<DataContract>>,
     available: mpsc::Receiver<Arc<DataContract>>,
-    tasks: Mutex<JoinSet<()>>,
+    tasks: JoinSet<()>,
     sdk: Arc<Sdk>,
     cancel: CancellationToken,
     timeout: Duration,
-    included: Arc<AtomicU64>,
+    successful: Arc<AtomicU64>,
     _signer: Arc<S>,
+    check_queue_tx: mpsc::Sender<CheckRequest>,
 }
 
-impl<S: Signer> CheckWorker<S> {
+impl<S: Signer + 'static> CheckWorker<S> {
     /// new creates a new CheckWorker
     ///
     /// ## Arguments
@@ -784,17 +792,30 @@ impl<S: Signer> CheckWorker<S> {
         // When a contract is used by a task, it is removed from the channel.
         // When it's freed, it is put back into the channel.
         let (done, available) = mpsc::channel::<Arc<DataContract>>(contracts.len());
+        let (check_queue_tx, check_queue_rx) = mpsc::channel(contracts.len());
 
-        let me = CheckWorker {
-            done,
+        let mut me = CheckWorker {
+            done: done.clone(),
             available,
             cancel,
             sdk,
-            tasks: Mutex::new(JoinSet::new()),
-            included: Arc::new(AtomicU64::new(0)),
+            tasks: JoinSet::new(),
+            successful: Arc::new(AtomicU64::new(0)),
             timeout: Duration::from_secs(mine_timeout_secs as u64),
+            check_queue_tx,
             _signer: signer,
         };
+
+        // start the worker
+        me.tasks.spawn(Self::worker(
+            me.sdk.clone(),
+            me.check_queue_tx.clone(),
+            check_queue_rx,
+            me.cancel.clone(),
+            me.successful.clone(),
+            me.done.clone(),
+        ));
+
         // put all contracts into the channel, so they are available
         me.release(contracts);
 
@@ -808,12 +829,11 @@ impl<S: Signer> CheckWorker<S> {
 
     /// number of documents that were mined
     fn mined(&self) -> u64 {
-        self.included.load(Ordering::SeqCst)
+        self.successful.load(Ordering::SeqCst)
     }
 
-
     /// number of available contracts to be acquired using [next()]
-    fn len(&self) -> usize{
+    fn len(&self) -> usize {
         self.done.max_capacity() - self.done.capacity()
     }
 
@@ -829,52 +849,61 @@ impl<S: Signer> CheckWorker<S> {
     // Check if the state transition finished successfully.
     // Then release data contract so it can be used by another task.
     async fn check(&self, doc: Document, st: StateTransition, dc: Arc<DataContract>) {
-        let sdk = self.sdk.clone();
-        let cancel = self.cancel.child_token();
-        let included = self.included.clone();
+        let deadline = Instant::now() + self.timeout;
 
-        let mut tasks = self.tasks.lock().await;
-        let done = self.done.clone();
-        let timeout = self.timeout.clone();
-        tasks.spawn(async move {
-            Self::worker(sdk, doc, st, dc.clone(), timeout, cancel).await;
-            done.send(dc).await.expect("failed to set doc type as done");
-            included.fetch_add(1, Ordering::SeqCst);
-        });
+        self.check_queue_tx
+            .send(CheckRequest {
+                dc,
+                deadline,
+                doc,
+                st,
+            })
+            .await
+            .expect("enqueue check");
     }
 
     /// Worker function that waits for the document to be mined
     /// Returns where the document was mined or the timeout was reached.
     async fn worker(
         sdk: Arc<Sdk>,
-        doc: Document,
-        st: StateTransition,
-        dc: Arc<DataContract>,
-        timeout: Duration,
+        queue_tx: mpsc::Sender<CheckRequest>,
+        mut queue_rx: mpsc::Receiver<CheckRequest>,
         cancel: CancellationToken,
+        included: Arc<AtomicU64>,
+        done: mpsc::Sender<Arc<DataContract>>,
     ) {
-        let start = Instant::now();
+        while !cancel.is_cancelled() {
+            let check_request = queue_rx.recv().await.expect("checks queue must be open");
+            let CheckRequest {
+                doc,
+                deadline,
+                st,
+                dc,
+            } = &check_request;
 
-        let id = doc.id().to_string(Encoding::Base58);
+            let id = doc.id().to_string(Encoding::Base58);
 
-        // note this will not repeat for timeout 0
-        while start.elapsed() < timeout {
             tokio::select! {
                 _ = cancel.cancelled() => return,
-                result = PutDocument::<S>:: wait_for_response(&doc,&sdk,st.clone(), dc.clone()) =>{
+                result = PutDocument::<S>:: wait_for_response(doc,&sdk,st.clone(), dc.clone()) =>{
                     match result {
                         Err(err) => {
-                            tracing::warn!(id, ?err, "failed to get state transition response, retrying");
+
+                            if deadline.lt(&Instant::now()) {
+                                tracing::trace!(id, ?err, "failed to get state transition response, retrying");
+                                queue_tx.send(check_request).await.expect("enqueue recheck");
+                            } else {
+                                tracing::warn!(id, ?deadline, "timed out waiting for document to be mined");
+                                done.send(check_request.dc).await.expect("failed to set contract as done");
+                            }
                         }
                         Ok(_) => {
-                            // noop
-                            return;
+                            included.fetch_add(1, Ordering::SeqCst);
+                            done.send(check_request.dc).await.expect("failed to set contract as done");
                         }
                     }
                 }
-            }
+            };
         }
-
-        tracing::warn!(id, ?timeout, "timed out waiting for document to be mined");
     }
 }
