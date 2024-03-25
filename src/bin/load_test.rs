@@ -668,15 +668,20 @@ async fn broadcast_random_documents_load_test(
             if start_time.elapsed().as_secs() % 10 == 0
                 && elapsed_secs != last_report.load(Ordering::SeqCst)
             {
-                let included = checker.lock().await.count();
+                let (mined, available_contracts) = {
+                    let guard = checker.lock().await;
+                    (guard.mined(), guard.len())
+                };
+
                 tracing::info!(
-                    "{} secs passed: {} pending, {} successful, {} mined, {} failed",
+                    "{} secs passed: {} pending, {} broadcasted successfully, {} mined, {} failed; {} contracts available",
                     elapsed_secs,
                     pending.load(Ordering::SeqCst),
                     oks.load(Ordering::SeqCst),
-                    included,
+                    mined,
                     errs.load(Ordering::SeqCst),
-                );
+                    available_contracts              
+                  );
                 last_report.swap(elapsed_secs, Ordering::SeqCst);
             }
 
@@ -732,7 +737,7 @@ async fn broadcast_random_documents_load_test(
 
     let oks = oks.load(Ordering::SeqCst);
     let errs = errs.load(Ordering::SeqCst);
-    let mined = checker.lock().await.count();
+    let mined = checker.lock().await.mined();
 
     tracing::info!(
         document_type = document_type.name(),
@@ -801,9 +806,15 @@ impl<S: Signer> CheckWorker<S> {
         self.available.recv().into_future().boxed()
     }
 
-    /// count returns number of documents that were mined
-    fn count(&self) -> u64 {
+    /// number of documents that were mined
+    fn mined(&self) -> u64 {
         self.included.load(Ordering::SeqCst)
+    }
+
+
+    /// number of available contracts to be acquired using [next()]
+    fn len(&self) -> usize{
+        self.done.max_capacity() - self.done.capacity()
     }
 
     /// release data contract(s) so that they can be retrieved using [next()]
