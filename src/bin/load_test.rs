@@ -576,8 +576,19 @@ async fn broadcast_random_documents_load_test(
 
     let version = sdk.version();
 
+    /*concurrent_requests: u16,
+    rate_limit_per_sec: u32,
+    mine_timeout_seconds: u32, */
+    let docs_to_send: u64 = rate_limit_per_sec.get() as u64 * mine_timeout_seconds as u64;
+    let docs_to_send = if docs_to_send > 10000 {
+        10000
+    } else {
+        docs_to_send as usize
+    };
+
     let checker = Arc::new(Mutex::new(CheckWorker::new(
         sdk.clone(),
+        docs_to_send,
         mine_timeout_seconds,
         &contracts,
         cancel.child_token(),
@@ -706,6 +717,7 @@ async fn broadcast_random_documents_load_test(
 
             pending.fetch_sub(1, Ordering::SeqCst);
 
+            let guard = checker.lock().await;
             match result {
                 Ok(st) => {
                     oks.fetch_add(1, Ordering::SeqCst);
@@ -714,7 +726,6 @@ async fn broadcast_random_documents_load_test(
                         "document {} successfully broadcast",
                         random_document.id().to_string(Encoding::Base58),
                     );
-                    let guard = checker.lock().await;
 
                     guard.check(random_document, st, contract).await;
                 }
@@ -727,8 +738,10 @@ async fn broadcast_random_documents_load_test(
                     );
 
                     errs.fetch_add(1, Ordering::SeqCst);
+                    guard.release(&[contract])
                 }
             };
+            drop(guard);
         });
 
         tasks.push(task)
@@ -753,6 +766,7 @@ async fn broadcast_random_documents_load_test(
     );
 }
 
+#[derive(Clone, Debug)]
 struct CheckRequest {
     doc: Document,
     dc: Arc<DataContract>,
@@ -784,6 +798,7 @@ impl<S: Signer + 'static> CheckWorker<S> {
     /// * `signer` - Arc<S> - The signer used to sign the documents
     fn new(
         sdk: Arc<Sdk>,
+        docs_to_send: usize,
         mine_timeout_secs: u32,
         contracts: &[Arc<DataContract>],
         cancel: CancellationToken,
@@ -793,7 +808,7 @@ impl<S: Signer + 'static> CheckWorker<S> {
         // When a contract is used by a task, it is removed from the channel.
         // When it's freed, it is put back into the channel.
         let (done, available) = mpsc::channel::<Arc<DataContract>>(contracts.len());
-        let (check_queue_tx, check_queue_rx) = mpsc::channel(contracts.len());
+        let (check_queue_tx, check_queue_rx) = mpsc::channel(docs_to_send);
         let check_queue_rx = Arc::new(Mutex::new(check_queue_rx));
 
         let mut me = CheckWorker {
@@ -855,11 +870,15 @@ impl<S: Signer + 'static> CheckWorker<S> {
     // Then release data contract so it can be used by another task.
     async fn check(&self, doc: Document, _st: StateTransition, dc: Arc<DataContract>) {
         let deadline = Instant::now() + self.timeout;
+        let req = CheckRequest { dc, deadline, doc };
 
-        self.check_queue_tx
-            .send(CheckRequest { dc, deadline, doc })
-            .await
-            .expect("enqueue check");
+        if self.check_queue_tx.try_send(req.clone()).is_err() {
+            tracing::warn!("check channel is full, blocking");
+            self.check_queue_tx
+                .send(req)
+                .await
+                .expect("check channel must always have enough space, data leak?");
+        }
     }
 
     /// Worker function that waits for the document to be mined
@@ -876,7 +895,9 @@ impl<S: Signer + 'static> CheckWorker<S> {
         while !cancel.is_cancelled() {
             let check_request = {
                 let mut guard = queue_rx.lock().await;
-                guard.recv().await.expect("checks queue must be open")
+                let request = guard.recv().await.expect("checks queue must be open");
+                drop(guard);
+                request
             };
 
             let CheckRequest { doc, deadline, .. } = &check_request;
@@ -898,7 +919,7 @@ impl<S: Signer + 'static> CheckWorker<S> {
                                 queue_tx.send(check_request).await.expect("enqueue recheck");
                             } else {
                                 tracing::error!(id, deadline=?deadline.elapsed(), thread_id, "error when checking document, not retrying");
-                                done.send(check_request.dc).await.expect("failed to set contract as done");
+                                done.try_send(check_request.dc).expect("done channel should always have enough capacity");
                             }
                         }
                         Ok(None) => {
@@ -907,13 +928,13 @@ impl<S: Signer + 'static> CheckWorker<S> {
                                 queue_tx.send(check_request).await.expect("enqueue recheck of missing doc");
                             } else {
                                 tracing::warn!(id, deadline=?deadline.elapsed(), thread_id, "timed out waiting for document to be mined");
-                                done.send(check_request.dc).await.expect("failed to set contract as done");
+                                done.try_send(check_request.dc).expect("done channel should always have enough capacity");
                             }
                         }
                         Ok(Some(_)) => {
                             tracing::trace!(id, thread_id, "document mined successfully");
                             included.fetch_add(1, Ordering::SeqCst);
-                            done.send(check_request.dc).await.expect("failed to set contract as done");
+                            done.try_send(check_request.dc).expect("done channel should always have enough capacity");
                         }
                     }
                 }
