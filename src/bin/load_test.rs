@@ -15,7 +15,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tokio::task::JoinSet;
-use tokio::time::{sleep, timeout};
+use tokio::time::sleep;
 
 use clap::Parser;
 use dpp::prelude::IdentityNonce;
@@ -625,24 +625,19 @@ async fn broadcast_random_documents_load_test(
                _ = cancel_task.cancelled() => return,
             };
 
-            // get some variant; it will be disposed (re-entered) when document is mined
-            let mut contract: Option<Arc<DataContract>> = None;
+            // get some contract to use; it will be disposed (re-entered) when document is mined
             let start = Instant::now();
-            while contract.is_none() {
-                contract = match timeout(Duration::from_secs(1), checker.next()).await {
-                    Ok(variant) => Some(variant.expect("contract reservation failed")),
-                    Err(err) => {
-                        tracing::warn!(?err,"no document type variant available, waiting for one, maybe increase --contracts argument?");
-                        None
-                    }
-                };
-
-                if cancel_task.is_cancelled() {
-                    return;
-                }
+            let contract = checker.next().await.expect("contract reservation failed");
+            if cancel_task.is_cancelled() {
+                return;
             }
-            tracing::info!("acquired contract in {:?}", start.elapsed());
-            let contract = contract.expect("data contract must be available");
+            let elapsed = start.elapsed();
+            if elapsed.as_millis() > 100 {
+                tracing::trace!(
+                    ?elapsed,
+                    "contract reservation took too long, consider increasing --contracts argument"
+                );
+            };
 
             let document_type_to_use = Arc::new(
                 contract
@@ -723,7 +718,12 @@ async fn broadcast_random_documents_load_test(
                         random_document.id().to_string(Encoding::Base58),
                     );
 
+                    let start = Instant::now();
                     checker.check(random_document, st, contract).await;
+                    let elapsed = start.elapsed();
+                    if elapsed.as_millis() > 100 {
+                        tracing::info!(?elapsed, "check took too long");
+                    };
                 }
                 Err(error) => {
                     tracing::error!(
