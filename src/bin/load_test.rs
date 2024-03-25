@@ -15,7 +15,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tokio::task::JoinSet;
-use tokio::time::sleep;
+use tokio::time::{sleep, sleep_until};
 
 use clap::Parser;
 use dpp::prelude::IdentityNonce;
@@ -771,6 +771,7 @@ struct CheckRequest {
     doc: Document,
     dc: Arc<DataContract>,
     deadline: Instant,
+    last_run: Option<Instant>,
 }
 
 /// Delayed verification of a document create state transition
@@ -871,7 +872,12 @@ impl<S: Signer + 'static> CheckWorker<S> {
     // Then release data contract so it can be used by another task.
     async fn check(&self, doc: Document, _st: StateTransition, dc: Arc<DataContract>) {
         let deadline = Instant::now() + self.timeout;
-        let req = CheckRequest { dc, deadline, doc };
+        let req = CheckRequest {
+            dc,
+            deadline,
+            doc,
+            last_run: None,
+        };
 
         if self.check_queue_tx.try_send(req.clone()).is_err() {
             tracing::warn!("check channel is full, blocking");
@@ -894,48 +900,58 @@ impl<S: Signer + 'static> CheckWorker<S> {
         done: mpsc::Sender<Arc<DataContract>>,
     ) {
         while !cancel.is_cancelled() {
-            let check_request = {
+            let check = {
                 let mut guard = queue_rx.lock().await;
                 let request = guard.recv().await.expect("checks queue must be open");
                 drop(guard);
                 request
             };
 
-            let CheckRequest { doc, deadline, .. } = &check_request;
-            let id = doc.id().to_string(Encoding::Base58);
+            if let Some(last) = check.last_run {
+                if last.elapsed() < Duration::from_secs(1) {
+                    // we are too fast, let's slow down a bit
+                    sleep_until(last + Duration::from_secs(1)).await;
+                }
+            }
+            let check = CheckRequest {
+                last_run: Some(Instant::now()),
+                ..check
+            };
+
+            let id = check.doc.id().to_string(Encoding::Base58);
 
             // Now query for individual document
 
-            let query = DocumentQuery::new(check_request.dc.clone(), "preorder")
+            let query = DocumentQuery::new(check.dc.clone(), "preorder")
                 .expect("create SdkDocumentQuery")
-                .with_document_id(&doc.id());
+                .with_document_id(&check.doc.id());
 
             tokio::select! {
                 _ = cancel.cancelled() => return,
                 result = Document::fetch(&sdk, query) => {
                     match result {
                         Err(err) => {
-                            if deadline.elapsed().is_zero() {
+                            if check.deadline.elapsed().is_zero() {
                                 tracing::warn!(id, ?err, thread_id, "error when checking document, retrying");
-                                queue_tx.send(check_request).await.expect("enqueue recheck");
+                                queue_tx.send(check).await.expect("enqueue recheck");
                             } else {
-                                tracing::error!(id, deadline=?deadline.elapsed(), thread_id, "error when checking document, not retrying");
-                                done.try_send(check_request.dc).expect("done channel should always have enough capacity");
+                                tracing::error!(id, deadline=?check.deadline.elapsed(), thread_id, "error when checking document, not retrying");
+                                done.try_send(check.dc).expect("done channel should always have enough capacity");
                             }
                         }
                         Ok(None) => {
-                            if deadline.elapsed().is_zero() {
+                            if check.deadline.elapsed().is_zero() {
                                 tracing::debug!(id, thread_id, "document not found, retrying");
-                                queue_tx.send(check_request).await.expect("enqueue recheck of missing doc");
+                                queue_tx.send(check).await.expect("enqueue recheck of missing doc");
                             } else {
-                                tracing::warn!(id, deadline=?deadline.elapsed(), thread_id, "timed out waiting for document to be mined");
-                                done.try_send(check_request.dc).expect("done channel should always have enough capacity");
+                                tracing::warn!(id, deadline=?check.deadline.elapsed(), thread_id, "timed out waiting for document to be mined");
+                                done.try_send(check.dc).expect("done channel should always have enough capacity");
                             }
                         }
                         Ok(Some(_)) => {
                             tracing::trace!(id, thread_id, "document mined successfully");
                             included.fetch_add(1, Ordering::SeqCst);
-                            done.try_send(check_request.dc).expect("done channel should always have enough capacity");
+                            done.try_send(check.dc).expect("done channel should always have enough capacity");
                         }
                     }
                 }
