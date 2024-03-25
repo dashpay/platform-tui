@@ -618,6 +618,9 @@ async fn broadcast_random_documents_load_test(
                 }
             };
             drop(guard); // explicit drop to release the lock, for safety
+            if cancel_task.is_cancelled() {
+                return;
+            }
         }
         let contract = contract.expect("data contract must be available");
 
@@ -854,7 +857,7 @@ impl<S: Signer> CheckWorker<S> {
                         }
                         Ok(_) => {
                             // noop
-                            break;
+                            return;
                         }
                     }
                 }
