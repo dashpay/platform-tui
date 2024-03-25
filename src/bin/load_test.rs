@@ -789,10 +789,12 @@ impl<S: Signer + 'static> CheckWorker<S> {
         cancel: CancellationToken,
         signer: Arc<S>,
     ) -> Self {
+        const WORKERS: usize = 10;
         // When a contract is used by a task, it is removed from the channel.
         // When it's freed, it is put back into the channel.
         let (done, available) = mpsc::channel::<Arc<DataContract>>(contracts.len());
         let (check_queue_tx, check_queue_rx) = mpsc::channel(contracts.len());
+        let check_queue_rx = Arc::new(Mutex::new(check_queue_rx));
 
         let mut me = CheckWorker {
             done: done.clone(),
@@ -806,18 +808,21 @@ impl<S: Signer + 'static> CheckWorker<S> {
             _signer: signer,
         };
 
-        // start the worker
-        me.tasks.spawn(Self::worker(
-            me.sdk.clone(),
-            me.check_queue_tx.clone(),
-            check_queue_rx,
-            me.cancel.clone(),
-            me.successful.clone(),
-            me.done.clone(),
-        ));
-
         // put all contracts into the channel, so they are available
         me.release(contracts);
+
+        // start the worker
+        for thread_id in 0..WORKERS {
+            me.tasks.spawn(Self::worker(
+                thread_id,
+                me.sdk.clone(),
+                me.check_queue_tx.clone(),
+                check_queue_rx.clone(),
+                me.cancel.clone(),
+                me.successful.clone(),
+                me.done.clone(),
+            ));
+        }
 
         me
     }
@@ -865,15 +870,20 @@ impl<S: Signer + 'static> CheckWorker<S> {
     /// Worker function that waits for the document to be mined
     /// Returns where the document was mined or the timeout was reached.
     async fn worker(
+        thread_id: usize,
         sdk: Arc<Sdk>,
         queue_tx: mpsc::Sender<CheckRequest>,
-        mut queue_rx: mpsc::Receiver<CheckRequest>,
+        queue_rx: Arc<Mutex<mpsc::Receiver<CheckRequest>>>,
         cancel: CancellationToken,
         included: Arc<AtomicU64>,
         done: mpsc::Sender<Arc<DataContract>>,
     ) {
         while !cancel.is_cancelled() {
-            let check_request = queue_rx.recv().await.expect("checks queue must be open");
+            let check_request = {
+                let mut guard = queue_rx.lock().await;
+                guard.recv().await.expect("checks queue must be open")
+            };
+
             let CheckRequest {
                 doc,
                 deadline,
@@ -890,14 +900,15 @@ impl<S: Signer + 'static> CheckWorker<S> {
                         Err(err) => {
 
                             if deadline.lt(&Instant::now()) {
-                                tracing::trace!(id, ?err, "failed to get state transition response, retrying");
+                                tracing::debug!(id, ?err, thread_id, "failed to get state transition response, retrying");
                                 queue_tx.send(check_request).await.expect("enqueue recheck");
                             } else {
-                                tracing::warn!(id, ?deadline, "timed out waiting for document to be mined");
+                                tracing::warn!(id, ?deadline, thread_id, "timed out waiting for document to be mined");
                                 done.send(check_request.dc).await.expect("failed to set contract as done");
                             }
                         }
                         Ok(_) => {
+                            tracing::trace!(id, thread_id, "document mined successfully");
                             included.fetch_add(1, Ordering::SeqCst);
                             done.send(check_request.dc).await.expect("failed to set contract as done");
                         }
