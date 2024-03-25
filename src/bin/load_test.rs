@@ -1,10 +1,8 @@
 use dpp::document::Document;
 use dpp::identity::signer::Signer;
-use futures::FutureExt;
 use rs_sdk::platform::DocumentQuery;
 use std::collections::VecDeque;
 use std::fmt::Debug;
-use std::future::IntoFuture;
 use std::ops::Deref;
 use std::{
     collections::HashSet,
@@ -46,7 +44,7 @@ use dpp::{
     },
     version::PlatformVersion,
 };
-use futures::future::{join_all, BoxFuture};
+use futures::future::join_all;
 use governor::{Quota, RateLimiter};
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use rs_dapi_client::RequestSettings;
@@ -586,14 +584,14 @@ async fn broadcast_random_documents_load_test(
         docs_to_send as usize
     };
 
-    let checker = Arc::new(Mutex::new(CheckWorker::new(
+    let checker = Arc::new(CheckWorker::new(
         sdk.clone(),
         docs_to_send,
         mine_timeout_seconds,
         &contracts,
         cancel.child_token(),
         signer.clone(),
-    )));
+    ));
     let mut std_rng = StdRng::from_entropy();
 
     while !cancel.is_cancelled() {
@@ -621,15 +619,14 @@ async fn broadcast_random_documents_load_test(
 
         let mut contract: Option<Arc<DataContract>> = None;
         while contract.is_none() {
-            let mut guard = checker.lock().await;
-            contract = match timeout(Duration::from_secs(1), guard.next()).await {
+            contract = match timeout(Duration::from_secs(1), checker.next()).await {
                 Ok(variant) => Some(variant.expect("contract reservation failed")),
                 Err(err) => {
                     tracing::warn!(?err,"no document type variant available, waiting for one, maybe increase --contracts argument?");
                     None
                 }
             };
-            drop(guard); // explicit drop to release the lock, for safety
+
             if cancel_task.is_cancelled() {
                 return;
             }
@@ -680,10 +677,7 @@ async fn broadcast_random_documents_load_test(
             if start_time.elapsed().as_secs() % 10 == 0
                 && elapsed_secs != last_report.load(Ordering::SeqCst)
             {
-                let (mined, available_contracts) = {
-                    let guard = checker.lock().await;
-                    (guard.mined(), guard.len())
-                };
+                let (mined, available_contracts) = (checker.mined(), checker.len());
 
                 tracing::info!(
                     "{} secs passed: {} pending, {} broadcasted successfully, {} mined, {} failed; {} contracts available",
@@ -717,7 +711,6 @@ async fn broadcast_random_documents_load_test(
 
             pending.fetch_sub(1, Ordering::SeqCst);
 
-            let guard = checker.lock().await;
             match result {
                 Ok(st) => {
                     oks.fetch_add(1, Ordering::SeqCst);
@@ -727,7 +720,7 @@ async fn broadcast_random_documents_load_test(
                         random_document.id().to_string(Encoding::Base58),
                     );
 
-                    guard.check(random_document, st, contract).await;
+                    checker.check(random_document, st, contract).await;
                 }
                 Err(error) => {
                     tracing::error!(
@@ -738,10 +731,9 @@ async fn broadcast_random_documents_load_test(
                     );
 
                     errs.fetch_add(1, Ordering::SeqCst);
-                    guard.release(&[contract])
+                    checker.release(&[contract])
                 }
             };
-            drop(guard);
         });
 
         tasks.push(task)
@@ -751,7 +743,7 @@ async fn broadcast_random_documents_load_test(
 
     let oks = oks.load(Ordering::SeqCst);
     let errs = errs.load(Ordering::SeqCst);
-    let mined = checker.lock().await.mined();
+    let mined = checker.mined();
 
     tracing::info!(
         document_type = document_type.name(),
@@ -776,7 +768,7 @@ struct CheckRequest {
 /// Delayed verification of a document create state transition
 struct CheckWorker<S: Signer> {
     done: mpsc::Sender<Arc<DataContract>>,
-    available: mpsc::Receiver<Arc<DataContract>>,
+    available: Mutex<mpsc::Receiver<Arc<DataContract>>>,
     tasks: JoinSet<()>,
     sdk: Arc<Sdk>,
     cancel: CancellationToken,
@@ -813,7 +805,7 @@ impl<S: Signer + 'static> CheckWorker<S> {
 
         let mut me = CheckWorker {
             done: done.clone(),
-            available,
+            available: Mutex::new(available),
             cancel,
             sdk,
             tasks: JoinSet::new(),
@@ -842,9 +834,10 @@ impl<S: Signer + 'static> CheckWorker<S> {
         me
     }
 
-    /// next returns future that will resolves into the next data contract, or None on error
-    fn next<'a>(&'a mut self) -> BoxFuture<'a, Option<Arc<DataContract>>> {
-        self.available.recv().into_future().boxed()
+    /// next returns the next data contract, or None on error
+    async fn next(&self) -> Option<Arc<DataContract>> {
+        let mut guard = self.available.lock().await;
+        guard.recv().await
     }
 
     /// number of documents that were mined
