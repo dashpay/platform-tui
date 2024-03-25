@@ -893,25 +893,25 @@ impl<S: Signer + 'static> CheckWorker<S> {
                 result = Document::fetch(&sdk, query) => {
                     match result {
                         Err(err) => {
-                            if deadline.lt(&Instant::now()) {
+                            if deadline.elapsed().is_zero() {
                                 tracing::warn!(id, ?err, thread_id, "error when checking document, retrying");
                                 queue_tx.send(check_request).await.expect("enqueue recheck");
                             } else {
-                                tracing::error!(id, ?deadline, thread_id, "error when checking document, not retrying");
+                                tracing::error!(id, deadline=?deadline.elapsed(), thread_id, "error when checking document, not retrying");
                                 done.send(check_request.dc).await.expect("failed to set contract as done");
                             }
                         }
                         Ok(None) => {
-                            if deadline.lt(&Instant::now()) {
-                                tracing::debug!(id, ?deadline, thread_id, "document not found, retrying");
+                            if deadline.elapsed().is_zero() {
+                                tracing::debug!(id, thread_id, "document not found, retrying");
                                 queue_tx.send(check_request).await.expect("enqueue recheck of missing doc");
                             } else {
-                                tracing::warn!(id, ?deadline, thread_id, "timed out waiting for document to be mined");
+                                tracing::warn!(id, deadline=?deadline.elapsed(), thread_id, "timed out waiting for document to be mined");
                                 done.send(check_request.dc).await.expect("failed to set contract as done");
                             }
                         }
                         Ok(Some(_)) => {
-                            tracing::trace!(id, ?deadline, thread_id, "document mined successfully");
+                            tracing::trace!(id, thread_id, "document mined successfully");
                             included.fetch_add(1, Ordering::SeqCst);
                             done.send(check_request.dc).await.expect("failed to set contract as done");
                         }
