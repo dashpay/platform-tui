@@ -1,9 +1,9 @@
-use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
-use dpp::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
-use dpp::state_transition::documents_batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
-use rs_sdk::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
+use dpp::document::Document;
+use dpp::identity::signer::Signer;
+use futures::FutureExt;
 use std::collections::VecDeque;
 use std::fmt::Debug;
+use std::future::IntoFuture;
 use std::ops::Deref;
 use std::{
     collections::HashSet,
@@ -16,7 +16,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tokio::task::JoinSet;
-use tokio::time::sleep;
+use tokio::time::{sleep, timeout};
 
 use clap::Parser;
 use dpp::prelude::IdentityNonce;
@@ -45,10 +45,10 @@ use dpp::{
     },
     version::PlatformVersion,
 };
-use futures::future::join_all;
+use futures::future::{join_all, BoxFuture};
 use governor::{Quota, RateLimiter};
 use rand::{rngs::StdRng, Rng, SeedableRng};
-use rs_dapi_client::{DapiRequest, RequestSettings};
+use rs_dapi_client::RequestSettings;
 use rs_platform_explorer::{
     backend::{
         identities::IdentityTask, insight::InsightAPIClient, wallet::WalletTask, Backend, Task,
@@ -114,6 +114,13 @@ struct Args {
         default_value = "15"
     )]
     refill_amount: u64,
+
+    #[arg(
+        long,
+        help = "How long to wait for the document to be mined, in seconds; 0 to disable waiting",
+        default_value = "60"
+    )]
+    mine_timeout: u32,
 }
 
 #[tokio::main]
@@ -282,7 +289,7 @@ async fn main() {
 
     let contract_count = args.contracts;
 
-    let document_types = broadcast_contract_variants(
+    let contracts = broadcast_contract_variants(
         Arc::clone(&sdk),
         &identity,
         arc_signer.clone(),
@@ -291,25 +298,18 @@ async fn main() {
         args.start_nonce,
         args.contract_push_speed,
     )
-    .await
-    .into_iter()
-    .map(|contract| {
-        contract
-            .document_type_cloned_for_name("preorder")
-            .expect("expected preorder document")
-            .into()
-    })
-    .collect::<Vec<Arc<_>>>();
+    .await;
 
     broadcast_random_documents_load_test(
         Arc::clone(&sdk),
         &identity,
         arc_signer,
         document_type,
-        document_types,
+        contracts,
         Duration::from_secs(args.time.into()),
         args.connections,
         args.rate,
+        args.mine_timeout,
     )
     .await;
 }
@@ -493,147 +493,17 @@ async fn broadcast_contract_variants(
     );
     found_data_contracts
 }
-/*
-// Variants stores a lockable list of items. When next is called, it will find the next non-locked
-// item, lock it and return it. If no item is available, it will return None.
-struct LockableItems<T: Send> {
-    data: VecDeque<Mutex<T>>,
-    cursor: Mutex<usize>,
-}
 
-impl<T: Send + Sync + Clone> LockableItems<T> {
-    pub fn new() -> Self {
-        LockableItems {
-            data: VecDeque::new(),
-            cursor: Mutex::new(0),
-        }
-    }
-
-    pub fn push(&mut self, item: T) {
-        let item = Mutex::new(item);
-        self.data.push_back(item);
-    }
-
-    // Find next non-locked item, lock and return it.
-    //
-    // None is returned if no item is available.
-    pub async fn next<'a>(&'a self) -> Option<MutexGuard<'a, T>> {
-        if self.data.is_empty() {
-            return None;
-        }
-        let mut count = self.data.len();
-        let mut cursor = self.cursor.lock().await;
-        while count > 0 {
-            let item = self.data.get(*cursor)?;
-            *cursor = (*cursor + 1) % self.data.len();
-
-            if let Ok(locked) = item.try_lock() {
-                return Some(locked);
-            }
-            count -= 1;
-        }
-
-        // we didn't find any data contracts to lock
-        None
-    }
-
-    // Find next non-locked item, lock and return it.
-    // Blocks if there are no unlocked items.
-    //
-    // # Panics
-    //
-    // Panics on empty list
-    //
-    pub async fn next_blocking<'a>(&'a self, cancel: CancellationToken) -> MutexGuard<'a, T> {
-        if self.data.is_empty() {
-            panic!("no items available");
-        }
-
-        loop {
-            if let Some(item) = self.next().await {
-                return item;
-            }
-
-            tracing::debug!(
-                "no unlocked {} available, waiting for an item",
-                std::any::type_name::<T>()
-            );
-            tokio::select! {
-                _ = sleep(Duration::from_millis(10)) => {},
-                _ = cancel.cancelled() => {}
-            }
-        }
-    }
-
-    // pub async fn chan<'a>(
-    //     self,
-    //     cancel: CancellationToken,
-    // ) -> mpsc::Receiver<Arc<MutexGuard<'static, T>>>
-    // where
-    //     T: 'static,
-    //     Self: 'static,
-    // {
-    //     let (tx, rx) = mpsc::channel::<Arc<MutexGuard<'static, T>>>(1);
-
-    //     tokio::task::spawn(async move {
-    //         while !cancel.is_cancelled() {
-    //             let doc = self.next_blocking::<'static>(cancel.child_token()).await;
-
-    //             if tx.send(Arc::new(doc)).await.is_err() {
-    //                 break;
-    //             }
-    //         }
-    //     });
-
-    //     rx
-    // }
-}
-impl<T: Send + Clone> Clone for LockableItems<T> {
-    fn clone(&self) -> Self {
-        // we can't use blocking lock here, so we fallback to non-blocking try_lock()
-        let mut cursor = self.cursor.try_lock();
-        while cursor.is_err() {
-            std::thread::sleep(Duration::from_millis(10));
-            cursor = self.cursor.try_lock();
-        }
-        let cursor = cursor.expect("expected to lock cursor");
-
-        let mut data = VecDeque::new();
-        for item in self.data {
-            let mut guard = item.try_lock();
-            while guard.is_err() {
-                std::thread::sleep(Duration::from_millis(10));
-                guard = item.try_lock();
-            }
-            data.push_back(Mutex::new(guard.expect("expected to lock cursor").clone()));
-        }
-
-        LockableItems {
-            data,
-            cursor: Mutex::new(*cursor),
-        }
-    }
-}
-
-impl<'a> From<Vec<Arc<DocumentType>>> for LockableItems<Arc<DocumentType>> {
-    fn from(data: Vec<Arc<DocumentType>>) -> Self {
-        let mut variants = LockableItems::new();
-        for item in data {
-            variants.push(item);
-        }
-        variants
-    }
-}
- */
 async fn broadcast_random_documents_load_test(
     sdk: Arc<Sdk>,
     identity: &Identity,
     signer: Arc<SimpleSigner>,
     document_type: DocumentType,
-    document_type_variants: Vec<Arc<DocumentType>>,
+    contracts: Vec<DataContract>,
     duration: Duration,
     concurrent_requests: u16,
     rate_limit_per_sec: u32,
+    mine_timeout_seconds: u32,
 ) {
     let rate_limit_per_sec = NonZeroU32::new(rate_limit_per_sec).unwrap_or(NonZeroU32::MAX);
     tracing::info!(
@@ -647,18 +517,10 @@ async fn broadcast_random_documents_load_test(
     let identity_id = identity.id();
     let cancel = CancellationToken::new();
 
-    // Put document varians into an mpsc channel
-    // When variant is used by a task, it is read from the channel.
-    // When it's freed, it is put back into the channel.
-    let (doctype_variants_done, mut doctype_variants) =
-        mpsc::channel::<Arc<DocumentType>>(document_type_variants.len());
-    for v in document_type_variants {
-        // initially, all doctype variants are available
-        doctype_variants_done
-            .send(v)
-            .await
-            .expect("expected to send a variant");
-    }
+    let contracts = contracts
+        .into_iter()
+        .map(|c| Arc::new(c))
+        .collect::<Vec<Arc<DataContract>>>();
 
     // Get identity public key
     let identity_public_key = identity
@@ -684,7 +546,6 @@ async fn broadcast_random_documents_load_test(
 
     // what the hell
     let oks = Arc::new(AtomicUsize::new(0)); // Atomic counter for tasks
-    let included = Arc::new(AtomicUsize::new(0)); // Txs included in a block
     let errs = Arc::new(AtomicUsize::new(0)); // Atomic counter for tasks
     let pending = Arc::new(AtomicUsize::new(0));
     let last_report = Arc::new(AtomicU64::new(0));
@@ -714,15 +575,14 @@ async fn broadcast_random_documents_load_test(
 
     let version = sdk.version();
 
-    let checker = Arc::new(CheckWorker::new(
+    let checker = Arc::new(Mutex::new(CheckWorker::new(
         sdk.clone(),
-        settings.clone(),
+        mine_timeout_seconds,
+        &contracts,
         cancel.child_token(),
-        included.clone(),
-        doctype_variants_done,
-    ));
+        signer.clone(),
+    )));
     let mut std_rng = StdRng::from_entropy();
-    let mut warned_not_enough_contracts = Instant::now();
 
     while !cancel.is_cancelled() {
         if cancel.is_cancelled() {
@@ -733,7 +593,6 @@ async fn broadcast_random_documents_load_test(
         let permit = permits.acquire_owned().await.unwrap();
 
         let oks = Arc::clone(&oks);
-        let included = Arc::clone(&included);
         let errs = Arc::clone(&errs);
         let pending = Arc::clone(&pending);
         let last_report = Arc::clone(&last_report);
@@ -747,20 +606,26 @@ async fn broadcast_random_documents_load_test(
         let sdk = Arc::clone(&sdk);
 
         // get some variant; it will be disposed (re-entered) when document is mined
-        let mut document_type_variant = doctype_variants.try_recv();
-        while document_type_variant.is_err() {
-            sleep(Duration::from_millis(10)).await;
-            document_type_variant = doctype_variants.try_recv();
-            if warned_not_enough_contracts.elapsed() > Duration::from_secs(1) {
-                tracing::warn!("no document type variant available, waiting for one, maybe increase --contracts argument?");
-                warned_not_enough_contracts = Instant::now();
-            }
+
+        let mut contract: Option<Arc<DataContract>> = None;
+        while contract.is_none() {
+            let mut guard = checker.lock().await;
+            contract = match timeout(Duration::from_secs(1), guard.next()).await {
+                Ok(variant) => Some(variant.expect("contract reservation failed")),
+                Err(err) => {
+                    tracing::warn!(?err,"no document type variant available, waiting for one, maybe increase --contracts argument?");
+                    None
+                }
+            };
+            drop(guard); // explicit drop to release the lock, for safety
         }
+        let contract = contract.expect("data contract must be available");
 
-        let document_type_variant =
-            document_type_variant.expect("expected a document type variant");
-
-        let document_type_to_use = document_type_variant.clone();
+        let document_type_to_use = Arc::new(
+            contract
+                .document_type_cloned_for_name("preorder")
+                .expect("expected preorder document"),
+        );
 
         let document_state_transition_entropy: [u8; 32] = std_rng.gen();
 
@@ -800,12 +665,13 @@ async fn broadcast_random_documents_load_test(
             if start_time.elapsed().as_secs() % 10 == 0
                 && elapsed_secs != last_report.load(Ordering::SeqCst)
             {
+                let included = checker.lock().await.count();
                 tracing::info!(
                     "{} secs passed: {} pending, {} successful, {} mined, {} failed",
                     elapsed_secs,
                     pending.load(Ordering::SeqCst),
                     oks.load(Ordering::SeqCst),
-                    included.load(Ordering::SeqCst),
+                    included,
                     errs.load(Ordering::SeqCst),
                 );
                 last_report.swap(elapsed_secs, Ordering::SeqCst);
@@ -839,8 +705,9 @@ async fn broadcast_random_documents_load_test(
                         "document {} successfully broadcast",
                         random_document.id().to_string(Encoding::Base58),
                     );
+                    let guard = checker.lock().await;
 
-                    checker.check(st, document_type_variant).await;
+                    guard.check(random_document, st, contract).await;
                 }
                 Err(error) => {
                     tracing::error!(
@@ -862,113 +729,138 @@ async fn broadcast_random_documents_load_test(
 
     let oks = oks.load(Ordering::SeqCst);
     let errs = errs.load(Ordering::SeqCst);
+    let mined = checker.lock().await.count();
 
     tracing::info!(
         document_type = document_type.name(),
-        "broadcasting {} random documents during {} secs. successfully: {}, failed: {}, mined: {}, rate: {} \
+        "broadcasting {} random documents during {} secs. Broadcasted successfully: {}, failed: {}, mined: {}, rate: {} \
          docs/sec",
         oks + errs,
         duration.as_secs_f32(),
         oks,
         errs,
-        included.load(Ordering::SeqCst),
+        mined,
         (oks + errs) as f32 / duration.as_secs_f32()
     );
 }
 
-struct CheckWorker {
-    // done checks
-    done: tokio::sync::mpsc::Sender<Arc<DocumentType>>,
+/// Delayed verification of a document create state transition
+struct CheckWorker<S: Signer> {
+    done: mpsc::Sender<Arc<DataContract>>,
+    available: mpsc::Receiver<Arc<DataContract>>,
     tasks: Mutex<JoinSet<()>>,
     sdk: Arc<Sdk>,
-    settings: RequestSettings,
     cancel: CancellationToken,
-    included: Arc<AtomicUsize>,
+    timeout: Duration,
+    included: Arc<AtomicU64>,
+    _signer: Arc<S>,
 }
 
-impl CheckWorker {
+impl<S: Signer> CheckWorker<S> {
+    /// new creates a new CheckWorker
+    ///
+    /// ## Arguments
+    ///
+    /// * `sdk` - Arc<Sdk> - The platform SDK
+    /// * `mine_timeout_secs` - u32 - The time to wait for the document to be mined; 0 means no waiting
+    /// * `contracts` - &[Arc<DataContract>] - The data contracts to be used
+    /// * `cancel` - CancellationToken - The cancellation token
+    /// * `signer` - Arc<S> - The signer used to sign the documents
     fn new(
         sdk: Arc<Sdk>,
-        settings: RequestSettings,
+        mine_timeout_secs: u32,
+        contracts: &[Arc<DataContract>],
         cancel: CancellationToken,
-        included: Arc<AtomicUsize>,
-        done: tokio::sync::mpsc::Sender<Arc<DocumentType>>,
+        signer: Arc<S>,
     ) -> Self {
-        // let (sender, receiver) = tokio::sync::mpsc::channel(queue);
+        // When a contract is used by a task, it is removed from the channel.
+        // When it's freed, it is put back into the channel.
+        let (done, available) = mpsc::channel::<Arc<DataContract>>(contracts.len());
 
-        CheckWorker {
+        let me = CheckWorker {
             done,
+            available,
             cancel,
             sdk,
-            settings,
-            // sender,
             tasks: Mutex::new(JoinSet::new()),
-            included,
+            included: Arc::new(AtomicU64::new(0)),
+            timeout: Duration::from_secs(mine_timeout_secs as u64),
+            _signer: signer,
+        };
+        // put all contracts into the channel, so they are available
+        me.release(contracts);
+
+        me
+    }
+
+    /// next returns future that will resolves into the next data contract, or None on error
+    fn next<'a>(&'a mut self) -> BoxFuture<'a, Option<Arc<DataContract>>> {
+        self.available.recv().into_future().boxed()
+    }
+
+    /// count returns number of documents that were mined
+    fn count(&self) -> u64 {
+        self.included.load(Ordering::SeqCst)
+    }
+
+    /// release data contract(s) so that they can be retrieved using [next()]
+    fn release(&self, data: &[Arc<DataContract>]) {
+        for v in data {
+            self.done
+                .try_send(v.clone())
+                .expect("doctype channel cannot be full");
         }
     }
 
     // Check if the state transition finished successfully.
-    // Then drop the guard to release the lock on the document type variant.
-    async fn check(&self, st: StateTransition, doctype: Arc<DocumentType>) {
-        // self.sender
-        //     .send(value)
-        //     .await
-        //     .expect("expected to send a message");
+    // Then release data contract so it can be used by another task.
+    async fn check(&self, doc: Document, st: StateTransition, dc: Arc<DataContract>) {
         let sdk = self.sdk.clone();
-        let settings = self.settings.clone();
         let cancel = self.cancel.child_token();
         let included = self.included.clone();
 
         let mut tasks = self.tasks.lock().await;
         let done = self.done.clone();
+        let timeout = self.timeout.clone();
         tasks.spawn(async move {
-            Self::worker(&st, sdk, settings, cancel).await;
-            done.send(doctype)
-                .await
-                .expect("failed to set doc type as done");
+            Self::worker(sdk, doc, st, dc.clone(), timeout, cancel).await;
+            done.send(dc).await.expect("failed to set doc type as done");
             included.fetch_add(1, Ordering::SeqCst);
         });
     }
 
+    /// Worker function that waits for the document to be mined
+    /// Returns where the document was mined or the timeout was reached.
     async fn worker(
-        st: &StateTransition,
         sdk: Arc<Sdk>,
-        settings: RequestSettings,
+        doc: Document,
+        st: StateTransition,
+        dc: Arc<DataContract>,
+        timeout: Duration,
         cancel: CancellationToken,
     ) {
-        let settings = RequestSettings {
-            timeout: Some(Duration::from_secs(300)),
-            ..settings
-        };
+        let start = Instant::now();
 
-        let req = st
-            .wait_for_state_transition_result_request()
-            .expect("expected to get request");
+        let id = doc.id().to_string(Encoding::Base58);
 
-        let sdk = sdk.deref();
-        tokio::select! {
-            _ = cancel.cancelled() => return,
-            resp = req.execute(sdk, settings) => {
-                if resp.is_err() {
-                    tracing::error!("failed to get state transition response");
+        // note this will not repeat for timeout 0
+        while start.elapsed() < timeout {
+            tokio::select! {
+                _ = cancel.cancelled() => return,
+                result = PutDocument::<S>:: wait_for_response(&doc,&sdk,st.clone(), dc.clone()) =>{
+                    match result {
+                        Err(err) => {
+                            tracing::warn!(id, ?err, "failed to get state transition response, retrying");
+                        }
+                        Ok(_) => {
+                            // noop
+                            break;
+                        }
+                    }
                 }
             }
         }
 
-        match st {
-            StateTransition::DocumentsBatch(batch) => {
-                let docs = batch.transitions();
-                let doc = docs
-                    .first()
-                    .expect("expected a document")
-                    .as_transition_create()
-                    .expect("expected a create transition");
-
-                tracing::trace!("document {} successfully broadcast", doc.base().id());
-            }
-            _ => {
-                tracing::error!("unexpected state transition type : {:?}", st.name());
-            }
-        }
+        tracing::warn!(id, ?timeout, "timed out waiting for document to be mined");
     }
 }
