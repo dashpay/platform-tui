@@ -309,7 +309,8 @@ fn display_strategy(
 {operations_lines}
     Start identities: {} (Keys: {}, Balance: {:.2} dash)"#,
         strategy.start_identities.number_of_identities,
-        strategy.start_identities.keys_per_identity,
+        strategy.start_identities.keys_per_identity
+            + strategy.start_identities.extra_keys.len() as u8,
         strategy.start_identities.starting_balances as f64 / 100_000_000.0,
     )
 }

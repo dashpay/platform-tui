@@ -15,8 +15,7 @@ use dpp::{
     block::{block_info::BlockInfo, epoch::Epoch}, dashcore::PrivateKey, data_contract::{
         accessors::v0::DataContractV0Getters, created_data_contract::CreatedDataContract, DataContract
     }, identity::{
-        accessors::IdentityGettersV0, state_transition::asset_lock_proof::AssetLockProof, Identity,
-        PartialIdentity,
+        accessors::IdentityGettersV0, state_transition::asset_lock_proof::AssetLockProof, Identity, KeyType, PartialIdentity, Purpose, SecurityLevel
     }, platform_value::{string_encoding::Encoding, Identifier}, serialization::{PlatformDeserializableWithPotentialValidationFromVersionedStructure, PlatformSerializableWithPlatformVersion}, state_transition::{data_contract_create_transition::DataContractCreateTransition, documents_batch_transition::{document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods, document_transition::DocumentTransition, DocumentCreateTransition, DocumentsBatchTransition}, StateTransition, StateTransitionLike}, version::PlatformVersion
 };
 use drive::{
@@ -34,7 +33,7 @@ use rs_sdk::{
 };
 use simple_signer::signer::SimpleSigner;
 use strategy_tests::{
-    frequency::Frequency, operations::{FinalizeBlockOperation, Operation}, IdentityInsertInfo, LocalDocumentQuery, StartIdentities, Strategy, StrategyConfig
+    frequency::Frequency, operations::{FinalizeBlockOperation, Operation}, IdentityInsertInfo, KeyMaps, LocalDocumentQuery, StartIdentities, Strategy, StrategyConfig
 };
 use tokio::sync::{Mutex, MutexGuard};
 use tracing::{error, info};
@@ -63,6 +62,7 @@ pub enum StrategyTask {
         count: u8,
         keys_count: u8,
         balance: u64,
+        add_transfer_key: bool,
     },
     SetStartIdentitiesBalance(String, u64),
     AddOperation {
@@ -452,13 +452,20 @@ pub async fn run_strategy_task<'s>(
             count,
             keys_count,
             balance,
+            add_transfer_key,
         } => {
             let mut strategies_lock = app_state.available_strategies.lock().await;
             if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
+                let mut extra_keys = BTreeMap::new();
+                if add_transfer_key {
+                    extra_keys.insert(Purpose::TRANSFER,
+                        [(SecurityLevel::CRITICAL, vec![KeyType::ECDSA_SECP256K1])].into());
+                }
                 strategy.start_identities = StartIdentities {
                     number_of_identities: count,
                     keys_per_identity: keys_count,
                     starting_balances: balance,
+                    extra_keys,
                 };
                 BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
                     strategy_name.clone(),
@@ -481,6 +488,7 @@ pub async fn run_strategy_task<'s>(
                     number_of_identities: strategy.start_identities.number_of_identities,
                     keys_per_identity: strategy.start_identities.keys_per_identity,
                     starting_balances: balance,
+                    extra_keys: strategy.start_identities.extra_keys.clone(),
                 };
                 BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
                     strategy_name.clone(),
@@ -946,8 +954,8 @@ pub async fn run_strategy_task<'s>(
                                                     Ok(wait_response) => {
                                                         if let Some(wait_for_state_transition_result_response::Version::V0(v0_response)) = &wait_response.version {
                                                             if let Some(metadata) = &v0_response.metadata {
-                                                                success_count += 1;
                                                                 if !verify_proofs {
+                                                                    success_count += 1;
                                                                     info!("Successfully processed state transition {} ({}) for block {} (Actual block height: {})", st_queue_index, transition_type, current_block_info.height, metadata.height);
                                                                 }
                                                                 // Additional logging to inspect the result regardless of metadata presence
@@ -968,10 +976,11 @@ pub async fn run_strategy_task<'s>(
                                                                                 },
                                                                                 proof.grovedb_proof.as_slice(),
                                                                                 &|_| Ok(None),
-                                                                                sdk.version(),                                                            
+                                                                                sdk.version(),
                                                                             );
                                                                             match verified {
                                                                                 Ok(_) => {
+                                                                                    success_count += 1;
                                                                                     info!("Successfully processed and verified proof for state transition {} ({}), block {} (Actual block height: {})", st_queue_index, transition_type, current_block_info.height, metadata.height);
                                                                                 }
                                                                                 Err(e) => {
