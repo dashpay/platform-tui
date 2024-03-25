@@ -1,6 +1,7 @@
 use dpp::document::Document;
 use dpp::identity::signer::Signer;
 use futures::FutureExt;
+use rs_sdk::platform::DocumentQuery;
 use std::collections::VecDeque;
 use std::fmt::Debug;
 use std::future::IntoFuture;
@@ -754,7 +755,6 @@ async fn broadcast_random_documents_load_test(
 
 struct CheckRequest {
     doc: Document,
-    st: StateTransition,
     dc: Arc<DataContract>,
     deadline: Instant,
 }
@@ -853,16 +853,11 @@ impl<S: Signer + 'static> CheckWorker<S> {
 
     // Check if the state transition finished successfully.
     // Then release data contract so it can be used by another task.
-    async fn check(&self, doc: Document, st: StateTransition, dc: Arc<DataContract>) {
+    async fn check(&self, doc: Document, _st: StateTransition, dc: Arc<DataContract>) {
         let deadline = Instant::now() + self.timeout;
 
         self.check_queue_tx
-            .send(CheckRequest {
-                dc,
-                deadline,
-                doc,
-                st,
-            })
+            .send(CheckRequest { dc, deadline, doc })
             .await
             .expect("enqueue check");
     }
@@ -884,31 +879,39 @@ impl<S: Signer + 'static> CheckWorker<S> {
                 guard.recv().await.expect("checks queue must be open")
             };
 
-            let CheckRequest {
-                doc,
-                deadline,
-                st,
-                dc,
-            } = &check_request;
-
+            let CheckRequest { doc, deadline, .. } = &check_request;
             let id = doc.id().to_string(Encoding::Base58);
+
+            // Now query for individual document
+
+            let query = DocumentQuery::new(check_request.dc.clone(), "preorder")
+                .expect("create SdkDocumentQuery")
+                .with_document_id(&doc.id());
 
             tokio::select! {
                 _ = cancel.cancelled() => return,
-                result = PutDocument::<S>:: wait_for_response(doc,&sdk,st.clone(), dc.clone()) =>{
+                result = Document::fetch(&sdk, query) => {
                     match result {
                         Err(err) => {
-
                             if deadline.lt(&Instant::now()) {
-                                tracing::debug!(id, ?err, thread_id, "failed to get state transition response, retrying");
+                                tracing::warn!(id, ?err, thread_id, "error when checking document, retrying");
                                 queue_tx.send(check_request).await.expect("enqueue recheck");
+                            } else {
+                                tracing::error!(id, ?deadline, thread_id, "error when checking document, not retrying");
+                                done.send(check_request.dc).await.expect("failed to set contract as done");
+                            }
+                        }
+                        Ok(None) => {
+                            if deadline.lt(&Instant::now()) {
+                                tracing::debug!(id, ?deadline, thread_id, "document not found, retrying");
+                                queue_tx.send(check_request).await.expect("enqueue recheck of missing doc");
                             } else {
                                 tracing::warn!(id, ?deadline, thread_id, "timed out waiting for document to be mined");
                                 done.send(check_request.dc).await.expect("failed to set contract as done");
                             }
                         }
-                        Ok(_) => {
-                            tracing::trace!(id, thread_id, "document mined successfully");
+                        Ok(Some(_)) => {
+                            tracing::trace!(id, ?deadline, thread_id, "document mined successfully");
                             included.fetch_add(1, Ordering::SeqCst);
                             done.send(check_request.dc).await.expect("failed to set contract as done");
                         }
