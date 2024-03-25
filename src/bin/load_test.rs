@@ -705,7 +705,7 @@ async fn broadcast_random_documents_load_test(
                 )
                 .await;
             let elapsed = start.elapsed();
-            if elapsed.as_millis() > 10 {
+            if elapsed.as_millis() > 100 {
                 tracing::info!(?elapsed, "put took too long");
             };
             // note we still hold the contract variant until we confirm the tx is included in a block
