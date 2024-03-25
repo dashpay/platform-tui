@@ -632,7 +632,7 @@ async fn broadcast_random_documents_load_test(
                 return;
             }
             let elapsed = start.elapsed();
-            if elapsed.as_millis() > 100 {
+            if elapsed.as_millis() > 10 {
                 tracing::trace!(
                     ?elapsed,
                     "contract reservation took too long, consider increasing --contracts argument"
@@ -689,6 +689,7 @@ async fn broadcast_random_documents_load_test(
                 last_report.swap(elapsed_secs, Ordering::SeqCst);
             }
 
+            let start = Instant::now();
             let result = random_document
                 .put_to_platform(
                     &sdk,
@@ -703,7 +704,10 @@ async fn broadcast_random_documents_load_test(
                     }),
                 )
                 .await;
-
+            let elapsed = start.elapsed();
+            if elapsed.as_millis() > 10 {
+                tracing::info!(?elapsed, "put took too long");
+            };
             // note we still hold the contract variant until we confirm the tx is included in a block
             drop(permit);
 
@@ -721,10 +725,11 @@ async fn broadcast_random_documents_load_test(
                     let start = Instant::now();
                     checker.check(random_document, st, contract).await;
                     let elapsed = start.elapsed();
-                    if elapsed.as_millis() > 100 {
+                    if elapsed.as_millis() > 1 {
                         tracing::info!(?elapsed, "check took too long");
                     };
                 }
+
                 Err(error) => {
                     tracing::error!(
                         ?error,
