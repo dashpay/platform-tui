@@ -1,7 +1,7 @@
 //! Strategies management backend module.
 
 use std::{
-    collections::{BTreeMap, BTreeSet, VecDeque}, fs::File, io::Write, time::Instant
+    collections::{BTreeMap, BTreeSet, VecDeque}, fs::File, io::Write, time::{Duration, Instant, SystemTime, UNIX_EPOCH}
 };
 
 use dapi_grpc::platform::v0::{
@@ -502,12 +502,9 @@ pub(crate) async fn run_strategy_task<'s>(
             }
         }
         StrategyTask::RunStrategy(strategy_name, num_blocks_or_seconds, verify_proofs, block_mode) => {
-            info!("-----Starting strategy '{}'-----", strategy_name);
+            tracing::info!("-----Starting strategy '{}'-----", strategy_name);
+            
             let run_start_time = Instant::now();
-
-            let mut strategies_lock = app_state.available_strategies.lock().await;
-            let drive_lock = app_state.drive.lock().await;
-            let identity_private_keys_lock = app_state.identity_private_keys.lock().await;
 
             // Fetch known_contracts from the chain to assure local copies match actual
             // state.
@@ -522,6 +519,7 @@ pub(crate) async fn run_strategy_task<'s>(
                 }
             };
 
+            // Refresh loaded_identity and get the current balance at strategy start
             let mut loaded_identity_lock = match app_state.refresh_identity(&sdk).await {
                 Ok(lock) => {
                     info!("Refreshed loaded identity.");
@@ -535,22 +533,18 @@ pub(crate) async fn run_strategy_task<'s>(
                     };
                 }
             };
+            let initial_balance_identity = loaded_identity_lock.balance();
 
-            // Access the loaded_wallet within the Mutex
+            // Refresh UTXOs for the loaded wallet and get initial wallet balance
             let mut loaded_wallet_lock = app_state.loaded_wallet.lock().await;
-
-            // Refresh UTXOs for the loaded wallet
             if let Some(ref mut wallet) = *loaded_wallet_lock {
                 let _ = wallet.reload_utxos(insight).await;
             }
-
-            let initial_balance_identity = loaded_identity_lock.balance();
             let initial_balance_wallet = loaded_wallet_lock.clone().unwrap().balance();
-
             drop(loaded_wallet_lock);
 
-            // It's normal that we're asking for the mutable strategy because we need to
-            // modify some properties of a contract on update
+            // Get a mutable strategy because we need to modify some properties of contracts on updates
+            let mut strategies_lock = app_state.available_strategies.lock().await;
             if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
                 // Get block_info
                 // Get block info for the first block by sending a grpc request and looking at
@@ -606,6 +600,7 @@ pub(crate) async fn run_strategy_task<'s>(
 
                 // Get signer from loaded_identity
                 // Convert loaded_identity to SimpleSigner
+                let identity_private_keys_lock = app_state.identity_private_keys.lock().await;
                 let mut signer = {
                     let strategy_signer = strategy.signer.insert({
                         let mut new_signer = SimpleSigner::default();
@@ -624,12 +619,14 @@ pub(crate) async fn run_strategy_task<'s>(
                     });
                     strategy_signer.clone()
                 };
+                drop(identity_private_keys_lock);
 
                 // Set initial current_identities to loaded_identity
-                // On the first block of execution, start_identities will be added to current_identities
+                // During strategy execution, newly created identities will be added to current_identities
                 let mut loaded_identity_clone = loaded_identity_lock.clone();
                 let mut current_identities: Vec<Identity> = vec![loaded_identity_clone.clone()];
 
+                // Set the nonce counters
                 let mut identity_nonce_counter = BTreeMap::new();
                 let current_identity_nonce = sdk
                     .get_identity_nonce(
@@ -664,19 +661,172 @@ pub(crate) async fn run_strategy_task<'s>(
                     );
                 }
 
-                let mut current_block_info = initial_block_info.clone();
+                // Get a lock on the local drive for the following two callbacks
+                let drive_lock = app_state.drive.lock().await;
 
-                let mut transition_count = 0;
-                let mut success_count = 0;
+                // Callback used to fetch documents from the local Drive instance
+                // Used for DocumentReplace and DocumentDelete transitions
+                let mut document_query_callback = |query: LocalDocumentQuery| {
+                    match query {
+                        LocalDocumentQuery::RandomDocumentQuery(random_query) => {
+                            let document_type = random_query.document_type;
+                            let data_contract = random_query.data_contract;
 
-                let execution_start_time = Instant::now();
+                            // Construct a DriveQuery based on the document_type and
+                            // data_contract
+                            let drive_query = DriveQuery::any_item_query(
+                                data_contract,
+                                document_type.as_ref(),
+                            );
+
+                            // Query the Drive for documents
+                            match drive_lock.query_documents(
+                                drive_query,
+                                None,
+                                false,
+                                None,
+                                None,
+                            ) {
+                                Ok(outcome) => match outcome {
+                                    QueryDocumentsOutcome::V0(outcome_v0) => {
+                                        let documents = outcome_v0.documents_owned();
+                                        info!(
+                                            "Fetched {} documents using DriveQuery",
+                                            documents.len()
+                                        );
+                                        documents
+                                    }
+                                },
+                                Err(e) => {
+                                    error!("Error fetching documents using DriveQuery: {:?}", e);
+                                    vec![]
+                                }
+                            }
+                        }
+                    }
+                };
+
+                // Callback used to fetch identities from the local Drive instance
+                let mut identity_fetch_callback =
+                    |identifier: Identifier, _keys_request: Option<IdentityKeysRequest>| {
+                        // Convert Identifier to a byte array format expected by the Drive
+                        // method
+                        let identity_id_bytes = identifier.into_buffer();
+
+                        // Fetch identity information from the Drive
+                        match drive_lock.fetch_identity_with_balance(
+                            identity_id_bytes,
+                            None,
+                            PlatformVersion::latest(),
+                        ) {
+                            Ok(maybe_partial_identity) => {
+                                let partial_identity =
+                                    maybe_partial_identity.unwrap_or_else(|| PartialIdentity {
+                                        id: identifier,
+                                        loaded_public_keys: BTreeMap::new(),
+                                        balance: None,
+                                        revision: None,
+                                        not_found_public_keys: BTreeSet::new(),
+                                    });
+                                info!(
+                                    "Fetched identity info for identifier {}: {:?}",
+                                    identifier, partial_identity
+                                );
+                                partial_identity
+                            }
+                            Err(e) => {
+                                error!("Error fetching identity: {:?}", e);
+                                PartialIdentity {
+                                    id: identifier,
+                                    loaded_public_keys: BTreeMap::new(),
+                                    balance: None,
+                                    revision: None,
+                                    not_found_public_keys: BTreeSet::new(),
+                                }
+                            }
+                        }
+                    };
+
+                // Callback used for creating asset locks for identity create and top up transitions
+                let mut create_asset_lock = {
+                    let insight_ref = insight.clone();
+
+                    move |amount: u64| -> Option<(AssetLockProof, PrivateKey)> {
+                        tokio::task::block_in_place(|| {
+                            let rt = tokio::runtime::Handle::current();
+                            rt.block_on(async {
+                                let mut wallet_lock = app_state.loaded_wallet.lock().await;
+                                if let Some(ref mut wallet) = *wallet_lock {
+                                    // Initialize old_utxos
+                                    let old_utxos = match wallet {
+                                        Wallet::SingleKeyWallet(ref wallet) => wallet.utxos.clone(),
+                                    };
+
+                                    // Handle asset lock transaction
+                                    match wallet.asset_lock_transaction(None, amount) {
+                                        Ok((asset_lock_transaction, asset_lock_proof_private_key)) => {
+                                            // Use sdk_ref_clone for broadcasting and retrieving asset lock
+                                            match AppState::broadcast_and_retrieve_asset_lock(&sdk, &asset_lock_transaction, &wallet.receive_address()).await {
+                                                Ok(proof) => {
+                                                    // Check for new UTXOs in the wallet
+                                                    let max_retries = 5;
+                                                    let mut retries = 0;
+                                                    let mut found_new_utxos = false;
+                                                    while retries < max_retries {
+                                                        let _ = wallet.reload_utxos(&insight_ref).await;
+                                                        // Check if new UTXOs are available and if UTXO list is not empty
+                                                        let current_utxos = match wallet {
+                                                            Wallet::SingleKeyWallet(ref wallet) => &wallet.utxos,
+                                                        };
+                                                        if current_utxos != &old_utxos && !current_utxos.is_empty() {
+                                                            found_new_utxos = true;
+                                                            break;
+                                                        } else {
+                                                            retries += 1;
+                                                            tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+                                                        }
+                                                    }
+                                                    if !found_new_utxos {
+                                                        error!("Failed to find new UTXOs after maximum retries");
+                                                        return None;
+                                                    }
+                                                    Some((proof, asset_lock_proof_private_key))
+                                                },
+                                                Err(e) => {
+                                                    error!("Error broadcasting asset lock transaction: {:?}", e);
+                                                    None
+                                                }
+                                            }
+                                        },
+                                        Err(e) => {
+                                            error!("Error creating asset lock transaction: {:?}", e);
+                                            None
+                                        }
+                                    }
+                                } else {
+                                    error!("Wallet not loaded");
+                                    None
+                                }
+                            })
+                        })
+                    }
+                };
+
+                // Some final initialization
+                let mut rng = StdRng::from_entropy(); // Will be passed to state_transitions_for_block
+                let mut current_block_info = initial_block_info.clone(); // Used for transition creation and logging
+                let mut transition_count = 0; // Used for logging how many transitions we attempted
+                let mut success_count = 0; // Used for logging how many transitions were successful
+                let execution_start_time = Instant::now(); // Time when actual execution begins
+                let mut second_index = 1; // index for seconds in time-based execution
 
                 tracing::info!("Initialization finished after {} seconds. Beginning execution.", run_start_time.elapsed().as_secs());
-                
+
+                // Now loop through the number of blocks or seconds the user asked for, preparing and processing state transitions
                 while (block_mode && current_block_info.height < (initial_block_info.height + num_blocks_or_seconds))
                     || (!block_mode && execution_start_time.elapsed().as_secs() < num_blocks_or_seconds) {
                     
-                    // Get the mode as a string for logging
+                    // Get the execution mode as a string for logging
                     let mut mode_string = String::new();
                     if block_mode {
                         mode_string.push_str("block");
@@ -684,159 +834,7 @@ pub(crate) async fn run_strategy_task<'s>(
                         mode_string.push_str("second");
                     }
 
-                    let mut document_query_callback = |query: LocalDocumentQuery| {
-                        match query {
-                            LocalDocumentQuery::RandomDocumentQuery(random_query) => {
-                                let document_type = random_query.document_type;
-                                let data_contract = random_query.data_contract;
-
-                                // Construct a DriveQuery based on the document_type and
-                                // data_contract
-                                let drive_query = DriveQuery::any_item_query(
-                                    data_contract,
-                                    document_type.as_ref(),
-                                );
-
-                                // Query the Drive for documents
-                                match drive_lock.query_documents(
-                                    drive_query,
-                                    None,
-                                    false,
-                                    None,
-                                    None,
-                                ) {
-                                    Ok(outcome) => match outcome {
-                                        QueryDocumentsOutcome::V0(outcome_v0) => {
-                                            let documents = outcome_v0.documents_owned();
-                                            info!(
-                                                "Fetched {} documents using DriveQuery",
-                                                documents.len()
-                                            );
-                                            documents
-                                        }
-                                    },
-                                    Err(e) => {
-                                        error!(
-                                            "Block {}: Error fetching documents using DriveQuery: \
-                                             {:?}",
-                                            current_block_info.height, e
-                                        );
-                                        vec![]
-                                    }
-                                }
-                            }
-                        }
-                    };
-                    let mut identity_fetch_callback =
-                        |identifier: Identifier, _keys_request: Option<IdentityKeysRequest>| {
-                            // Convert Identifier to a byte array format expected by the Drive
-                            // method
-                            let identity_id_bytes = identifier.into_buffer();
-
-                            // Fetch identity information from the Drive
-                            match drive_lock.fetch_identity_with_balance(
-                                identity_id_bytes,
-                                None,
-                                PlatformVersion::latest(),
-                            ) {
-                                Ok(maybe_partial_identity) => {
-                                    let partial_identity =
-                                        maybe_partial_identity.unwrap_or_else(|| PartialIdentity {
-                                            id: identifier,
-                                            loaded_public_keys: BTreeMap::new(),
-                                            balance: None,
-                                            revision: None,
-                                            not_found_public_keys: BTreeSet::new(),
-                                        });
-                                    info!(
-                                        "Fetched identity info for identifier {}: {:?}",
-                                        identifier, partial_identity
-                                    );
-                                    partial_identity
-                                }
-                                Err(e) => {
-                                    error!("Error fetching identity: {:?}", e);
-                                    PartialIdentity {
-                                        id: identifier,
-                                        loaded_public_keys: BTreeMap::new(),
-                                        balance: None,
-                                        revision: None,
-                                        not_found_public_keys: BTreeSet::new(),
-                                    }
-                                }
-                            }
-                        };
-
-                    let mut create_asset_lock = {
-                        let insight_ref = insight.clone();
-
-                        move |amount: u64| -> Option<(AssetLockProof, PrivateKey)> {
-                            tokio::task::block_in_place(|| {
-                                let rt = tokio::runtime::Handle::current();
-                                rt.block_on(async {
-                                    let mut wallet_lock = app_state.loaded_wallet.lock().await;
-                                    if let Some(ref mut wallet) = *wallet_lock {
-                                        // Initialize old_utxos
-                                        let old_utxos = match wallet {
-                                            Wallet::SingleKeyWallet(ref wallet) => wallet.utxos.clone(),
-                                        };
-
-                                        // Handle asset lock transaction
-                                        match wallet.asset_lock_transaction(None, amount) {
-                                            Ok((asset_lock_transaction, asset_lock_proof_private_key)) => {
-                                                // Use sdk_ref_clone for broadcasting and retrieving asset lock
-                                                match AppState::broadcast_and_retrieve_asset_lock(&sdk, &asset_lock_transaction, &wallet.receive_address()).await {
-                                                    Ok(proof) => {
-                                                        // Check for new UTXOs in the wallet
-                                                        let max_retries = 5;
-                                                        let mut retries = 0;
-                                                        let mut found_new_utxos = false;
-                                                        while retries < max_retries {
-                                                            let _ = wallet.reload_utxos(&insight_ref).await;
-                                                            // Check if new UTXOs are available and if UTXO list is not empty
-                                                            let current_utxos = match wallet {
-                                                                Wallet::SingleKeyWallet(ref wallet) => &wallet.utxos,
-                                                            };
-                                                            if current_utxos != &old_utxos && !current_utxos.is_empty() {
-                                                                found_new_utxos = true;
-                                                                break;
-                                                            } else {
-                                                                retries += 1;
-                                                                tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
-                                                            }
-                                                        }
-                                                        if !found_new_utxos {
-                                                            error!("Failed to find new UTXOs after maximum retries");
-                                                            return None;
-                                                        }
-                                                        Some((proof, asset_lock_proof_private_key))
-                                                    },
-                                                    Err(e) => {
-                                                        error!("Error broadcasting asset lock transaction: {:?}", e);
-                                                        None
-                                                    }
-                                                }
-                                            },
-                                            Err(e) => {
-                                                error!("Error creating asset lock transaction: {:?}", e);
-                                                None
-                                            }
-                                        }
-                                    } else {
-                                        error!("Wallet not loaded");
-                                        None
-                                    }
-                                })
-                            })
-                        }
-                    };
-
-                    // Get rng
-                    let mut rng = StdRng::from_entropy();
-
-                    let mut known_contracts_lock = app_state.known_contracts.lock().await;
-
-                    // Log if you are creating start_identities, because the asset lock proofs may take a while
+                    // Log if you are creating start_identities, because the asset lock proofs take a while
                     if current_block_info.height == initial_block_info.height && strategy.start_identities.number_of_identities > 0 {
                         info!(
                             "Creating {} asset lock proofs for start identities...",
@@ -844,7 +842,10 @@ pub(crate) async fn run_strategy_task<'s>(
                         );
                     }
 
-                    // Call the function to get STs for block
+                    // Need to pass app_state.known_contracts to state_transitions_for_block
+                    let mut known_contracts_lock = app_state.known_contracts.lock().await;
+
+                    // Get the state transitions for the block (or second)
                     let (transitions, finalize_operations, mut new_identities) = strategy
                         .state_transitions_for_block(
                             &mut document_query_callback,
@@ -867,13 +868,14 @@ pub(crate) async fn run_strategy_task<'s>(
 
                     drop(known_contracts_lock);
 
+                    // Add the identities that will be created to current_identities.
+                    // TO-DO: This should be moved to execution after we confirm they were registered.
                     current_identities.append(&mut new_identities);
 
-                    // TO-DO: add documents from state transitions to explorer.drive here
-                    // this is required for DocumentDelete and DocumentReplace strategy operations
+                    // TO-DO: for DocumentDelete and DocumentReplace strategy operations, we need to 
+                    // add documents from state transitions to the local Drive instance here
 
-                    // Process each FinalizeBlockOperation, which so far is just adding keys to the
-                    // identities
+                    // Process each FinalizeBlockOperation, which so far is just adding keys to identities
                     for operation in finalize_operations {
                         match operation {
                             FinalizeBlockOperation::IdentityAddKeys(identifier, keys) => {
@@ -889,8 +891,7 @@ pub(crate) async fn run_strategy_task<'s>(
                         }
                     }
 
-                    // Update the loaded_identity_clone and loaded_identity_lock with the latest
-                    // state of the identity
+                    // Update the loaded_identity_clone and loaded_identity_lock with the latest state of the identity
                     if let Some(modified_identity) = current_identities
                         .iter()
                         .find(|identity| identity.id() == loaded_identity_clone.id())
@@ -899,46 +900,35 @@ pub(crate) async fn run_strategy_task<'s>(
                         *loaded_identity_lock = modified_identity.clone();
                     }
 
-                    let mut st_queue = VecDeque::new();
+                    // In time mode, this is how long to sleep between transitions to ensure we only submit n transitions per second
+                    let time_mode_sleep_duration = 1 / transitions.len();
 
-                    // Put the state transitions in the queue if not empty
+                    // Now process the state transitions
                     if !transitions.is_empty() {
-                        st_queue = transitions.into();
-                        info!(
+                        tracing::info!(
                             "Prepared {} state transitions for {} {}",
-                            st_queue.len(),
+                            transitions.len(),
                             mode_string,
                             current_block_info.height
                         );
-                    } else {
-                        // Log when no state transitions are found for a block
-                        info!(
-                            "No state transitions prepared for {} {}",
-                            mode_string,
-                            current_block_info.height
-                        );
-                    }
 
-                    if st_queue.is_empty() {
-                        info!(
-                            "No state transitions to process for {} {}",
-                            mode_string,
-                            current_block_info.height
-                        );
-                    } else {
-                        let mut st_queue_index = 0;
+                        // A queue for the state transitions for the block (or second)
+                        let st_queue: VecDeque<StateTransition> = transitions.clone().into();
+                        let mut st_queue_index = 0; // Current index of the queue. Only used for logging.
+                        
+                        // We will concurrently broadcast the state transitions, so collect the futures
                         let mut broadcast_futures = Vec::new();
 
                         for transition in st_queue.iter() {
-                            // Init
-                            transition_count += 1;
-                            st_queue_index += 1;
+                            transition_count += 1; // Used for logging how many transitions we attempted
+                            st_queue_index += 1; // Start at 1 and iterate upwards since we're only using this for logs
                             let transition_clone = transition.clone();
                             let transition_type = transition_clone.name().to_owned();
 
+                            // Determine if the transitions is a dependent transition.
                             // Dependent state transitions are those that get their revision checked. Sending multiple
                             // in the same block causes errors because they get sent to different nodes and become disordered.
-                            // So we sleep for 1 second for dependent transitions so that they only go 1 per block.
+                            // So we sleep for 1 second between dependent transitions to enforce only 1 per block.
                             let is_dependent_transition = matches!(
                                 transition_clone,
                                 StateTransition::IdentityUpdate(_)
@@ -948,8 +938,7 @@ pub(crate) async fn run_strategy_task<'s>(
                             );
 
                             if is_dependent_transition {
-                                // Sequentially process dependent transitions with a delay between
-                                // them
+                                // Sequentially process dependent transitions with a delay between them
                                 if let Ok(broadcast_request) =
                                     transition_clone.broadcast_request_for_state_transition()
                                 {
@@ -1049,6 +1038,8 @@ pub(crate) async fn run_strategy_task<'s>(
                                     }
                                 };
                                 broadcast_futures.push(future);
+                                let duration = Duration::from_millis((time_mode_sleep_duration * 1000).try_into().unwrap());
+                                tokio::time::sleep(duration).await;    
                             }
                         }
 
@@ -1056,230 +1047,249 @@ pub(crate) async fn run_strategy_task<'s>(
                         let broadcast_results = join_all(broadcast_futures).await;
 
                         // Prepare futures for waiting for state transition results
-                        let mut wait_futures = Vec::new();
-                        for (index, result) in broadcast_results.into_iter().enumerate() {
-                            match result {
-                                Ok((transition, broadcast_result)) => {
-                                    let transition_type = transition.name().to_owned();
-
-                                    if broadcast_result.is_err() {
-                                        error!(
-                                            "Error broadcasting state transition {} ({}) for {} {}: {:?}",
-                                            index + 1,
-                                            transition_type,
-                                            mode_string,
-                                            current_block_info.height,
-                                            broadcast_result.err().unwrap()
-                                        );
-                                        continue;
-                                    }
-
-                                    // Extract the data contract ID from the transition
-                                    let data_contract_id_option = match &transition {
-                                        StateTransition::DocumentsBatch(DocumentsBatchTransition::V0(documents_batch)) => {
-                                            documents_batch.transitions.get(0).and_then(|document_transition| {
-                                                match document_transition {
-                                                    DocumentTransition::Create(DocumentCreateTransition::V0(create_transition)) => {
-                                                        Some(create_transition.base.data_contract_id())
-                                                    },
-                                                    // Add handling for Replace and Delete transitions if necessary
-                                                    _ => None,
-                                                }
-                                            })
-                                        },
-                                        // Handle other state transition types that involve data contracts here
-                                        _ => None,
-                                    };
-
-                                    let known_contracts_lock = app_state.known_contracts.lock().await;
-
-                                    let data_contract_clone = if let Some(data_contract_id) = data_contract_id_option {
-                                        let data_contract_id_str = data_contract_id.to_string(Encoding::Base58);
-                                        known_contracts_lock.get(&data_contract_id_str).cloned()
-                                    } else {
-                                        None
-                                    };
-
-                                    drop(known_contracts_lock);
-
-                                    let wait_future = async move {
-                                        let mut mode_string = String::new();
-                                        if block_mode {
-                                            mode_string.push_str("block");
-                                        } else {
-                                            mode_string.push_str("second");
+                        if block_mode {
+                            let mut wait_futures = Vec::new();
+                            for (index, result) in broadcast_results.into_iter().enumerate() {
+                                match result {
+                                    Ok((transition, broadcast_result)) => {
+                                        let transition_type = transition.name().to_owned();
+    
+                                        if broadcast_result.is_err() {
+                                            error!(
+                                                "Error broadcasting state transition {} ({}) for {} {}: {:?}",
+                                                index + 1,
+                                                transition_type,
+                                                mode_string,
+                                                current_block_info.height,
+                                                broadcast_result.err().unwrap()
+                                            );
+                                            continue;
                                         }
-                                        let wait_result = match transition.wait_for_state_transition_result_request() {
-                                            Ok(wait_request) => wait_request.execute(sdk, RequestSettings::default()).await,
-                                            Err(e) => {
-                                                error!(
-                                                    "Error creating wait request for state transition {} {} {}: {:?}",
-                                                    index + 1, mode_string, current_block_info.height, e
-                                                );
-                                                return None;
-                                            }
-                                        };
-
-                                        match wait_result {
-                                            Ok(wait_response) => {
-                                                Some(if let Some(wait_for_state_transition_result_response::Version::V0(v0_response)) = &wait_response.version {
-                                                    if let Some(metadata) = &v0_response.metadata {
-                                                        if !verify_proofs {
-                                                            info!(
-                                                                "Successfully processed state transition {} ({}) for {} {} (Actual block height: {})",
-                                                                index + 1, transition.name(), mode_string, current_block_info.height, metadata.height
-                                                            );    
-                                                        }
-
-                                                        // Verification of the proof
-                                                        if let Some(wait_for_state_transition_result_response_v0::Result::Proof(proof)) = &v0_response.result {
-                                                            if verify_proofs {
-                                                                let epoch = Epoch::new(metadata.epoch as u16).expect("Expected to get epoch from metadata in proof verification");
-                                                                // For proof verification, if it's a DocumentsBatch, include the data contract, else don't
-                                                                let verified = if transition.name() == "DocumentsBatch" {
-                                                                    match data_contract_clone.as_ref() {
-                                                                        Some(data_contract) => {
-                                                                            Drive::verify_state_transition_was_executed_with_proof(
-                                                                                &transition,
-                                                                                &BlockInfo {
-                                                                                    time_ms: metadata.time_ms,
-                                                                                    height: metadata.height,
-                                                                                    core_height: metadata.core_chain_locked_height,
-                                                                                    epoch,
-                                                                                },
-                                                                                proof.grovedb_proof.as_slice(),
-                                                                                &|_| Ok(Some(data_contract.clone().into())),
-                                                                                sdk.version(),
-                                                                            )
-                                                                        }
-                                                                        None => Err(drive::error::Error::Proof(ProofError::UnknownContract("Data contract ID not found in known_contracts".into()))),
-                                                                    }
-                                                                } else {
-                                                                    Drive::verify_state_transition_was_executed_with_proof(
-                                                                        &transition,
-                                                                        &BlockInfo {
-                                                                            time_ms: metadata.time_ms,
-                                                                            height: metadata.height,
-                                                                            core_height: metadata.core_chain_locked_height,
-                                                                            epoch,
-                                                                        },
-                                                                        proof.grovedb_proof.as_slice(),
-                                                                        &|_| Ok(None),
-                                                                        sdk.version(),
-                                                                    )
-                                                                };
-
-                                                                match verified {
-                                                                    Ok(_) => {
-                                                                        info!("Successfully processed and verified proof for state transition {} ({}), {} {} (Actual block height: {})", index + 1, transition_type, mode_string, current_block_info.height, metadata.height);
-                                                                        
-                                                                        // If a data contract was registered, add it to
-                                                                        // known_contracts
-                                                                        if let StateTransition::DataContractCreate(
-                                                                            DataContractCreateTransition::V0(
-                                                                                data_contract_create_transition,
-                                                                            ),
-                                                                        ) = &transition
-                                                                        {
-                                                                            // Extract the data contract from the transition
-                                                                            let data_contract_serialized =
-                                                                                &data_contract_create_transition
-                                                                                    .data_contract;
-                                                                            let data_contract_result =
-                                                                                DataContract::try_from_platform_versioned(
-                                                                                    data_contract_serialized.clone(),
-                                                                                    false,
-                                                                                    PlatformVersion::latest(),
-                                                                                );
-
-                                                                            match data_contract_result {
-                                                                                Ok(data_contract) => {
-                                                                                    let mut known_contracts_lock =
-                                                                                        app_state
-                                                                                            .known_contracts
-                                                                                            .lock()
-                                                                                            .await;
-                                                                                    known_contracts_lock.insert(
-                                                                                        data_contract
-                                                                                            .id()
-                                                                                            .to_string(Encoding::Base58),
-                                                                                        data_contract,
-                                                                                    );
-                                                                                }
-                                                                                Err(e) => {
-                                                                                    error!(
-                                                                                        "Error deserializing data \
-                                                                                        contract: {:?}",
-                                                                                        e
-                                                                                    );
-                                                                                }
-                                                                            }
-                                                                        }
-                                                                    }
-                                                                    Err(e) => error!("Error verifying state transition execution proof: {}", e),
-                                                                }
-                                                            }
-                                                        }
-
-                                                        // Log the Base58 encoded IDs of any created Identities
-                                                        match transition.clone() {
-                                                            StateTransition::IdentityCreate(identity_create_transition) => {
-                                                                let ids = identity_create_transition.modified_data_ids();
-                                                                for id in ids {
-                                                                    let encoded_id: String = id.into();
-                                                                    info!("Created Identity: {}", encoded_id);
-                                                                }
-                                                            },
-                                                            _ => {
-                                                                // nothing
-                                                            }
-                                                        }
+    
+                                        // Extract the data contract ID from the transition
+                                        let data_contract_id_option = match &transition {
+                                            StateTransition::DocumentsBatch(DocumentsBatchTransition::V0(documents_batch)) => {
+                                                documents_batch.transitions.get(0).and_then(|document_transition| {
+                                                    match document_transition {
+                                                        DocumentTransition::Create(DocumentCreateTransition::V0(create_transition)) => {
+                                                            Some(create_transition.base.data_contract_id())
+                                                        },
+                                                        // Add handling for Replace and Delete transitions if necessary
+                                                        _ => None,
                                                     }
                                                 })
                                             },
-                                            Err(e) => {
-                                                error!("Wait result error: {:?}", e);
-                                                None
+                                            // Handle other state transition types that involve data contracts here
+                                            _ => None,
+                                        };
+    
+                                        let known_contracts_lock = app_state.known_contracts.lock().await;
+    
+                                        let data_contract_clone = if let Some(data_contract_id) = data_contract_id_option {
+                                            let data_contract_id_str = data_contract_id.to_string(Encoding::Base58);
+                                            known_contracts_lock.get(&data_contract_id_str).cloned()
+                                        } else {
+                                            None
+                                        };
+    
+                                        drop(known_contracts_lock);
+    
+                                        let wait_future = async move {
+                                            let mut mode_string = String::new();
+                                            if block_mode {
+                                                mode_string.push_str("block");
+                                            } else {
+                                                mode_string.push_str("second");
                                             }
-                                        }
-                                    };
-                                    wait_futures.push(wait_future);
-                                },
-                                Err(e) => {
-                                    error!(
-                                        "Error preparing broadcast request for state transition {} {} {}: {:?}",
-                                        index + 1,
-                                        mode_string,
-                                        current_block_info.height,
-                                        e
-                                    );
+                                            let wait_result = match transition.wait_for_state_transition_result_request() {
+                                                Ok(wait_request) => wait_request.execute(sdk, RequestSettings::default()).await,
+                                                Err(e) => {
+                                                    error!(
+                                                        "Error creating wait request for state transition {} {} {}: {:?}",
+                                                        index + 1, mode_string, current_block_info.height, e
+                                                    );
+                                                    return None;
+                                                }
+                                            };
+    
+                                            match wait_result {
+                                                Ok(wait_response) => {
+                                                    Some(if let Some(wait_for_state_transition_result_response::Version::V0(v0_response)) = &wait_response.version {
+                                                        if let Some(metadata) = &v0_response.metadata {
+                                                            if !verify_proofs {
+                                                                info!(
+                                                                    "Successfully processed state transition {} ({}) for {} {} (Actual block height: {})",
+                                                                    index + 1, transition.name(), mode_string, current_block_info.height, metadata.height
+                                                                );    
+                                                            }
+    
+                                                            // Verification of the proof
+                                                            if let Some(wait_for_state_transition_result_response_v0::Result::Proof(proof)) = &v0_response.result {
+                                                                if verify_proofs {
+                                                                    let epoch = Epoch::new(metadata.epoch as u16).expect("Expected to get epoch from metadata in proof verification");
+                                                                    // For proof verification, if it's a DocumentsBatch, include the data contract, else don't
+                                                                    let verified = if transition.name() == "DocumentsBatch" {
+                                                                        match data_contract_clone.as_ref() {
+                                                                            Some(data_contract) => {
+                                                                                Drive::verify_state_transition_was_executed_with_proof(
+                                                                                    &transition,
+                                                                                    &BlockInfo {
+                                                                                        time_ms: metadata.time_ms,
+                                                                                        height: metadata.height,
+                                                                                        core_height: metadata.core_chain_locked_height,
+                                                                                        epoch,
+                                                                                    },
+                                                                                    proof.grovedb_proof.as_slice(),
+                                                                                    &|_| Ok(Some(data_contract.clone().into())),
+                                                                                    sdk.version(),
+                                                                                )
+                                                                            }
+                                                                            None => Err(drive::error::Error::Proof(ProofError::UnknownContract("Data contract ID not found in known_contracts".into()))),
+                                                                        }
+                                                                    } else {
+                                                                        Drive::verify_state_transition_was_executed_with_proof(
+                                                                            &transition,
+                                                                            &BlockInfo {
+                                                                                time_ms: metadata.time_ms,
+                                                                                height: metadata.height,
+                                                                                core_height: metadata.core_chain_locked_height,
+                                                                                epoch,
+                                                                            },
+                                                                            proof.grovedb_proof.as_slice(),
+                                                                            &|_| Ok(None),
+                                                                            sdk.version(),
+                                                                        )
+                                                                    };
+    
+                                                                    match verified {
+                                                                        Ok(_) => {
+                                                                            info!("Successfully processed and verified proof for state transition {} ({}), {} {} (Actual block height: {})", index + 1, transition_type, mode_string, current_block_info.height, metadata.height);
+                                                                            
+                                                                            // If a data contract was registered, add it to
+                                                                            // known_contracts
+                                                                            if let StateTransition::DataContractCreate(
+                                                                                DataContractCreateTransition::V0(
+                                                                                    data_contract_create_transition,
+                                                                                ),
+                                                                            ) = &transition
+                                                                            {
+                                                                                // Extract the data contract from the transition
+                                                                                let data_contract_serialized =
+                                                                                    &data_contract_create_transition
+                                                                                        .data_contract;
+                                                                                let data_contract_result =
+                                                                                    DataContract::try_from_platform_versioned(
+                                                                                        data_contract_serialized.clone(),
+                                                                                        false,
+                                                                                        PlatformVersion::latest(),
+                                                                                    );
+    
+                                                                                match data_contract_result {
+                                                                                    Ok(data_contract) => {
+                                                                                        let mut known_contracts_lock =
+                                                                                            app_state
+                                                                                                .known_contracts
+                                                                                                .lock()
+                                                                                                .await;
+                                                                                        known_contracts_lock.insert(
+                                                                                            data_contract
+                                                                                                .id()
+                                                                                                .to_string(Encoding::Base58),
+                                                                                            data_contract,
+                                                                                        );
+                                                                                    }
+                                                                                    Err(e) => {
+                                                                                        error!(
+                                                                                            "Error deserializing data \
+                                                                                            contract: {:?}",
+                                                                                            e
+                                                                                        );
+                                                                                    }
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                        Err(e) => error!("Error verifying state transition execution proof: {}", e),
+                                                                    }
+                                                                }
+                                                            }
+    
+                                                            // Log the Base58 encoded IDs of any created Identities
+                                                            match transition.clone() {
+                                                                StateTransition::IdentityCreate(identity_create_transition) => {
+                                                                    let ids = identity_create_transition.modified_data_ids();
+                                                                    for id in ids {
+                                                                        let encoded_id: String = id.into();
+                                                                        info!("Created Identity: {}", encoded_id);
+                                                                    }
+                                                                },
+                                                                _ => {
+                                                                    // nothing
+                                                                }
+                                                            }
+                                                        }
+                                                    })
+                                                },
+                                                Err(e) => {
+                                                    error!("Wait result error: {:?}", e);
+                                                    None
+                                                }
+                                            }
+                                        };
+                                        wait_futures.push(wait_future);
+                                    },
+                                    Err(e) => {
+                                        error!(
+                                            "Error preparing broadcast request for state transition {} {} {}: {:?}",
+                                            index + 1,
+                                            mode_string,
+                                            current_block_info.height,
+                                            e
+                                        );
+                                    }
                                 }
                             }
-                        }
-
-                        // Wait for all state transition result futures to complete
-                        let wait_results = join_all(wait_futures).await;
-
-                        // Log the actual block height for each state transition
-                        for (_, actual_block_height) in wait_results.into_iter().enumerate() {
-                            match actual_block_height {
-                                Some(_) => {
-                                    success_count += 1;
+    
+                            // Wait for all state transition result futures to complete
+                            let wait_results = join_all(wait_futures).await;
+    
+                            // Log the actual block height for each state transition
+                            for (_, actual_block_height) in wait_results.into_iter().enumerate() {
+                                match actual_block_height {
+                                    Some(_) => {
+                                        success_count += 1;
+                                    }
+                                    None => continue,
                                 }
-                                None => continue,
-                            }
+                            }    
+                        } else {
+                            tracing::info!("Submitted {} state transitions for {} {}", transitions.len(), mode_string, second_index);
                         }
+                    
+                        // sleep for one second after the first block in time mode
+                        if !block_mode && current_block_info.height == initial_block_info.height {
+                            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                        }
+                    } else {
+                        tracing::info!(
+                            "No state transitions prepared for {} {}",
+                            mode_string,
+                            current_block_info.height
+                        );
+                        tracing::info!(
+                            "No state transitions to process for {} {}",
+                            mode_string,
+                            current_block_info.height
+                        );
                     }
 
-                    // sleep for one second after the first block in time mode
-                    if !block_mode && current_block_info.height == initial_block_info.height {
-                        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-                        current_block_info.time_ms += 1 * 1000; // plus 1 second
-                    }
-
-                    // Update block_info
+                    // Update current_block_info and second_index
                     current_block_info.height += 1;
-                    current_block_info.time_ms += 1 * 1000; // plus 1 second
+                    let current_time_ms = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .expect("time went backwards")
+                        .as_millis();
+                    current_block_info.time_ms = current_time_ms as u64;
+                    second_index += 1;
                 }
 
                 tracing::info!("-----Strategy '{}' finished running-----", strategy_name);
