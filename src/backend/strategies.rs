@@ -34,7 +34,7 @@ use rs_sdk::{
 };
 use simple_signer::signer::SimpleSigner;
 use strategy_tests::{
-    frequency::Frequency, operations::{FinalizeBlockOperation, Operation}, LocalDocumentQuery, StartIdentities, Strategy, StrategyConfig
+    frequency::Frequency, operations::{FinalizeBlockOperation, Operation}, IdentityInsertInfo, LocalDocumentQuery, StartIdentities, Strategy, StrategyConfig
 };
 use tokio::sync::{Mutex, MutexGuard};
 use tracing::{error, info};
@@ -62,7 +62,9 @@ pub enum StrategyTask {
         strategy_name: String,
         count: u8,
         keys_count: u8,
+        balance: u64,
     },
+    SetStartIdentitiesBalance(String, u64),
     AddOperation {
         strategy_name: String,
         operation: Operation,
@@ -433,7 +435,11 @@ pub async fn run_strategy_task<'s>(
         } => {
             let mut strategies_lock = app_state.available_strategies.lock().await;
             if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
-                strategy.identities_inserts = identity_inserts_frequency;
+                strategy.identities_inserts = IdentityInsertInfo {
+                    frequency: identity_inserts_frequency,
+                    start_keys: 3,
+                    extra_keys: BTreeMap::new(),
+                };
                 BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
                     strategy_name.clone(),
                     MutexGuard::map(strategies_lock, |strategies| {
@@ -452,13 +458,36 @@ pub async fn run_strategy_task<'s>(
             strategy_name,
             count,
             keys_count,
+            balance,
         } => {
             let mut strategies_lock = app_state.available_strategies.lock().await;
             if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
                 strategy.start_identities = StartIdentities {
                     number_of_identities: count,
                     keys_per_identity: keys_count,
-                    starting_balances: None,
+                    starting_balances: balance,
+                };
+                BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
+                    strategy_name.clone(),
+                    MutexGuard::map(strategies_lock, |strategies| {
+                        strategies.get_mut(&strategy_name).expect("strategy exists")
+                    }),
+                    MutexGuard::map(
+                        app_state.available_strategies_contract_names.lock().await,
+                        |names| names.get_mut(&strategy_name).expect("inconsistent data"),
+                    ),
+                ))
+            } else {
+                BackendEvent::None
+            }
+        }
+        StrategyTask::SetStartIdentitiesBalance(strategy_name, balance) => {
+            let mut strategies_lock = app_state.available_strategies.lock().await;
+            if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
+                strategy.start_identities = StartIdentities {
+                    number_of_identities: strategy.start_identities.number_of_identities,
+                    keys_per_identity: strategy.start_identities.keys_per_identity,
+                    starting_balances: balance,
                 };
                 BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
                     strategy_name.clone(),
@@ -580,7 +609,7 @@ pub async fn run_strategy_task<'s>(
                 // Get signer from loaded_identity
                 // Convert loaded_identity to SimpleSigner
                 let mut signer = {
-                    let strategy_signer = strategy.signer.get_or_insert_with(|| {
+                    let strategy_signer = strategy.signer.insert({
                         let mut new_signer = SimpleSigner::default();
                         let Identity::V0(identity_v0) = &*loaded_identity_lock;
                         for (key_id, public_key) in &identity_v0.public_keys {
@@ -599,6 +628,7 @@ pub async fn run_strategy_task<'s>(
                 };
 
                 // Set initial current_identities to loaded_identity
+                // On the first block of execution, start_identities will be added to current_identities
                 let mut loaded_identity_clone = loaded_identity_lock.clone();
                 let mut current_identities: Vec<Identity> = vec![loaded_identity_clone.clone()];
 
@@ -803,8 +833,8 @@ pub async fn run_strategy_task<'s>(
                     }
 
                     // Call the function to get STs for block
-                    let (transitions, finalize_operations) = strategy
-                        .state_transitions_for_block_with_new_identities(
+                    let (transitions, finalize_operations, mut new_identities) = strategy
+                        .state_transitions_for_block(
                             &mut document_query_callback,
                             &mut identity_fetch_callback,
                             &mut create_asset_lock,
@@ -824,6 +854,8 @@ pub async fn run_strategy_task<'s>(
                         .await;
 
                     drop(known_contracts_lock);
+
+                    current_identities.append(&mut new_identities);
 
                     // TO-DO: add documents from state transitions to explorer.drive here
                     // this is required for DocumentDelete and DocumentReplace strategy operations
@@ -920,39 +952,47 @@ pub async fn run_strategy_task<'s>(
                                                 {
                                                     Ok(wait_response) => {
                                                         if let Some(wait_for_state_transition_result_response::Version::V0(v0_response)) = &wait_response.version {
-                                                            let mut actual_block_height: u64 = 0;
                                                             if let Some(metadata) = &v0_response.metadata {
-                                                                actual_block_height = metadata.height;
                                                                 success_count += 1;
-                                                                info!("Successfully processed state transition {} ({}) for block {} (Actual block height: {})", st_queue_index, transition_type, current_block_info.height, actual_block_height);
+                                                                if !verify_proofs {
+                                                                    info!("Successfully processed state transition {} ({}) for block {} (Actual block height: {})", st_queue_index, transition_type, current_block_info.height, metadata.height);
+                                                                }
+                                                                // Additional logging to inspect the result regardless of metadata presence
+                                                                match &v0_response.result {
+                                                                    Some(wait_for_state_transition_result_response_v0::Result::Error(error)) => {
+                                                                        error!("WaitForStateTransitionResultResponse error: {:?}", error);
+                                                                    }
+                                                                    Some(wait_for_state_transition_result_response_v0::Result::Proof(proof)) => {
+                                                                        if verify_proofs {
+                                                                            let epoch = Epoch::new(metadata.epoch as u16).expect("Expected to get epoch from metadata in proof verification");
+                                                                            let verified = Drive::verify_state_transition_was_executed_with_proof(
+                                                                                &transition_clone,
+                                                                                &BlockInfo {
+                                                                                    time_ms: metadata.time_ms,
+                                                                                    height: metadata.height,
+                                                                                    core_height: metadata.core_chain_locked_height,
+                                                                                    epoch,
+                                                                                },
+                                                                                proof.grovedb_proof.as_slice(),
+                                                                                &|_| Ok(None),
+                                                                                sdk.version(),                                                            
+                                                                            );
+                                                                            match verified {
+                                                                                Ok(_) => {
+                                                                                    info!("Successfully processed and verified proof for state transition {} ({}), block {} (Actual block height: {})", st_queue_index, transition_type, current_block_info.height, metadata.height);
+                                                                                }
+                                                                                Err(e) => {
+                                                                                    error!("Error verifying state transition execution proof: {}", e);
+                                                                                }
+                                                                            }    
+                                                                        }
+                                                                    }
+                                                                    _ => {}
+                                                                }
+
                                                                 // Sleep because we need to give the chain state time to update revisions
                                                                 // It seems this is only necessary for certain STs. Like AddKeys and DisableKeys seem to need it, but Transfer does not. Not sure about Withdraw or ContractUpdate yet.
                                                                 tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-                                                            }
-                                                            // Additional logging to inspect the result regardless of metadata presence
-                                                            match &v0_response.result {
-                                                                Some(wait_for_state_transition_result_response_v0::Result::Error(error)) => {
-                                                                    error!("WaitForStateTransitionResultResponse error: {:?}", error);
-                                                                }
-                                                                Some(wait_for_state_transition_result_response_v0::Result::Proof(proof)) => {
-                                                                    if verify_proofs {
-                                                                        let verified = Drive::verify_state_transition_was_executed_with_proof(
-                                                                            &transition_clone,
-                                                                            proof.grovedb_proof.as_slice(),
-                                                                            &|_| Ok(None),
-                                                                            sdk.version(),                                                            
-                                                                        );
-                                                                        match verified {
-                                                                            Ok(_) => {
-                                                                                info!("Verified proof for state transition {} ({}) for block {} (Actual block height: {})", st_queue_index, transition_type, current_block_info.height, actual_block_height);
-                                                                            }
-                                                                            Err(e) => {
-                                                                                error!("Error verifying state transition execution proof: {}", e);
-                                                                            }
-                                                                        }    
-                                                                    }
-                                                                }
-                                                                _ => {}
                                                             }
                                                         } else {
                                                             info!("Response version other than V0 received or absent for state transition {} ({})", st_queue_index, transition_type);
@@ -1045,7 +1085,7 @@ pub async fn run_strategy_task<'s>(
                                     };
 
                                     drop(known_contracts_lock);
-            
+
                                     let wait_future = async move {
                                         let wait_result = match transition.wait_for_state_transition_result_request() {
                                             Ok(wait_request) => wait_request.execute(sdk, RequestSettings::default()).await,
@@ -1057,40 +1097,34 @@ pub async fn run_strategy_task<'s>(
                                                 return None;
                                             }
                                         };
-                                    
+
                                         match wait_result {
                                             Ok(wait_response) => {
                                                 Some(if let Some(wait_for_state_transition_result_response::Version::V0(v0_response)) = &wait_response.version {
                                                     if let Some(metadata) = &v0_response.metadata {
-                                                        let actual_block_height = metadata.height;
-                                                        info!(
-                                                            "Successfully processed state transition {} ({}) for block {} (Actual block height: {})",
-                                                            index + 1, transition.name(), current_block_info.height, actual_block_height
-                                                        );
-
-                                                        // Log the Base58 encoded IDs of any created Identities
-                                                        match transition.clone() {
-                                                            StateTransition::IdentityCreate(identity_create_transition) => {
-                                                                let ids = identity_create_transition.modified_data_ids();
-                                                                for id in ids {
-                                                                    let encoded_id: String = id.into();
-                                                                    info!("Created Identity: {}", encoded_id);
-                                                                }
-                                                            },
-                                                            _ => {
-                                                                // nothing
-                                                            }
-                                                        }                                                        
+                                                        if !verify_proofs {
+                                                            info!(
+                                                                "Successfully processed state transition {} ({}) for block {} (Actual block height: {})",
+                                                                index + 1, transition.name(), current_block_info.height, metadata.height
+                                                            );    
+                                                        }
 
                                                         // Verification of the proof
                                                         if let Some(wait_for_state_transition_result_response_v0::Result::Proof(proof)) = &v0_response.result {
                                                             if verify_proofs {
+                                                                let epoch = Epoch::new(metadata.epoch as u16).expect("Expected to get epoch from metadata in proof verification");
                                                                 // For proof verification, if it's a DocumentsBatch, include the data contract, else don't
                                                                 let verified = if transition.name() == "DocumentsBatch" {
                                                                     match data_contract_clone.as_ref() {
                                                                         Some(data_contract) => {
                                                                             Drive::verify_state_transition_was_executed_with_proof(
                                                                                 &transition,
+                                                                                &BlockInfo {
+                                                                                    time_ms: metadata.time_ms,
+                                                                                    height: metadata.height,
+                                                                                    core_height: metadata.core_chain_locked_height,
+                                                                                    epoch,
+                                                                                },
                                                                                 proof.grovedb_proof.as_slice(),
                                                                                 &|_| Ok(Some(data_contract.clone().into())),
                                                                                 sdk.version(),
@@ -1101,6 +1135,12 @@ pub async fn run_strategy_task<'s>(
                                                                 } else {
                                                                     Drive::verify_state_transition_was_executed_with_proof(
                                                                         &transition,
+                                                                        &BlockInfo {
+                                                                            time_ms: metadata.time_ms,
+                                                                            height: metadata.height,
+                                                                            core_height: metadata.core_chain_locked_height,
+                                                                            epoch,
+                                                                        },
                                                                         proof.grovedb_proof.as_slice(),
                                                                         &|_| Ok(None),
                                                                         sdk.version(),
@@ -1109,7 +1149,7 @@ pub async fn run_strategy_task<'s>(
 
                                                                 match verified {
                                                                     Ok(_) => {
-                                                                        info!("Verified proof for state transition {} ({}) for block {} (Actual block height: {})", index + 1, transition_type, current_block_info.height, actual_block_height);
+                                                                        info!("Successfully processed and verified proof for state transition {} ({}), block {} (Actual block height: {})", index + 1, transition_type, current_block_info.height, metadata.height);
                                                                         
                                                                         // If a data contract was registered, add it to
                                                                         // known_contracts
@@ -1162,6 +1202,20 @@ pub async fn run_strategy_task<'s>(
                                                         if current_block_info.height == initial_block_info.height {
                                                             tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
                                                         }
+                                                        }
+
+                                                        // Log the Base58 encoded IDs of any created Identities
+                                                        match transition.clone() {
+                                                            StateTransition::IdentityCreate(identity_create_transition) => {
+                                                                let ids = identity_create_transition.modified_data_ids();
+                                                                for id in ids {
+                                                                    let encoded_id: String = id.into();
+                                                                    info!("Created Identity: {}", encoded_id);
+                                                                }
+                                                            },
+                                                            _ => {
+                                                                // nothing
+                                                            }
                                                         }
                                                     }
                                                 })
@@ -1239,7 +1293,7 @@ pub async fn run_strategy_task<'s>(
                 info!(
                     "-----Strategy '{}' completed-----\n\nState transitions attempted: {}\nState \
                     transitions succeeded: {}\nNumber of blocks: {}\nRun time: \
-                    {:?}\nDash spent (Identity): {}\nDash spent (Wallet): {}\n",
+                    {:?}\nDash spent (Loaded Identity): {}\nDash spent (Wallet): {}\n",
                     strategy_name,
                     transition_count,
                     success_count,
@@ -1298,10 +1352,7 @@ pub async fn run_strategy_task<'s>(
         StrategyTask::RemoveIdentityInserts(strategy_name) => {
             let mut strategies_lock = app_state.available_strategies.lock().await;
             if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
-                strategy.identities_inserts = Frequency {
-                    times_per_block_range: Default::default(),
-                    chance_per_block: None,
-                };
+                strategy.identities_inserts = IdentityInsertInfo::default();
                 BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
                     strategy_name.clone(),
                     MutexGuard::map(strategies_lock, |strategies| {
