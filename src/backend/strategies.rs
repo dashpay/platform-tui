@@ -46,7 +46,7 @@ use super::{
 use crate::backend::Wallet;
 
 #[derive(Debug, PartialEq, Clone)]
-pub(crate) enum StrategyTask {
+pub enum StrategyTask {
     CreateStrategy(String),
     ImportStrategy(String),
     ExportStrategy(String),
@@ -76,7 +76,7 @@ pub(crate) enum StrategyTask {
     RemoveLastOperation(String),
 }
 
-pub(crate) async fn run_strategy_task<'s>(
+pub async fn run_strategy_task<'s>(
     sdk: &Sdk,
     app_state: &'s AppState,
     task: StrategyTask,
@@ -308,21 +308,23 @@ pub(crate) async fn run_strategy_task<'s>(
                 };
 
                 // Get the loaded identity nonce
-                let loaded_identity_lock = match app_state.refresh_identity(&sdk).await {
-                    Ok(lock) => lock,
-                    Err(e) => {
-                        error!("Failed to refresh identity: {:?}", e);
-                        return BackendEvent::StrategyError {
-                            strategy_name: strategy_name.clone(),
-                            error: format!("Failed to refresh identity: {:?}", e),
-                        };
-                    }
-                };
+                let mut loaded_identity_lock = app_state.loaded_identity.lock().await;
+                if loaded_identity_lock.is_some() {
+                    drop(loaded_identity_lock);
+            
+                    let _ = app_state.refresh_identity(&sdk).await;
+            
+                    loaded_identity_lock = app_state.loaded_identity.lock().await;
+                } else {
+                    error!("Can't create contracts_with_updates because there's no loaded identity.");
+                    return BackendEvent::None;
+                }
+                let identity_id = loaded_identity_lock.as_ref().expect("Expected a loaded identity").id();
                 let identity_nonce = sdk
-                    .get_identity_nonce(loaded_identity_lock.id(), true, None)
+                    .get_identity_nonce(identity_id, true, None)
                     .await
                     .expect("Couldn't get current identity nonce");
-
+            
                 if let Some(first_contract_name) = selected_contract_names.first() {
                     if let Some(data_contract) = get_contract(first_contract_name) {
                         match CreatedDataContract::from_contract_and_identity_nonce(
@@ -502,56 +504,56 @@ pub(crate) async fn run_strategy_task<'s>(
             }
         }
         StrategyTask::RunStrategy(strategy_name, num_blocks, verify_proofs) => {
-            info!("-----Starting strategy '{}'-----", strategy_name);
-            let run_start_time = Instant::now();
-
             let mut strategies_lock = app_state.available_strategies.lock().await;
-            let drive_lock = app_state.drive.lock().await;
-            let identity_private_keys_lock = app_state.identity_private_keys.lock().await;
-
-            // Fetch known_contracts from the chain to assure local copies match actual
-            // state.
-            match update_known_contracts(sdk, &app_state.known_contracts).await {
-                Ok(_) => info!("Known contracts updated successfully."),
-                Err(e) => {
-                    error!("Failed to update known contracts: {:?}", e);
-                    return BackendEvent::StrategyError {
-                        strategy_name: strategy_name.clone(),
-                        error: format!("Failed to update known contracts: {:?}", e),
-                    };
-                }
-            };
-
-            let mut loaded_identity_lock = match app_state.refresh_identity(&sdk).await {
-                Ok(lock) => {
-                    info!("Refreshed loaded identity.");
-                    lock
-                },                
-                Err(e) => {
-                    error!("Failed to refresh identity: {:?}", e);
-                    return BackendEvent::StrategyError {
-                        strategy_name: strategy_name.clone(),
-                        error: format!("Failed to refresh identity: {:?}", e),
-                    };
-                }
-            };
-
-            // Access the loaded_wallet within the Mutex
-            let mut loaded_wallet_lock = app_state.loaded_wallet.lock().await;
-
-            // Refresh UTXOs for the loaded wallet
-            if let Some(ref mut wallet) = *loaded_wallet_lock {
-                let _ = wallet.reload_utxos(insight).await;
-            }
-
-            let initial_balance_identity = loaded_identity_lock.balance();
-            let initial_balance_wallet = loaded_wallet_lock.clone().unwrap().balance();
-
-            drop(loaded_wallet_lock);
 
             // It's normal that we're asking for the mutable strategy because we need to
             // modify some properties of a contract on update
             if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
+                info!("-----Starting strategy '{}'-----", strategy_name);
+                let run_start_time = Instant::now();
+
+                let drive_lock = app_state.drive.lock().await;
+                let identity_private_keys_lock = app_state.identity_private_keys.lock().await;
+
+                // Fetch known_contracts from the chain to assure local copies match actual
+                // state.
+                match update_known_contracts(sdk, &app_state.known_contracts).await {
+                    Ok(_) => {
+                        // nothing
+                    }
+                    Err(e) => {
+                        error!("Failed to update known contracts: {:?}", e);
+                        return BackendEvent::StrategyError {
+                            strategy_name: strategy_name.clone(),
+                            error: format!("Failed to update known contracts: {:?}", e),
+                        };
+                    }
+                };
+
+                let mut loaded_identity_lock = match app_state.refresh_identity(&sdk).await {
+                    Ok(lock) => lock,                
+                    Err(e) => {
+                        error!("Failed to refresh identity: {:?}", e);
+                        return BackendEvent::StrategyError {
+                            strategy_name: strategy_name.clone(),
+                            error: format!("Failed to refresh identity: {:?}", e),
+                        };
+                    }
+                };
+
+                // Access the loaded_wallet within the Mutex
+                let mut loaded_wallet_lock = app_state.loaded_wallet.lock().await;
+
+                // Refresh UTXOs for the loaded wallet
+                if let Some(ref mut wallet) = *loaded_wallet_lock {
+                    let _ = wallet.reload_utxos(insight).await;
+                }
+
+                let initial_balance_identity = loaded_identity_lock.balance();
+                let initial_balance_wallet = loaded_wallet_lock.clone().unwrap().balance();
+
+                drop(loaded_wallet_lock);
+
                 // Get block_info
                 // Get block info for the first block by sending a grpc request and looking at
                 // the metadata Retry up to MAX_RETRIES times
@@ -1195,6 +1197,11 @@ pub(crate) async fn run_strategy_task<'s>(
                                                                     Err(e) => error!("Error verifying state transition execution proof: {}", e),
                                                                 }
                                                             }
+
+                                                        // If it's the first block, sleep for one second so we don't, for example, register a doc to a new contract
+                                                        if current_block_info.height == initial_block_info.height {
+                                                            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                                                        }
                                                         }
 
                                                         // Log the Base58 encoded IDs of any created Identities
@@ -1309,6 +1316,7 @@ pub(crate) async fn run_strategy_task<'s>(
                     },
                 }
             } else {
+                tracing::error!("No strategy loaded with name \"{}\"", strategy_name);
                 BackendEvent::None
             }
         }
