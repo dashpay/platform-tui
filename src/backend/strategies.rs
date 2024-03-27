@@ -1,7 +1,7 @@
 //! Strategies management backend module.
 
 use std::{
-    collections::{BTreeMap, BTreeSet, VecDeque}, fs::File, io::Write, time::{Duration, Instant, SystemTime, UNIX_EPOCH}
+    collections::{BTreeMap, BTreeSet, VecDeque}, fs::File, io::Write, sync::{atomic::{AtomicUsize, Ordering}, Arc}, time::{Duration, Instant, SystemTime, UNIX_EPOCH}
 };
 
 use dapi_grpc::platform::v0::{
@@ -13,7 +13,7 @@ use dapi_grpc::platform::v0::{
 };
 use dpp::{
     block::{block_info::BlockInfo, epoch::Epoch}, dashcore::PrivateKey, data_contract::{
-        accessors::v0::DataContractV0Getters, created_data_contract::CreatedDataContract, DataContract
+        accessors::v0::{DataContractV0Getters, DataContractV0Setters}, created_data_contract::CreatedDataContract, DataContract
     }, identity::{
         accessors::IdentityGettersV0, state_transition::asset_lock_proof::AssetLockProof, Identity,
         PartialIdentity,
@@ -54,6 +54,7 @@ pub(crate) enum StrategyTask {
     DeleteStrategy(String),
     CloneStrategy(String),
     SetContractsWithUpdates(String, Vec<String>),
+    SetContractsWithUpdatesRandom(String, String, u8),
     SetIdentityInserts {
         strategy_name: String,
         identity_inserts_frequency: Frequency,
@@ -71,6 +72,7 @@ pub(crate) enum StrategyTask {
     },
     RunStrategy(String, u64, bool, bool),
     RemoveLastContract(String),
+    ClearContracts(String),
     RemoveIdentityInserts(String),
     RemoveStartIdentities(String),
     RemoveLastOperation(String),
@@ -406,6 +408,111 @@ pub(crate) async fn run_strategy_task<'s>(
                 BackendEvent::None
             }
         }
+        StrategyTask::SetContractsWithUpdatesRandom(strategy_name, selected_contract_name, variants) => {
+            let mut strategies_lock = app_state.available_strategies.lock().await;
+            let known_contracts_lock = app_state.known_contracts.lock().await;
+            let mut supporting_contracts_lock = app_state.supporting_contracts.lock().await;
+            let mut contract_names_lock =
+                app_state.available_strategies_contract_names.lock().await;
+
+            if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
+                let platform_version = PlatformVersion::latest();
+
+                // Function to retrieve the contract from either known_contracts or
+                // supporting_contracts
+                let get_contract = |contract_name: &String| {
+                    known_contracts_lock
+                        .get(contract_name)
+                        .or_else(|| supporting_contracts_lock.get(contract_name))
+                        .cloned()
+                };
+
+                // Get the loaded identity nonce
+                let loaded_identity_lock = match app_state.refresh_identity(&sdk).await {
+                    Ok(lock) => lock,
+                    Err(e) => {
+                        error!("Failed to refresh identity: {:?}", e);
+                        return BackendEvent::StrategyError {
+                            strategy_name: strategy_name.clone(),
+                            error: format!("Failed to refresh identity: {:?}", e),
+                        };
+                    }
+                };
+                let mut identity_nonce = sdk
+                    .get_identity_nonce(loaded_identity_lock.id(), true, None)
+                    .await
+                    .expect("Couldn't get current identity nonce");
+
+                // Add the contracts to the strategy contracts_with_updates
+                if let Some(data_contract) = get_contract(&selected_contract_name) {
+                    match CreatedDataContract::from_contract_and_identity_nonce(
+                        data_contract,
+                        identity_nonce,
+                        platform_version,
+                    ) {
+                        Ok(original_contract) => {
+                            // Add original contract to the strategy
+                            let mut contract_variants: Vec<CreatedDataContract> = Vec::new();
+                            contract_variants.push(original_contract.clone());
+                            strategy.contracts_with_updates.push((original_contract.clone(), None));
+                            
+                            // Add i variants of the original contract to the strategy
+                            for i in 0..variants-1 {
+                                let mut new_data_contract = original_contract.data_contract().clone();
+                                let new_id = DataContract::generate_data_contract_id_v0(loaded_identity_lock.id(), identity_nonce);
+                                new_data_contract.set_id(new_id);
+                                match CreatedDataContract::from_contract_and_identity_nonce(
+                                    new_data_contract.clone(),
+                                    identity_nonce,
+                                    platform_version,
+                                ) {
+                                    Ok(contract) => {
+                                        contract_variants.push(contract.clone());
+                                        strategy.contracts_with_updates.push((contract, None));
+                                        let new_contract_name = String::from(format!("{}_variant_{}", selected_contract_name, i));
+                                        supporting_contracts_lock.insert(new_contract_name, new_data_contract);
+                                        identity_nonce += 1;
+                                    }
+                                    Err(e) => {
+                                        tracing::error!(
+                                            "Error converting DataContract to CreatedDataContract variant: {:?}",
+                                            e
+                                        );            
+                                    }
+                                };
+                            }
+
+                            let contract_id_strings: Vec<(String, Option<BTreeMap<u64, String>>)> = contract_variants.iter().map(|x| (x.data_contract().id().to_string(Encoding::Base58), None)).collect();
+                            
+                            // Add the new contracts to app_state.available_strategies_contract_names
+                            if let Some(existing_strategy_contracts) = contract_names_lock.get_mut(&strategy_name) {
+                                existing_strategy_contracts.extend(contract_id_strings);
+                            } else {
+                                contract_names_lock.insert(strategy_name.clone(), contract_id_strings);
+                            }
+                        }
+                        Err(e) => {
+                            tracing::error!(
+                                "Error converting original DataContract to CreatedDataContract: {:?}",
+                                e
+                            );
+                        }
+                    }
+                }
+
+                BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
+                    strategy_name.clone(),
+                    MutexGuard::map(strategies_lock, |strategies| {
+                        strategies.get_mut(&strategy_name).expect("strategy exists")
+                    }),
+                    MutexGuard::map(contract_names_lock, |names| {
+                        names.get_mut(&strategy_name).expect("inconsistent data")
+                    }),
+                ))
+            } else {
+                BackendEvent::None
+            }
+        }
         StrategyTask::AddOperation {
             ref strategy_name,
             ref operation,
@@ -502,14 +609,15 @@ pub(crate) async fn run_strategy_task<'s>(
             }
         }
         StrategyTask::RunStrategy(strategy_name, num_blocks_or_seconds, verify_proofs, block_mode) => {
+
             tracing::info!("-----Starting strategy '{}'-----", strategy_name);
             
-            let run_start_time = Instant::now();
-
             // Fetch known_contracts from the chain to assure local copies match actual
             // state.
             match update_known_contracts(sdk, &app_state.known_contracts).await {
-                Ok(_) => info!("Known contracts updated successfully."),
+                Ok(_) => {
+                    // nothing
+                },
                 Err(e) => {
                     error!("Failed to update known contracts: {:?}", e);
                     return BackendEvent::StrategyError {
@@ -522,7 +630,6 @@ pub(crate) async fn run_strategy_task<'s>(
             // Refresh loaded_identity and get the current balance at strategy start
             let mut loaded_identity_lock = match app_state.refresh_identity(&sdk).await {
                 Ok(lock) => {
-                    info!("Refreshed loaded identity.");
                     lock
                 },                
                 Err(e) => {
@@ -818,9 +925,9 @@ pub(crate) async fn run_strategy_task<'s>(
                 let mut transition_count = 0; // Used for logging how many transitions we attempted
                 let mut success_count = 0; // Used for logging how many transitions were successful
                 let execution_start_time = Instant::now(); // Time when actual execution begins
-                let mut second_index = 1; // index for seconds in time-based execution
-
-                tracing::info!("Initialization finished after {} seconds. Beginning execution.", run_start_time.elapsed().as_secs());
+                let mut index = 1; // Index of the loop iteration. Represents blocks for block mode and seconds for time mode
+                let oks = Arc::new(AtomicUsize::new(0)); // Atomic counter for successful broadcasts
+                let errs = Arc::new(AtomicUsize::new(0)); // Atomic counter for failed broadcasts
 
                 // Now loop through the number of blocks or seconds the user asked for, preparing and processing state transitions
                 while (block_mode && current_block_info.height < (initial_block_info.height + num_blocks_or_seconds))
@@ -833,6 +940,10 @@ pub(crate) async fn run_strategy_task<'s>(
                     } else {
                         mode_string.push_str("second");
                     }
+
+                    let oks_clone = oks.clone();
+                    let errs_clone = errs.clone();
+                    let loop_start_time = Instant::now();
 
                     // Log if you are creating start_identities, because the asset lock proofs take a while
                     if current_block_info.height == initial_block_info.height && strategy.start_identities.number_of_identities > 0 {
@@ -900,16 +1011,13 @@ pub(crate) async fn run_strategy_task<'s>(
                         *loaded_identity_lock = modified_identity.clone();
                     }
 
-                    // In time mode, this is how long to sleep between transitions to ensure we only submit n transitions per second
-                    let time_mode_sleep_duration = 1 / transitions.len();
-
                     // Now process the state transitions
                     if !transitions.is_empty() {
                         tracing::info!(
                             "Prepared {} state transitions for {} {}",
                             transitions.len(),
                             mode_string,
-                            current_block_info.height
+                            index
                         );
 
                         // A queue for the state transitions for the block (or second)
@@ -924,7 +1032,7 @@ pub(crate) async fn run_strategy_task<'s>(
                             st_queue_index += 1; // Start at 1 and iterate upwards since we're only using this for logs
                             let transition_clone = transition.clone();
                             let transition_type = transition_clone.name().to_owned();
-
+                        
                             // Determine if the transitions is a dependent transition.
                             // Dependent state transitions are those that get their revision checked. Sending multiple
                             // in the same block causes errors because they get sent to different nodes and become disordered.
@@ -959,9 +1067,8 @@ pub(crate) async fn run_strategy_task<'s>(
                                                             if let Some(metadata) = &v0_response.metadata {
                                                                 success_count += 1;
                                                                 if !verify_proofs {
-                                                                    info!("Successfully processed state transition {} ({}) for {} {} (Actual block height: {})", st_queue_index, transition_type, mode_string, current_block_info.height, metadata.height);
+                                                                    info!("Successfully processed state transition {} ({}) for {} {} (Actual block height: {})", st_queue_index, transition_type, mode_string, index, metadata.height);
                                                                 }
-                                                                // Additional logging to inspect the result regardless of metadata presence
                                                                 match &v0_response.result {
                                                                     Some(wait_for_state_transition_result_response_v0::Result::Error(error)) => {
                                                                         error!("WaitForStateTransitionResultResponse error: {:?}", error);
@@ -983,7 +1090,7 @@ pub(crate) async fn run_strategy_task<'s>(
                                                                             );
                                                                             match verified {
                                                                                 Ok(_) => {
-                                                                                    info!("Successfully processed and verified proof for state transition {} ({}), {} {} (Actual block height: {})", st_queue_index, transition_type, mode_string, current_block_info.height, metadata.height);
+                                                                                    info!("Successfully processed and verified proof for state transition {} ({}), {} {} (Actual block height: {})", st_queue_index, transition_type, mode_string, index, metadata.height);
                                                                                 }
                                                                                 Err(e) => {
                                                                                     error!("Error verifying state transition execution proof: {}", e);
@@ -1024,29 +1131,45 @@ pub(crate) async fn run_strategy_task<'s>(
                                     );
                                 }
                             } else {
+                                let oks = oks_clone.clone();
+                                let errs = errs_clone.clone();
+
                                 // Prepare futures for broadcasting independent transitions
-                                let future = async move {
-                                    match transition_clone.broadcast_request_for_state_transition()
-                                    {
+                                let future = async move {                            
+                                    match transition_clone.broadcast_request_for_state_transition() {
                                         Ok(broadcast_request) => {
-                                            let broadcast_result = broadcast_request
-                                                .execute(sdk, RequestSettings::default())
-                                                .await;
-                                            Ok((transition_clone, broadcast_result))
-                                        }
-                                        Err(e) => Err(e),
+                                            let broadcast_result = broadcast_request.execute(sdk, RequestSettings::default()).await;
+                                            match broadcast_result {
+                                                Ok(_) => {
+                                                    oks.fetch_add(1, Ordering::SeqCst);
+                                                    if !block_mode {
+                                                        tracing::info!("Successfully broadcasted transition: {}", transition_clone.name());
+                                                    }
+                                                    Ok((transition_clone, broadcast_result))
+                                                },
+                                                Err(e) => {
+                                                    errs.fetch_add(1, Ordering::SeqCst);
+                                                    tracing::error!("Failed to broadcast transition: {}, Error: {:?}", transition_clone.name(), e);
+                                                    Err(e)
+                                                }
+                                            }
+                                        },
+                                        Err(e) => {
+                                            errs.fetch_add(1, Ordering::SeqCst);
+                                            tracing::error!("Error preparing broadcast for transition: {}, Error: {:?}", transition_clone.name(), e);
+                                            Err(e)
+                                        }.expect("Expected to prepare broadcast for request for state transition") // I guess I have to do this to make it compile
                                     }
                                 };
                                 broadcast_futures.push(future);
-                                let duration = Duration::from_millis((time_mode_sleep_duration * 1000).try_into().unwrap());
-                                tokio::time::sleep(duration).await;    
                             }
                         }
 
                         // Concurrently execute all broadcast requests for independent transitions
                         let broadcast_results = join_all(broadcast_futures).await;
 
-                        // Prepare futures for waiting for state transition results
+                        // If we're in block mode, we're going to wait for state transition results and potentially verify proofs too.
+                        // If we're in time mode, we're just broadcasting.
                         if block_mode {
                             let mut wait_futures = Vec::new();
                             for (index, result) in broadcast_results.into_iter().enumerate() {
@@ -1060,7 +1183,7 @@ pub(crate) async fn run_strategy_task<'s>(
                                                 index + 1,
                                                 transition_type,
                                                 mode_string,
-                                                current_block_info.height,
+                                                index,
                                                 broadcast_result.err().unwrap()
                                             );
                                             continue;
@@ -1106,7 +1229,7 @@ pub(crate) async fn run_strategy_task<'s>(
                                                 Err(e) => {
                                                     error!(
                                                         "Error creating wait request for state transition {} {} {}: {:?}",
-                                                        index + 1, mode_string, current_block_info.height, e
+                                                        index + 1, mode_string, index, e
                                                     );
                                                     return None;
                                                 }
@@ -1119,7 +1242,7 @@ pub(crate) async fn run_strategy_task<'s>(
                                                             if !verify_proofs {
                                                                 info!(
                                                                     "Successfully processed state transition {} ({}) for {} {} (Actual block height: {})",
-                                                                    index + 1, transition.name(), mode_string, current_block_info.height, metadata.height
+                                                                    index + 1, transition.name(), mode_string, index, metadata.height
                                                                 );    
                                                             }
     
@@ -1163,7 +1286,7 @@ pub(crate) async fn run_strategy_task<'s>(
     
                                                                     match verified {
                                                                         Ok(_) => {
-                                                                            info!("Successfully processed and verified proof for state transition {} ({}), {} {} (Actual block height: {})", index + 1, transition_type, mode_string, current_block_info.height, metadata.height);
+                                                                            info!("Successfully processed and verified proof for state transition {} ({}), {} {} (Actual block height: {})", index + 1, transition_type, mode_string, index, metadata.height);
                                                                             
                                                                             // If a data contract was registered, add it to
                                                                             // known_contracts
@@ -1242,7 +1365,7 @@ pub(crate) async fn run_strategy_task<'s>(
                                             "Error preparing broadcast request for state transition {} {} {}: {:?}",
                                             index + 1,
                                             mode_string,
-                                            current_block_info.height,
+                                            index,
                                             e
                                         );
                                     }
@@ -1262,43 +1385,51 @@ pub(crate) async fn run_strategy_task<'s>(
                                 }
                             }    
                         } else {
-                            tracing::info!("Submitted {} state transitions for {} {}", transitions.len(), mode_string, second_index);
-                        }
-                    
-                        // sleep for one second after the first block in time mode
-                        if !block_mode && current_block_info.height == initial_block_info.height {
-                            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                            // Time mode
+                            // Sleep for one second on first block to make sure we don't submit documents or updates in the same block as contract or identity creation
+                            if index == 1 {
+                                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                            }
                         }
                     } else {
+                        // No transitions prepared for the block (or second)
                         tracing::info!(
                             "No state transitions prepared for {} {}",
                             mode_string,
                             current_block_info.height
                         );
-                        tracing::info!(
-                            "No state transitions to process for {} {}",
-                            mode_string,
-                            current_block_info.height
-                        );
                     }
 
-                    // Update current_block_info and second_index
+                    // Update current_block_info and index for next loop iteration
                     current_block_info.height += 1;
                     let current_time_ms = SystemTime::now()
                         .duration_since(UNIX_EPOCH)
                         .expect("time went backwards")
                         .as_millis();
                     current_block_info.time_ms = current_time_ms as u64;
-                    second_index += 1;
+                    index += 1;
+
+                    // Make sure the loop doesn't iterate faster than once per second in time mode
+                    if !block_mode {
+                        let elapsed = loop_start_time.elapsed();
+                        if elapsed < Duration::from_secs(1) {
+                            let remaining_time = Duration::from_secs(1) - elapsed;
+                            tokio::time::sleep(remaining_time).await;
+                        }    
+                    }
                 }
 
+                // Strategy execution is finished
                 tracing::info!("-----Strategy '{}' finished running-----", strategy_name);
-                let execution_run_time = execution_start_time.elapsed().as_secs();
-                if !block_mode {
-                    tracing::info!("Time-based strategy execution ran for {} seconds and intended to run for {} seconds.", execution_run_time, num_blocks_or_seconds);
-                }
 
-                let run_time = run_start_time.elapsed();
+                // Log oks and errs
+                tracing::info!("Successfully processed: {}, Failed to process: {}", oks.load(Ordering::SeqCst), errs.load(Ordering::SeqCst));
+
+                // Time the execution took
+                let execution_run_time = execution_start_time.elapsed();
+                if !block_mode {
+                    tracing::info!("Time-based strategy execution ran for {} seconds and intended to run for {} seconds.", execution_run_time.as_secs(), num_blocks_or_seconds);
+                }
 
                 // Refresh the identity at the end
                 drop(loaded_identity_lock);
@@ -1329,27 +1460,55 @@ pub(crate) async fn run_strategy_task<'s>(
                     - final_balance_wallet as f64)
                     / 100_000_000_000.0;
 
-                info!(
-                    "-----Strategy '{}' completed-----\n\nState transitions attempted: {}\nState \
-                    transitions succeeded: {}\nNumber of blocks: {}\nRun time: \
-                    {:?}\nDash spent (Loaded Identity): {}\nDash spent (Wallet): {}\n",
-                    strategy_name,
-                    transition_count,
-                    success_count,
-                    (current_block_info.height - initial_block_info.height),
-                    run_time,
-                    dash_spent_identity,
-                    dash_spent_wallet,
-                );
+                // For time mode, success_count is just the number of broadcasts
+                if !block_mode {
+                    success_count = oks.load(Ordering::SeqCst);
+                }
+
+                if block_mode {
+                    info!(
+                        "-----Strategy '{}' completed-----\n\nState transitions attempted: {}\nState \
+                        transitions succeeded: {}\nNumber of blocks: {}\nRun time: \
+                        {:?} seconds\nDash spent (Loaded Identity): {}\nDash spent (Wallet): {}\n",
+                        strategy_name,
+                        transition_count,
+                        success_count,
+                        (current_block_info.height - initial_block_info.height),
+                        execution_run_time.as_secs(),
+                        dash_spent_identity,
+                        dash_spent_wallet,
+                    );    
+                } else {
+                    info!(
+                        "-----Strategy '{}' completed-----\n\nState transitions attempted: {}\nState \
+                        transitions succeeded: {}\nNumber of loops: {}\nRun time: \
+                        {:?} seconds\nAttempted rate (approx): {} txs/s\nDash spent (Loaded Identity): {}\nDash spent (Wallet): {}\n",
+                        strategy_name,
+                        transition_count,
+                        success_count,
+                        index-1,
+                        execution_run_time.as_secs(),
+                        transition_count as u64 / (execution_run_time.as_secs() - 1), // Subtract one here because we sleep for one second after the first block.
+                        dash_spent_identity,
+                        dash_spent_wallet,
+                    );    
+                }
+
+                // Make sure we don't divide by 0 when we determine the tx/s rate
+                let mut run_time = 1;
+                if (execution_run_time.as_secs() - 1) > 1 {
+                    run_time = execution_run_time.as_secs() - 1;
+                }
 
                 BackendEvent::StrategyCompleted {
                     strategy_name: strategy_name.clone(),
                     result: StrategyCompletionResult::Success {
                         final_block_height: current_block_info.height,
                         start_block_height: initial_block_info.height,
-                        success_count,
+                        success_count: success_count.try_into().unwrap(),
                         transition_count,
-                        run_time,
+                        rate: transition_count as u64 / (run_time - 1),
+                        run_time: execution_run_time,
                         dash_spent_identity,
                         dash_spent_wallet,
                     },
@@ -1372,6 +1531,33 @@ pub(crate) async fn run_strategy_task<'s>(
                     // Assuming each entry in contract_names corresponds to an entry in
                     // contracts_with_updates
                     contract_names.pop();
+                }
+
+                BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
+                    strategy_name.clone(),
+                    MutexGuard::map(strategies_lock, |strategies| {
+                        strategies.get_mut(&strategy_name).expect("strategy exists")
+                    }),
+                    MutexGuard::map(contract_names_lock, |names| {
+                        names.get_mut(&strategy_name).expect("inconsistent data")
+                    }),
+                ))
+            } else {
+                BackendEvent::None
+            }
+        }
+        StrategyTask::ClearContracts(strategy_name) => {
+            let mut strategies_lock = app_state.available_strategies.lock().await;
+            let mut contract_names_lock =
+                app_state.available_strategies_contract_names.lock().await;
+
+            if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
+                // Clear contract_with_updates for the strategy
+                strategy.contracts_with_updates.clear();
+
+                // Also clear the displayed contracts
+                if let Some(contract_names) = contract_names_lock.get_mut(&strategy_name) {
+                    contract_names.clear();
                 }
 
                 BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(

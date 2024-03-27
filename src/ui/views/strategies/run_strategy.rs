@@ -30,7 +30,7 @@ impl RunStrategyFormController {
                     SelectInput::new(vec![10, 20, 30, 60, 120, 300, 600]),
                 ),
                 Field::new(
-                    "Verify state transition proofs?",
+                    "Verify state transition proofs? (Only applies to block mode)",
                     SelectInput::new(vec!["Yes".to_string(), "No".to_string()]),
                 ),
                 Field::new(
@@ -124,6 +124,6 @@ impl FormController for RunStrategyFormController {
     }
 
     fn steps_number(&self) -> u8 {
-        3
+        4
     }
 }
