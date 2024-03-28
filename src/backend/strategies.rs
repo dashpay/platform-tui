@@ -1102,6 +1102,20 @@ pub async fn run_strategy_task<'s>(
                                                                 // nothing
                                                             }
                                                         }
+                                                        
+                                                        // Log the Base58 encoded IDs of any created Contracts
+                                                        match transition.clone() {
+                                                            StateTransition::IdentityCreate(identity_create_transition) => {
+                                                                let ids = identity_create_transition.modified_data_ids();
+                                                                for id in ids {
+                                                                    let encoded_id: String = id.into();
+                                                                    info!("Created Identity: {}", encoded_id);
+                                                                }
+                                                            },
+                                                            _ => {
+                                                                // nothing
+                                                            }
+                                                        }
 
                                                         // If a data contract was registered, add it to
                                                         // known_contracts

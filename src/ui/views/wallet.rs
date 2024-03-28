@@ -23,7 +23,7 @@ use crate::{
             TextInput,
         },
         screen::{
-            info_display::{display_info, InfoDisplay},
+            info_display::display_info,
             utils::impl_builder,
             widgets::info::Info,
             ScreenCommandKey, ScreenController, ScreenFeedback, ScreenToggleKey,
