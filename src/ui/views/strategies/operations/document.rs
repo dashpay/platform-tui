@@ -9,13 +9,11 @@ use dpp::data_contract::{
         DocumentType,
     },
 };
-use drive::drive::contract;
 use rs_sdk::platform::DataContract;
 use strategy_tests::{
     frequency::Frequency,
     operations::{DocumentAction, DocumentOp, Operation, OperationType},
 };
-use tracing::info;
 use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
 use crate::{

@@ -12,14 +12,22 @@ mod identity_withdrawal;
 use std::collections::BTreeMap;
 
 use rs_sdk::platform::DataContract;
-use strum::IntoEnumIterator;
 use tracing::error;
 use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
 use self::{
-    contract_create::StrategyOpContractCreateFormController, contract_update_doc_types::StrategyOpContractUpdateDocTypesFormController, document::StrategyOpDocumentFormController, identity_top_up::StrategyOpIdentityTopUpFormController, identity_transfer::StrategyOpIdentityTransferFormController, identity_update::StrategyOpIdentityUpdateFormController, identity_withdrawal::StrategyOpIdentityWithdrawalFormController
+    contract_create::StrategyOpContractCreateFormController,
+    contract_update_doc_types::StrategyOpContractUpdateDocTypesFormController,
+    document::StrategyOpDocumentFormController,
+    identity_top_up::StrategyOpIdentityTopUpFormController,
+    identity_transfer::StrategyOpIdentityTransferFormController,
+    identity_update::StrategyOpIdentityUpdateFormController,
+    identity_withdrawal::StrategyOpIdentityWithdrawalFormController,
 };
-use crate::ui::form::{FormController, FormStatus, Input, InputStatus, SelectInput};
+use crate::{
+    backend::{StrategyTask, Task},
+    ui::form::{FormController, FormStatus, Input, InputStatus, SelectInput},
+};
 
 #[derive(Debug, strum::Display, Clone, strum::EnumIter, Copy)]
 enum OperationType {
@@ -57,7 +65,7 @@ impl StrategyAddOperationFormController {
             "IdentityTransfer (requires start_identities > 0)".to_string(),
             "ContractCreateRandom".to_string(),
             "ContractUpdateDocTypesRandom".to_string(),
-            // "ContractUpdateFieldsRandom".to_string(),        
+            // "ContractUpdateFieldsRandom".to_string(),
         ];
         Self {
             op_type_input: SelectInput::new(operation_types),
@@ -124,9 +132,13 @@ impl FormController for StrategyAddOperationFormController {
                         "IdentityAddKeys" => OperationType::IdentityAddKeys,
                         "IdentityDisableKeys" => OperationType::IdentityDisableKeys,
                         "IdentityWithdrawal" => OperationType::IdentityWithdrawal,
-                        "IdentityTransfer (requires start_identities > 0)" => OperationType::IdentityTransfer,
+                        "IdentityTransfer (requires start_identities > 0)" => {
+                            OperationType::IdentityTransfer
+                        }
                         "ContractCreateRandom" => OperationType::ContractCreateRandom,
-                        "ContractUpdateDocTypesRandom" => OperationType::ContractUpdateDocTypesRandom,
+                        "ContractUpdateDocTypesRandom" => {
+                            OperationType::ContractUpdateDocTypesRandom
+                        }
                         // "ContractUpdateFieldsRandom" => OperationType::ContractUpdateFields,
                         _ => {
                             error!("Non-existant operation type selected");
@@ -179,5 +191,55 @@ impl FormController for StrategyAddOperationFormController {
         } else {
             1
         }
+    }
+}
+
+pub(super) struct StrategyAutomaticDocumentsFormController {
+    strategy_name: String,
+    input: SelectInput<u16>,
+}
+
+impl StrategyAutomaticDocumentsFormController {
+    pub(super) fn new(strategy_name: String) -> Self {
+        let num_docs = vec![1, 3, 5, 10, 15, 20, 24];
+        Self {
+            strategy_name,
+            input: SelectInput::new(num_docs),
+        }
+    }
+}
+
+impl FormController for StrategyAutomaticDocumentsFormController {
+    fn on_event(&mut self, event: KeyEvent) -> FormStatus {
+        match self.input.on_event(event) {
+            InputStatus::Done((num_docs)) => FormStatus::Done {
+                task: Task::Strategy(StrategyTask::RegisterDocsToAllContracts(
+                    self.strategy_name.clone(),
+                    num_docs,
+                )),
+                block: false,
+            },
+            status => status.into(),
+        }
+    }
+
+    fn form_name(&self) -> &'static str {
+        "Auto add docs to contracts"
+    }
+
+    fn step_view(&mut self, frame: &mut Frame, area: Rect) {
+        self.input.view(frame, area)
+    }
+
+    fn step_name(&self) -> &'static str {
+        "Select number of docs to add to each contract"
+    }
+
+    fn step_index(&self) -> u8 {
+        1
+    }
+
+    fn steps_number(&self) -> u8 {
+        1
     }
 }

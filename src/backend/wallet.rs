@@ -20,7 +20,6 @@ use dpp::dashcore::{
 };
 use rand::{prelude::StdRng, Rng, SeedableRng};
 use tokio::sync::{Mutex, MutexGuard};
-use tracing::info;
 
 use super::{AppStateUpdate, BackendEvent, Task};
 use crate::backend::insight::{InsightAPIClient, InsightError};

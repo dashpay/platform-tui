@@ -13,7 +13,7 @@ use dapi_grpc::platform::v0::{
 };
 use dpp::{
     block::{block_info::BlockInfo, epoch::Epoch}, dashcore::PrivateKey, data_contract::{
-        accessors::v0::{DataContractV0Getters, DataContractV0Setters}, created_data_contract::CreatedDataContract, DataContract
+        accessors::v0::{DataContractV0Getters, DataContractV0Setters}, created_data_contract::CreatedDataContract, document_type::random_document::{DocumentFieldFillSize, DocumentFieldFillType}, DataContract
     }, identity::{
         accessors::IdentityGettersV0, state_transition::asset_lock_proof::AssetLockProof, Identity,
         PartialIdentity,
@@ -34,7 +34,7 @@ use rs_sdk::{
 };
 use simple_signer::signer::SimpleSigner;
 use strategy_tests::{
-    frequency::Frequency, operations::{FinalizeBlockOperation, Operation}, IdentityInsertInfo, LocalDocumentQuery, StartIdentities, Strategy, StrategyConfig
+    frequency::Frequency, operations::{DocumentAction, DocumentOp, FinalizeBlockOperation, Operation, OperationType}, IdentityInsertInfo, LocalDocumentQuery, StartIdentities, Strategy, StrategyConfig
 };
 use tokio::sync::{Mutex, MutexGuard};
 use tracing::{error, info};
@@ -70,9 +70,11 @@ pub(crate) enum StrategyTask {
         strategy_name: String,
         operation: Operation,
     },
+    RegisterDocsToAllContracts(String, u16),
     RunStrategy(String, u64, bool, bool),
     RemoveLastContract(String),
     ClearContracts(String),
+    ClearOperations(String),
     RemoveIdentityInserts(String),
     RemoveStartIdentities(String),
     RemoveLastOperation(String),
@@ -470,6 +472,8 @@ pub(crate) async fn run_strategy_task<'s>(
                                         contract_variants.push(contract.clone());
                                         strategy.contracts_with_updates.push((contract, None));
                                         let new_contract_name = String::from(format!("{}_variant_{}", selected_contract_name, i));
+                                        // Insert into supporting_contracts so we can register documents to them. We will clear
+                                        // supporting contracts at the end of strategy execution.
                                         supporting_contracts_lock.insert(new_contract_name, new_data_contract);
                                         identity_nonce += 1;
                                     }
@@ -477,7 +481,7 @@ pub(crate) async fn run_strategy_task<'s>(
                                         tracing::error!(
                                             "Error converting DataContract to CreatedDataContract variant: {:?}",
                                             e
-                                        );            
+                                        );
                                     }
                                 };
                             }
@@ -528,6 +532,47 @@ pub(crate) async fn run_strategy_task<'s>(
                     MutexGuard::map(
                         app_state.available_strategies_contract_names.lock().await,
                         |names| names.get_mut(strategy_name).expect("inconsistent data"),
+                    ),
+                ))
+            } else {
+                BackendEvent::None
+            }
+        }
+        StrategyTask::RegisterDocsToAllContracts(strategy_name, num_docs)=> {
+            let mut strategies_lock = app_state.available_strategies.lock().await;
+            if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
+                for _ in 0..num_docs {
+                    for contract_with_updates in &strategy.contracts_with_updates {
+                        let contract = &contract_with_updates.0;
+                        let document_types = contract.data_contract().document_types();
+                        let document_type = document_types.values().next()
+                            .expect("Expected to get a document type in RegisterDocsToAllContracts");
+                        let action = DocumentAction::DocumentActionInsertRandom(
+                                DocumentFieldFillType::FillIfNotRequired,
+                                DocumentFieldFillSize::AnyDocumentFillSize,
+                            );
+                        let operation = Operation {
+                            op_type: OperationType::Document(DocumentOp {
+                                contract: contract.data_contract().clone(),
+                                document_type: document_type.clone(),
+                                action,
+                            }),
+                            frequency: Frequency {
+                                times_per_block_range: num_docs..num_docs + 1,
+                                chance_per_block: None,
+                            },
+                        };
+                        strategy.operations.push(operation);
+                    };
+                }
+                BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
+                    strategy_name.clone(),
+                    MutexGuard::map(strategies_lock, |strategies| {
+                        strategies.get_mut(&strategy_name).expect("strategy exists")
+                    }),
+                    MutexGuard::map(
+                        app_state.available_strategies_contract_names.lock().await,
+                        |names| names.get_mut(&strategy_name).expect("inconsistent data"),
                     ),
                 ))
             } else {
@@ -1465,6 +1510,10 @@ pub(crate) async fn run_strategy_task<'s>(
                     success_count = oks.load(Ordering::SeqCst);
                 }
 
+                // Clear app_state.supporting_contracts
+                let mut supporting_contracts_lock = app_state.supporting_contracts.lock().await;
+                supporting_contracts_lock.clear();
+
                 if block_mode {
                     info!(
                         "-----Strategy '{}' completed-----\n\nState transitions attempted: {}\nState \
@@ -1559,6 +1608,28 @@ pub(crate) async fn run_strategy_task<'s>(
                 if let Some(contract_names) = contract_names_lock.get_mut(&strategy_name) {
                     contract_names.clear();
                 }
+
+                BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
+                    strategy_name.clone(),
+                    MutexGuard::map(strategies_lock, |strategies| {
+                        strategies.get_mut(&strategy_name).expect("strategy exists")
+                    }),
+                    MutexGuard::map(contract_names_lock, |names| {
+                        names.get_mut(&strategy_name).expect("inconsistent data")
+                    }),
+                ))
+            } else {
+                BackendEvent::None
+            }
+        }
+        StrategyTask::ClearOperations(strategy_name) => {
+            let mut strategies_lock = app_state.available_strategies.lock().await;
+            let contract_names_lock =
+                app_state.available_strategies_contract_names.lock().await;
+
+            if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
+                // Clear operations for the strategy
+                strategy.operations.clear();
 
                 BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
                     strategy_name.clone(),

@@ -11,7 +11,6 @@ use dpp::{
     tests::json_document::json_document_to_contract,
     version::PlatformVersion,
 };
-use drive::drive::contract;
 use strategy_tests::{
     operations::{
         DataContractUpdateAction::{DataContractNewDocumentTypes, DataContractNewOptionalFields},
@@ -26,7 +25,9 @@ use tuirealm::{
 };
 use walkdir::WalkDir;
 
-use super::operations::StrategyAddOperationFormController;
+use super::operations::{
+    StrategyAddOperationFormController, StrategyAutomaticDocumentsFormController,
+};
 use crate::{
     backend::{AppState, AppStateUpdate, BackendEvent, StrategyTask, Task},
     ui::screen::{
@@ -36,10 +37,12 @@ use crate::{
     Event,
 };
 
-const COMMAND_KEYS: [ScreenCommandKey; 3] = [
+const COMMAND_KEYS: [ScreenCommandKey; 5] = [
     ScreenCommandKey::new("q", "Back to Strategy"),
     ScreenCommandKey::new("a", "Add"),
     ScreenCommandKey::new("r", "Remove last"),
+    ScreenCommandKey::new("c", "Clear all"),
+    ScreenCommandKey::new("d", "Register documents to all contracts"),
 ];
 
 pub struct OperationsScreenController {
@@ -174,6 +177,31 @@ impl ScreenController for OperationsScreenController {
                 )),
                 block: false,
             },
+            Event::Key(KeyEvent {
+                code: Key::Char('c'),
+                modifiers: KeyModifiers::NONE,
+            }) => {
+                if let Some(strategy_name) = &self.strategy_name {
+                    ScreenFeedback::Task {
+                        task: Task::Strategy(StrategyTask::ClearOperations(strategy_name.clone())),
+                        block: false,
+                    }
+                } else {
+                    ScreenFeedback::None
+                }
+            }
+            Event::Key(KeyEvent {
+                code: Key::Char('d'),
+                modifiers: KeyModifiers::NONE,
+            }) => {
+                if let Some(strategy_name) = self.strategy_name.clone() {
+                    ScreenFeedback::Form(Box::new(StrategyAutomaticDocumentsFormController::new(
+                        strategy_name.clone(),
+                    )))
+                } else {
+                    ScreenFeedback::None
+                }
+            }
             Event::Backend(
                 BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
                     strategy_name,
