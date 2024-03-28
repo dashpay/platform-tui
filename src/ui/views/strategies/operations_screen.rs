@@ -3,10 +3,15 @@
 use std::collections::BTreeMap;
 
 use dpp::{
-    data_contract::{created_data_contract::CreatedDataContract, DataContract},
+    data_contract::{
+        accessors::v0::DataContractV0Getters, created_data_contract::CreatedDataContract,
+        DataContract,
+    },
+    platform_value::string_encoding::Encoding,
     tests::json_document::json_document_to_contract,
     version::PlatformVersion,
 };
+use drive::drive::contract;
 use strategy_tests::{
     operations::{
         DataContractUpdateAction::{DataContractNewDocumentTypes, DataContractNewOptionalFields},
@@ -151,10 +156,14 @@ impl ScreenController for OperationsScreenController {
                     // Update known contracts before showing the form
                     self.update_supporting_contracts_sync();
 
+                    let strategy_contract_names = self.strategy_contract_names.get(&strategy_name)
+                        .expect("Expected to get strategy contract names in operations screen");
+
                     ScreenFeedback::Form(Box::new(StrategyAddOperationFormController::new(
                         strategy_name.clone(),
                         self.known_contracts.clone(),
                         self.supporting_contracts.clone(),
+                        strategy_contract_names.to_vec(),
                     )))
                 } else {
                     ScreenFeedback::None
@@ -210,7 +219,7 @@ impl ScreenController for OperationsScreenController {
                     op.frequency.times_per_block_range.end
                 };
                 operations_lines.push_str(&format!(
-                    "{:indent$}{}; Times per block: {}, chance per block: {}\n",
+                    "{:indent$}{}; Times per block: 1..{}, chance per block: {}\n",
                     "",
                     op_name,
                     times_per_block_display,
@@ -249,15 +258,25 @@ fn format_operation_name(op_type: &OperationType) -> String {
                 DocumentAction::DocumentActionReplace => "Replace",
                 _ => "Unknown",
             };
-            format!("Document({})", op_type)
+            format!(
+                "Document({}): Contract: {}",
+                op_type,
+                op.contract.id().to_string(Encoding::Base58)
+            )
         }
         OperationType::IdentityTopUp => "IdentityTopUp".to_string(),
         OperationType::IdentityUpdate(op) => format!("IdentityUpdate({:?})", op),
         OperationType::IdentityWithdrawal => "IdentityWithdrawal".to_string(),
         OperationType::ContractCreate(..) => "ContractCreateRandom".to_string(),
         OperationType::ContractUpdate(op) => match op.action {
-            DataContractNewDocumentTypes(_) => "NewDocTypesRandom",
-            DataContractNewOptionalFields(..) => "NewFieldsRandom",
+            DataContractNewDocumentTypes(_) => format!(
+                "ContractUpdate(NewDocTypesRandom): Contract: {}",
+                op.contract.id().to_string(Encoding::Base58)
+            ),
+            DataContractNewOptionalFields(..) => format!(
+                "ContractUpdate(NewFieldsRandom): Contract: {}",
+                op.contract.id().to_string(Encoding::Base58)
+            ),
         }
         .to_string(),
         OperationType::IdentityTransfer => "IdentityTransfer".to_string(),
