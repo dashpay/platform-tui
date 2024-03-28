@@ -307,17 +307,6 @@ pub async fn run_strategy_task<'s>(
                         .cloned()
                 };
 
-                // Get the loaded identity nonce
-                let loaded_identity_lock = app_state.loaded_identity.lock().await;
-                if loaded_identity_lock.is_some() {
-                    drop(loaded_identity_lock);
-            
-                    let _ = app_state.refresh_identity(&sdk).await;
-                } else {
-                    error!("Can't create contracts_with_updates because there's no loaded identity.");
-                    return BackendEvent::None;
-                }
-
                 if let Some(first_contract_name) = selected_contract_names.first() {
                     if let Some(data_contract) = get_contract(first_contract_name) {
                         match CreatedDataContract::from_contract_and_identity_nonce(
@@ -991,18 +980,19 @@ pub async fn run_strategy_task<'s>(
                                                                     }
                                                                     _ => {}
                                                                 }
-
-                                                                // Sleep because we need to give the chain state time to update revisions
-                                                                // It seems this is only necessary for certain STs. Like AddKeys and DisableKeys seem to need it, but Transfer does not. Not sure about Withdraw or ContractUpdate yet.
-                                                                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
                                                             } else {
                                                                 if let Some(result) = &v0_response.result {
                                                                     match result {
                                                                         wait_for_state_transition_result_response_v0::Result::Error(e) => tracing::error!("{:?}", e),
                                                                         wait_for_state_transition_result_response_v0::Result::Proof(_) => tracing::info!("Proof received but no metadata present so we can't verify it."),
                                                                     }
+                                                                    _ => {}
                                                                 }
                                                             }
+                                                          
+                                                            // Sleep because we need to give the chain state time to update revisions
+                                                            // It seems this is only necessary for certain STs. Like AddKeys and DisableKeys seem to need it, but Transfer does not. Not sure about Withdraw or ContractUpdate yet.
+                                                            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
                                                         } else {
                                                             info!("Response version other than V0 received or absent for state transition {} ({})", st_queue_index, transition_type);
                                                         }
@@ -1128,6 +1118,7 @@ pub async fn run_strategy_task<'s>(
                                                         // Verification of the proof
                                                         if let Some(wait_for_state_transition_result_response_v0::Result::Proof(proof)) = &v0_response.result {
                                                             if verify_proofs {
+                                                                let epoch = Epoch::new(metadata.epoch as u16).expect("Expected to get epoch from metadata in proof verification");
                                                                 // For proof verification, if it's a DocumentsBatch, include the data contract, else don't
                                                                 let verified = if transition.name() == "DocumentsBatch" {
                                                                     match data_contract_clone.as_ref() {
@@ -1253,6 +1244,20 @@ pub async fn run_strategy_task<'s>(
                                                             match result {
                                                                 wait_for_state_transition_result_response_v0::Result::Error(e) => tracing::error!("{:?}", e),
                                                                 wait_for_state_transition_result_response_v0::Result::Proof(_) => tracing::info!("Proof received but no metadata present so we can't verify it."),
+                                                            }
+                                                        }
+
+                                                        // Log the Base58 encoded IDs of any created Identities
+                                                        match transition.clone() {
+                                                            StateTransition::IdentityCreate(identity_create_transition) => {
+                                                                let ids = identity_create_transition.modified_data_ids();
+                                                                for id in ids {
+                                                                    let encoded_id: String = id.into();
+                                                                    info!("Created Identity: {}", encoded_id);
+                                                                }
+                                                            },
+                                                            _ => {
+                                                                // nothing
                                                             }
                                                         }
                                                     }
