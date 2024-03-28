@@ -541,30 +541,28 @@ pub(crate) async fn run_strategy_task<'s>(
         StrategyTask::RegisterDocsToAllContracts(strategy_name, num_docs)=> {
             let mut strategies_lock = app_state.available_strategies.lock().await;
             if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
-                for _ in 0..num_docs {
-                    for contract_with_updates in &strategy.contracts_with_updates {
-                        let contract = &contract_with_updates.0;
-                        let document_types = contract.data_contract().document_types();
-                        let document_type = document_types.values().next()
-                            .expect("Expected to get a document type in RegisterDocsToAllContracts");
-                        let action = DocumentAction::DocumentActionInsertRandom(
-                                DocumentFieldFillType::FillIfNotRequired,
-                                DocumentFieldFillSize::AnyDocumentFillSize,
-                            );
-                        let operation = Operation {
-                            op_type: OperationType::Document(DocumentOp {
-                                contract: contract.data_contract().clone(),
-                                document_type: document_type.clone(),
-                                action,
-                            }),
-                            frequency: Frequency {
-                                times_per_block_range: num_docs..num_docs + 1,
-                                chance_per_block: None,
-                            },
-                        };
-                        strategy.operations.push(operation);
+                for contract_with_updates in &strategy.contracts_with_updates {
+                    let contract = &contract_with_updates.0;
+                    let document_types = contract.data_contract().document_types();
+                    let document_type = document_types.values().next()
+                        .expect("Expected to get a document type in RegisterDocsToAllContracts");
+                    let action = DocumentAction::DocumentActionInsertRandom(
+                            DocumentFieldFillType::FillIfNotRequired,
+                            DocumentFieldFillSize::AnyDocumentFillSize,
+                        );
+                    let operation = Operation {
+                        op_type: OperationType::Document(DocumentOp {
+                            contract: contract.data_contract().clone(),
+                            document_type: document_type.clone(),
+                            action,
+                        }),
+                        frequency: Frequency {
+                            times_per_block_range: num_docs..num_docs + 1,
+                            chance_per_block: None,
+                        },
                     };
-                }
+                    strategy.operations.push(operation);
+                };
                 BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
                     strategy_name.clone(),
                     MutexGuard::map(strategies_lock, |strategies| {
@@ -921,7 +919,7 @@ pub(crate) async fn run_strategy_task<'s>(
                                             match AppState::broadcast_and_retrieve_asset_lock(&sdk, &asset_lock_transaction, &wallet.receive_address()).await {
                                                 Ok(proof) => {
                                                     // Check for new UTXOs in the wallet
-                                                    let max_retries = 5;
+                                                    let max_retries = 25;
                                                     let mut retries = 0;
                                                     let mut found_new_utxos = false;
                                                     while retries < max_retries {
@@ -935,7 +933,7 @@ pub(crate) async fn run_strategy_task<'s>(
                                                             break;
                                                         } else {
                                                             retries += 1;
-                                                            tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+                                                            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
                                                         }
                                                     }
                                                     if !found_new_utxos {
@@ -969,7 +967,7 @@ pub(crate) async fn run_strategy_task<'s>(
                 let mut current_block_info = initial_block_info.clone(); // Used for transition creation and logging
                 let mut transition_count = 0; // Used for logging how many transitions we attempted
                 let mut success_count = 0; // Used for logging how many transitions were successful
-                let execution_start_time = Instant::now(); // Time when actual execution begins
+                let mut execution_start_time = Instant::now(); // Time when actual execution begins
                 let mut index = 1; // Index of the loop iteration. Represents blocks for block mode and seconds for time mode
                 let oks = Arc::new(AtomicUsize::new(0)); // Atomic counter for successful broadcasts
                 let errs = Arc::new(AtomicUsize::new(0)); // Atomic counter for failed broadcasts
@@ -1445,6 +1443,13 @@ pub(crate) async fn run_strategy_task<'s>(
                         );
                     }
 
+                    // If it's the first iteration of the loop, reset the start time to after processing
+                    // Because start_identities asset lock proofs take a long time and
+                    // I'm not concerned with that right now
+                    if index == 1 {
+                        execution_start_time = Instant::now();
+                    }
+
                     // Update current_block_info and index for next loop iteration
                     current_block_info.height += 1;
                     let current_time_ms = SystemTime::now()
@@ -1461,7 +1466,7 @@ pub(crate) async fn run_strategy_task<'s>(
                             let remaining_time = Duration::from_secs(1) - elapsed;
                             tokio::time::sleep(remaining_time).await;
                         }    
-                    }
+                    }                
                 }
 
                 // Strategy execution is finished
