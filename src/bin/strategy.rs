@@ -3,7 +3,13 @@ use std::{fs::File, panic, time::Duration};
 use clap::{ArgAction, Parser};
 use dpp::{identity::accessors::IdentityGettersV0, version::PlatformVersion};
 use rs_platform_explorer::{
-    backend::{self, identities::IdentityTask::{self}, insight::InsightAPIClient, wallet::WalletTask, Backend, Task},
+    backend::{
+        self,
+        identities::IdentityTask::{self},
+        insight::InsightAPIClient,
+        wallet::WalletTask,
+        Backend, Task,
+    },
     config::Config,
 };
 use rs_sdk::{RequestSettings, SdkBuilder};
@@ -17,10 +23,19 @@ struct Args {
     #[arg(short, long, action = ArgAction::SetTrue, help = "Enables state transition proof verification.")]
     prove: bool,
 
-    #[arg(short, long, default_value_t = 20, help = "Specifies how many blocks to run the test. Default 20.")]
+    #[arg(
+        short,
+        long,
+        default_value_t = 20,
+        help = "Specifies how many blocks to run the test. Default 20."
+    )]
     blocks: u64,
 
-    #[arg(short, long, help = "Specifies the minimum amount of Dash the loaded identity should have.")]
+    #[arg(
+        short,
+        long,
+        help = "Specifies the minimum amount of Dash the loaded identity should have."
+    )]
     dash: Option<u64>,
 }
 
@@ -37,7 +52,8 @@ async fn main() {
             .with_ansi(false)
             .finish();
 
-        tracing::subscriber::set_global_default(subscriber).expect("Setting default subscriber failed");
+        tracing::subscriber::set_global_default(subscriber)
+            .expect("Setting default subscriber failed");
     } else {
         let log_file = File::create("explorer.log").expect("create log file");
 
@@ -46,8 +62,9 @@ async fn main() {
             .with_writer(log_file)
             .with_ansi(false)
             .finish();
-    
-        tracing::subscriber::set_global_default(subscriber).expect("Setting default subscriber failed");    
+
+        tracing::subscriber::set_global_default(subscriber)
+            .expect("Setting default subscriber failed");
     }
 
     // Test log statement
@@ -124,7 +141,7 @@ async fn main() {
     if backend.state().loaded_identity.lock().await.is_none() && args.dash.is_none() {
         panic!("There's no loaded identity and the --dash argument is not passed");
     }
-    
+
     // Add loaded identity to known identities if it's not already there
     // And set selected_strategy to None
     {
@@ -141,7 +158,7 @@ async fn main() {
 
         *selected_strategy = None;
     }
-    
+
     // Handle CLI commands
     if let Some(start_dash) = args.dash {
         // Register identity with `dash` balance if there is none yet
@@ -178,9 +195,14 @@ async fn main() {
             );
 
             if balance < start_dash * 100000000000 {
-                tracing::info!("Balance too low, adding {} more Dash", (start_dash as f64 * 100000000000.0 - balance as f64) / 100000000000.0);
+                tracing::info!(
+                    "Balance too low, adding {} more Dash",
+                    (start_dash as f64 * 100000000000.0 - balance as f64) / 100000000000.0
+                );
                 let amount = (start_dash * 100000000000 - balance) / 1000; // duffs to go into asset lock transaction
-                backend.run_task(Task::Identity(IdentityTask::TopUpIdentity(amount))).await;
+                backend
+                    .run_task(Task::Identity(IdentityTask::TopUpIdentity(amount)))
+                    .await;
             }
         }
     }
@@ -188,8 +210,13 @@ async fn main() {
         backend::strategies::run_strategy_task(
             &sdk,
             &backend.state(),
-            backend::strategies::StrategyTask::RunStrategy(test_name.to_string(), args.blocks, args.prove),
+            backend::strategies::StrategyTask::RunStrategy(
+                test_name.to_string(),
+                args.blocks,
+                args.prove,
+            ),
             &insight,
-        ).await;
+        )
+        .await;
     }
 }

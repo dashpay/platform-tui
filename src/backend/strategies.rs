@@ -15,8 +15,7 @@ use dpp::{
     block::{block_info::BlockInfo, epoch::Epoch}, dashcore::PrivateKey, data_contract::{
         accessors::v0::DataContractV0Getters, created_data_contract::CreatedDataContract, DataContract
     }, identity::{
-        accessors::IdentityGettersV0, state_transition::asset_lock_proof::AssetLockProof, Identity,
-        PartialIdentity,
+        accessors::IdentityGettersV0, state_transition::asset_lock_proof::AssetLockProof, Identity, KeyType, PartialIdentity, Purpose, SecurityLevel
     }, platform_value::{string_encoding::Encoding, Identifier}, serialization::{PlatformDeserializableWithPotentialValidationFromVersionedStructure, PlatformSerializableWithPlatformVersion}, state_transition::{data_contract_create_transition::DataContractCreateTransition, documents_batch_transition::{document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods, document_transition::DocumentTransition, DocumentCreateTransition, DocumentsBatchTransition}, StateTransition, StateTransitionLike}, version::PlatformVersion
 };
 use drive::{
@@ -34,7 +33,7 @@ use rs_sdk::{
 };
 use simple_signer::signer::SimpleSigner;
 use strategy_tests::{
-    frequency::Frequency, operations::{FinalizeBlockOperation, Operation}, IdentityInsertInfo, LocalDocumentQuery, StartIdentities, Strategy, StrategyConfig
+    frequency::Frequency, operations::{FinalizeBlockOperation, Operation}, IdentityInsertInfo, KeyMaps, LocalDocumentQuery, StartIdentities, Strategy, StrategyConfig
 };
 use tokio::sync::{Mutex, MutexGuard};
 use tracing::{error, info};
@@ -63,6 +62,7 @@ pub enum StrategyTask {
         count: u8,
         keys_count: u8,
         balance: u64,
+        add_transfer_key: bool,
     },
     SetStartIdentitiesBalance(String, u64),
     AddOperation {
@@ -441,13 +441,20 @@ pub async fn run_strategy_task<'s>(
             count,
             keys_count,
             balance,
+            add_transfer_key,
         } => {
             let mut strategies_lock = app_state.available_strategies.lock().await;
             if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
+                let mut extra_keys = BTreeMap::new();
+                if add_transfer_key {
+                    extra_keys.insert(Purpose::TRANSFER,
+                        [(SecurityLevel::CRITICAL, vec![KeyType::ECDSA_SECP256K1])].into());
+                }
                 strategy.start_identities = StartIdentities {
                     number_of_identities: count,
                     keys_per_identity: keys_count,
                     starting_balances: balance,
+                    extra_keys,
                 };
                 BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
                     strategy_name.clone(),
@@ -470,6 +477,7 @@ pub async fn run_strategy_task<'s>(
                     number_of_identities: strategy.start_identities.number_of_identities,
                     keys_per_identity: strategy.start_identities.keys_per_identity,
                     starting_balances: balance,
+                    extra_keys: strategy.start_identities.extra_keys.clone(),
                 };
                 BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
                     strategy_name.clone(),
@@ -935,8 +943,8 @@ pub async fn run_strategy_task<'s>(
                                                     Ok(wait_response) => {
                                                         if let Some(wait_for_state_transition_result_response::Version::V0(v0_response)) = &wait_response.version {
                                                             if let Some(metadata) = &v0_response.metadata {
-                                                                success_count += 1;
                                                                 if !verify_proofs {
+                                                                    success_count += 1;
                                                                     info!("Successfully processed state transition {} ({}) for block {} (Actual block height: {})", st_queue_index, transition_type, current_block_info.height, metadata.height);
                                                                 }
                                                                 // Additional logging to inspect the result regardless of metadata presence
@@ -957,10 +965,11 @@ pub async fn run_strategy_task<'s>(
                                                                                 },
                                                                                 proof.grovedb_proof.as_slice(),
                                                                                 &|_| Ok(None),
-                                                                                sdk.version(),                                                            
+                                                                                sdk.version(),
                                                                             );
                                                                             match verified {
                                                                                 Ok(_) => {
+                                                                                    success_count += 1;
                                                                                     info!("Successfully processed and verified proof for state transition {} ({}), block {} (Actual block height: {})", st_queue_index, transition_type, current_block_info.height, metadata.height);
                                                                                 }
                                                                                 Err(e) => {
@@ -971,11 +980,19 @@ pub async fn run_strategy_task<'s>(
                                                                     }
                                                                     _ => {}
                                                                 }
-
-                                                                // Sleep because we need to give the chain state time to update revisions
-                                                                // It seems this is only necessary for certain STs. Like AddKeys and DisableKeys seem to need it, but Transfer does not. Not sure about Withdraw or ContractUpdate yet.
-                                                                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                                                            } else {
+                                                                if let Some(result) = &v0_response.result {
+                                                                    match result {
+                                                                        wait_for_state_transition_result_response_v0::Result::Error(e) => tracing::error!("{:?}", e),
+                                                                        wait_for_state_transition_result_response_v0::Result::Proof(_) => tracing::info!("Proof received but no metadata present so we can't verify it."),
+                                                                    }
+                                                                    _ => {}
+                                                                }
                                                             }
+                                                          
+                                                            // Sleep because we need to give the chain state time to update revisions
+                                                            // It seems this is only necessary for certain STs. Like AddKeys and DisableKeys seem to need it, but Transfer does not. Not sure about Withdraw or ContractUpdate yet.
+                                                            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
                                                         } else {
                                                             info!("Response version other than V0 received or absent for state transition {} ({})", st_queue_index, transition_type);
                                                         }
@@ -1012,7 +1029,15 @@ pub async fn run_strategy_task<'s>(
                                                 .await;
                                             Ok((transition_clone, broadcast_result))
                                         }
-                                        Err(e) => Err(e),
+                                        Err(e) => {
+                                            tracing::error!(
+                                                "Error preparing broadcast request for state transition {} block height {}: {:?}",
+                                                st_queue_index,
+                                                current_block_info.height,
+                                                e
+                                            );
+                                            Err(e)
+                                        },
                                     }
                                 };
                                 broadcast_futures.push(future);
@@ -1083,81 +1108,11 @@ pub async fn run_strategy_task<'s>(
                                             Ok(wait_response) => {
                                                 Some(if let Some(wait_for_state_transition_result_response::Version::V0(v0_response)) = &wait_response.version {
                                                     if let Some(metadata) = &v0_response.metadata {
-                                                        let actual_block_height = metadata.height;
-                                                        info!(
-                                                            "Successfully processed state transition {} ({}) for block {} (Actual block height: {})",
-                                                            index + 1, transition.name(), current_block_info.height, actual_block_height
-                                                        );
-
-                                                        // Log the Base58 encoded IDs of any created Identities
-                                                        match transition.clone() {
-                                                            StateTransition::IdentityCreate(identity_create_transition) => {
-                                                                let ids = identity_create_transition.modified_data_ids();
-                                                                for id in ids {
-                                                                    let encoded_id: String = id.into();
-                                                                    info!("Created Identity: {}", encoded_id);
-                                                                }
-                                                            },
-                                                            _ => {
-                                                                // nothing
-                                                            }
-                                                        }
-                                                        
-                                                        // Log the Base58 encoded IDs of any created Contracts
-                                                        match transition.clone() {
-                                                            StateTransition::IdentityCreate(identity_create_transition) => {
-                                                                let ids = identity_create_transition.modified_data_ids();
-                                                                for id in ids {
-                                                                    let encoded_id: String = id.into();
-                                                                    info!("Created Identity: {}", encoded_id);
-                                                                }
-                                                            },
-                                                            _ => {
-                                                                // nothing
-                                                            }
-                                                        }
-
-                                                        // If a data contract was registered, add it to
-                                                        // known_contracts
-                                                        if let StateTransition::DataContractCreate(
-                                                            DataContractCreateTransition::V0(
-                                                                data_contract_create_transition,
-                                                            ),
-                                                        ) = &transition
-                                                        {
-                                                            // Extract the data contract from the transition
-                                                            let data_contract_serialized =
-                                                                &data_contract_create_transition
-                                                                    .data_contract;
-                                                            let data_contract_result =
-                                                                DataContract::try_from_platform_versioned(
-                                                                    data_contract_serialized.clone(),
-                                                                    false,
-                                                                    PlatformVersion::latest(),
-                                                                );
-
-                                                            match data_contract_result {
-                                                                Ok(data_contract) => {
-                                                                    let mut known_contracts_lock =
-                                                                        app_state
-                                                                            .known_contracts
-                                                                            .lock()
-                                                                            .await;
-                                                                    known_contracts_lock.insert(
-                                                                        data_contract
-                                                                            .id()
-                                                                            .to_string(Encoding::Base58),
-                                                                        data_contract,
-                                                                    );
-                                                                }
-                                                                Err(e) => {
-                                                                    error!(
-                                                                        "Error deserializing data \
-                                                                        contract: {:?}",
-                                                                        e
-                                                                    );
-                                                                }
-                                                            }
+                                                        if !verify_proofs {
+                                                            info!(
+                                                                "Successfully processed state transition {} ({}) for block {} (Actual block height: {})",
+                                                                index + 1, transition.name(), current_block_info.height, metadata.height
+                                                            );    
                                                         }
 
                                                         // Verification of the proof
@@ -1201,15 +1156,95 @@ pub async fn run_strategy_task<'s>(
                                                                 };
 
                                                                 match verified {
-                                                                    Ok(_) => info!("Verified proof for state transition {} ({}) for block {} (Actual block height: {})", index + 1, transition_type, current_block_info.height, actual_block_height),
+                                                                    Ok(_) => {
+                                                                        info!("Successfully processed and verified proof for state transition {} ({}), block {} (Actual block height: {})", index + 1, transition_type, current_block_info.height, metadata.height);
+                                                                    }
                                                                     Err(e) => error!("Error verifying state transition execution proof: {}", e),
                                                                 }
                                                             }
 
-                                                        // If it's the first block, sleep for one second so we don't, for example, register a doc to a new contract
-                                                        if current_block_info.height == initial_block_info.height {
-                                                            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                                                            // If it's the first block, sleep for one second so we don't, for example, register a doc to a new contract
+                                                            if current_block_info.height == initial_block_info.height {
+                                                                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                                                            }
                                                         }
+                                                        
+                                                        // If a data contract was registered, add it to
+                                                        // known_contracts
+                                                        if let StateTransition::DataContractCreate(
+                                                            DataContractCreateTransition::V0(
+                                                                data_contract_create_transition,
+                                                            ),
+                                                        ) = &transition
+                                                        {
+                                                            // Extract the data contract from the transition
+                                                            let data_contract_serialized =
+                                                                &data_contract_create_transition
+                                                                    .data_contract;
+                                                            let data_contract_result =
+                                                                DataContract::try_from_platform_versioned(
+                                                                    data_contract_serialized.clone(),
+                                                                    false,
+                                                                    PlatformVersion::latest(),
+                                                                );
+
+                                                            match data_contract_result {
+                                                                Ok(data_contract) => {
+                                                                    let mut known_contracts_lock =
+                                                                        app_state
+                                                                            .known_contracts
+                                                                            .lock()
+                                                                            .await;
+                                                                    known_contracts_lock.insert(
+                                                                        data_contract
+                                                                            .id()
+                                                                            .to_string(Encoding::Base58),
+                                                                        data_contract,
+                                                                    );
+                                                                }
+                                                                Err(e) => {
+                                                                    error!(
+                                                                        "Error deserializing data \
+                                                                        contract: {:?}",
+                                                                        e
+                                                                    );
+                                                                }
+                                                            }
+                                                        }
+                                                        
+                                                        // Log the Base58 encoded IDs of any created Contracts
+                                                        match transition.clone() {
+                                                            StateTransition::DataContractCreate(contract_create_transition) => {
+                                                                let ids = contract_create_transition.modified_data_ids();
+                                                                for id in ids {
+                                                                    let encoded_id: String = id.into();
+                                                                    info!("Created Contract: {}", encoded_id);
+                                                                }
+                                                            },
+                                                            _ => {
+                                                                // nothing
+                                                            }
+                                                        }
+
+                                                        // Log the Base58 encoded IDs of any created Identities
+                                                        match transition.clone() {
+                                                            StateTransition::IdentityCreate(identity_create_transition) => {
+                                                                let ids = identity_create_transition.modified_data_ids();
+                                                                for id in ids {
+                                                                    let encoded_id: String = id.into();
+                                                                    info!("Created Identity: {}", encoded_id);
+                                                                }
+                                                            },
+                                                            _ => {
+                                                                // nothing
+                                                            }
+                                                        }
+                                                    } else {
+                                                        if let Some(result) = &v0_response.result {
+                                                            match result {
+                                                                wait_for_state_transition_result_response_v0::Result::Error(e) => tracing::error!("{:?}", e),
+                                                                wait_for_state_transition_result_response_v0::Result::Proof(_) => tracing::info!("Proof received but no metadata present so we can't verify it."),
+                                                            }
                                                         }
 
                                                         // Log the Base58 encoded IDs of any created Identities
@@ -1226,6 +1261,8 @@ pub async fn run_strategy_task<'s>(
                                                             }
                                                         }
                                                     }
+                                                } else {
+                                                    tracing::error!("wait_response.version is None");
                                                 })
                                             },
                                             Err(e) => {

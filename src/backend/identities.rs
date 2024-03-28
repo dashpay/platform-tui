@@ -348,6 +348,7 @@ impl AppState {
                 identity_info.clone()
             } else {
                 let mut std_rng = StdRng::from_entropy();
+                // Create a random identity with master key
                 let (mut identity, mut keys): (Identity, BTreeMap<IdentityPublicKey, Vec<u8>>) =
                     Identity::random_identity_with_main_keys_with_private_key(
                         2,
@@ -355,6 +356,7 @@ impl AppState {
                         sdk.version(),
                     )?;
 
+                // Add a critical key
                 let (critical_key, critical_private_key) =
                     IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
                         2,
@@ -363,6 +365,19 @@ impl AppState {
                     )?;
                 identity.add_public_key(critical_key.clone());
                 keys.insert(critical_key, critical_private_key);
+
+                // Add a key for transfers
+                let (transfer_key, transfer_private_key) =
+                    IdentityPublicKey::random_key_with_known_attributes(
+                        3,
+                        &mut std_rng,
+                        KeyPurpose::TRANSFER,
+                        KeySecurityLevel::CRITICAL,
+                        KeyType::ECDSA_SECP256K1,
+                        sdk.version(),
+                    )?;
+                identity.add_public_key(transfer_key.clone());
+                keys.insert(transfer_key, transfer_private_key);
 
                 identity.set_id(
                     asset_lock_proof
