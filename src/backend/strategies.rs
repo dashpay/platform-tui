@@ -1168,6 +1168,7 @@ pub async fn run_strategy_task<'s>(
                                                                 let verified = if transition.name() == "DocumentsBatch" {
                                                                     match data_contract_clone.as_ref() {
                                                                         Some(data_contract) => {
+                                                                            let epoch = Epoch::new(metadata.epoch as u16).expect("Expected to get epoch from metadata in proof verification");
                                                                             Drive::verify_state_transition_was_executed_with_proof(
                                                                                 &transition,
                                                                                 &BlockInfo {
@@ -1184,6 +1185,7 @@ pub async fn run_strategy_task<'s>(
                                                                         None => Err(drive::error::Error::Proof(ProofError::UnknownContract("Data contract ID not found in known_contracts".into()))),
                                                                     }
                                                                 } else {
+                                                                    let epoch = Epoch::new(metadata.epoch as u16).expect("Expected to get epoch from metadata in proof verification");
                                                                     Drive::verify_state_transition_was_executed_with_proof(
                                                                         &transition,
                                                                         &BlockInfo {

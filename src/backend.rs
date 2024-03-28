@@ -132,6 +132,7 @@ pub(crate) enum AppStateUpdate<'s> {
     IdentityRegistrationProgressed, // TODO provide state update details
     LoadedIdentity(MappedMutexGuard<'s, Identity>),
     FailedToRefreshIdentity,
+    ClearedLoadedIdentity,
 }
 
 /// Represents the result of completing a strategy.

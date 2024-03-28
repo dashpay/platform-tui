@@ -74,6 +74,7 @@ pub enum IdentityTask {
         security_level: KeySecurityLevel,
         purpose: KeyPurpose,
     },
+    ClearLoadedIdentity,
 }
 
 impl AppState {
@@ -94,6 +95,19 @@ impl AppState {
                     task: Task::Identity(task),
                     execution_result,
                     app_state_update,
+                }
+            }
+            IdentityTask::ClearLoadedIdentity => {
+                let mut loaded_identity = self.loaded_identity.lock().await;
+                *loaded_identity = None;
+                let mut identity_private_keys = self.identity_private_keys.lock().await;
+                identity_private_keys.clear();
+                BackendEvent::TaskCompletedStateChange {
+                    task: Task::Identity(task),
+                    execution_result: Ok(CompletedTaskPayload::String(
+                        "Cleared loaded identity".to_string(),
+                    )),
+                    app_state_update: AppStateUpdate::ClearedLoadedIdentity,
                 }
             }
             IdentityTask::Refresh => {
