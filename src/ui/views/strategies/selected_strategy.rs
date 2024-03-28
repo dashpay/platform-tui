@@ -288,13 +288,16 @@ fn display_strategy(
         ));
     }
 
+    let contracts_with_updates_len = strategy.contracts_with_updates.len();
+    let operations_len = strategy.operations.len();
+
     format!(
         r#"{strategy_name}:
-    Contracts with updates:
+    Contracts with updates ({contracts_with_updates_len}):
 {contracts_with_updates_lines}
     Identity inserts:
 {identity_inserts_line}
-    Operations:
+    Operations ({operations_len}):
 {operations_lines}
     Start identities: {} (Keys: {}, Balance: {:.2} dash)"#,
         strategy.start_identities.number_of_identities,

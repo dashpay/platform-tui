@@ -4,13 +4,16 @@ use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
 use crate::{
     backend::{StrategyTask, Task},
-    ui::form::{ComposedInput, Field, FormController, FormStatus, Input, InputStatus, SelectInput},
+    ui::form::{
+        parsers::DefaultTextInputParser, ComposedInput, Field, FormController, FormStatus, Input,
+        InputStatus, SelectInput, TextInput,
+    },
 };
 
 pub(super) struct RunStrategyFormController {
     input: ComposedInput<(
         Field<SelectInput<String>>,
-        Field<SelectInput<u64>>,
+        Field<TextInput<DefaultTextInputParser<u64>>>,
         Field<SelectInput<String>>,
         Field<SelectInput<String>>,
     )>,
@@ -27,7 +30,7 @@ impl RunStrategyFormController {
                 ),
                 Field::new(
                     "Number of blocks or seconds to run the strategy",
-                    SelectInput::new(vec![10, 20, 30, 60, 120, 300, 600]),
+                    TextInput::new("Enter a whole number"),
                 ),
                 Field::new(
                     "Verify state transition proofs? (Only applies to block mode)",

@@ -90,24 +90,32 @@ impl ScreenController for RunStrategyScreenController {
 
                 let display_text = match result {
                     StrategyCompletionResult::Success {
+                        block_mode,
                         final_block_height,
                         start_block_height,
                         success_count,
                         transition_count,
                         rate,
                         run_time,
+                        init_time,
                         dash_spent_identity,
                         dash_spent_wallet,
                     } => {
+                        let mode = match block_mode {
+                            true => String::from("block"),
+                            false => String::from("time"),
+                        };
                         format!(
-                            "Strategy '{}' completed:\n\nState transitions attempted: {}\nState \
+                            "Strategy '{}' completed:\n\nMode: {}\nState transitions attempted: {}\nState \
                              transitions succeeded: {}\nNumber of blocks (or seconds): {}\nRun time: \
-                             {:?}\nAttempted rate (approx): {} txs/s\nDash spent (Identity): {}\nDash spent (Wallet): {}",
+                             {:?}\nInitialization time: {}\nAttempted rate (approx): {} txs/s\nDash spent (Identity): {}\nDash spent (Wallet): {}",
                             strategy_name,
+                            mode,
                             transition_count,
                             success_count,
                             (final_block_height - start_block_height),
                             run_time,
+                            init_time.as_secs(),
                             rate,
                             dash_spent_identity,
                             dash_spent_wallet,

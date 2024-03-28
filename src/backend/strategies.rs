@@ -962,27 +962,29 @@ pub(crate) async fn run_strategy_task<'s>(
                     }
                 };
 
+                // Get the execution mode as a string for logging
+                let mut mode_string = String::new();
+                if block_mode {
+                    mode_string.push_str("block");
+                } else {
+                    mode_string.push_str("second");
+                }                
+
                 // Some final initialization
                 let mut rng = StdRng::from_entropy(); // Will be passed to state_transitions_for_block
                 let mut current_block_info = initial_block_info.clone(); // Used for transition creation and logging
                 let mut transition_count = 0; // Used for logging how many transitions we attempted
                 let mut success_count = 0; // Used for logging how many transitions were successful
-                let mut execution_start_time = Instant::now(); // Time when actual execution begins
+                let mut load_start_time = Instant::now(); // Time when the load test begins (all blocks after the first/init block)
+                let init_start_time = Instant::now(); // Time when the init block begins (first block)
+                let mut init_time = Duration::new(0, 0); // Will set this to the time it took the first block to execute
                 let mut index = 1; // Index of the loop iteration. Represents blocks for block mode and seconds for time mode
                 let oks = Arc::new(AtomicUsize::new(0)); // Atomic counter for successful broadcasts
                 let errs = Arc::new(AtomicUsize::new(0)); // Atomic counter for failed broadcasts
 
                 // Now loop through the number of blocks or seconds the user asked for, preparing and processing state transitions
                 while (block_mode && current_block_info.height < (initial_block_info.height + num_blocks_or_seconds))
-                    || (!block_mode && execution_start_time.elapsed().as_secs() < num_blocks_or_seconds) {
-                    
-                    // Get the execution mode as a string for logging
-                    let mut mode_string = String::new();
-                    if block_mode {
-                        mode_string.push_str("block");
-                    } else {
-                        mode_string.push_str("second");
-                    }
+                    || (!block_mode && load_start_time.elapsed().as_secs() < num_blocks_or_seconds) {
 
                     let oks_clone = oks.clone();
                     let errs_clone = errs.clone();
@@ -1429,9 +1431,9 @@ pub(crate) async fn run_strategy_task<'s>(
                             }    
                         } else {
                             // Time mode
-                            // Sleep for one second on first block to make sure we don't submit documents or updates in the same block as contract or identity creation
+                            // Sleep for three seconds on first block to make sure we don't submit documents or updates in the same block as contract or identity creation
                             if index == 1 {
-                                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                                tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
                             }
                         }
                     } else {
@@ -1443,11 +1445,12 @@ pub(crate) async fn run_strategy_task<'s>(
                         );
                     }
 
-                    // If it's the first iteration of the loop, reset the start time to after processing
+                    // In time mode, if it's the first iteration of the loop, reset the start time to after processing
                     // Because start_identities asset lock proofs take a long time and
                     // I'm not concerned with that right now
-                    if index == 1 {
-                        execution_start_time = Instant::now();
+                    if !block_mode && index == 1 {
+                        load_start_time = Instant::now();
+                        init_time = init_start_time.elapsed();
                     }
 
                     // Update current_block_info and index for next loop iteration
@@ -1476,9 +1479,9 @@ pub(crate) async fn run_strategy_task<'s>(
                 tracing::info!("Successfully processed: {}, Failed to process: {}", oks.load(Ordering::SeqCst), errs.load(Ordering::SeqCst));
 
                 // Time the execution took
-                let execution_run_time = execution_start_time.elapsed();
+                let load_execution_run_time = load_start_time.elapsed();
                 if !block_mode {
-                    tracing::info!("Time-based strategy execution ran for {} seconds and intended to run for {} seconds.", execution_run_time.as_secs(), num_blocks_or_seconds);
+                    tracing::info!("Time-based strategy execution ran for {} seconds and intended to run for {} seconds.", load_execution_run_time.as_secs(), num_blocks_or_seconds);
                 }
 
                 // Refresh the identity at the end
@@ -1515,54 +1518,62 @@ pub(crate) async fn run_strategy_task<'s>(
                     success_count = oks.load(Ordering::SeqCst);
                 }
 
+                // Make sure we don't divide by 0 when we determine the tx/s rate
+                let mut load_run_time = 1;
+                if (load_execution_run_time.as_secs() - 1) > 1 {
+                    load_run_time = load_execution_run_time.as_secs();
+                }                                
+
                 // Clear app_state.supporting_contracts
                 let mut supporting_contracts_lock = app_state.supporting_contracts.lock().await;
                 supporting_contracts_lock.clear();
 
                 if block_mode {
                     info!(
-                        "-----Strategy '{}' completed-----\n\nState transitions attempted: {}\nState \
+                        "-----Strategy '{}' completed-----\n\nMode: {}\nState transitions attempted: {}\nState \
                         transitions succeeded: {}\nNumber of blocks: {}\nRun time: \
                         {:?} seconds\nDash spent (Loaded Identity): {}\nDash spent (Wallet): {}\n",
                         strategy_name,
+                        mode_string,
                         transition_count,
                         success_count,
                         (current_block_info.height - initial_block_info.height),
-                        execution_run_time.as_secs(),
+                        load_execution_run_time.as_secs(),
                         dash_spent_identity,
                         dash_spent_wallet,
                     );    
                 } else {
                     info!(
-                        "-----Strategy '{}' completed-----\n\nState transitions attempted: {}\nState \
-                        transitions succeeded: {}\nNumber of loops: {}\nRun time: \
-                        {:?} seconds\nAttempted rate (approx): {} txs/s\nDash spent (Loaded Identity): {}\nDash spent (Wallet): {}\n",
+                        "-----Strategy '{}' completed-----\n\nMode: {}\nState transitions attempted: {}\nState \
+                        transitions succeeded: {}\nNumber of loops: {}\nLoad run time: \
+                        {:?} seconds\nInit run time: {} seconds\nAttempted rate (approx): {} txs/s\nDash spent (Loaded Identity): {}\nDash spent (Wallet): {}\n",
                         strategy_name,
+                        mode_string,
                         transition_count,
                         success_count,
-                        index-1,
-                        execution_run_time.as_secs(),
-                        transition_count as u64 / (execution_run_time.as_secs() - 1), // Subtract one here because we sleep for one second after the first block.
+                        index-1, // Minus 1 because we added 1 at the end of the last loop
+                        load_run_time,
+                        init_time.as_secs(),
+                        (transition_count
+                            - strategy.contracts_with_updates.len()
+                            - strategy.start_identities.number_of_identities as usize
+                        ) as u64 / (load_run_time - 3), // Subtract 3 here because we sleep for 3 seconds after the first block.
                         dash_spent_identity,
                         dash_spent_wallet,
                     );    
                 }
 
-                // Make sure we don't divide by 0 when we determine the tx/s rate
-                let mut run_time = 1;
-                if (execution_run_time.as_secs() - 1) > 1 {
-                    run_time = execution_run_time.as_secs() - 1;
-                }
-
                 BackendEvent::StrategyCompleted {
                     strategy_name: strategy_name.clone(),
                     result: StrategyCompletionResult::Success {
+                        block_mode: block_mode,
                         final_block_height: current_block_info.height,
                         start_block_height: initial_block_info.height,
                         success_count: success_count.try_into().unwrap(),
-                        transition_count,
-                        rate: transition_count as u64 / (run_time - 1),
-                        run_time: execution_run_time,
+                        transition_count: transition_count.try_into().unwrap(),
+                        rate: transition_count as u64 / (load_run_time - 1),
+                        run_time: load_execution_run_time,
+                        init_time: init_time,
                         dash_spent_identity,
                         dash_spent_wallet,
                     },

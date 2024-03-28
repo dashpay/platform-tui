@@ -138,11 +138,13 @@ pub(crate) enum AppStateUpdate<'s> {
 #[derive(Debug)]
 pub(crate) enum StrategyCompletionResult {
     Success {
+        block_mode: bool,
         final_block_height: u64,
         start_block_height: u64,
         success_count: u64,
         transition_count: u64,
         run_time: Duration,
+        init_time: Duration,
         rate: u64,
         dash_spent_identity: f64,
         dash_spent_wallet: f64,
