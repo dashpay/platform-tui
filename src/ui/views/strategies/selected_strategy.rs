@@ -2,6 +2,9 @@
 
 use std::collections::BTreeMap;
 
+use dpp::{
+    data_contract::accessors::v0::DataContractV0Getters, platform_value::string_encoding::Encoding,
+};
 use strategy_tests::{
     operations::{
         DataContractUpdateAction::{DataContractNewDocumentTypes, DataContractNewOptionalFields},
@@ -197,19 +200,40 @@ fn display_strategy(
         }
     }
 
-    let times_per_block_display = if strategy.identities_inserts.times_per_block_range.end
-        > strategy.identities_inserts.times_per_block_range.start
+    let times_per_block_display = if strategy
+        .identities_inserts
+        .frequency
+        .times_per_block_range
+        .end
+        > strategy
+            .identities_inserts
+            .frequency
+            .times_per_block_range
+            .start
     {
-        strategy.identities_inserts.times_per_block_range.end - 1
+        strategy
+            .identities_inserts
+            .frequency
+            .times_per_block_range
+            .end
+            - 1
     } else {
-        strategy.identities_inserts.times_per_block_range.end
+        strategy
+            .identities_inserts
+            .frequency
+            .times_per_block_range
+            .end
     };
 
     let identity_inserts_line = format!(
-        "{:indent$}Times per block: {}; chance per block: {}\n",
+        "{:indent$}Times per block: 1..{}; chance per block: {}\n",
         "",
         times_per_block_display,
-        strategy.identities_inserts.chance_per_block.unwrap_or(0.0),
+        strategy
+            .identities_inserts
+            .frequency
+            .chance_per_block
+            .unwrap_or(0.0),
         indent = 8,
     );
 
@@ -223,7 +247,11 @@ fn display_strategy(
                     DocumentAction::DocumentActionReplace => "Replace".to_string(),
                     _ => panic!("invalid document action selected"),
                 };
-                format!("Document({})", op_type)
+                format!(
+                    "Document({}): Contract: {}",
+                    op_type,
+                    op.contract.id().to_string(Encoding::Base58)
+                )
             }
             OperationType::IdentityTopUp => "IdentityTopUp".to_string(),
             OperationType::IdentityUpdate(op) => format!("IdentityUpdate({:?})", op),
@@ -234,7 +262,11 @@ fn display_strategy(
                     DataContractNewDocumentTypes(_) => "NewDocTypesRandom".to_string(),
                     DataContractNewOptionalFields(..) => "NewFieldsRandom".to_string(),
                 };
-                format!("ContractUpdate({})", op_type)
+                format!(
+                    "ContractUpdate({}): Contract: {}",
+                    op_type,
+                    op.contract.id().to_string(Encoding::Base58)
+                )
             }
             OperationType::IdentityTransfer => "IdentityTransfer".to_string(),
         };
@@ -247,7 +279,7 @@ fn display_strategy(
             };
 
         operations_lines.push_str(&format!(
-            "{:indent$}{}; Times per block: {}, chance per block: {}\n",
+            "{:indent$}{}; Times per block: 1..{}, chance per block: {}\n",
             "",
             op_name,
             times_per_block_display,
@@ -264,7 +296,9 @@ fn display_strategy(
 {identity_inserts_line}
     Operations:
 {operations_lines}
-    Start identities: {}"#,
-        strategy.start_identities.number_of_identities
+    Start identities: {} (Keys: {}, Balance: {:.2} dash)"#,
+        strategy.start_identities.number_of_identities,
+        strategy.start_identities.keys_per_identity,
+        strategy.start_identities.starting_balances as f64 / 100_000_000.0,
     )
 }

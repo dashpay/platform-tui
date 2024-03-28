@@ -122,18 +122,39 @@ impl ScreenController for IdentityInsertsScreenController {
         let display_text = if let Some(strategy) = &self.selected_strategy {
             // Extracting times per block and chance per block from
             // strategy.identities_inserts
-            let times_per_block_display = if strategy.identities_inserts.times_per_block_range.end
-                > strategy.identities_inserts.times_per_block_range.start
+            let times_per_block_display = if strategy
+                .identities_inserts
+                .frequency
+                .times_per_block_range
+                .end
+                > strategy
+                    .identities_inserts
+                    .frequency
+                    .times_per_block_range
+                    .start
             {
-                strategy.identities_inserts.times_per_block_range.end - 1
+                strategy
+                    .identities_inserts
+                    .frequency
+                    .times_per_block_range
+                    .end
+                    - 1
             } else {
-                strategy.identities_inserts.times_per_block_range.end
+                strategy
+                    .identities_inserts
+                    .frequency
+                    .times_per_block_range
+                    .end
             };
 
             let identity_inserts_text = format!(
-                "Identity inserts:\nTimes per block: {}; Chance per block: {}",
+                "Identity inserts:\nTimes per block: 1..{}; Chance per block: {}",
                 times_per_block_display,
-                strategy.identities_inserts.chance_per_block.unwrap_or(0.0),
+                strategy
+                    .identities_inserts
+                    .frequency
+                    .chance_per_block
+                    .unwrap_or(0.0),
             );
 
             format!(

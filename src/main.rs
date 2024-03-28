@@ -10,7 +10,6 @@ use rs_platform_explorer::{
     Event,
 };
 use rs_sdk::{RequestSettings, SdkBuilder};
-use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() {
