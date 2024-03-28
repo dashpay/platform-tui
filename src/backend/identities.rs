@@ -78,7 +78,7 @@ pub enum IdentityTask {
 }
 
 impl AppState {
-    pub(crate) async fn run_identity_task(&self, sdk: &Sdk, task: IdentityTask) -> BackendEvent {
+    pub async fn run_identity_task(&self, sdk: &Sdk, task: IdentityTask) -> BackendEvent {
         match task {
             IdentityTask::RegisterIdentity(amount) => {
                 let result = self.register_new_identity(sdk, amount).await;
@@ -580,7 +580,7 @@ impl AppState {
 
         let identity_public_key = identity
             .get_first_public_key_matching(
-                KeyPurpose::WITHDRAW,
+                KeyPurpose::TRANSFER,
                 KeySecurityLevel::full_range().into(),
                 KeyType::all_key_types().into(),
             )
