@@ -33,7 +33,7 @@ use rs_sdk::{
 };
 use simple_signer::signer::SimpleSigner;
 use strategy_tests::{
-    frequency::Frequency, operations::{DocumentAction, DocumentOp, FinalizeBlockOperation, Operation, OperationType}, KeyMaps, IdentityInsertInfo, LocalDocumentQuery, StartIdentities, Strategy, StrategyConfig
+    frequency::Frequency, operations::{DocumentAction, DocumentOp, FinalizeBlockOperation, Operation, OperationType}, IdentityInsertInfo, LocalDocumentQuery, StartIdentities, Strategy, StrategyConfig
 };
 use tokio::sync::{Mutex, MutexGuard};
 use tracing::{error, info};
@@ -644,6 +644,9 @@ pub async fn run_strategy_task<'s>(
             }
         }
         StrategyTask::RunStrategy(strategy_name, num_blocks_or_seconds, verify_proofs, block_mode) => {
+
+            tracing::info!("-----Starting strategy '{}'-----", strategy_name);
+            
             // Fetch known_contracts from the chain to assure local copies match actual
             // state.
             match update_known_contracts(sdk, &app_state.known_contracts).await {
@@ -685,51 +688,6 @@ pub async fn run_strategy_task<'s>(
             // Get a mutable strategy because we need to modify some properties of contracts on updates
             let mut strategies_lock = app_state.available_strategies.lock().await;
             if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
-                info!("-----Starting strategy '{}'-----", strategy_name);
-                let run_start_time = Instant::now();
-
-                let drive_lock = app_state.drive.lock().await;
-                let identity_private_keys_lock = app_state.identity_private_keys.lock().await;
-
-                // Fetch known_contracts from the chain to assure local copies match actual
-                // state.
-                match update_known_contracts(sdk, &app_state.known_contracts).await {
-                    Ok(_) => {
-                        // nothing
-                    }
-                    Err(e) => {
-                        error!("Failed to update known contracts: {:?}", e);
-                        return BackendEvent::StrategyError {
-                            strategy_name: strategy_name.clone(),
-                            error: format!("Failed to update known contracts: {:?}", e),
-                        };
-                    }
-                };
-
-                let mut loaded_identity_lock = match app_state.refresh_identity(&sdk).await {
-                    Ok(lock) => lock,                
-                    Err(e) => {
-                        error!("Failed to refresh identity: {:?}", e);
-                        return BackendEvent::StrategyError {
-                            strategy_name: strategy_name.clone(),
-                            error: format!("Failed to refresh identity: {:?}", e),
-                        };
-                    }
-                };
-
-                // Access the loaded_wallet within the Mutex
-                let mut loaded_wallet_lock = app_state.loaded_wallet.lock().await;
-
-                // Refresh UTXOs for the loaded wallet
-                if let Some(ref mut wallet) = *loaded_wallet_lock {
-                    let _ = wallet.reload_utxos(insight).await;
-                }
-
-                let initial_balance_identity = loaded_identity_lock.balance();
-                let initial_balance_wallet = loaded_wallet_lock.clone().unwrap().balance();
-
-                drop(loaded_wallet_lock);
-
                 // Get block_info
                 // Get block info for the first block by sending a grpc request and looking at
                 // the metadata Retry up to MAX_RETRIES times
@@ -1273,7 +1231,7 @@ pub async fn run_strategy_task<'s>(
                                             );
                                             continue;
                                         }
-    
+
                                         // Extract the data contract ID from the transition
                                         let data_contract_id_option = match &transition {
                                             StateTransition::DocumentsBatch(DocumentsBatchTransition::V0(documents_batch)) => {
@@ -1290,18 +1248,18 @@ pub async fn run_strategy_task<'s>(
                                             // Handle other state transition types that involve data contracts here
                                             _ => None,
                                         };
-    
+
                                         let known_contracts_lock = app_state.known_contracts.lock().await;
-    
+
                                         let data_contract_clone = if let Some(data_contract_id) = data_contract_id_option {
                                             let data_contract_id_str = data_contract_id.to_string(Encoding::Base58);
                                             known_contracts_lock.get(&data_contract_id_str).cloned()
                                         } else {
                                             None
                                         };
-    
+
                                         drop(known_contracts_lock);
-    
+
                                         let wait_future = async move {
                                             let mut mode_string = String::new();
                                             if block_mode {
@@ -1319,7 +1277,7 @@ pub async fn run_strategy_task<'s>(
                                                     return None;
                                                 }
                                             };
-    
+
                                             match wait_result {
                                                 Ok(wait_response) => {
                                                     Some(if let Some(wait_for_state_transition_result_response::Version::V0(v0_response)) = &wait_response.version {
@@ -1330,7 +1288,7 @@ pub async fn run_strategy_task<'s>(
                                                                     index + 1, transition.name(), mode_string, index, metadata.height
                                                                 );    
                                                             }
-    
+
                                                             // Verification of the proof
                                                             if let Some(wait_for_state_transition_result_response_v0::Result::Proof(proof)) = &v0_response.result {
                                                                 if verify_proofs {
@@ -1368,7 +1326,7 @@ pub async fn run_strategy_task<'s>(
                                                                             sdk.version(),
                                                                         )
                                                                     };
-    
+
                                                                     match verified {
                                                                         Ok(_) => {
                                                                             info!("Successfully processed and verified proof for state transition {} ({}), {} {} (Actual block height: {})", index + 1, transition_type, mode_string, index, metadata.height);
@@ -1391,7 +1349,7 @@ pub async fn run_strategy_task<'s>(
                                                                                         false,
                                                                                         PlatformVersion::latest(),
                                                                                     );
-    
+
                                                                                 match data_contract_result {
                                                                                     Ok(data_contract) => {
                                                                                         let mut known_contracts_lock =
@@ -1420,7 +1378,7 @@ pub async fn run_strategy_task<'s>(
                                                                     }
                                                                 }
                                                             }
-    
+
                                                             // Log the Base58 encoded IDs of any created Identities
                                                             match transition.clone() {
                                                                 StateTransition::IdentityCreate(identity_create_transition) => {
@@ -1456,10 +1414,10 @@ pub async fn run_strategy_task<'s>(
                                     }
                                 }
                             }
-    
+
                             // Wait for all state transition result futures to complete
                             let wait_results = join_all(wait_futures).await;
-    
+
                             // Log the actual block height for each state transition
                             for (_, actual_block_height) in wait_results.into_iter().enumerate() {
                                 match actual_block_height {
