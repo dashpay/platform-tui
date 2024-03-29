@@ -29,7 +29,7 @@ use crate::{
 };
 
 pub struct IdentityBalance {
-    credits: u64,
+    pub credits: u64,
 }
 
 impl IdentityBalance {
@@ -149,6 +149,19 @@ impl Ui {
         {
             self.status_bar_state
                 .update_balance(IdentityBalance::from_credits(identity.balance()));
+            redraw = true;
+        }
+
+        // Identity cleared
+        if let Event::Backend(
+            BackendEvent::AppStateUpdated(AppStateUpdate::ClearedLoadedIdentity)
+            | BackendEvent::TaskCompletedStateChange {
+                app_state_update: AppStateUpdate::ClearedLoadedIdentity,
+                ..
+            },
+        ) = &event
+        {
+            self.status_bar_state.clear_balance();
             redraw = true;
         }
 

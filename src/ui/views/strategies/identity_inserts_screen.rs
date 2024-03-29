@@ -1,6 +1,7 @@
 //! Edit identity_inserts screen.
 
 use strategy_tests::Strategy;
+use tracing_subscriber::fmt::time;
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
     tui::prelude::Rect,
@@ -147,15 +148,29 @@ impl ScreenController for IdentityInsertsScreenController {
                     .end
             };
 
-            let identity_inserts_text = format!(
-                "Identity inserts:\nTimes per block: {}; Chance per block: {}",
-                times_per_block_display,
-                strategy
-                    .identities_inserts
-                    .frequency
-                    .chance_per_block
-                    .unwrap_or(0.0),
-            );
+            let mut identity_inserts_text = String::new();
+
+            if times_per_block_display == 0 {
+                identity_inserts_text = format!(
+                    "Identity inserts:\nTimes per block: {}; Chance per block: {}",
+                    times_per_block_display,
+                    strategy
+                        .identities_inserts
+                        .frequency
+                        .chance_per_block
+                        .unwrap_or(0.0),
+                );
+            } else {
+                identity_inserts_text = format!(
+                    "Identity inserts:\nTimes per block: {}; Chance per block: {}",
+                    times_per_block_display,
+                    strategy
+                        .identities_inserts
+                        .frequency
+                        .chance_per_block
+                        .unwrap_or(0.0),
+                );
+            }
 
             format!(
                 "Strategy: {}\n{}",

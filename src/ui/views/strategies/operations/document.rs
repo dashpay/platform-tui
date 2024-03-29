@@ -17,7 +17,7 @@ use strategy_tests::{
 use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
 use crate::{
-    backend::{StrategyTask, Task},
+    backend::{StrategyContractNames, StrategyTask, Task},
     ui::form::{ComposedInput, Field, FormController, FormStatus, Input, InputStatus, SelectInput},
 };
 
@@ -28,22 +28,39 @@ pub(super) struct StrategyOpDocumentFormController {
         Field<SelectInput<u16>>,
         Field<SelectInput<f64>>,
     )>,
-    selected_strategy: String,
+    selected_strategy_name: String,
     known_contracts: BTreeMap<String, DataContract>,
     supporting_contracts: BTreeMap<String, DataContract>,
     document_types: BTreeMap<String, DocumentType>,
+    strategy_contract_names: StrategyContractNames,
 }
 
 impl StrategyOpDocumentFormController {
     pub(super) fn new(
-        selected_strategy: String,
+        selected_strategy_name: String,
         known_contracts: BTreeMap<String, DataContract>,
         supporting_contracts: BTreeMap<String, DataContract>,
+        strategy_contract_names: StrategyContractNames,
     ) -> Self {
         // Collect known_contracts and supporting_contracts names for the form
         let mut contract_names: Vec<String> = known_contracts.keys().cloned().collect();
-        contract_names.extend(supporting_contracts.keys().cloned());
 
+        // Add only supporting contracts that are also in strategy_contract_names
+        for (supporting_contract_name, _) in supporting_contracts.iter() {
+            if strategy_contract_names.iter().any(|(name, _)| name == supporting_contract_name) {
+                contract_names.push(supporting_contract_name.clone());
+            }
+        }
+
+        // Flatten the nested structure of strategy_contract_names and add to contract_names
+        for (_, optional_map) in strategy_contract_names.iter() {
+            if let Some(map) = optional_map {
+                for (_, contract_name) in map.iter() {
+                    contract_names.push(contract_name.clone());
+                }
+            }
+        }
+        
         // Remove duplicates
         let contract_names: Vec<String> = contract_names
             .into_iter()
@@ -70,10 +87,11 @@ impl StrategyOpDocumentFormController {
                     SelectInput::new(vec![1.0, 0.75, 0.5, 0.25, 0.1]),
                 ),
             )),
-            selected_strategy,
+            selected_strategy_name,
             known_contracts,
             supporting_contracts,
             document_types: BTreeMap::new(),
+            strategy_contract_names,
         }
     }
 }
@@ -107,7 +125,7 @@ impl FormController for StrategyOpDocumentFormController {
 
                 FormStatus::Done {
                     task: Task::Strategy(StrategyTask::AddOperation {
-                        strategy_name: self.selected_strategy.clone(),
+                        strategy_name: self.selected_strategy_name.clone(),
                         operation: Operation {
                             op_type: OperationType::Document(DocumentOp {
                                 contract: selected_contract.clone(),

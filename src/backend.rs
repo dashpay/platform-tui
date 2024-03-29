@@ -8,7 +8,7 @@ pub mod identities;
 pub mod insight;
 pub mod platform_info;
 pub mod state;
-mod strategies;
+pub mod strategies;
 pub mod wallet;
 
 use std::{
@@ -132,6 +132,7 @@ pub(crate) enum AppStateUpdate<'s> {
     IdentityRegistrationProgressed, // TODO provide state update details
     LoadedIdentity(MappedMutexGuard<'s, Identity>),
     FailedToRefreshIdentity,
+    ClearedLoadedIdentity,
 }
 
 /// Represents the result of completing a strategy.

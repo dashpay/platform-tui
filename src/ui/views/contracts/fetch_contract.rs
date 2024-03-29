@@ -6,43 +6,42 @@ use tuirealm::{
     Frame,
 };
 
-use super::ContractsScreenController;
 use crate::{
-    backend::{BackendEvent, ContractTask, Task},
-    ui::screen::{
+    backend::{BackendEvent, Task},
+    ui::{form::{parsers::DefaultTextInputParser, FormController, FormStatus, Input, InputStatus, TextInput}, screen::{
         utils::impl_builder_no_args, widgets::info::Info, ScreenCommandKey, ScreenController,
         ScreenFeedback, ScreenToggleKey,
-    },
+    }},
     Event,
 };
+use crate::ui::views::contracts::ContractTask::FetchContract;
 
-const COMMAND_KEYS: [ScreenCommandKey; 3] = [
+const COMMAND_KEYS: [ScreenCommandKey; 2] = [
     ScreenCommandKey::new("q", "Back to Contracts"),
-    ScreenCommandKey::new("p", "Fetch Dashpay contract"),
-    ScreenCommandKey::new("n", "Fetch DPNS contract"),
+    ScreenCommandKey::new("f", "Fetch contract by ID"),
 ];
 
-pub(crate) struct FetchSystemContractScreenController {
+pub(crate) struct FetchContractScreenController {
     info: Info,
 }
 
-impl_builder_no_args!(FetchSystemContractScreenController);
+impl_builder_no_args!(FetchContractScreenController);
 
-impl FetchSystemContractScreenController {
+impl FetchContractScreenController {
     pub(crate) fn new() -> Self {
         Self {
-            info: Info::new_fixed("Fetch system contracts"),
+            info: Info::new_fixed("Fetch contracts"),
         }
     }
 }
 
-impl ScreenController for FetchSystemContractScreenController {
+impl ScreenController for FetchContractScreenController {
     fn view(&mut self, frame: &mut Frame, area: Rect) {
         self.info.view(frame, area)
     }
 
     fn name(&self) -> &'static str {
-        "System Contracts"
+        "Contracts"
     }
 
     fn command_keys(&self) -> &[ScreenCommandKey] {
@@ -61,20 +60,9 @@ impl ScreenController for FetchSystemContractScreenController {
             }) => ScreenFeedback::PreviousScreen,
 
             Event::Key(KeyEvent {
-                code: Key::Char('p'),
+                code: Key::Char('f'),
                 modifiers: KeyModifiers::NONE,
-            }) => ScreenFeedback::Task {
-                task: Task::Contract(ContractTask::FetchDashpayContract),
-                block: true,
-            },
-
-            Event::Key(KeyEvent {
-                code: Key::Char('n'),
-                modifiers: KeyModifiers::NONE,
-            }) => ScreenFeedback::Task {
-                task: Task::Contract(ContractTask::FetchDPNSContract),
-                block: true,
-            },
+            }) => ScreenFeedback::Form(Box::new(GetContractByIdFormController::new())),
 
             Event::Backend(
                 BackendEvent::TaskCompleted {
@@ -92,5 +80,49 @@ impl ScreenController for FetchSystemContractScreenController {
             }
             _ => ScreenFeedback::None,
         }
+    }
+}
+
+pub(crate) struct GetContractByIdFormController {
+    input: TextInput<DefaultTextInputParser<String>>, // TODO: b58 parser
+}
+
+impl GetContractByIdFormController {
+    fn new() -> Self {
+        Self {
+            input: TextInput::new("base58 id"),
+        }
+    }
+}
+
+impl FormController for GetContractByIdFormController {
+    fn on_event(&mut self, event: KeyEvent) -> FormStatus {
+        match self.input.on_event(event) {
+            InputStatus::Done(value) => FormStatus::Done {
+                task: Task::Contract(FetchContract(value)),
+                block: true,
+            },
+            status => status.into(),
+        }
+    }
+
+    fn step_view(&mut self, frame: &mut Frame, area: tuirealm::tui::prelude::Rect) {
+        self.input.view(frame, area);
+    }
+
+    fn form_name(&self) -> &'static str {
+        "Get Contract by ID"
+    }
+
+    fn step_name(&self) -> &'static str {
+        "Base 58 ID"
+    }
+
+    fn step_index(&self) -> u8 {
+        0
+    }
+
+    fn steps_number(&self) -> u8 {
+        1
     }
 }

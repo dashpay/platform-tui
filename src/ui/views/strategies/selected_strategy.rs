@@ -278,14 +278,25 @@ fn display_strategy(
                 op.frequency.times_per_block_range.end
             };
 
-        operations_lines.push_str(&format!(
-            "{:indent$}{}; Times per block: {}, chance per block: {}\n",
-            "",
-            op_name,
-            times_per_block_display,
-            op.frequency.chance_per_block.unwrap_or(0.0),
-            indent = 8
-        ));
+        if times_per_block_display == 0 {
+            operations_lines.push_str(&format!(
+                "{:indent$}{}; Times per block: {}, chance per block: {}\n",
+                "",
+                op_name,
+                times_per_block_display,
+                op.frequency.chance_per_block.unwrap_or(0.0),
+                indent = 8
+            ));
+        } else {
+            operations_lines.push_str(&format!(
+                "{:indent$}{}; Times per block: {}, chance per block: {}\n",
+                "",
+                op_name,
+                times_per_block_display,
+                op.frequency.chance_per_block.unwrap_or(0.0),
+                indent = 8
+            ));
+        }
     }
 
     let contracts_with_updates_len = strategy.contracts_with_updates.len();
@@ -301,7 +312,8 @@ fn display_strategy(
 {operations_lines}
     Start identities: {} (Keys: {}, Balance: {:.2} dash)"#,
         strategy.start_identities.number_of_identities,
-        strategy.start_identities.keys_per_identity,
+        strategy.start_identities.keys_per_identity
+            + strategy.start_identities.extra_keys.len() as u8,
         strategy.start_identities.starting_balances as f64 / 100_000_000.0,
     )
 }

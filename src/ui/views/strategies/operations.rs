@@ -25,7 +25,7 @@ use self::{
     identity_withdrawal::StrategyOpIdentityWithdrawalFormController,
 };
 use crate::{
-    backend::{StrategyTask, Task},
+    backend::{StrategyContractNames, StrategyTask, Task},
     ui::form::{FormController, FormStatus, Input, InputStatus, SelectInput},
 };
 
@@ -48,6 +48,7 @@ pub(super) struct StrategyAddOperationFormController {
     strategy_name: String,
     known_contracts: BTreeMap<String, DataContract>,
     supporting_contracts: BTreeMap<String, DataContract>,
+    strategy_contract_names: StrategyContractNames,
 }
 
 impl StrategyAddOperationFormController {
@@ -55,6 +56,7 @@ impl StrategyAddOperationFormController {
         strategy_name: String,
         known_contracts: BTreeMap<String, DataContract>,
         supporting_contracts: BTreeMap<String, DataContract>,
+        strategy_contract_names: StrategyContractNames,
     ) -> Self {
         let operation_types = vec![
             "Document".to_string(),
@@ -73,6 +75,7 @@ impl StrategyAddOperationFormController {
             strategy_name,
             known_contracts,
             supporting_contracts,
+            strategy_contract_names,
         }
     }
 
@@ -82,6 +85,7 @@ impl StrategyAddOperationFormController {
                 self.strategy_name.clone(),
                 self.known_contracts.clone(),
                 self.supporting_contracts.clone(),
+                self.strategy_contract_names.clone(),
             )),
             OperationType::IdentityTopUp => Box::new(StrategyOpIdentityTopUpFormController::new(
                 self.strategy_name.clone(),

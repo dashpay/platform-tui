@@ -159,10 +159,14 @@ impl ScreenController for OperationsScreenController {
                     // Update known contracts before showing the form
                     self.update_supporting_contracts_sync();
 
+                    let strategy_contract_names = self.strategy_contract_names.get(&strategy_name)
+                        .expect("Expected to get strategy contract names in operations screen");
+
                     ScreenFeedback::Form(Box::new(StrategyAddOperationFormController::new(
                         strategy_name.clone(),
                         self.known_contracts.clone(),
                         self.supporting_contracts.clone(),
+                        strategy_contract_names.to_vec(),
                     )))
                 } else {
                     ScreenFeedback::None
