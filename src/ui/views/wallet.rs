@@ -30,10 +30,11 @@ use crate::{
     Event,
 };
 
-const WALLET_LOADED_COMMANDS: [ScreenCommandKey; 3] = [
+const WALLET_LOADED_COMMANDS: [ScreenCommandKey; 4] = [
     ScreenCommandKey::new("b", "Refresh wallet utxos and balance"),
     ScreenCommandKey::new("c", "Copy Receive Address"),
     ScreenCommandKey::new("i", "Register identity"),
+    ScreenCommandKey::new("m", "Clear loaded wallet"),
 ];
 
 const IDENTITY_LOADED_COMMANDS: [ScreenCommandKey; 5] = [
@@ -393,6 +394,17 @@ impl ScreenController for WalletScreenController {
                 }
             }
 
+            Event::Key(KeyEvent {
+                code: Key::Char('m'),
+                modifiers: KeyModifiers::NONE,
+            }) if self.wallet_loaded => {
+                self.wallet_loaded = false;
+                ScreenFeedback::Task {
+                    task: Task::Wallet(WalletTask::ClearLoadedWallet),
+                    block: false,
+                }
+            }
+
             Event::Backend(
                 BackendEvent::AppStateUpdated(AppStateUpdate::LoadedWallet(wallet))
                 | BackendEvent::TaskCompletedStateChange {
@@ -418,9 +430,22 @@ impl ScreenController for WalletScreenController {
 
             Event::Backend(BackendEvent::TaskCompletedStateChange {
                 task: Task::Identity(IdentityTask::ClearLoadedIdentity),
-                execution_result,
+                execution_result: _,
                 app_state_update: AppStateUpdate::ClearedLoadedIdentity,
             }) => {
+                self.identity_info = Info::new_fixed("");
+                self.identity_loaded = false;
+                ScreenFeedback::Redraw
+            }
+
+            Event::Backend(BackendEvent::TaskCompletedStateChange {
+                task: Task::Wallet(WalletTask::ClearLoadedWallet),
+                execution_result: _,
+                app_state_update: AppStateUpdate::ClearedLoadedWallet,
+            }) => {
+                self.wallet_info =
+                    Info::new_fixed("Wallet management commands\n\nNo wallet loaded yet");
+                self.wallet_loaded = false;
                 self.identity_info = Info::new_fixed("");
                 self.identity_loaded = false;
                 ScreenFeedback::Redraw

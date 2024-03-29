@@ -133,6 +133,7 @@ pub(crate) enum AppStateUpdate<'s> {
     LoadedIdentity(MappedMutexGuard<'s, Identity>),
     FailedToRefreshIdentity,
     ClearedLoadedIdentity,
+    ClearedLoadedWallet,
 }
 
 /// Represents the result of completing a strategy.

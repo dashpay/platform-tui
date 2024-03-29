@@ -42,7 +42,7 @@ const COMMAND_KEYS: [ScreenCommandKey; 5] = [
     ScreenCommandKey::new("a", "Add"),
     ScreenCommandKey::new("r", "Remove last"),
     ScreenCommandKey::new("c", "Clear all"),
-    ScreenCommandKey::new("d", "Register documents to all contracts"),
+    ScreenCommandKey::new("x", "Register x documents to all contracts"),
 ];
 
 pub struct OperationsScreenController {
@@ -159,7 +159,9 @@ impl ScreenController for OperationsScreenController {
                     // Update known contracts before showing the form
                     self.update_supporting_contracts_sync();
 
-                    let strategy_contract_names = self.strategy_contract_names.get(&strategy_name)
+                    let strategy_contract_names = self
+                        .strategy_contract_names
+                        .get(&strategy_name)
                         .expect("Expected to get strategy contract names in operations screen");
 
                     ScreenFeedback::Form(Box::new(StrategyAddOperationFormController::new(
@@ -195,7 +197,7 @@ impl ScreenController for OperationsScreenController {
                 }
             }
             Event::Key(KeyEvent {
-                code: Key::Char('d'),
+                code: Key::Char('x'),
                 modifiers: KeyModifiers::NONE,
             }) => {
                 if let Some(strategy_name) = self.strategy_name.clone() {

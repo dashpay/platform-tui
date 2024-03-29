@@ -21,7 +21,7 @@ use dpp::dashcore::{
 use rand::{prelude::StdRng, Rng, SeedableRng};
 use tokio::sync::{Mutex, MutexGuard};
 
-use super::{AppStateUpdate, BackendEvent, Task};
+use super::{AppStateUpdate, BackendEvent, CompletedTaskPayload, Task};
 use crate::backend::insight::{InsightAPIClient, InsightError};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -29,6 +29,7 @@ pub enum WalletTask {
     AddByPrivateKey(String),
     Refresh,
     CopyAddress,
+    ClearLoadedWallet,
 }
 
 pub(super) async fn run_wallet_task<'s>(
@@ -105,6 +106,17 @@ pub(super) async fn run_wallet_task<'s>(
                 }
             } else {
                 BackendEvent::None
+            }
+        }
+        WalletTask::ClearLoadedWallet => {
+            let mut wallet_guard = wallet_state.lock().await;
+            *wallet_guard = None;
+            BackendEvent::TaskCompletedStateChange {
+                task: Task::Wallet(task),
+                execution_result: Ok(CompletedTaskPayload::String(
+                    "Cleared loaded wallet".to_string(),
+                )),
+                app_state_update: AppStateUpdate::ClearedLoadedWallet,
             }
         }
     }

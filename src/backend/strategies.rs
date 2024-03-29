@@ -644,7 +644,6 @@ pub async fn run_strategy_task<'s>(
             }
         }
         StrategyTask::RunStrategy(strategy_name, num_blocks_or_seconds, verify_proofs, block_mode) => {
-
             tracing::info!("-----Starting strategy '{}'-----", strategy_name);
             
             // Fetch known_contracts from the chain to assure local copies match actual
@@ -985,7 +984,7 @@ pub async fn run_strategy_task<'s>(
                     // Log if you are creating start_identities, because the asset lock proofs take a while
                     if current_block_info.height == initial_block_info.height && strategy.start_identities.number_of_identities > 0 {
                         info!(
-                            "Creating {} asset lock proofs for start identities...",
+                            "Creating {} asset lock proofs for start identities (takes 20-30 seconds for each)...",
                             strategy.start_identities.number_of_identities
                         );
                     }
@@ -1102,6 +1101,7 @@ pub async fn run_strategy_task<'s>(
                                                     Ok(wait_response) => {
                                                         if let Some(wait_for_state_transition_result_response::Version::V0(v0_response)) = &wait_response.version {
                                                             if let Some(metadata) = &v0_response.metadata {
+                                                                success_count += 1;
                                                                 if !verify_proofs {
                                                                     info!("Successfully processed state transition {} ({}) for {} {} (Actual block height: {})", st_queue_index, transition_type, mode_string, index, metadata.height);
                                                                 }
@@ -1122,7 +1122,7 @@ pub async fn run_strategy_task<'s>(
                                                                                 },
                                                                                 proof.grovedb_proof.as_slice(),
                                                                                 &|_| Ok(None),
-                                                                                sdk.version(),
+                                                                                sdk.version(),                                                            
                                                                             );
                                                                             match verified {
                                                                                 Ok(_) => {
@@ -1136,18 +1136,11 @@ pub async fn run_strategy_task<'s>(
                                                                     }
                                                                     _ => {}
                                                                 }
-                                                            } else {
-                                                                if let Some(result) = &v0_response.result {
-                                                                    match result {
-                                                                        wait_for_state_transition_result_response_v0::Result::Error(e) => tracing::error!("{:?}", e),
-                                                                        wait_for_state_transition_result_response_v0::Result::Proof(_) => tracing::info!("Proof received but no metadata present so we can't verify it."),
-                                                                    }
-                                                                }
+
+                                                                // Sleep because we need to give the chain state time to update revisions
+                                                                // It seems this is only necessary for certain STs. Like AddKeys and DisableKeys seem to need it, but Transfer does not. Not sure about Withdraw or ContractUpdate yet.
+                                                                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
                                                             }
-                                                          
-                                                            // Sleep because we need to give the chain state time to update revisions
-                                                            // It seems this is only necessary for certain STs. Like AddKeys and DisableKeys seem to need it, but Transfer does not. Not sure about Withdraw or ContractUpdate yet.
-                                                            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
                                                         } else {
                                                             info!("Response version other than V0 received or absent for state transition {} ({})", st_queue_index, transition_type);
                                                         }

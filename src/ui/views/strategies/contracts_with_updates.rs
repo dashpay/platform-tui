@@ -159,7 +159,7 @@ impl RandomContractsFormController {
                 ),
                 Field::new(
                     "Select the number of variants to create",
-                    SelectInput::new(vec![5, 10, 20, 50, 100]),
+                    SelectInput::new(vec![3, 5, 10, 15, 20, 24]),
                 ),
             )),
         }
