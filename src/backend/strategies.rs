@@ -38,11 +38,12 @@ use strategy_tests::{
 use tokio::sync::{Mutex, MutexGuard};
 use tracing::{error, info};
 
+use crate::backend::{wallet::SingleKeyWallet, Wallet};
+
 use super::{
     insight::InsightAPIClient, state::{ContractFileName, KnownContractsMap}, AppState, AppStateUpdate,
     BackendEvent, StrategyCompletionResult, StrategyContractNames,
 };
-use crate::backend::Wallet;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum StrategyTask {
@@ -645,9 +646,8 @@ pub async fn run_strategy_task<'s>(
         }
         StrategyTask::RunStrategy(strategy_name, num_blocks_or_seconds, verify_proofs, block_mode) => {
             tracing::info!("-----Starting strategy '{}'-----", strategy_name);
-            
-            // Fetch known_contracts from the chain to assure local copies match actual
-            // state.
+
+            // Fetch known_contracts from the chain to assure local copies match actual state.
             match update_known_contracts(sdk, &app_state.known_contracts).await {
                 Ok(_) => {
                     // nothing
@@ -888,70 +888,50 @@ pub async fn run_strategy_task<'s>(
                         }
                     };
 
-                // Callback used for creating asset locks for identity create and top up transitions
-                let mut create_asset_lock = {
-                    let insight_ref = insight.clone();
-
-                    move |amount: u64| -> Option<(AssetLockProof, PrivateKey)> {
-                        tokio::task::block_in_place(|| {
-                            let rt = tokio::runtime::Handle::current();
-                            rt.block_on(async {
-                                let mut wallet_lock = app_state.loaded_wallet.lock().await;
-                                if let Some(ref mut wallet) = *wallet_lock {
-                                    // Initialize old_utxos
-                                    let old_utxos = match wallet {
-                                        Wallet::SingleKeyWallet(ref wallet) => wallet.utxos.clone(),
-                                    };
-
-                                    // Handle asset lock transaction
-                                    match wallet.asset_lock_transaction(None, amount) {
-                                        Ok((asset_lock_transaction, asset_lock_proof_private_key)) => {
-                                            // Use sdk_ref_clone for broadcasting and retrieving asset lock
-                                            match AppState::broadcast_and_retrieve_asset_lock(&sdk, &asset_lock_transaction, &wallet.receive_address()).await {
-                                                Ok(proof) => {
-                                                    // Check for new UTXOs in the wallet
-                                                    let max_retries = 25;
-                                                    let mut retries = 0;
-                                                    let mut found_new_utxos = false;
-                                                    while retries < max_retries {
-                                                        let _ = wallet.reload_utxos(&insight_ref).await;
-                                                        // Check if new UTXOs are available and if UTXO list is not empty
-                                                        let current_utxos = match wallet {
-                                                            Wallet::SingleKeyWallet(ref wallet) => &wallet.utxos,
-                                                        };
-                                                        if current_utxos != &old_utxos && !current_utxos.is_empty() {
-                                                            found_new_utxos = true;
-                                                            break;
-                                                        } else {
-                                                            retries += 1;
-                                                            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-                                                        }
-                                                    }
-                                                    if !found_new_utxos {
-                                                        error!("Failed to find new UTXOs after maximum retries");
-                                                        return None;
-                                                    }
-                                                    Some((proof, asset_lock_proof_private_key))
-                                                },
-                                                Err(e) => {
-                                                    error!("Error broadcasting asset lock transaction: {:?}", e);
-                                                    None
-                                                }
-                                            }
-                                        },
-                                        Err(e) => {
-                                            error!("Error creating asset lock transaction: {:?}", e);
-                                            None
-                                        }
-                                    }
-                                } else {
-                                    error!("Wallet not loaded");
-                                    None
-                                }
-                            })
-                        })
+                // Create asset lock proofs for all the identity creates and top ups
+                let num_identity_inserts = (strategy.identities_inserts.frequency.times_per_block_range.end - 1) as u64;
+                let num_start_identities = strategy.start_identities.number_of_identities as u64;
+                let mut num_top_ups: u64 = 0;
+                for operation in &strategy.operations {
+                    if operation.op_type == OperationType::IdentityTopUp {
+                        num_top_ups += (operation.frequency.times_per_block_range.end - 1) as u64;
                     }
+                }
+                let num_asset_lock_proofs_needed = num_identity_inserts * num_blocks_or_seconds + num_start_identities + num_top_ups;
+                let mut asset_lock_proofs: Vec<(AssetLockProof, PrivateKey)> = Vec::new();
+                let mut wallet_lock = app_state.loaded_wallet.lock().await;
+                let num_available_utxos = match wallet_lock.clone().expect("No wallet loaded while getting asset lock proofs") {
+                    Wallet::SingleKeyWallet(SingleKeyWallet { utxos, .. }) => utxos.len(),
                 };
+                if num_available_utxos < num_asset_lock_proofs_needed.try_into().expect("Couldn't convert num_asset_lock_proofs_needed into usize") {
+                    // obtain more utxos
+                }
+                tracing::info!("Obtaining {num_asset_lock_proofs_needed} asset lock proofs for the strategy...");
+                let asset_lock_proof_time = Instant::now();
+                let mut num_asset_lock_proofs_obtained = 0;
+                for i in 0..(num_asset_lock_proofs_needed) {
+                    if let Some(wallet) = wallet_lock.as_mut() {
+                        match wallet.asset_lock_transaction(None, 2_000_000) {
+                            Ok((asset_lock_transaction, asset_lock_proof_private_key)) => {
+                                match AppState::broadcast_and_retrieve_asset_lock(sdk, &asset_lock_transaction, &wallet.receive_address()).await {
+                                    Ok(asset_lock_proof) => {
+                                        tracing::info!("Got {} asset lock proofs", i+1);
+                                        num_asset_lock_proofs_obtained += 1;
+                                        asset_lock_proofs.push((asset_lock_proof, asset_lock_proof_private_key));
+                                    },
+                                    Err(e) => tracing::error!("Error broadcasting and retrieving asset lock: {:?}", e),
+                                }
+                            },
+                            Err(e) => {
+                                tracing::error!("Error creating asset lock transaction: {:?}", e)
+                            },
+                        }
+                    } else {
+                        tracing::error!("Wallet not loaded");
+                    }
+                }
+                tracing::info!("Took {} seconds to obtain {} asset lock proofs", asset_lock_proof_time.elapsed().as_secs(), num_asset_lock_proofs_obtained);
+                drop(wallet_lock);
 
                 // Get the execution mode as a string for logging
                 let mut mode_string = String::new();
@@ -959,7 +939,7 @@ pub async fn run_strategy_task<'s>(
                     mode_string.push_str("block");
                 } else {
                     mode_string.push_str("second");
-                }                
+                }
 
                 // Some final initialization
                 let mut rng = StdRng::from_entropy(); // Will be passed to state_transitions_for_block
@@ -997,7 +977,7 @@ pub async fn run_strategy_task<'s>(
                         .state_transitions_for_block(
                             &mut document_query_callback,
                             &mut identity_fetch_callback,
-                            &mut create_asset_lock,
+                            &mut asset_lock_proofs,
                             &current_block_info,
                             &mut current_identities,
                             &mut known_contracts_lock,
