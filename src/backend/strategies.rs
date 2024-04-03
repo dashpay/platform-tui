@@ -701,6 +701,7 @@ pub async fn run_strategy_task<'s>(
                         }
                     } else {
                         tracing::error!("Wallet not loaded");
+                        return BackendEvent::StrategyError { strategy_name: strategy_name, error: "No wallet loaded".to_string() }
                     }
                 }
                 tracing::info!("Took {} seconds to obtain {} asset lock proofs", asset_lock_proof_time.elapsed().as_secs(), num_asset_lock_proofs_obtained);
