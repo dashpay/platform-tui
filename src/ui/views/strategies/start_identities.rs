@@ -4,13 +4,16 @@ use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
 use crate::{
     backend::{StrategyTask, Task},
-    ui::form::{ComposedInput, Field, FormController, FormStatus, Input, InputStatus, SelectInput},
+    ui::form::{
+        parsers::DefaultTextInputParser, ComposedInput, Field, FormController, FormStatus, Input,
+        InputStatus, SelectInput, TextInput,
+    },
 };
 
 pub(super) struct StrategyStartIdentitiesFormController {
     input: ComposedInput<(
-        Field<SelectInput<u8>>,
-        Field<SelectInput<u8>>,
+        Field<TextInput<DefaultTextInputParser<u8>>>,
+        Field<TextInput<DefaultTextInputParser<u8>>>,
         Field<SelectInput<String>>,
     )>,
     selected_strategy: String,
@@ -22,11 +25,11 @@ impl StrategyStartIdentitiesFormController {
             input: ComposedInput::new((
                 Field::new(
                     "Number of identities",
-                    SelectInput::new(vec![1, 2, 3, 5, 10, 100]),
+                    TextInput::new("Enter a whole number"),
                 ),
                 Field::new(
-                    "Keys per identity",
-                    SelectInput::new(vec![3, 4, 5, 10, 15, 20, 32]),
+                    "Keys per identity (min 3, max 32)",
+                    TextInput::new("Enter a whole number"),
                 ),
                 Field::new(
                     "Add transfer key?",
@@ -71,7 +74,7 @@ impl FormController for StrategyStartIdentitiesFormController {
     }
 
     fn form_name(&self) -> &'static str {
-        "Identity inserts for strategy"
+        "Start identities for strategy"
     }
 
     fn step_view(&mut self, frame: &mut Frame, area: Rect) {

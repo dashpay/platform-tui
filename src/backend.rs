@@ -209,8 +209,13 @@ impl<'a> Backend<'a> {
                 .await
             }
             Task::Wallet(wallet_task) => {
-                wallet::run_wallet_task(&self.app_state.loaded_wallet, wallet_task, &self.insight)
-                    .await
+                wallet::run_wallet_task(
+                    self.sdk,
+                    &self.app_state.loaded_wallet,
+                    wallet_task,
+                    &self.insight,
+                )
+                .await
             }
             Task::Contract(contract_task) => {
                 contracts::run_contract_task(

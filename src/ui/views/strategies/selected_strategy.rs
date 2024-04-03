@@ -183,20 +183,23 @@ fn display_strategy(
     contract_updates: &[(String, Option<BTreeMap<u64, String>>)],
 ) -> String {
     let mut contracts_with_updates_lines = String::new();
-    for (contract, updates) in contract_updates.iter() {
-        contracts_with_updates_lines.push_str(&format!(
-            "{:indent$}Contract: {contract}\n",
-            "",
-            indent = 8
-        ));
-        for (block, update) in updates.iter().flatten() {
-            let block = block + 1;
-            let block_spacing = (block - 1) * 3;
+    // Only display the individual contract details in this screen if the number is less than 5
+    if contract_updates.len() <= 5 {
+        for (contract, updates) in contract_updates.iter() {
             contracts_with_updates_lines.push_str(&format!(
-                "{:indent$}On block {block_spacing} apply {update}\n",
+                "{:indent$}Contract: {contract}\n",
                 "",
-                indent = 12
+                indent = 8
             ));
+            for (block, update) in updates.iter().flatten() {
+                let block = block + 1;
+                let block_spacing = (block - 1) * 3;
+                contracts_with_updates_lines.push_str(&format!(
+                    "{:indent$}On block {block_spacing} apply {update}\n",
+                    "",
+                    indent = 12
+                ));
+            }
         }
     }
 
@@ -238,64 +241,70 @@ fn display_strategy(
     );
 
     let mut operations_lines = String::new();
-    for op in strategy.operations.iter() {
-        let op_name = match op.op_type.clone() {
-            OperationType::Document(op) => {
-                let op_type = match op.action {
-                    DocumentAction::DocumentActionInsertRandom(..) => "InsertRandom".to_string(),
-                    DocumentAction::DocumentActionDelete => "Delete".to_string(),
-                    DocumentAction::DocumentActionReplace => "Replace".to_string(),
-                    _ => panic!("invalid document action selected"),
-                };
-                format!(
-                    "Document({}): Contract: {}",
-                    op_type,
-                    op.contract.id().to_string(Encoding::Base58)
-                )
-            }
-            OperationType::IdentityTopUp => "IdentityTopUp".to_string(),
-            OperationType::IdentityUpdate(op) => format!("IdentityUpdate({:?})", op),
-            OperationType::IdentityWithdrawal => "IdentityWithdrawal".to_string(),
-            OperationType::ContractCreate(..) => "ContractCreateRandom".to_string(),
-            OperationType::ContractUpdate(op) => {
-                let op_type = match op.action {
-                    DataContractNewDocumentTypes(_) => "NewDocTypesRandom".to_string(),
-                    DataContractNewOptionalFields(..) => "NewFieldsRandom".to_string(),
-                };
-                format!(
-                    "ContractUpdate({}): Contract: {}",
-                    op_type,
-                    op.contract.id().to_string(Encoding::Base58)
-                )
-            }
-            OperationType::IdentityTransfer => "IdentityTransfer".to_string(),
-        };
+    // Only display the individual operation details in this screen if the number is less than 5
+    if strategy.operations.len() <= 5 {
+        for op in strategy.operations.iter() {
+            let op_name = match op.op_type.clone() {
+                OperationType::Document(op) => {
+                    let op_type = match op.action {
+                        DocumentAction::DocumentActionInsertRandom(..) => {
+                            "InsertRandom".to_string()
+                        }
+                        DocumentAction::DocumentActionDelete => "Delete".to_string(),
+                        DocumentAction::DocumentActionReplace => "Replace".to_string(),
+                        _ => panic!("invalid document action selected"),
+                    };
+                    format!(
+                        "Document({}): Contract: {}",
+                        op_type,
+                        op.contract.id().to_string(Encoding::Base58)
+                    )
+                }
+                OperationType::IdentityTopUp => "IdentityTopUp".to_string(),
+                OperationType::IdentityUpdate(op) => format!("IdentityUpdate({:?})", op),
+                OperationType::IdentityWithdrawal => "IdentityWithdrawal".to_string(),
+                OperationType::ContractCreate(..) => "ContractCreateRandom".to_string(),
+                OperationType::ContractUpdate(op) => {
+                    let op_type = match op.action {
+                        DataContractNewDocumentTypes(_) => "NewDocTypesRandom".to_string(),
+                        DataContractNewOptionalFields(..) => "NewFieldsRandom".to_string(),
+                    };
+                    format!(
+                        "ContractUpdate({}): Contract: {}",
+                        op_type,
+                        op.contract.id().to_string(Encoding::Base58)
+                    )
+                }
+                OperationType::IdentityTransfer => "IdentityTransfer".to_string(),
+            };
 
-        let times_per_block_display =
-            if op.frequency.times_per_block_range.end > op.frequency.times_per_block_range.start {
+            let times_per_block_display = if op.frequency.times_per_block_range.end
+                > op.frequency.times_per_block_range.start
+            {
                 op.frequency.times_per_block_range.end - 1
             } else {
                 op.frequency.times_per_block_range.end
             };
 
-        if times_per_block_display == 0 {
-            operations_lines.push_str(&format!(
-                "{:indent$}{}; Times per block: {}, chance per block: {}\n",
-                "",
-                op_name,
-                times_per_block_display,
-                op.frequency.chance_per_block.unwrap_or(0.0),
-                indent = 8
-            ));
-        } else {
-            operations_lines.push_str(&format!(
-                "{:indent$}{}; Times per block: {}, chance per block: {}\n",
-                "",
-                op_name,
-                times_per_block_display,
-                op.frequency.chance_per_block.unwrap_or(0.0),
-                indent = 8
-            ));
+            if times_per_block_display == 0 {
+                operations_lines.push_str(&format!(
+                    "{:indent$}{}; Times per block: {}, chance per block: {}\n",
+                    "",
+                    op_name,
+                    times_per_block_display,
+                    op.frequency.chance_per_block.unwrap_or(0.0),
+                    indent = 8
+                ));
+            } else {
+                operations_lines.push_str(&format!(
+                    "{:indent$}{}; Times per block: {}, chance per block: {}\n",
+                    "",
+                    op_name,
+                    times_per_block_display,
+                    op.frequency.chance_per_block.unwrap_or(0.0),
+                    indent = 8
+                ));
+            }
         }
     }
 

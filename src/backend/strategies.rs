@@ -646,6 +646,8 @@ pub async fn run_strategy_task<'s>(
         }
         StrategyTask::RunStrategy(strategy_name, num_blocks_or_seconds, verify_proofs, block_mode) => {
             tracing::info!("-----Starting strategy '{}'-----", strategy_name);
+            let init_start_time = Instant::now(); // Start time of strategy initialization plus execution of first block
+            let mut init_time = Duration::new(0, 0); // Will set this to the time it takes for all initialization plus the first block to complete
 
             // Fetch known_contracts from the chain to assure local copies match actual state.
             match update_known_contracts(sdk, &app_state.known_contracts).await {
@@ -889,12 +891,12 @@ pub async fn run_strategy_task<'s>(
                     };
 
                 // Create asset lock proofs for all the identity creates and top ups
-                let num_identity_inserts = (strategy.identities_inserts.frequency.times_per_block_range.end - 1) as u64;
+                let num_identity_inserts = (strategy.identities_inserts.frequency.times_per_block_range.start) as u64;
                 let num_start_identities = strategy.start_identities.number_of_identities as u64;
                 let mut num_top_ups: u64 = 0;
                 for operation in &strategy.operations {
                     if operation.op_type == OperationType::IdentityTopUp {
-                        num_top_ups += (operation.frequency.times_per_block_range.end - 1) as u64;
+                        num_top_ups += (operation.frequency.times_per_block_range.start) as u64;
                     }
                 }
                 let num_asset_lock_proofs_needed = num_identity_inserts * num_blocks_or_seconds + num_start_identities + num_top_ups;
@@ -904,7 +906,13 @@ pub async fn run_strategy_task<'s>(
                     Wallet::SingleKeyWallet(SingleKeyWallet { utxos, .. }) => utxos.len(),
                 };
                 if num_available_utxos < num_asset_lock_proofs_needed.try_into().expect("Couldn't convert num_asset_lock_proofs_needed into usize") {
-                    // obtain more utxos
+                    match wallet_lock.clone().expect("No wallet loaded while getting asset lock proofs") {
+                        Wallet::SingleKeyWallet(mut wallet) => {
+                            if let Err(e) = wallet.split_utxos(sdk, num_asset_lock_proofs_needed.try_into().unwrap()).await {
+                                tracing::error!("Error splitting utxos for asset lock proofs: {}", e);
+                            };
+                        },
+                    }
                 }
                 tracing::info!("Obtaining {num_asset_lock_proofs_needed} asset lock proofs for the strategy...");
                 let asset_lock_proof_time = Instant::now();
@@ -947,8 +955,6 @@ pub async fn run_strategy_task<'s>(
                 let mut transition_count = 0; // Used for logging how many transitions we attempted
                 let mut success_count = 0; // Used for logging how many transitions were successful
                 let mut load_start_time = Instant::now(); // Time when the load test begins (all blocks after the first/init block)
-                let init_start_time = Instant::now(); // Time when the init block begins (first block)
-                let mut init_time = Duration::new(0, 0); // Will set this to the time it took the first block to execute
                 let mut index = 1; // Index of the loop iteration. Represents blocks for block mode and seconds for time mode
                 let oks = Arc::new(AtomicUsize::new(0)); // Atomic counter for successful broadcasts
                 let errs = Arc::new(AtomicUsize::new(0)); // Atomic counter for failed broadcasts
@@ -1490,8 +1496,8 @@ pub async fn run_strategy_task<'s>(
                 }
 
                 // Make sure we don't divide by 0 when we determine the tx/s rate
-                let mut load_run_time = 1;
-                if (load_execution_run_time.as_secs() - 1) > 1 {
+                let mut load_run_time = 2;
+                if (load_execution_run_time.as_secs()) > 2 {
                     load_run_time = load_execution_run_time.as_secs();
                 }                                
 

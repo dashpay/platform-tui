@@ -30,10 +30,11 @@ use crate::{
     Event,
 };
 
-const WALLET_LOADED_COMMANDS: [ScreenCommandKey; 4] = [
+const WALLET_LOADED_COMMANDS: [ScreenCommandKey; 5] = [
     ScreenCommandKey::new("b", "Refresh wallet utxos and balance"),
     ScreenCommandKey::new("c", "Copy Receive Address"),
     ScreenCommandKey::new("i", "Register identity"),
+    ScreenCommandKey::new("u", "Get more utxos"),
     ScreenCommandKey::new("m", "Clear loaded wallet"),
 ];
 
@@ -356,6 +357,11 @@ impl ScreenController for WalletScreenController {
             }) => ScreenFeedback::Form(Box::new(RegisterIdentityFormController::new())),
 
             Event::Key(KeyEvent {
+                code: Key::Char('u'),
+                modifiers: KeyModifiers::NONE,
+            }) => ScreenFeedback::Form(Box::new(SplitUTXOsFormController::new())),
+
+            Event::Key(KeyEvent {
                 code: Key::Char('t'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::Form(Box::new(TopUpIdentityFormController::new())),
@@ -522,6 +528,50 @@ impl FormController for AddWalletPrivateKeyFormController {
 
     fn step_name(&self) -> &'static str {
         "Private key"
+    }
+
+    fn step_index(&self) -> u8 {
+        0
+    }
+
+    fn steps_number(&self) -> u8 {
+        1
+    }
+}
+
+struct SplitUTXOsFormController {
+    input: TextInput<DefaultTextInputParser<u32>>,
+}
+
+impl SplitUTXOsFormController {
+    fn new() -> Self {
+        Self {
+            input: TextInput::new("Enter the number of UTXOs you want the wallet to have"),
+        }
+    }
+}
+
+impl FormController for SplitUTXOsFormController {
+    fn on_event(&mut self, event: KeyEvent) -> FormStatus {
+        match self.input.on_event(event) {
+            InputStatus::Done(count) => FormStatus::Done {
+                task: Task::Wallet(WalletTask::SplitUTXOs(count)),
+                block: true,
+            },
+            status => status.into(),
+        }
+    }
+
+    fn form_name(&self) -> &'static str {
+        "Split wallet UTXOs"
+    }
+
+    fn step_view(&mut self, frame: &mut Frame, area: Rect) {
+        self.input.view(frame, area)
+    }
+
+    fn step_name(&self) -> &'static str {
+        "Desired number"
     }
 
     fn step_index(&self) -> u8 {
