@@ -36,7 +36,6 @@ use strategy_tests::{
     frequency::Frequency, operations::{DocumentAction, DocumentOp, FinalizeBlockOperation, Operation, OperationType}, IdentityInsertInfo, LocalDocumentQuery, StartIdentities, Strategy, StrategyConfig
 };
 use tokio::sync::{Mutex, MutexGuard};
-use tracing::{error, info};
 
 use crate::backend::{wallet::SingleKeyWallet, Wallet};
 
@@ -157,23 +156,23 @@ pub async fn run_strategy_task<'s>(
                                         ))
                                     },
                                     Err(e) => {
-                                        error!("Failed to deserialize strategy: {}", e);
+                                        tracing::error!("Failed to deserialize strategy: {}", e);
                                         BackendEvent::None
                                     }
                                 }
                             },
                             Err(e) => {
-                                error!("Failed to fetch strategy data: {}", e);
+                                tracing::error!("Failed to fetch strategy data: {}", e);
                                 BackendEvent::None
                             }
                         }
                     } else {
-                        error!("Failed to fetch strategy: HTTP {}", response.status());
+                        tracing::error!("Failed to fetch strategy: HTTP {}", response.status());
                         BackendEvent::None
                     }
                 },
                 Err(e) => {
-                    error!("Failed to fetch strategy: {}", e);
+                    tracing::error!("Failed to fetch strategy: {}", e);
                     BackendEvent::None
                 }
             }
@@ -192,18 +191,18 @@ pub async fn run_strategy_task<'s>(
                     match File::create(&path) {
                         Ok(mut file) => {
                             if let Err(e) = file.write_all(&binary_data) {
-                                error!("Failed to write strategy to file: {}", e);
+                                tracing::error!("Failed to write strategy to file: {}", e);
                             }
                             BackendEvent::None
                         },
                         Err(e) => {
-                            error!("Failed to create file: {}", e);
+                            tracing::error!("Failed to create file: {}", e);
                             BackendEvent::None
                         }
                     }
                 },
                 Err(e) => {
-                    error!("Failed to serialize strategy: {}", e);
+                    tracing::error!("Failed to serialize strategy: {}", e);
                     BackendEvent::None
                 }
             }
@@ -336,7 +335,7 @@ pub async fn run_strategy_task<'s>(
                                                     .insert(order as u64, created_update_contract);
                                             }
                                             Err(e) => {
-                                                error!(
+                                                tracing::error!(
                                                     "Error converting DataContract to \
                                                      CreatedDataContract for update: {:?}",
                                                     e
@@ -356,7 +355,7 @@ pub async fn run_strategy_task<'s>(
                                 ));
                             }
                             Err(e) => {
-                                error!(
+                                tracing::error!(
                                     "Error converting DataContract to CreatedDataContract: {:?}",
                                     e
                                 );
@@ -418,7 +417,7 @@ pub async fn run_strategy_task<'s>(
                 let loaded_identity_lock = match app_state.refresh_identity(&sdk).await {
                     Ok(lock) => lock,
                     Err(e) => {
-                        error!("Failed to refresh identity: {:?}", e);
+                        tracing::error!("Failed to refresh identity: {:?}", e);
                         return BackendEvent::StrategyError {
                             strategy_name: strategy_name.clone(),
                             error: format!("Failed to refresh identity: {:?}", e),
@@ -655,7 +654,7 @@ pub async fn run_strategy_task<'s>(
                     // nothing
                 },
                 Err(e) => {
-                    error!("Failed to update known contracts: {:?}", e);
+                    tracing::error!("Failed to update known contracts: {:?}", e);
                     return BackendEvent::StrategyError {
                         strategy_name: strategy_name.clone(),
                         error: format!("Failed to update known contracts: {:?}", e),
@@ -669,7 +668,7 @@ pub async fn run_strategy_task<'s>(
                     lock
                 },                
                 Err(e) => {
-                    error!("Failed to refresh identity: {:?}", e);
+                    tracing::error!("Failed to refresh identity: {:?}", e);
                     return BackendEvent::StrategyError {
                         strategy_name: strategy_name.clone(),
                         error: format!("Failed to refresh identity: {:?}", e),
@@ -727,11 +726,11 @@ pub async fn run_strategy_task<'s>(
                             break;
                         }
                         Err(e) if retries < MAX_RETRIES => {
-                            error!("Error executing request, retrying: {:?}", e);
+                            tracing::error!("Error executing request, retrying: {:?}", e);
                             retries += 1;
                         }
                         Err(e) => {
-                            error!("Failed to execute request after retries: {:?}", e);
+                            tracing::error!("Failed to execute request after retries: {:?}", e);
                             return BackendEvent::StrategyError {
                                 strategy_name: strategy_name.clone(),
                                 error: format!("Failed to execute request after retries: {:?}", e),
@@ -833,7 +832,7 @@ pub async fn run_strategy_task<'s>(
                                 Ok(outcome) => match outcome {
                                     QueryDocumentsOutcome::V0(outcome_v0) => {
                                         let documents = outcome_v0.documents_owned();
-                                        info!(
+                                        tracing::info!(
                                             "Fetched {} documents using DriveQuery",
                                             documents.len()
                                         );
@@ -841,7 +840,7 @@ pub async fn run_strategy_task<'s>(
                                     }
                                 },
                                 Err(e) => {
-                                    error!("Error fetching documents using DriveQuery: {:?}", e);
+                                    tracing::error!("Error fetching documents using DriveQuery: {:?}", e);
                                     vec![]
                                 }
                             }
@@ -871,14 +870,14 @@ pub async fn run_strategy_task<'s>(
                                         revision: None,
                                         not_found_public_keys: BTreeSet::new(),
                                     });
-                                info!(
+                                    tracing::info!(
                                     "Fetched identity info for identifier {}: {:?}",
                                     identifier, partial_identity
                                 );
                                 partial_identity
                             }
                             Err(e) => {
-                                error!("Error fetching identity: {:?}", e);
+                                tracing::error!("Error fetching identity: {:?}", e);
                                 PartialIdentity {
                                     id: identifier,
                                     loaded_public_keys: BTreeMap::new(),
@@ -914,7 +913,7 @@ pub async fn run_strategy_task<'s>(
                         },
                     }
                 }
-                tracing::info!("Obtaining {num_asset_lock_proofs_needed} asset lock proofs for the strategy...");
+                tracing::info!("Obtaining {} asset lock proofs for the strategy...", num_asset_lock_proofs_needed);
                 let asset_lock_proof_time = Instant::now();
                 let mut num_asset_lock_proofs_obtained = 0;
                 for i in 0..(num_asset_lock_proofs_needed) {
@@ -969,7 +968,7 @@ pub async fn run_strategy_task<'s>(
 
                     // Log if you are creating start_identities, because the asset lock proofs take a while
                     if current_block_info.height == initial_block_info.height && strategy.start_identities.number_of_identities > 0 {
-                        info!(
+                        tracing::info!(
                             "Creating {} asset lock proofs for start identities (takes 20-30 seconds for each)...",
                             strategy.start_identities.number_of_identities
                         );
@@ -1089,11 +1088,11 @@ pub async fn run_strategy_task<'s>(
                                                             if let Some(metadata) = &v0_response.metadata {
                                                                 success_count += 1;
                                                                 if !verify_proofs {
-                                                                    info!("Successfully processed state transition {} ({}) for {} {} (Actual block height: {})", st_queue_index, transition_type, mode_string, index, metadata.height);
+                                                                    tracing::info!("Successfully processed state transition {} ({}) for {} {} (Actual block height: {})", st_queue_index, transition_type, mode_string, index, metadata.height);
                                                                 }
                                                                 match &v0_response.result {
                                                                     Some(wait_for_state_transition_result_response_v0::Result::Error(error)) => {
-                                                                        error!("WaitForStateTransitionResultResponse error: {:?}", error);
+                                                                        tracing::error!("WaitForStateTransitionResultResponse error: {:?}", error);
                                                                     }
                                                                     Some(wait_for_state_transition_result_response_v0::Result::Proof(proof)) => {
                                                                         if verify_proofs {
@@ -1112,10 +1111,10 @@ pub async fn run_strategy_task<'s>(
                                                                             );
                                                                             match verified {
                                                                                 Ok(_) => {
-                                                                                    info!("Successfully processed and verified proof for state transition {} ({}), {} {} (Actual block height: {})", st_queue_index, transition_type, mode_string, index, metadata.height);
+                                                                                    tracing::info!("Successfully processed and verified proof for state transition {} ({}), {} {} (Actual block height: {})", st_queue_index, transition_type, mode_string, index, metadata.height);
                                                                                 }
                                                                                 Err(e) => {
-                                                                                    error!("Error verifying state transition execution proof: {}", e);
+                                                                                    tracing::error!("Error verifying state transition execution proof: {}", e);
                                                                                 }
                                                                             }    
                                                                         }
@@ -1128,27 +1127,27 @@ pub async fn run_strategy_task<'s>(
                                                                 tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
                                                             }
                                                         } else {
-                                                            info!("Response version other than V0 received or absent for state transition {} ({})", st_queue_index, transition_type);
+                                                            tracing::info!("Response version other than V0 received or absent for state transition {} ({})", st_queue_index, transition_type);
                                                         }
                                                     }
-                                                    Err(e) => error!(
+                                                    Err(e) => tracing::error!(
                                                         "Error waiting for state transition result: {:?}",
                                                         e
                                                     ),
                                                 }
                                             } else {
-                                                error!(
+                                                tracing::error!(
                                                     "Failed to create wait request for state transition."
                                                 );
                                             }
                                         }
-                                        Err(e) => error!(
+                                        Err(e) => tracing::error!(
                                             "Error broadcasting dependent state transition: {:?}",
                                             e
                                         ),
                                     }
                                 } else {
-                                    error!(
+                                    tracing::error!(
                                         "Failed to create broadcast request for state transition."
                                     );
                                 }
@@ -1200,7 +1199,7 @@ pub async fn run_strategy_task<'s>(
                                         let transition_type = transition.name().to_owned();
     
                                         if broadcast_result.is_err() {
-                                            error!(
+                                            tracing::error!(
                                                 "Error broadcasting state transition {} ({}) for {} {}: {:?}",
                                                 index + 1,
                                                 transition_type,
@@ -1249,7 +1248,7 @@ pub async fn run_strategy_task<'s>(
                                             let wait_result = match transition.wait_for_state_transition_result_request() {
                                                 Ok(wait_request) => wait_request.execute(sdk, RequestSettings::default()).await,
                                                 Err(e) => {
-                                                    error!(
+                                                    tracing::error!(
                                                         "Error creating wait request for state transition {} {} {}: {:?}",
                                                         index + 1, mode_string, index, e
                                                     );
@@ -1262,7 +1261,7 @@ pub async fn run_strategy_task<'s>(
                                                     Some(if let Some(wait_for_state_transition_result_response::Version::V0(v0_response)) = &wait_response.version {
                                                         if let Some(metadata) = &v0_response.metadata {
                                                             if !verify_proofs {
-                                                                info!(
+                                                                tracing::info!(
                                                                     "Successfully processed state transition {} ({}) for {} {} (Actual block height: {})",
                                                                     index + 1, transition.name(), mode_string, index, metadata.height
                                                                 );    
@@ -1308,7 +1307,7 @@ pub async fn run_strategy_task<'s>(
 
                                                                     match verified {
                                                                         Ok(_) => {
-                                                                            info!("Successfully processed and verified proof for state transition {} ({}), {} {} (Actual block height: {})", index + 1, transition_type, mode_string, index, metadata.height);
+                                                                            tracing::info!("Successfully processed and verified proof for state transition {} ({}), {} {} (Actual block height: {})", index + 1, transition_type, mode_string, index, metadata.height);
                                                                             
                                                                             // If a data contract was registered, add it to
                                                                             // known_contracts
@@ -1326,6 +1325,7 @@ pub async fn run_strategy_task<'s>(
                                                                                     DataContract::try_from_platform_versioned(
                                                                                         data_contract_serialized.clone(),
                                                                                         false,
+                                                                                        &mut vec![],
                                                                                         PlatformVersion::latest(),
                                                                                     );
 
@@ -1344,7 +1344,7 @@ pub async fn run_strategy_task<'s>(
                                                                                         );
                                                                                     }
                                                                                     Err(e) => {
-                                                                                        error!(
+                                                                                        tracing::error!(
                                                                                             "Error deserializing data \
                                                                                             contract: {:?}",
                                                                                             e
@@ -1353,7 +1353,7 @@ pub async fn run_strategy_task<'s>(
                                                                                 }
                                                                             }
                                                                         }
-                                                                        Err(e) => error!("Error verifying state transition execution proof: {}", e),
+                                                                        Err(e) => tracing::error!("Error verifying state transition execution proof: {}", e),
                                                                     }
                                                                 }
                                                             }
@@ -1364,7 +1364,7 @@ pub async fn run_strategy_task<'s>(
                                                                     let ids = identity_create_transition.modified_data_ids();
                                                                     for id in ids {
                                                                         let encoded_id: String = id.into();
-                                                                        info!("Created Identity: {}", encoded_id);
+                                                                        tracing::info!("Created Identity: {}", encoded_id);
                                                                     }
                                                                 },
                                                                 _ => {
@@ -1375,7 +1375,7 @@ pub async fn run_strategy_task<'s>(
                                                     })
                                                 },
                                                 Err(e) => {
-                                                    error!("Wait result error: {:?}", e);
+                                                    tracing::error!("Wait result error: {:?}", e);
                                                     None
                                                 }
                                             }
@@ -1383,7 +1383,7 @@ pub async fn run_strategy_task<'s>(
                                         wait_futures.push(wait_future);
                                     },
                                     Err(e) => {
-                                        error!(
+                                        tracing::error!(
                                             "Error preparing broadcast request for state transition {} {} {}: {:?}",
                                             index + 1,
                                             mode_string,
@@ -1465,7 +1465,7 @@ pub async fn run_strategy_task<'s>(
                 drop(loaded_identity_lock);
                 let refresh_result = app_state.refresh_identity(&sdk).await;
                 if let Err(ref e) = refresh_result {
-                    error!("Failed to refresh identity after running strategy: {:?}", e);
+                    tracing::error!("Failed to refresh identity after running strategy: {:?}", e);
                 }
 
                 // Attempt to retrieve the final balance from the refreshed identity
@@ -1475,7 +1475,7 @@ pub async fn run_strategy_task<'s>(
                         refreshed_identity_lock.balance()
                     }
                     Err(_) => {
-                        error!("Error refreshing identity after running strategy");
+                        tracing::error!("Error refreshing identity after running strategy");
                         initial_balance_identity
                     }
                 };
@@ -1506,7 +1506,7 @@ pub async fn run_strategy_task<'s>(
                 supporting_contracts_lock.clear();
 
                 if block_mode {
-                    info!(
+                    tracing::info!(
                         "-----Strategy '{}' completed-----\n\nMode: {}\nState transitions attempted: {}\nState \
                         transitions succeeded: {}\nNumber of blocks: {}\nRun time: \
                         {:?} seconds\nDash spent (Loaded Identity): {}\nDash spent (Wallet): {}\n",
@@ -1520,7 +1520,7 @@ pub async fn run_strategy_task<'s>(
                         dash_spent_wallet,
                     );    
                 } else {
-                    info!(
+                    tracing::info!(
                         "-----Strategy '{}' completed-----\n\nMode: {}\nState transitions attempted: {}\nState \
                         transitions succeeded: {}\nNumber of loops: {}\nLoad run time: \
                         {:?} seconds\nInit run time: {} seconds\nAttempted rate (approx): {} txs/s\nDash spent (Loaded Identity): {}\nDash spent (Wallet): {}\n",
@@ -1719,7 +1719,7 @@ pub async fn update_known_contracts(
                 contracts_lock.insert(contract_id_str.clone(), data_contract);
             }
             Ok(None) => {
-                error!("Contract not found for ID: {}", contract_id_str);
+                tracing::error!("Contract not found for ID: {}", contract_id_str);
             }
             Err(e) => {
                 return Err(format!(

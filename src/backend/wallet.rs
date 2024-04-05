@@ -10,7 +10,7 @@ use bincode::{
     error::{DecodeError, EncodeError},
     BorrowDecode, Decode, Encode,
 };
-use dapi_grpc::core::v0::{BroadcastTransactionRequest, GetStatusRequest, GetTransactionRequest};
+use dapi_grpc::core::v0::{BroadcastTransactionRequest, GetTransactionRequest};
 use dpp::dashcore::{
     hashes::Hash,
     psbt::serialize::Serialize,
@@ -526,53 +526,62 @@ impl SingleKeyWallet {
         Some((taken_utxos, required.abs() as u64))
     }
 
+    /// Takes a usize `desired_utxo_count` specifying the desired number of UTXOs one wants the wallet to have
+    /// and splits the existing utxos into that many equally-valued UTXOs.
+    ///
+    /// It does so by executing transactions with itself as the sender and receiver, and
+    /// the existing UTXOs as the inputs and just having `desired_utxo_count` outputs. Since Dash Core only
+    /// allows 24 outputs per transaction, we have to create (`desired_utxo_count` / 24) transactions.
+    ///
+    /// Each new UTXO is given a value of ((current_wallet_balance - fee) / desired_utxo_count) where fee is set to 3000
     pub async fn split_utxos(
         &mut self,
         sdk: &Sdk,
         desired_utxo_count: usize,
     ) -> Result<(), WalletError> {
+        tracing::info!("Splitting wallet UTXOs into {} UTXOs", desired_utxo_count);
+
         // Initialize
         const MAX_OUTPUTS_PER_TRANSACTION: usize = 24; // Dash Core only allows 24 outputs per tx
         let current_wallet_balance = self.balance();
         let mut remaining_utxos_in_wallet = self.utxos.clone();
-        let mut utxos_remaining_to_create = desired_utxo_count;
+        let mut num_utxos_remaining_to_create = desired_utxo_count;
 
         // Say we want 50 UTXOs, we need 3 transactions (24 + 24 + 2)
-        let number_of_splitting_transactions =
+        let number_of_transactions =
             (desired_utxo_count as f64 / MAX_OUTPUTS_PER_TRANSACTION as f64).ceil() as usize;
 
-        // Amount to fund each UTXO. Approx 90% of current wallet balance / number of desired UTXOs.
-        let utxo_split_value = (current_wallet_balance
-            - (current_wallet_balance as f64 * 0.1).ceil() as u64)
-            / desired_utxo_count as u64;
+        // Amount to fund each UTXO.
+        // Reserve a buffer of 3000 to make sure we never go over the current balance
+        let utxo_split_value = (current_wallet_balance - 1_000_000_000) / desired_utxo_count as u64;
 
-        // Create and execute the UTXO-splitting transactions
-        tracing::info!(
-            "We want to make {} transactions",
-            number_of_splitting_transactions
-        );
-        for i in 0..number_of_splitting_transactions {
+        // Create and execute the transactions
+        tracing::info!("We want to make {} transactions", number_of_transactions);
+        for i in 0..number_of_transactions {
             // Number of UTXOs to create with this tx
-            let num_utxos_to_create =
-                std::cmp::min(MAX_OUTPUTS_PER_TRANSACTION, utxos_remaining_to_create);
+            let num_utxos_to_create_this_tx =
+                std::cmp::min(MAX_OUTPUTS_PER_TRANSACTION, num_utxos_remaining_to_create);
 
             // Set the outputs of the transaction
-            let mut new_outputs: Vec<TxOut> = Vec::with_capacity(num_utxos_to_create);
-            for _ in 0..num_utxos_to_create {
+            // Only loop num_utxos_to_create-1 times because we'll add an output for excess change at the end (the value will be different)
+            let mut new_outputs: Vec<TxOut> = Vec::with_capacity(num_utxos_to_create_this_tx);
+            for _ in 0..num_utxos_to_create_this_tx - 1 {
                 new_outputs.push(TxOut {
                     value: utxo_split_value,
                     script_pubkey: self.receive_address().script_pubkey(),
                 });
             }
 
-            // Select some UTXOs from the wallet to be the inputs for the transaction
+            // Select existing UTXOs from the wallet to be the inputs for the transaction
             let mut total_value_of_tx_inputs: u64 = 0;
             let mut selected_utxos = Vec::new();
-            let mut utxo_values: Vec<_> = remaining_utxos_in_wallet.iter().collect();
-            utxo_values.sort_by_key(|&(_, txout)| txout.value);
-            utxo_values.reverse();
-            for (outpoint, txout) in utxo_values {
-                if total_value_of_tx_inputs >= utxo_split_value * num_utxos_to_create as u64 {
+            let mut remaining_utxos_in_wallet_vec: Vec<_> =
+                remaining_utxos_in_wallet.iter().collect();
+            remaining_utxos_in_wallet_vec.sort_by_key(|&(_, txout)| txout.value);
+            remaining_utxos_in_wallet_vec.reverse(); // Sort greatest to least value utxo
+            for (outpoint, txout) in remaining_utxos_in_wallet_vec.clone() {
+                if total_value_of_tx_inputs >= utxo_split_value * num_utxos_to_create_this_tx as u64
+                {
                     break; // Selected enough UTXOs
                 }
                 total_value_of_tx_inputs += txout.value;
@@ -580,12 +589,27 @@ impl SingleKeyWallet {
             }
 
             // Check if total value of selected UTXOs cover the amount required by new outputs
-            // This fails on the last loop every time?
             tracing::info!("total_value_of_tx_inputs: {}", total_value_of_tx_inputs);
-            tracing::info!("num_utxos_to_create: {}", num_utxos_to_create);
-            if total_value_of_tx_inputs < utxo_split_value * num_utxos_to_create as u64 {
+            tracing::info!(
+                "remaining_utxos_in_wallet_vec len: {}",
+                remaining_utxos_in_wallet_vec.len()
+            );
+            if total_value_of_tx_inputs < utxo_split_value * num_utxos_to_create_this_tx as u64 {
                 tracing::error!("inputs_total_value < utxo_split_value * current_utxo_count");
                 return Err(WalletError::Balance);
+            }
+
+            // Add the output for excess change if any
+            if total_value_of_tx_inputs
+            - (utxo_split_value * (num_utxos_to_create_this_tx - 1) as u64) // Total value of outputs
+            > 20_000
+            {
+                new_outputs.push(TxOut {
+                    value: total_value_of_tx_inputs
+                        - (utxo_split_value * (num_utxos_to_create_this_tx - 1) as u64) // This is the existing total value of tx outputs
+                        - 10_000, // Now inputs should equal outputs, so leave some excess input value to pay the tx fee
+                    script_pubkey: self.receive_address().script_pubkey(),
+                });
             }
 
             // Construct the transaction
@@ -636,7 +660,7 @@ impl SingleKeyWallet {
             // Attempt to broadcast the transaction
             let request = BroadcastTransactionRequest {
                 transaction: tx.serialize(),
-                allow_high_fees: true,
+                allow_high_fees: false,
                 bypass_limits: false,
             };
             match sdk.execute(request, RequestSettings::default()).await {
@@ -687,7 +711,7 @@ impl SingleKeyWallet {
                 );
             }
 
-            utxos_remaining_to_create -= tx.output.len();
+            num_utxos_remaining_to_create -= tx.output.len();
         }
 
         Ok(())
