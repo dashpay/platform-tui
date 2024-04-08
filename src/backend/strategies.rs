@@ -414,6 +414,8 @@ pub async fn run_strategy_task<'s>(
                 };
 
                 // Get the loaded identity nonce
+                // This is only used for initially setting up the contracts.
+                // During strategy execution, all the start identities will be used and the contract will be updated
                 let loaded_identity_lock = match app_state.refresh_identity(&sdk).await {
                     Ok(lock) => lock,
                     Err(e) => {
@@ -970,14 +972,6 @@ pub async fn run_strategy_task<'s>(
                     let errs_clone = errs.clone();
                     let loop_start_time = Instant::now();
 
-                    // Log if you are creating start_identities, because the asset lock proofs take a while
-                    if current_block_info.height == initial_block_info.height && strategy.start_identities.number_of_identities > 0 {
-                        tracing::info!(
-                            "Creating {} asset lock proofs for start identities (can take up to around 30 seconds for each)...",
-                            strategy.start_identities.number_of_identities
-                        );
-                    }
-
                     // Need to pass app_state.known_contracts to state_transitions_for_block
                     let mut known_contracts_lock = app_state.known_contracts.lock().await;
 
@@ -1362,13 +1356,20 @@ pub async fn run_strategy_task<'s>(
                                                                 }
                                                             }
 
-                                                            // Log the Base58 encoded IDs of any created Identities
+                                                            // Log the Base58 encoded IDs of any created contracts or identities
                                                             match transition.clone() {
                                                                 StateTransition::IdentityCreate(identity_create_transition) => {
                                                                     let ids = identity_create_transition.modified_data_ids();
                                                                     for id in ids {
                                                                         let encoded_id: String = id.into();
-                                                                        tracing::info!("Created Identity: {}", encoded_id);
+                                                                        tracing::info!("Created identity: {}", encoded_id);
+                                                                    }
+                                                                },
+                                                                StateTransition::DataContractCreate(contract_create_transition) => {
+                                                                    let ids = contract_create_transition.modified_data_ids();
+                                                                    for id in ids {
+                                                                        let encoded_id: String = id.into();
+                                                                        tracing::info!("Created contract: {}", encoded_id);
                                                                     }
                                                                 },
                                                                 _ => {
@@ -1411,7 +1412,7 @@ pub async fn run_strategy_task<'s>(
                                 }
                             }    
                         } else {
-                            // Time mode
+                            // Time mode                            
                             // Sleep for three seconds on first block to make sure we don't submit documents or updates in the same block as contract or identity creation
                             if index == 1 {
                                 tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
@@ -1426,10 +1427,10 @@ pub async fn run_strategy_task<'s>(
                         );
                     }
 
-                    // In time mode, if it's the first iteration of the loop, reset the start time to after processing
+                    // If it's the first iteration of the loop, reset the start time to after processing
                     // Because start_identities asset lock proofs take a long time and
                     // I'm not concerned with that right now
-                    if !block_mode && index == 1 {
+                    if index == 1 {
                         load_start_time = Instant::now();
                         init_time = init_start_time.elapsed();
                     }
@@ -1513,13 +1514,17 @@ pub async fn run_strategy_task<'s>(
                     tracing::info!(
                         "-----Strategy '{}' completed-----\n\nMode: {}\nState transitions attempted: {}\nState \
                         transitions succeeded: {}\nNumber of blocks: {}\nRun time: \
-                        {:?} seconds\nDash spent (Loaded Identity): {}\nDash spent (Wallet): {}\n",
+                        {:?} seconds\nTPS rate (approx): {} tps\nDash spent (Loaded Identity): {}\nDash spent (Wallet): {}\n",
                         strategy_name,
                         mode_string,
                         transition_count,
                         success_count,
                         (current_block_info.height - initial_block_info.height),
-                        load_execution_run_time.as_secs(),
+                        load_execution_run_time.as_secs(), // Processing time after the first block
+                        (transition_count
+                            - strategy.contracts_with_updates.len()
+                            - strategy.start_identities.number_of_identities as usize
+                        ) as u64 / load_run_time, // tps besides the first block
                         dash_spent_identity,
                         dash_spent_wallet,
                     );    

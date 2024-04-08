@@ -7,7 +7,10 @@ use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
 use crate::{
     backend::{StrategyTask, Task},
-    ui::form::{ComposedInput, Field, FormController, FormStatus, Input, InputStatus, SelectInput},
+    ui::form::{
+        parsers::DefaultTextInputParser, ComposedInput, Field, FormController, FormStatus, Input,
+        InputStatus, SelectInput, TextInput,
+    },
 };
 
 pub(super) struct ContractsWithUpdatesFormController {
@@ -126,7 +129,10 @@ impl FormController for ContractsWithUpdatesFormController {
 
 pub(super) struct RandomContractsFormController {
     selected_strategy: String,
-    input: ComposedInput<(Field<SelectInput<String>>, Field<SelectInput<u8>>)>,
+    input: ComposedInput<(
+        Field<SelectInput<String>>,
+        Field<TextInput<DefaultTextInputParser<u8>>>,
+    )>,
 }
 
 impl RandomContractsFormController {
@@ -158,8 +164,8 @@ impl RandomContractsFormController {
                     SelectInput::new(contract_names),
                 ),
                 Field::new(
-                    "Select the number of variants to create",
-                    SelectInput::new(vec![3, 5, 10, 15, 20, 24]),
+                    "Number of contract variants",
+                    TextInput::new("Enter a whole number"),
                 ),
             )),
         }
