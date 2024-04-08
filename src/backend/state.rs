@@ -123,7 +123,7 @@ impl Default for AppState {
             loaded_wallet: Mutex::new(None),
             drive: Mutex::from(drive),
             known_contracts: BTreeMap::new().into(),
-            supporting_contracts: BTreeMap::new().into(),
+            supporting_contracts: supporting_contracts_raw.into(),
             known_identities: BTreeMap::new().into(),
             available_strategies: BTreeMap::new().into(),
             selected_strategy: None.into(),

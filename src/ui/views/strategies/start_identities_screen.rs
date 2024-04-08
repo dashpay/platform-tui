@@ -22,8 +22,8 @@ use crate::{
 const COMMAND_KEYS: [ScreenCommandKey; 4] = [
     ScreenCommandKey::new("q", "Back to Strategy"),
     ScreenCommandKey::new("a", "Add/edit"),
-    ScreenCommandKey::new("r", "Remove"),
     ScreenCommandKey::new("b", "Set balance"),
+    ScreenCommandKey::new("c", "Remove"),
 ];
 
 pub(crate) struct StartIdentitiesScreenController {
@@ -93,15 +93,6 @@ impl ScreenController for StartIdentitiesScreenController {
                 }
             }
             Event::Key(KeyEvent {
-                code: Key::Char('r'),
-                modifiers: KeyModifiers::NONE,
-            }) => ScreenFeedback::Task {
-                task: Task::Strategy(StrategyTask::RemoveStartIdentities(
-                    self.strategy_name.clone().unwrap(),
-                )),
-                block: false,
-            },
-            Event::Key(KeyEvent {
                 code: Key::Char('b'),
                 modifiers: KeyModifiers::NONE,
             }) => {
@@ -113,6 +104,15 @@ impl ScreenController for StartIdentitiesScreenController {
                     ScreenFeedback::None
                 }
             }
+            Event::Key(KeyEvent {
+                code: Key::Char('c'),
+                modifiers: KeyModifiers::NONE,
+            }) => ScreenFeedback::Task {
+                task: Task::Strategy(StrategyTask::RemoveStartIdentities(
+                    self.strategy_name.clone().unwrap(),
+                )),
+                block: false,
+            },
             Event::Backend(BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
                 strategy_name,
                 strategy,

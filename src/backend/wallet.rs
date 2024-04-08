@@ -589,11 +589,6 @@ impl SingleKeyWallet {
             }
 
             // Check if total value of selected UTXOs cover the amount required by new outputs
-            tracing::info!("total_value_of_tx_inputs: {}", total_value_of_tx_inputs);
-            tracing::info!(
-                "remaining_utxos_in_wallet_vec len: {}",
-                remaining_utxos_in_wallet_vec.len()
-            );
             if total_value_of_tx_inputs < utxo_split_value * num_utxos_to_create_this_tx as u64 {
                 tracing::error!("inputs_total_value < utxo_split_value * current_utxo_count");
                 return Err(WalletError::Balance);
@@ -665,7 +660,10 @@ impl SingleKeyWallet {
             };
             match sdk.execute(request, RequestSettings::default()).await {
                 Ok(_) => {
-                    tracing::info!("Successfully broadcasted UTXO-splitting transaction {}", i)
+                    tracing::info!(
+                        "Successfully broadcasted UTXO-splitting transaction {}",
+                        i + 1
+                    )
                 }
                 Err(error) if error.to_string().contains("AlreadyExists") => {
                     // Transaction is already broadcasted. We need to restart the stream from a
@@ -685,7 +683,7 @@ impl SingleKeyWallet {
                         Ok(_) => {
                             tracing::info!(
                                 "Successfully broadcasted UTXO-splitting transaction {}",
-                                i
+                                i + 1
                             )
                         }
                         Err(error) => {

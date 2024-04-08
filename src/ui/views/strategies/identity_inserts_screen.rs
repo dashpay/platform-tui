@@ -21,7 +21,7 @@ use crate::{
 const COMMAND_KEYS: [ScreenCommandKey; 3] = [
     ScreenCommandKey::new("q", "Back to Strategy"),
     ScreenCommandKey::new("a", "Add/edit"),
-    ScreenCommandKey::new("r", "Remove"),
+    ScreenCommandKey::new("c", "Clear"),
 ];
 
 pub(crate) struct IdentityInsertsScreenController {
@@ -91,7 +91,7 @@ impl ScreenController for IdentityInsertsScreenController {
                 }
             }
             Event::Key(KeyEvent {
-                code: Key::Char('r'),
+                code: Key::Char('c'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::Task {
                 task: Task::Strategy(StrategyTask::RemoveIdentityInserts(

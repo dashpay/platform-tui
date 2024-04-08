@@ -169,11 +169,11 @@ impl RandomContractsFormController {
 impl FormController for RandomContractsFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
         match self.input.on_event(event) {
-            InputStatus::Done((selected_contract_name, variants)) => FormStatus::Done {
+            InputStatus::Done((selected_contract_name, variants_count)) => FormStatus::Done {
                 task: Task::Strategy(StrategyTask::SetContractsWithUpdatesRandom(
                     self.selected_strategy.clone(),
                     selected_contract_name,
-                    variants,
+                    variants_count,
                 )),
                 block: false,
             },

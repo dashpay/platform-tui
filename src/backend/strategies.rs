@@ -486,6 +486,8 @@ pub async fn run_strategy_task<'s>(
                             );
                         }
                     }
+                } else {
+                    tracing::error!("Contract wasn't retrieved by name in StrategyTask::SetContractsWithUpdatesRandom");
                 }
 
                 BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
@@ -922,11 +924,13 @@ pub async fn run_strategy_task<'s>(
                             Ok((asset_lock_transaction, asset_lock_proof_private_key)) => {
                                 match AppState::broadcast_and_retrieve_asset_lock(sdk, &asset_lock_transaction, &wallet.receive_address()).await {
                                     Ok(asset_lock_proof) => {
-                                        tracing::info!("Got {} asset lock proofs", i+1);
+                                        tracing::info!("Successfully obtained asset lock proof number {}", i+1);
                                         num_asset_lock_proofs_obtained += 1;
                                         asset_lock_proofs.push((asset_lock_proof, asset_lock_proof_private_key));
                                     },
-                                    Err(e) => tracing::error!("Error broadcasting and retrieving asset lock: {:?}", e),
+                                    Err(_) => {
+                                        // this error is handled from within the function
+                                    },
                                 }
                             },
                             Err(e) => {
@@ -969,7 +973,7 @@ pub async fn run_strategy_task<'s>(
                     // Log if you are creating start_identities, because the asset lock proofs take a while
                     if current_block_info.height == initial_block_info.height && strategy.start_identities.number_of_identities > 0 {
                         tracing::info!(
-                            "Creating {} asset lock proofs for start identities (takes 20-30 seconds for each)...",
+                            "Creating {} asset lock proofs for start identities (can take up to around 30 seconds for each)...",
                             strategy.start_identities.number_of_identities
                         );
                     }
