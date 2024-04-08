@@ -32,6 +32,8 @@ pub(crate) enum Error {
     IdentityTopUpError(String),
     #[error("Identity withdrawal error: {0}")]
     IdentityWithdrawalError(String),
+    #[error("Identity refresh error: {0}")]
+    IdentityRefreshError(String),
     #[error("Document Signing error: {0}")]
     DocumentSigningError(String),
 }

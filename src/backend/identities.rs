@@ -230,6 +230,10 @@ impl AppState {
             if let Some(refreshed_identity) = refreshed_identity {
                 loaded_identity.replace(refreshed_identity);
             }
+        } else {
+            return Err(Error::IdentityRefreshError(
+                "No identity loaded".to_string(),
+            ));
         }
         let identity_result =
             MutexGuard::map(loaded_identity, |x| x.as_mut().expect("assigned above"));
