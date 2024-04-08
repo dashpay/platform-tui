@@ -1524,6 +1524,7 @@ pub async fn run_strategy_task<'s>(
                         dash_spent_wallet,
                     );    
                 } else {
+                    // Time mode
                     tracing::info!(
                         "-----Strategy '{}' completed-----\n\nMode: {}\nState transitions attempted: {}\nState \
                         transitions succeeded: {}\nNumber of loops: {}\nLoad run time: \
