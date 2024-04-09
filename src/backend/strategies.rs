@@ -922,7 +922,8 @@ pub async fn run_strategy_task<'s>(
                 let mut num_asset_lock_proofs_obtained = 0;
                 for i in 0..(num_asset_lock_proofs_needed) {
                     if let Some(wallet) = wallet_lock.as_mut() {
-                        match wallet.asset_lock_transaction(None, 2_000_000) {
+                        // TO-DO: separate this into a function for start_identities, top ups, and inserts, because the balances should all be different
+                        match wallet.asset_lock_transaction(None, strategy.start_identities.starting_balances) {
                             Ok((asset_lock_transaction, asset_lock_proof_private_key)) => {
                                 match AppState::broadcast_and_retrieve_asset_lock(sdk, &asset_lock_transaction, &wallet.receive_address()).await {
                                     Ok(asset_lock_proof) => {
@@ -1413,9 +1414,11 @@ pub async fn run_strategy_task<'s>(
                             }    
                         } else {
                             // Time mode                            
-                            // Sleep for three seconds on first block to make sure we don't submit documents or updates in the same block as contract or identity creation
+                            // Sleep for three seconds on first and second blocks to make sure we don't submit documents or updates in the same block as contract or identity creation
                             if index == 1 {
                                 tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+                            } else if index == 2 {
+                                tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
                             }
                         }
                     } else {
@@ -1430,7 +1433,7 @@ pub async fn run_strategy_task<'s>(
                     // If it's the first iteration of the loop, reset the start time to after processing
                     // Because start_identities asset lock proofs take a long time and
                     // I'm not concerned with that right now
-                    if index == 1 {
+                    if index == 2 {
                         load_start_time = Instant::now();
                         init_time = init_start_time.elapsed();
                     }
@@ -1544,7 +1547,7 @@ pub async fn run_strategy_task<'s>(
                         (transition_count
                             - strategy.contracts_with_updates.len()
                             - strategy.start_identities.number_of_identities as usize
-                        ) as u64 / (load_run_time - 3), // Subtract 3 here because we sleep for 3 seconds after the first block.
+                        ) as u64 / (load_run_time - 13), // Subtract 3 here because we sleep for 13 seconds after the first block.
                         dash_spent_identity,
                         dash_spent_wallet,
                     );    
