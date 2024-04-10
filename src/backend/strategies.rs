@@ -1153,10 +1153,12 @@ pub async fn run_strategy_task<'s>(
                                                             let data_contract_serialized =
                                                                 &data_contract_create_transition
                                                                     .data_contract;
+                                                            let mut validation_operations=Vec::new();
                                                             let data_contract_result =
                                                                 DataContract::try_from_platform_versioned(
                                                                     data_contract_serialized.clone(),
                                                                     false,
+                                                                    &mut validation_operations,
                                                                     PlatformVersion::latest(),
                                                                 );
 
