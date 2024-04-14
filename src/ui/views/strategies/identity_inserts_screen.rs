@@ -122,27 +122,27 @@ impl ScreenController for IdentityInsertsScreenController {
     fn view(&mut self, frame: &mut Frame, area: Rect) {
         let display_text = if let Some(strategy) = &self.selected_strategy {
             // Extracting times per block and chance per block from
-            // strategy.identities_inserts
+            // strategy.identity_inserts
             let times_per_block_display = if strategy
-                .identities_inserts
+                .identity_inserts
                 .frequency
                 .times_per_block_range
                 .end
                 > strategy
-                    .identities_inserts
+                    .identity_inserts
                     .frequency
                     .times_per_block_range
                     .start
             {
                 strategy
-                    .identities_inserts
+                    .identity_inserts
                     .frequency
                     .times_per_block_range
                     .end
                     - 1
             } else {
                 strategy
-                    .identities_inserts
+                    .identity_inserts
                     .frequency
                     .times_per_block_range
                     .end
@@ -155,7 +155,7 @@ impl ScreenController for IdentityInsertsScreenController {
                     "Identity inserts:\nTimes per block: {}; Chance per block: {}",
                     times_per_block_display,
                     strategy
-                        .identities_inserts
+                        .identity_inserts
                         .frequency
                         .chance_per_block
                         .unwrap_or(0.0),
@@ -165,7 +165,7 @@ impl ScreenController for IdentityInsertsScreenController {
                     "Identity inserts:\nTimes per block: {}; Chance per block: {}",
                     times_per_block_display,
                     strategy
-                        .identities_inserts
+                        .identity_inserts
                         .frequency
                         .chance_per_block
                         .unwrap_or(0.0),

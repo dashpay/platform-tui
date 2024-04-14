@@ -12,6 +12,16 @@ use dapi_grpc::{
         GetIdentityBalanceRequest,
     },
 };
+use dash_sdk::{
+    platform::{
+        transition::{
+            broadcast::BroadcastStateTransition, put_identity::PutIdentity,
+            top_up_identity::TopUpIdentity, withdraw_from_identity::WithdrawFromIdentity,
+        },
+        Fetch,
+    },
+    Sdk,
+};
 use dpp::{
     dashcore::{psbt::serialize::Serialize, Address, PrivateKey, Transaction},
     identity::{
@@ -32,16 +42,6 @@ use dpp::{
 };
 use rand::{rngs::StdRng, SeedableRng};
 use rs_dapi_client::{DapiRequestExecutor, RequestSettings};
-use rs_sdk::{
-    platform::{
-        transition::{
-            broadcast::BroadcastStateTransition, put_identity::PutIdentity,
-            top_up_identity::TopUpIdentity, withdraw_from_identity::WithdrawFromIdentity,
-        },
-        Fetch,
-    },
-    Sdk,
-};
 use simple_signer::signer::SimpleSigner;
 use tokio::sync::{MappedMutexGuard, MutexGuard};
 
@@ -527,7 +527,7 @@ impl AppState {
             Ok(updated_identity_balance) => {
                 identity.set_balance(updated_identity_balance);
             }
-            Err(rs_sdk::Error::DapiClientError(error_string)) => {
+            Err(dash_sdk::Error::DapiClientError(error_string)) => {
                 //todo in the future, errors should be proved with a proof, even from tenderdash
 
                 if error_string.starts_with("Transport(Status { code: AlreadyExists, message: \"state transition already in chain\"") {
@@ -562,7 +562,7 @@ impl AppState {
                         .top_up_identity(sdk, new_asset_lock_proof.clone(), &new_asset_lock_proof_private_key, None)
                         .await?;
                 } else {
-                    return Err(rs_sdk::Error::DapiClientError(error_string).into())
+                    return Err(dash_sdk::Error::DapiClientError(error_string).into())
                 }
             }
             Err(e) => return Err(e.into()),
@@ -637,7 +637,7 @@ impl AppState {
         sdk: &Sdk,
         asset_lock_transaction: &Transaction,
         address: &Address,
-    ) -> Result<AssetLockProof, rs_sdk::Error> {
+    ) -> Result<AssetLockProof, dash_sdk::Error> {
         let _span = tracing::debug_span!(
             "broadcast_and_retrieve_asset_lock",
             transaction_id = asset_lock_transaction.txid().to_string(),
@@ -649,7 +649,7 @@ impl AppState {
             .await?
             .chain
             .map(|chain| chain.best_block_hash)
-            .ok_or_else(|| rs_sdk::Error::DapiClientError("missing `chain` field".to_owned()))?;
+            .ok_or_else(|| dash_sdk::Error::DapiClientError("missing `chain` field".to_owned()))?;
 
         tracing::debug!(
             "starting the stream from the tip block hash {}",

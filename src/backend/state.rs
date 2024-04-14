@@ -60,7 +60,7 @@ pub struct AppState {
     pub available_strategies: Mutex<StrategiesMap>,
     /// Because we don't store which contract support file was used exactly we
     /// cannot properly restore the state and display a strategy, so this
-    /// field serves as a double of strategies' `contracts_with_updates`,
+    /// field serves as a double of strategies' `start_contracts`,
     /// but using file names
     pub available_strategies_contract_names: Mutex<BTreeMap<String, StrategyContractNames>>,
     pub selected_strategy: Mutex<Option<String>>,

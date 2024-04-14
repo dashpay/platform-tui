@@ -27,7 +27,7 @@ use drive::{
 use futures::future::join_all;
 use rand::{rngs::StdRng, SeedableRng};
 use rs_dapi_client::{DapiRequest, DapiRequestExecutor, RequestSettings};
-use rs_sdk::{
+use dash_sdk::{
     platform::{transition::broadcast_request::BroadcastRequestForStateTransition, Fetch},
     Sdk,
 };
@@ -126,9 +126,9 @@ pub async fn run_strategy_task<'s>(
                                         strategies_lock.insert(strategy_name.clone(), strategy.clone());
 
                                         // We need to add the contracts to available_strategies_contract_names so they can be displayed.
-                                        // In order to do so, we need to convert contracts_with_updates into Base58-encoded IDs
-                                        let mut strategy_contracts_with_updates_in_format: StrategyContractNames = Vec::new();
-                                        for (contract, maybe_updates) in strategy.contracts_with_updates {
+                                        // In order to do so, we need to convert start_contracts into Base58-encoded IDs
+                                        let mut strategy_start_contracts_in_format: StrategyContractNames = Vec::new();
+                                        for (contract, maybe_updates) in strategy.start_contracts {
                                             let contract_name = contract.data_contract().id().to_string(Encoding::Base58);
                                             if let Some(update_map) = maybe_updates {
                                                 let formatted_update_map = update_map.into_iter().map(|(block_number, created_contract)| {
@@ -136,14 +136,14 @@ pub async fn run_strategy_task<'s>(
                                                     (block_number, contract_name)
                                                 }).collect::<BTreeMap<u64, ContractFileName>>();
 
-                                                strategy_contracts_with_updates_in_format.push((contract_name, Some(formatted_update_map)));
+                                                strategy_start_contracts_in_format.push((contract_name, Some(formatted_update_map)));
                                             } else {
-                                                strategy_contracts_with_updates_in_format.push((contract_name, None));
+                                                strategy_start_contracts_in_format.push((contract_name, None));
                                             }
                                         }
 
                                         let mut contract_names_lock = app_state.available_strategies_contract_names.lock().await;
-                                        contract_names_lock.insert(strategy_name.clone(), strategy_contracts_with_updates_in_format);
+                                        contract_names_lock.insert(strategy_name.clone(), strategy_start_contracts_in_format);
 
                                         BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
                                             strategy_name.clone(),
@@ -345,7 +345,7 @@ pub async fn run_strategy_task<'s>(
                                     }
                                 }
 
-                                strategy.contracts_with_updates.push((
+                                strategy.start_contracts.push((
                                     initial_contract,
                                     if updates.is_empty() {
                                         None
@@ -431,7 +431,7 @@ pub async fn run_strategy_task<'s>(
                     .await
                     .expect("Couldn't get current identity nonce");
 
-                // Add the contracts to the strategy contracts_with_updates
+                // Add the contracts to the strategy start_contracts
                 if let Some(data_contract) = get_contract(&selected_contract_name) {
                     match CreatedDataContract::from_contract_and_identity_nonce(
                         data_contract,
@@ -442,7 +442,7 @@ pub async fn run_strategy_task<'s>(
                             // Add original contract to the strategy
                             let mut contract_variants: Vec<CreatedDataContract> = Vec::new();
                             contract_variants.push(original_contract.clone());
-                            strategy.contracts_with_updates.push((original_contract.clone(), None));
+                            strategy.start_contracts.push((original_contract.clone(), None));
                             
                             // Add i variants of the original contract to the strategy
                             for i in 0..variants-1 {
@@ -456,7 +456,7 @@ pub async fn run_strategy_task<'s>(
                                 ) {
                                     Ok(contract) => {
                                         contract_variants.push(contract.clone());
-                                        strategy.contracts_with_updates.push((contract, None));
+                                        strategy.start_contracts.push((contract, None));
                                         let new_contract_name = String::from(format!("{}_variant_{}", selected_contract_name, i));
                                         // Insert into supporting_contracts so we can register documents to them. We will clear
                                         // supporting contracts at the end of strategy execution.
@@ -529,7 +529,7 @@ pub async fn run_strategy_task<'s>(
         StrategyTask::RegisterDocsToAllContracts(strategy_name, num_docs)=> {
             let mut strategies_lock = app_state.available_strategies.lock().await;
             if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
-                for contract_with_updates in &strategy.contracts_with_updates {
+                for contract_with_updates in &strategy.start_contracts {
                     let contract = &contract_with_updates.0;
                     let document_types = contract.data_contract().document_types();
                     let document_type = document_types.values().next()
@@ -571,7 +571,7 @@ pub async fn run_strategy_task<'s>(
         } => {
             let mut strategies_lock = app_state.available_strategies.lock().await;
             if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
-                strategy.identities_inserts = IdentityInsertInfo {
+                strategy.identity_inserts = IdentityInsertInfo {
                     frequency: identity_inserts_frequency,
                     start_keys: 3,
                     extra_keys: BTreeMap::new(),
@@ -773,12 +773,14 @@ pub async fn run_strategy_task<'s>(
                 let mut current_identities: Vec<Identity> = vec![loaded_identity_clone.clone()];
 
                 // Set the nonce counters
+                let used_contract_ids = strategy.used_contract_ids();
+                tracing::info!("Fetching {} identity contract nonces from Platform...", used_contract_ids.len());
                 let mut identity_nonce_counter = BTreeMap::new();
                 let current_identity_nonce = sdk
                     .get_identity_nonce(
                         loaded_identity_clone.id(),
                         false,
-                        Some(rs_sdk::platform::transition::put_settings::PutSettings {
+                        Some(dash_sdk::platform::transition::put_settings::PutSettings {
                             request_settings: RequestSettings::default(),
                             identity_nonce_stale_time_s: Some(0),
                             user_fee_increase: None,
@@ -787,13 +789,15 @@ pub async fn run_strategy_task<'s>(
                     .expect("Couldn't get current identity nonce");
                 identity_nonce_counter.insert(loaded_identity_clone.id(), current_identity_nonce);
                 let mut contract_nonce_counter = BTreeMap::new();
-                for used_contract_id in strategy.used_contract_ids() {
+                let mut index = 1;
+                for used_contract_id in used_contract_ids {
+                    // Fetch nonce from platform
                     let current_identity_contract_nonce = sdk
                         .get_identity_contract_nonce(
                             loaded_identity_clone.id(),
                             used_contract_id,
                             false,
-                            Some(rs_sdk::platform::transition::put_settings::PutSettings {
+                            Some(dash_sdk::platform::transition::put_settings::PutSettings {
                                 request_settings: RequestSettings::default(),
                                 identity_nonce_stale_time_s: Some(0),
                                 user_fee_increase: None,
@@ -805,6 +809,8 @@ pub async fn run_strategy_task<'s>(
                         (loaded_identity_clone.id(), used_contract_id),
                         current_identity_contract_nonce,
                     );
+                    tracing::info!("Fetched {index} nonce");
+                    index += 1;
                 }
 
                 // Get a lock on the local drive for the following two callbacks
@@ -894,7 +900,7 @@ pub async fn run_strategy_task<'s>(
                     };
 
                 // Create asset lock proofs for all the identity creates and top ups
-                let num_identity_inserts = (strategy.identities_inserts.frequency.times_per_block_range.start) as u64;
+                let num_identity_inserts = (strategy.identity_inserts.frequency.times_per_block_range.start) as u64;
                 let num_start_identities = strategy.start_identities.number_of_identities as u64;
                 let mut num_top_ups: u64 = 0;
                 for operation in &strategy.operations {
@@ -967,7 +973,7 @@ pub async fn run_strategy_task<'s>(
 
                 // Now loop through the number of blocks or seconds the user asked for, preparing and processing state transitions
                 while (block_mode && current_block_info.height < (initial_block_info.height + num_blocks_or_seconds))
-                    || (!block_mode && load_start_time.elapsed().as_secs() < num_blocks_or_seconds) {
+                    || (!block_mode && load_start_time.elapsed().as_secs() < num_blocks_or_seconds + 120) {
 
                     let oks_clone = oks.clone();
                     let errs_clone = errs.clone();
@@ -1155,7 +1161,7 @@ pub async fn run_strategy_task<'s>(
                                 let errs = errs_clone.clone();
 
                                 // Prepare futures for broadcasting independent transitions
-                                let future = async move {                            
+                                let future = async move {
                                     match transition_clone.broadcast_request_for_state_transition() {
                                         Ok(broadcast_request) => {
                                             let broadcast_result = broadcast_request.execute(sdk, RequestSettings::default()).await;
@@ -1413,12 +1419,12 @@ pub async fn run_strategy_task<'s>(
                                 }
                             }    
                         } else {
-                            // Time mode                            
+                            // Time mode
                             // Sleep for three seconds on first and second blocks to make sure we don't submit documents or updates in the same block as contract or identity creation
                             if index == 1 {
-                                tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+                                tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
                             } else if index == 2 {
-                                tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+                                tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
                             }
                         }
                     } else {
@@ -1525,7 +1531,7 @@ pub async fn run_strategy_task<'s>(
                         (current_block_info.height - initial_block_info.height),
                         load_execution_run_time.as_secs(), // Processing time after the first block
                         (transition_count
-                            - strategy.contracts_with_updates.len()
+                            - strategy.start_contracts.len()
                             - strategy.start_identities.number_of_identities as usize
                         ) as u64 / load_run_time, // tps besides the first block
                         dash_spent_identity,
@@ -1545,9 +1551,9 @@ pub async fn run_strategy_task<'s>(
                         load_run_time,
                         init_time.as_secs(),
                         (transition_count
-                            - strategy.contracts_with_updates.len()
+                            - strategy.start_contracts.len()
                             - strategy.start_identities.number_of_identities as usize
-                        ) as u64 / (load_run_time - 13), // Subtract 3 here because we sleep for 13 seconds after the first block.
+                        ) as u64 / (load_run_time - 120), // Subtract 3 here because we sleep for 13 seconds after the first block.
                         dash_spent_identity,
                         dash_spent_wallet,
                     );    
@@ -1561,7 +1567,7 @@ pub async fn run_strategy_task<'s>(
                         start_block_height: initial_block_info.height,
                         success_count: success_count.try_into().unwrap(),
                         transition_count: transition_count.try_into().unwrap(),
-                        rate: transition_count as u64 / (load_run_time - 1),
+                        rate: transition_count as u64 / (load_run_time - 120),
                         run_time: load_execution_run_time,
                         init_time: init_time,
                         dash_spent_identity,
@@ -1580,12 +1586,12 @@ pub async fn run_strategy_task<'s>(
 
             if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
                 // Remove the last contract_with_update entry from the strategy
-                strategy.contracts_with_updates.pop();
+                strategy.start_contracts.pop();
 
                 // Also remove the corresponding entry from the displayed contracts
                 if let Some(contract_names) = contract_names_lock.get_mut(&strategy_name) {
                     // Assuming each entry in contract_names corresponds to an entry in
-                    // contracts_with_updates
+                    // start_contracts
                     contract_names.pop();
                 }
 
@@ -1609,7 +1615,7 @@ pub async fn run_strategy_task<'s>(
 
             if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
                 // Clear contract_with_updates for the strategy
-                strategy.contracts_with_updates.clear();
+                strategy.start_contracts.clear();
 
                 // Also clear the displayed contracts
                 if let Some(contract_names) = contract_names_lock.get_mut(&strategy_name) {
@@ -1654,7 +1660,7 @@ pub async fn run_strategy_task<'s>(
         StrategyTask::RemoveIdentityInserts(strategy_name) => {
             let mut strategies_lock = app_state.available_strategies.lock().await;
             if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
-                strategy.identities_inserts = IdentityInsertInfo::default();
+                strategy.identity_inserts = IdentityInsertInfo::default();
                 BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
                     strategy_name.clone(),
                     MutexGuard::map(strategies_lock, |strategies| {

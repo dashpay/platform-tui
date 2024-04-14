@@ -1,4 +1,4 @@
-//! Edit contracts_with_updates screen.
+//! Edit start_contracts screen.
 
 use std::collections::BTreeMap;
 
@@ -15,9 +15,7 @@ use tuirealm::{
 };
 use walkdir::WalkDir;
 
-use super::contracts_with_updates::{
-    ContractsWithUpdatesFormController, RandomContractsFormController,
-};
+use super::start_contracts::{ContractsWithUpdatesFormController, RandomContractsFormController};
 use crate::{
     backend::{AppState, AppStateUpdate, BackendEvent, StrategyTask, Task},
     ui::screen::{
@@ -39,7 +37,7 @@ pub(crate) struct ContractsWithUpdatesScreenController {
     info: Info,
     strategy_name: Option<String>,
     selected_strategy: Option<Strategy>,
-    contracts_with_updates: Vec<(
+    start_contracts: Vec<(
         CreatedDataContract,
         Option<BTreeMap<u64, CreatedDataContract>>,
     )>,
@@ -59,18 +57,14 @@ impl ContractsWithUpdatesScreenController {
         let strategy_contract_names_lock =
             app_state.available_strategies_contract_names.lock().await;
 
-        let (info_text, current_strategy, current_contracts_with_updates) =
+        let (info_text, current_strategy, current_start_contracts) =
             if let Some(selected_strategy_name) = &*selected_strategy_lock {
                 if let Some(strategy) = available_strategies_lock.get(selected_strategy_name) {
-                    // Construct the info_text and get the contracts_with_updates for the selected
+                    // Construct the info_text and get the start_contracts for the selected
                     // strategy
                     let info_text = format!("Selected Strategy: {}", selected_strategy_name);
-                    let current_contracts_with_updates = strategy.contracts_with_updates.clone();
-                    (
-                        info_text,
-                        Some(strategy.clone()),
-                        current_contracts_with_updates,
-                    )
+                    let current_start_contracts = strategy.start_contracts.clone();
+                    (info_text, Some(strategy.clone()), current_start_contracts)
                 } else {
                     ("No selected strategy found".to_string(), None, vec![])
                 }
@@ -84,7 +78,7 @@ impl ContractsWithUpdatesScreenController {
             info,
             strategy_name: selected_strategy_lock.clone(),
             selected_strategy: current_strategy,
-            contracts_with_updates: current_contracts_with_updates,
+            start_contracts: current_start_contracts,
             known_contracts: known_contracts_lock.clone(),
             supporting_contracts: supporting_contracts_lock.clone(),
             strategy_contract_names: strategy_contract_names_lock.clone(),
@@ -217,7 +211,7 @@ impl ScreenController for ContractsWithUpdatesScreenController {
             ) => {
                 self.selected_strategy = Some((*strategy).clone());
                 self.strategy_name = Some(strategy_name.clone());
-                self.contracts_with_updates = strategy.contracts_with_updates.clone();
+                self.start_contracts = strategy.start_contracts.clone();
 
                 // Update the strategy_contract_names map
                 if let Some(strategy_name) = &self.strategy_name {
@@ -233,16 +227,15 @@ impl ScreenController for ContractsWithUpdatesScreenController {
 
     fn view(&mut self, frame: &mut Frame, area: Rect) {
         let display_text = if let Some(strategy_name) = &self.strategy_name {
-            if let Some(contracts_with_updates) = self.strategy_contract_names.get(strategy_name) {
-                if contracts_with_updates.is_empty() {
-                    "No contracts_with_updates".to_string()
+            if let Some(start_contracts) = self.strategy_contract_names.get(strategy_name) {
+                if start_contracts.is_empty() {
+                    "No start_contracts".to_string()
                 } else {
-                    let mut contracts_with_updates_lines = String::new();
-                    contracts_with_updates_lines
-                        .push_str(&format!("Strategy: {}\n", strategy_name));
-                    contracts_with_updates_lines.push_str("Contracts with updates:\n");
-                    for (contract_name, updates) in contracts_with_updates {
-                        contracts_with_updates_lines.push_str(&format!(
+                    let mut start_contracts_lines = String::new();
+                    start_contracts_lines.push_str(&format!("Strategy: {}\n", strategy_name));
+                    start_contracts_lines.push_str("Contracts with updates:\n");
+                    for (contract_name, updates) in start_contracts {
+                        start_contracts_lines.push_str(&format!(
                             "{:indent$}Contract: {}\n",
                             "",
                             contract_name,
@@ -250,7 +243,7 @@ impl ScreenController for ContractsWithUpdatesScreenController {
                         ));
                         if let Some(updates_map) = updates {
                             for (block, update) in updates_map {
-                                contracts_with_updates_lines.push_str(&format!(
+                                start_contracts_lines.push_str(&format!(
                                     "{:indent$}On block {} apply {}\n",
                                     "",
                                     block * 3,
@@ -260,13 +253,13 @@ impl ScreenController for ContractsWithUpdatesScreenController {
                             }
                         }
                     }
-                    contracts_with_updates_lines
+                    start_contracts_lines
                 }
             } else {
                 "Contracts with updates not found for selected strategy.".to_string()
             }
         } else {
-            "Select a strategy to view contracts_with_updates.".to_string()
+            "Select a strategy to view start_contracts.".to_string()
         };
 
         self.info = Info::new_fixed(&display_text);

@@ -11,7 +11,7 @@ mod identity_withdrawal;
 
 use std::collections::BTreeMap;
 
-use rs_sdk::platform::DataContract;
+use dash_sdk::platform::DataContract;
 use tracing::error;
 use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 

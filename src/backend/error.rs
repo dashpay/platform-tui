@@ -23,9 +23,9 @@ pub(crate) enum Error {
     #[error("SDK unexpected result: {0}")]
     SdkUnexpectedResultError(String),
     #[error("SDK error: {0} {1}")]
-    SdkExplainedError(String, rs_sdk::Error),
+    SdkExplainedError(String, dash_sdk::Error),
     #[error("SDK error: {0}")]
-    SdkError(#[from] rs_sdk::Error),
+    SdkError(#[from] dash_sdk::Error),
     #[error("Identity registration error: {0}")]
     IdentityRegistrationError(String),
     #[error("Identity top up error: {0}")]

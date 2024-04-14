@@ -49,7 +49,7 @@ pub struct OperationsScreenController {
     info: Info,
     strategy_name: Option<String>,
     selected_strategy: Option<Strategy>,
-    contracts_with_updates: Vec<(
+    start_contracts: Vec<(
         CreatedDataContract,
         Option<BTreeMap<u64, CreatedDataContract>>,
     )>,
@@ -69,18 +69,14 @@ impl OperationsScreenController {
         let strategy_contract_names_lock =
             app_state.available_strategies_contract_names.lock().await;
 
-        let (info_text, current_strategy, current_contracts_with_updates) =
+        let (info_text, current_strategy, current_start_contracts) =
             if let Some(selected_strategy_name) = &*selected_strategy_lock {
                 if let Some(strategy) = available_strategies_lock.get(selected_strategy_name) {
-                    // Construct the info_text and get the contracts_with_updates for the selected
+                    // Construct the info_text and get the start_contracts for the selected
                     // strategy
                     let info_text = format!("Selected Strategy: {}", selected_strategy_name);
-                    let current_contracts_with_updates = strategy.contracts_with_updates.clone();
-                    (
-                        info_text,
-                        Some(strategy.clone()),
-                        current_contracts_with_updates,
-                    )
+                    let current_start_contracts = strategy.start_contracts.clone();
+                    (info_text, Some(strategy.clone()), current_start_contracts)
                 } else {
                     ("No selected strategy found".to_string(), None, vec![])
                 }
@@ -94,7 +90,7 @@ impl OperationsScreenController {
             info,
             strategy_name: selected_strategy_lock.clone(),
             selected_strategy: current_strategy,
-            contracts_with_updates: current_contracts_with_updates,
+            start_contracts: current_start_contracts,
             known_contracts: known_contracts_lock.clone(),
             supporting_contracts: supporting_contracts_lock.clone(),
             strategy_contract_names: strategy_contract_names_lock.clone(),
@@ -222,7 +218,7 @@ impl ScreenController for OperationsScreenController {
             ) => {
                 self.selected_strategy = Some((*strategy).clone());
                 self.strategy_name = Some(strategy_name.clone());
-                self.contracts_with_updates = strategy.contracts_with_updates.clone();
+                self.start_contracts = strategy.start_contracts.clone();
 
                 // Update the strategy_contract_names map
                 if let Some(strategy_name) = &self.strategy_name {

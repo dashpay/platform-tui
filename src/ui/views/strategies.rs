@@ -1,13 +1,11 @@
 //! Screens and forms related to strategies manipulation.
 
 mod clone_strategy;
-mod contracts_with_updates;
-mod contracts_with_updates_screen;
 mod delete_strategy;
+mod export_strategy;
 mod identity_inserts;
 mod identity_inserts_screen;
 mod import_strategy;
-mod export_strategy;
 mod new_strategy;
 mod operations;
 mod operations_screen;
@@ -15,6 +13,8 @@ mod run_strategy;
 mod run_strategy_screen;
 mod select_strategy;
 pub mod selected_strategy;
+mod start_contracts;
+mod start_contracts_screen;
 mod start_identities;
 mod start_identities_screen;
 
@@ -25,12 +25,10 @@ use tuirealm::{
 };
 
 use self::{
-    delete_strategy::DeleteStrategyFormController,
-    import_strategy::ImportStrategyFormController,
-    export_strategy::ExportStrategyFormController,
-    new_strategy::NewStrategyFormController,
+    delete_strategy::DeleteStrategyFormController, export_strategy::ExportStrategyFormController,
+    import_strategy::ImportStrategyFormController, new_strategy::NewStrategyFormController,
     select_strategy::SelectStrategyFormController,
-    selected_strategy::SelectedStrategyScreenController
+    selected_strategy::SelectedStrategyScreenController,
 };
 use crate::{
     backend::{AppState, AppStateUpdate, BackendEvent},
@@ -123,7 +121,9 @@ impl ScreenController for StrategiesScreenController {
                 modifiers: KeyModifiers::NONE,
             }) => {
                 if !self.available_strategies.is_empty() {
-                    ScreenFeedback::Form(Box::new(ExportStrategyFormController::new(self.available_strategies.clone())))
+                    ScreenFeedback::Form(Box::new(ExportStrategyFormController::new(
+                        self.available_strategies.clone(),
+                    )))
                 } else {
                     ScreenFeedback::None
                 }

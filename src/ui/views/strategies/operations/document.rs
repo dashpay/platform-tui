@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 
+use dash_sdk::platform::DataContract;
 use dpp::data_contract::{
     accessors::v0::DataContractV0Getters,
     document_type::{
@@ -9,7 +10,6 @@ use dpp::data_contract::{
         DocumentType,
     },
 };
-use rs_sdk::platform::DataContract;
 use strategy_tests::{
     frequency::Frequency,
     operations::{DocumentAction, DocumentOp, Operation, OperationType},
@@ -47,7 +47,10 @@ impl StrategyOpDocumentFormController {
 
         // Add only supporting contracts that are also in strategy_contract_names
         for (supporting_contract_name, _) in supporting_contracts.iter() {
-            if strategy_contract_names.iter().any(|(name, _)| name == supporting_contract_name) {
+            if strategy_contract_names
+                .iter()
+                .any(|(name, _)| name == supporting_contract_name)
+            {
                 contract_names.push(supporting_contract_name.clone());
             }
         }
@@ -60,7 +63,7 @@ impl StrategyOpDocumentFormController {
                 }
             }
         }
-        
+
         // Remove duplicates
         let contract_names: Vec<String> = contract_names
             .into_iter()

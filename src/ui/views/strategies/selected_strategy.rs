@@ -20,10 +20,10 @@ use tuirealm::{
 
 use super::{
     clone_strategy::CloneStrategyFormController,
-    contracts_with_updates_screen::ContractsWithUpdatesScreenController,
     identity_inserts_screen::IdentityInsertsScreenController,
     operations_screen::OperationsScreenController, run_strategy::RunStrategyFormController,
     run_strategy_screen::RunStrategyScreenController,
+    start_contracts_screen::ContractsWithUpdatesScreenController,
     start_identities_screen::StartIdentitiesScreenController,
 };
 use crate::{
@@ -182,11 +182,11 @@ fn display_strategy(
     strategy: &Strategy,
     contract_updates: &[(String, Option<BTreeMap<u64, String>>)],
 ) -> String {
-    let mut contracts_with_updates_lines = String::new();
+    let mut start_contracts_lines = String::new();
     // Only display the individual contract details in this screen if the number is less than 5
     if contract_updates.len() <= 5 {
         for (contract, updates) in contract_updates.iter() {
-            contracts_with_updates_lines.push_str(&format!(
+            start_contracts_lines.push_str(&format!(
                 "{:indent$}Contract: {contract}\n",
                 "",
                 indent = 8
@@ -194,7 +194,7 @@ fn display_strategy(
             for (block, update) in updates.iter().flatten() {
                 let block = block + 1;
                 let block_spacing = (block - 1) * 3;
-                contracts_with_updates_lines.push_str(&format!(
+                start_contracts_lines.push_str(&format!(
                     "{:indent$}On block {block_spacing} apply {update}\n",
                     "",
                     indent = 12
@@ -204,25 +204,25 @@ fn display_strategy(
     }
 
     let times_per_block_display = if strategy
-        .identities_inserts
+        .identity_inserts
         .frequency
         .times_per_block_range
         .end
         > strategy
-            .identities_inserts
+            .identity_inserts
             .frequency
             .times_per_block_range
             .start
     {
         strategy
-            .identities_inserts
+            .identity_inserts
             .frequency
             .times_per_block_range
             .end
             - 1
     } else {
         strategy
-            .identities_inserts
+            .identity_inserts
             .frequency
             .times_per_block_range
             .end
@@ -233,7 +233,7 @@ fn display_strategy(
         "",
         times_per_block_display,
         strategy
-            .identities_inserts
+            .identity_inserts
             .frequency
             .chance_per_block
             .unwrap_or(0.0),
@@ -308,13 +308,13 @@ fn display_strategy(
         }
     }
 
-    let contracts_with_updates_len = strategy.contracts_with_updates.len();
+    let start_contracts_len = strategy.start_contracts.len();
     let operations_len = strategy.operations.len();
 
     format!(
         r#"{strategy_name}:
-    Contracts with updates ({contracts_with_updates_len}):
-{contracts_with_updates_lines}
+    Contracts with updates ({start_contracts_len}):
+{start_contracts_lines}
     Identity inserts:
 {identity_inserts_line}
     Operations ({operations_len}):
