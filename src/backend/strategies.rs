@@ -649,8 +649,8 @@ pub async fn run_strategy_task<'s>(
         }
         StrategyTask::RunStrategy(strategy_name, num_blocks_or_seconds, verify_proofs, block_mode) => {
             tracing::info!("-----Starting strategy '{}'-----", strategy_name);
-            let init_start_time = Instant::now(); // Start time of strategy initialization plus execution of first block
-            let mut init_time = Duration::new(0, 0); // Will set this to the time it takes for all initialization plus the first block to complete
+            let init_start_time = Instant::now(); // Start time of strategy initialization plus execution of first two blocks
+            let mut init_time = Duration::new(0, 0); // Will set this to the time it takes for all initialization plus the first two blocks to complete
 
             // Fetch known_contracts from the chain to assure local copies match actual state.
             match update_known_contracts(sdk, &app_state.known_contracts).await {
@@ -775,26 +775,21 @@ pub async fn run_strategy_task<'s>(
                 // Set the nonce counters
                 let used_contract_ids = strategy.used_contract_ids();
                 tracing::info!("Fetching {} identity contract nonces from Platform...", used_contract_ids.len());
-                let mut identity_nonce_counter = BTreeMap::new();
-                let current_identity_nonce = sdk
-                    .get_identity_nonce(
-                        loaded_identity_clone.id(),
-                        false,
-                        Some(dash_sdk::platform::transition::put_settings::PutSettings {
-                            request_settings: RequestSettings::default(),
-                            identity_nonce_stale_time_s: Some(0),
-                            user_fee_increase: None,
-                        }))
-                    .await
-                    .expect("Couldn't get current identity nonce");
-                identity_nonce_counter.insert(loaded_identity_clone.id(), current_identity_nonce);
-                let mut contract_nonce_counter = BTreeMap::new();
-                let mut index = 1;
-                for used_contract_id in used_contract_ids {
-                    // Fetch nonce from platform
-                    let current_identity_contract_nonce = sdk
-                        .get_identity_contract_nonce(
-                            loaded_identity_clone.id(),
+                let nonce_fetching_time = Instant::now();
+                let identity_future = sdk.get_identity_nonce(
+                    loaded_identity_clone.id(),
+                    false,
+                    Some(dash_sdk::platform::transition::put_settings::PutSettings {
+                        request_settings: RequestSettings::default(),
+                        identity_nonce_stale_time_s: Some(0),
+                        user_fee_increase: None,
+                    }),
+                );
+                let contract_futures = used_contract_ids.clone().into_iter().map(|used_contract_id| {
+                    let identity_id = loaded_identity_clone.id();
+                    async move {
+                        let current_nonce = sdk.get_identity_contract_nonce(
+                            identity_id,
                             used_contract_id,
                             false,
                             Some(dash_sdk::platform::transition::put_settings::PutSettings {
@@ -802,16 +797,16 @@ pub async fn run_strategy_task<'s>(
                                 identity_nonce_stale_time_s: Some(0),
                                 user_fee_increase: None,
                             })
-                        )
-                        .await
-                        .expect("Couldn't get current identity contract nonce");
-                    contract_nonce_counter.insert(
-                        (loaded_identity_clone.id(), used_contract_id),
-                        current_identity_contract_nonce,
-                    );
-                    tracing::info!("Fetched {index} nonce");
-                    index += 1;
-                }
+                        ).await.expect("Couldn't get current identity contract nonce");
+                        ((identity_id, used_contract_id), current_nonce)
+                    }
+                });
+                let identity_result = identity_future.await.expect("Couldn't get current identity nonce");
+                let mut identity_nonce_counter = BTreeMap::new();
+                identity_nonce_counter.insert(loaded_identity_clone.id(), identity_result);
+                let contract_results = join_all(contract_futures).await;
+                let mut contract_nonce_counter: BTreeMap<(Identifier, Identifier), u64> = contract_results.into_iter().collect();
+                tracing::info!("Took {} seconds to obtain {} identity contract nonces", nonce_fetching_time.elapsed().as_secs(), used_contract_ids.len());
 
                 // Get a lock on the local drive for the following two callbacks
                 let drive_lock = app_state.drive.lock().await;
@@ -966,14 +961,14 @@ pub async fn run_strategy_task<'s>(
                 let mut current_block_info = initial_block_info.clone(); // Used for transition creation and logging
                 let mut transition_count = 0; // Used for logging how many transitions we attempted
                 let mut success_count = 0; // Used for logging how many transitions were successful
-                let mut load_start_time = Instant::now(); // Time when the load test begins (all blocks after the first/init block)
+                let mut load_start_time = Instant::now(); // Time when the load test begins (all blocks after the second block)
                 let mut index = 1; // Index of the loop iteration. Represents blocks for block mode and seconds for time mode
                 let oks = Arc::new(AtomicUsize::new(0)); // Atomic counter for successful broadcasts
                 let errs = Arc::new(AtomicUsize::new(0)); // Atomic counter for failed broadcasts
 
                 // Now loop through the number of blocks or seconds the user asked for, preparing and processing state transitions
                 while (block_mode && current_block_info.height < (initial_block_info.height + num_blocks_or_seconds))
-                    || (!block_mode && load_start_time.elapsed().as_secs() < num_blocks_or_seconds + 120) {
+                    || (!block_mode && load_start_time.elapsed().as_secs() < num_blocks_or_seconds) {
 
                     let oks_clone = oks.clone();
                     let errs_clone = errs.clone();
@@ -1160,11 +1155,17 @@ pub async fn run_strategy_task<'s>(
                                 let oks = oks_clone.clone();
                                 let errs = errs_clone.clone();
 
+                                let mut request_settings = RequestSettings::default();
+                                if !block_mode {
+                                    request_settings.timeout = Some(Duration::from_secs(1));
+                                    request_settings.retries = Some(0);
+                                }
+
                                 // Prepare futures for broadcasting independent transitions
                                 let future = async move {
                                     match transition_clone.broadcast_request_for_state_transition() {
                                         Ok(broadcast_request) => {
-                                            let broadcast_result = broadcast_request.execute(sdk, RequestSettings::default()).await;
+                                            let broadcast_result = broadcast_request.execute(sdk, request_settings).await;
                                             match broadcast_result {
                                                 Ok(_) => {
                                                     oks.fetch_add(1, Ordering::SeqCst);
@@ -1420,13 +1421,19 @@ pub async fn run_strategy_task<'s>(
                             }    
                         } else {
                             // Time mode
-                            // Sleep for three seconds on first and second blocks to make sure we don't submit documents or updates in the same block as contract or identity creation
-                            if index == 1 {
-                                tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
-                            } else if index == 2 {
-                                tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
-                            }
                         }
+
+                        // Sleep for some time on first and second blocks to make sure we don't submit documents or updates in the same block as contract or identity creation
+                        if index == 1 {
+                            tracing::info!("Sleeping 60 seconds to allow start_identities to register.");
+                            tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
+                            load_start_time = Instant::now();
+                        } else if index == 2 {
+                            tracing::info!("Sleeping 60 seconds to allow start_contracts to register.");
+                            tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
+                            load_start_time = Instant::now();
+                        }
+                        
                     } else {
                         // No transitions prepared for the block (or second)
                         tracing::info!(
@@ -1436,11 +1443,7 @@ pub async fn run_strategy_task<'s>(
                         );
                     }
 
-                    // If it's the first iteration of the loop, reset the start time to after processing
-                    // Because start_identities asset lock proofs take a long time and
-                    // I'm not concerned with that right now
                     if index == 2 {
-                        load_start_time = Instant::now();
                         init_time = init_start_time.elapsed();
                     }
 
@@ -1529,11 +1532,11 @@ pub async fn run_strategy_task<'s>(
                         transition_count,
                         success_count,
                         (current_block_info.height - initial_block_info.height),
-                        load_execution_run_time.as_secs(), // Processing time after the first block
+                        load_run_time, // Processing time after the second block
                         (transition_count
                             - strategy.start_contracts.len()
                             - strategy.start_identities.number_of_identities as usize
-                        ) as u64 / load_run_time, // tps besides the first block
+                        ) as u64 / (load_run_time), // tps besides the first two blocks
                         dash_spent_identity,
                         dash_spent_wallet,
                     );    
@@ -1553,7 +1556,7 @@ pub async fn run_strategy_task<'s>(
                         (transition_count
                             - strategy.start_contracts.len()
                             - strategy.start_identities.number_of_identities as usize
-                        ) as u64 / (load_run_time - 120), // Subtract 3 here because we sleep for 13 seconds after the first block.
+                        ) as u64 / (load_run_time), // Subtract 3 here because we sleep for 13 seconds after the first block.
                         dash_spent_identity,
                         dash_spent_wallet,
                     );    
@@ -1567,7 +1570,7 @@ pub async fn run_strategy_task<'s>(
                         start_block_height: initial_block_info.height,
                         success_count: success_count.try_into().unwrap(),
                         transition_count: transition_count.try_into().unwrap(),
-                        rate: transition_count as u64 / (load_run_time - 120),
+                        rate: transition_count as u64 / (load_run_time),
                         run_time: load_execution_run_time,
                         init_time: init_time,
                         dash_spent_identity,
