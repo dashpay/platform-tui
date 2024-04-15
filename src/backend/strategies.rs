@@ -1156,7 +1156,7 @@ pub async fn run_strategy_task<'s>(
                                 let errs = errs_clone.clone();
 
                                 let mut request_settings = RequestSettings::default();
-                                if !block_mode {
+                                if !block_mode && index != 1 && index != 2 {
                                     request_settings.timeout = Some(Duration::from_secs(1));
                                     request_settings.retries = Some(0);
                                 }
@@ -1545,7 +1545,7 @@ pub async fn run_strategy_task<'s>(
                     tracing::info!(
                         "-----Strategy '{}' completed-----\n\nMode: {}\nState transitions attempted: {}\nState \
                         transitions succeeded: {}\nNumber of loops: {}\nLoad run time: \
-                        {:?} seconds\nInit run time: {} seconds\nAttempted rate (approx): {} txs/s\nDash spent (Loaded Identity): {}\nDash spent (Wallet): {}\n",
+                        {:?} seconds\nInit run time: {} seconds\nAttempted rate (approx): {} txs/s\nSuccessful rate: {}\nDash spent (Loaded Identity): {}\nDash spent (Wallet): {}\n",
                         strategy_name,
                         mode_string,
                         transition_count,
@@ -1556,7 +1556,11 @@ pub async fn run_strategy_task<'s>(
                         (transition_count
                             - strategy.start_contracts.len()
                             - strategy.start_identities.number_of_identities as usize
-                        ) as u64 / (load_run_time), // Subtract 3 here because we sleep for 13 seconds after the first block.
+                        ) as u64 / (load_run_time),
+                        (success_count
+                            - strategy.start_contracts.len()
+                            - strategy.start_identities.number_of_identities as usize
+                        ) as u64 / (load_run_time),
                         dash_spent_identity,
                         dash_spent_wallet,
                     );    
@@ -1570,7 +1574,14 @@ pub async fn run_strategy_task<'s>(
                         start_block_height: initial_block_info.height,
                         success_count: success_count.try_into().unwrap(),
                         transition_count: transition_count.try_into().unwrap(),
-                        rate: transition_count as u64 / (load_run_time),
+                        rate: (transition_count
+                            - strategy.start_contracts.len()
+                            - strategy.start_identities.number_of_identities as usize
+                        ) as u64 / (load_run_time),
+                        success_rate: (success_count
+                            - strategy.start_contracts.len()
+                            - strategy.start_identities.number_of_identities as usize
+                        ) as u64 / (load_run_time),
                         run_time: load_execution_run_time,
                         init_time: init_time,
                         dash_spent_identity,

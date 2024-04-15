@@ -148,6 +148,7 @@ pub(crate) enum StrategyCompletionResult {
         run_time: Duration,
         init_time: Duration,
         rate: u64,
+        success_rate: u64,
         dash_spent_identity: f64,
         dash_spent_wallet: f64,
     },

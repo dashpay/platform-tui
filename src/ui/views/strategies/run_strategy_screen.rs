@@ -96,6 +96,7 @@ impl ScreenController for RunStrategyScreenController {
                         success_count,
                         transition_count,
                         rate,
+                        success_rate,
                         run_time,
                         init_time,
                         dash_spent_identity,
@@ -108,7 +109,7 @@ impl ScreenController for RunStrategyScreenController {
                         format!(
                             "Strategy '{}' completed:\n\nMode: {}\nState transitions attempted: {}\nState \
                              transitions succeeded: {}\nNumber of blocks (or seconds): {}\nRun time: \
-                             {:?}\nInitialization time: {}\nAttempted rate (approx): {} txs/s\nDash spent (Identity): {}\nDash spent (Wallet): {}",
+                             {:?}\nInitialization time: {}\nAttempted rate (approx): {} txs/s\nSuccessful rate: {}\nDash spent (Identity): {}\nDash spent (Wallet): {}",
                             strategy_name,
                             mode,
                             transition_count,
@@ -117,6 +118,7 @@ impl ScreenController for RunStrategyScreenController {
                             run_time,
                             init_time.as_secs(),
                             rate,
+                            success_rate,
                             dash_spent_identity,
                             dash_spent_wallet,
                         )
