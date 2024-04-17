@@ -313,10 +313,10 @@ fn display_strategy(
 
     format!(
         r#"{strategy_name}:
-    Start contracts ({start_contracts_len}):
-{start_contracts_lines}
     Start identities: {} (Keys: {}, Balance: {:.2} dash)
     
+    Start contracts ({start_contracts_len}):
+{start_contracts_lines}
     Operations ({operations_len}):
 {operations_lines}
     Identity inserts:
