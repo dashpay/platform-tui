@@ -118,7 +118,7 @@ impl ContractsWithUpdatesScreenController {
 
 impl ScreenController for ContractsWithUpdatesScreenController {
     fn name(&self) -> &'static str {
-        "Contracts with updates"
+        "Start contracts"
     }
 
     fn command_keys(&self) -> &[ScreenCommandKey] {
@@ -233,7 +233,7 @@ impl ScreenController for ContractsWithUpdatesScreenController {
                 } else {
                     let mut start_contracts_lines = String::new();
                     start_contracts_lines.push_str(&format!("Strategy: {}\n", strategy_name));
-                    start_contracts_lines.push_str("Contracts with updates:\n");
+                    start_contracts_lines.push_str("Start contracts:\n");
                     for (contract_name, updates) in start_contracts {
                         start_contracts_lines.push_str(&format!(
                             "{:indent$}Contract: {}\n",
@@ -256,7 +256,7 @@ impl ScreenController for ContractsWithUpdatesScreenController {
                     start_contracts_lines
                 }
             } else {
-                "Contracts with updates not found for selected strategy.".to_string()
+                "Start contracts not found for selected strategy.".to_string()
             }
         } else {
             "Select a strategy to view start_contracts.".to_string()

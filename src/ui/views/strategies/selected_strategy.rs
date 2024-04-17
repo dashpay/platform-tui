@@ -39,7 +39,7 @@ const COMMAND_KEYS: [ScreenCommandKey; 7] = [
     ScreenCommandKey::new("q", "Back to Strategies"),
     ScreenCommandKey::new("r", "Run strategy"),
     ScreenCommandKey::new("l", "Clone this strategy"),
-    ScreenCommandKey::new("c", "Contracts with updates"),
+    ScreenCommandKey::new("c", "Start contracts"),
     ScreenCommandKey::new("i", "Identity inserts"),
     ScreenCommandKey::new("o", "Operations"),
     ScreenCommandKey::new("s", "Start identities"),
@@ -313,13 +313,14 @@ fn display_strategy(
 
     format!(
         r#"{strategy_name}:
-    Contracts with updates ({start_contracts_len}):
+    Start contracts ({start_contracts_len}):
 {start_contracts_lines}
-    Identity inserts:
-{identity_inserts_line}
+    Start identities: {} (Keys: {}, Balance: {:.2} dash)
+    
     Operations ({operations_len}):
 {operations_lines}
-    Start identities: {} (Keys: {}, Balance: {:.2} dash)"#,
+    Identity inserts:
+{identity_inserts_line}"#,
         strategy.start_identities.number_of_identities,
         strategy.start_identities.keys_per_identity
             + strategy.start_identities.extra_keys.len() as u8,

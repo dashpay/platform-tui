@@ -107,7 +107,7 @@ impl FormController for ContractsWithUpdatesFormController {
     }
 
     fn form_name(&self) -> &'static str {
-        "Contract with updates for strategy"
+        "Start contracts for strategy"
     }
 
     fn step_view(&mut self, frame: &mut Frame, area: Rect) {
@@ -188,7 +188,7 @@ impl FormController for RandomContractsFormController {
     }
 
     fn form_name(&self) -> &'static str {
-        "Random initial contracts for strategy"
+        "Random start contracts for strategy"
     }
 
     fn step_view(&mut self, frame: &mut Frame, area: Rect) {

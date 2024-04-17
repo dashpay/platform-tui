@@ -202,7 +202,7 @@ impl FormController for DocumentTypeFormController {
                                     .expect("Expected the document type to be there"),
                                 action: DocumentAction::DocumentActionInsertRandom(
                                     DocumentFieldFillType::FillIfNotRequired,
-                                    DocumentFieldFillSize::AnyDocumentFillSize,
+                                    DocumentFieldFillSize::MinDocumentFillSize,
                                 ),
                             }),
                             frequency: Frequency {

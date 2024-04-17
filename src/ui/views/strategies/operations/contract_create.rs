@@ -14,13 +14,16 @@ use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
 use crate::{
     backend::{StrategyTask, Task},
-    ui::form::{ComposedInput, Field, FormController, FormStatus, Input, InputStatus, SelectInput},
+    ui::form::{
+        parsers::DefaultTextInputParser, ComposedInput, Field, FormController, FormStatus, Input,
+        InputStatus, SelectInput, TextInput,
+    },
 };
 
 pub(super) struct StrategyOpContractCreateFormController {
     input: ComposedInput<(
-        Field<SelectInput<u16>>,
-        Field<SelectInput<u16>>,
+        Field<TextInput<DefaultTextInputParser<u16>>>,
+        Field<TextInput<DefaultTextInputParser<u16>>>,
         Field<SelectInput<f64>>,
     )>,
     selected_strategy: String,
@@ -32,12 +35,9 @@ impl StrategyOpContractCreateFormController {
             input: ComposedInput::new((
                 Field::new(
                     "Number of document types",
-                    SelectInput::new(vec![1, 5, 10, 15, 20, 25, 30, 50, 100]),
+                    TextInput::new("Enter a whole number."),
                 ),
-                Field::new(
-                    "Times per block",
-                    SelectInput::new(vec![1, 2, 5, 10, 20, 24]),
-                ),
+                Field::new("Times per block", TextInput::new("Enter a whole number")),
                 Field::new(
                     "Chance per block",
                     SelectInput::new(vec![1.0, 0.9, 0.75, 0.5, 0.25, 0.1]),

@@ -95,24 +95,14 @@ impl FormController for StrategyStartIdentitiesFormController {
 }
 
 pub(super) struct StrategyStartIdentitiesBalanceFormController {
-    input: SelectInput<u64>,
+    input: TextInput<DefaultTextInputParser<f64>>,
     selected_strategy: String,
 }
 
 impl StrategyStartIdentitiesBalanceFormController {
     pub(super) fn new(selected_strategy: String) -> Self {
         Self {
-            input: SelectInput::new(vec![
-                1_000_000,
-                10_000_000,
-                50_000_000,
-                100_000_000,
-                300_000_000,
-                500_000_000,
-                1_000_000_000,
-                1_500_000_000,
-                2_000_000_000,
-            ]),
+            input: TextInput::new("Quantity (in Dash)"),
             selected_strategy,
         }
     }
@@ -124,7 +114,7 @@ impl FormController for StrategyStartIdentitiesBalanceFormController {
             InputStatus::Done(balance) => FormStatus::Done {
                 task: Task::Strategy(StrategyTask::SetStartIdentitiesBalance(
                     self.selected_strategy.clone(),
-                    balance,
+                    (balance * 100000000.0) as u64,
                 )),
                 block: false,
             },
@@ -133,7 +123,7 @@ impl FormController for StrategyStartIdentitiesBalanceFormController {
     }
 
     fn form_name(&self) -> &'static str {
-        "Set initial identities balances (100_000_000 duffs = 1 dash)"
+        "Set start identities balances"
     }
 
     fn step_view(&mut self, frame: &mut Frame, area: Rect) {

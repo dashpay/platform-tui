@@ -145,6 +145,9 @@ pub async fn run_strategy_task<'s>(
                                         let mut contract_names_lock = app_state.available_strategies_contract_names.lock().await;
                                         contract_names_lock.insert(strategy_name.clone(), strategy_start_contracts_in_format);
 
+                                        let mut selected_strategy = app_state.selected_strategy.lock().await;
+                                        *selected_strategy = Some(strategy_name.clone());
+
                                         BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
                                             strategy_name.clone(),
                                             MutexGuard::map(strategies_lock, |strategies| {
@@ -536,7 +539,7 @@ pub async fn run_strategy_task<'s>(
                         .expect("Expected to get a document type in RegisterDocsToAllContracts");
                     let action = DocumentAction::DocumentActionInsertRandom(
                             DocumentFieldFillType::FillIfNotRequired,
-                            DocumentFieldFillSize::AnyDocumentFillSize,
+                            DocumentFieldFillSize::MinDocumentFillSize,
                         );
                     let operation = Operation {
                         op_type: OperationType::Document(DocumentOp {
@@ -1160,6 +1163,10 @@ pub async fn run_strategy_task<'s>(
                                     request_settings.timeout = Some(Duration::from_secs(1));
                                     request_settings.retries = Some(0);
                                 }
+                                if block_mode && index != 1 && index != 2 {
+                                    request_settings.timeout = Some(Duration::from_secs(3));
+                                    request_settings.retries = Some(1);
+                                }
 
                                 // Prepare futures for broadcasting independent transitions
                                 let future = async move {
@@ -1183,7 +1190,9 @@ pub async fn run_strategy_task<'s>(
                                         },
                                         Err(e) => {
                                             errs.fetch_add(1, Ordering::SeqCst);
-                                            tracing::error!("Error preparing broadcast for transition: {}, Error: {:?}", transition_clone.name(), e);
+                                            if !block_mode {
+                                                tracing::error!("Error preparing broadcast request for transition: {}, Error: {:?}", transition_clone.name(), e);
+                                            }
                                             Err(e)
                                         }.expect("Expected to prepare broadcast for request for state transition") // I guess I have to do this to make it compile
                                     }
@@ -1269,7 +1278,7 @@ pub async fn run_strategy_task<'s>(
                                                             if !verify_proofs {
                                                                 tracing::info!(
                                                                     "Successfully processed state transition {} ({}) for {} {} (Actual block height: {})",
-                                                                    index + 1, transition.name(), mode_string, index, metadata.height
+                                                                    index + 1, transition.name(), mode_string, current_block_info.height, metadata.height
                                                                 );    
                                                             }
 
@@ -1400,7 +1409,7 @@ pub async fn run_strategy_task<'s>(
                                             "Error preparing broadcast request for state transition {} {} {}: {:?}",
                                             index + 1,
                                             mode_string,
-                                            index,
+                                            current_block_info.height,
                                             e
                                         );
                                     }
