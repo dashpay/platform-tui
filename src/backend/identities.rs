@@ -12,16 +12,6 @@ use dapi_grpc::{
         GetIdentityBalanceRequest,
     },
 };
-use dash_sdk::{
-    platform::{
-        transition::{
-            broadcast::BroadcastStateTransition, put_identity::PutIdentity,
-            top_up_identity::TopUpIdentity, withdraw_from_identity::WithdrawFromIdentity,
-        },
-        Fetch,
-    },
-    Sdk,
-};
 use dpp::{
     dashcore::{psbt::serialize::Serialize, Address, PrivateKey, Transaction},
     identity::{
@@ -42,6 +32,16 @@ use dpp::{
 };
 use rand::{rngs::StdRng, SeedableRng};
 use rs_dapi_client::{DapiRequestExecutor, RequestSettings};
+use dash_sdk::{
+    platform::{
+        transition::{
+            broadcast::BroadcastStateTransition, put_identity::PutIdentity,
+            top_up_identity::TopUpIdentity, withdraw_from_identity::WithdrawFromIdentity,
+        },
+        Fetch,
+    },
+    Sdk,
+};
 use simple_signer::signer::SimpleSigner;
 use tokio::sync::{MappedMutexGuard, MutexGuard};
 

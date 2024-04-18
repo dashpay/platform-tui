@@ -317,10 +317,10 @@ fn display_strategy(
     
     Start contracts ({start_contracts_len}):
 {start_contracts_lines}
-    Operations ({operations_len}):
-{operations_lines}
     Identity inserts:
-{identity_inserts_line}"#,
+{identity_inserts_line}
+    Operations ({operations_len}):
+{operations_lines}"#,
         strategy.start_identities.number_of_identities,
         strategy.start_identities.keys_per_identity
             + strategy.start_identities.extra_keys.len() as u8,

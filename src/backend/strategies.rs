@@ -31,6 +31,7 @@ use dash_sdk::{
     platform::{transition::broadcast_request::BroadcastRequestForStateTransition, Fetch},
     Sdk,
 };
+use dash_sdk::platform::transition::withdraw_from_identity::WithdrawFromIdentity;
 use simple_signer::signer::SimpleSigner;
 use strategy_tests::{
     frequency::Frequency, operations::{DocumentAction, DocumentOp, FinalizeBlockOperation, Operation, OperationType}, IdentityInsertInfo, LocalDocumentQuery, StartIdentities, Strategy, StrategyConfig
@@ -966,6 +967,7 @@ pub async fn run_strategy_task<'s>(
                 let mut success_count = 0; // Used for logging how many transitions were successful
                 let mut load_start_time = Instant::now(); // Time when the load test begins (all blocks after the second block)
                 let mut index = 1; // Index of the loop iteration. Represents blocks for block mode and seconds for time mode
+                let mut new_identity_ids = Vec::new(); // Will capture the ids of identities added to current_identities
                 let oks = Arc::new(AtomicUsize::new(0)); // Atomic counter for successful broadcasts
                 let errs = Arc::new(AtomicUsize::new(0)); // Atomic counter for failed broadcasts
 
@@ -1005,6 +1007,9 @@ pub async fn run_strategy_task<'s>(
 
                     // Add the identities that will be created to current_identities.
                     // TO-DO: This should be moved to execution after we confirm they were registered.
+                    for identity in &new_identities {
+                        new_identity_ids.push(identity.id().to_string(Encoding::Base58))
+                    }
                     current_identities.append(&mut new_identities);
 
                     // TO-DO: for DocumentDelete and DocumentReplace strategy operations, we need to 
@@ -1160,10 +1165,12 @@ pub async fn run_strategy_task<'s>(
 
                                 let mut request_settings = RequestSettings::default();
                                 if !block_mode && index != 1 && index != 2 {
+                                    request_settings.connect_timeout = Some(Duration::from_secs(1));
                                     request_settings.timeout = Some(Duration::from_secs(1));
                                     request_settings.retries = Some(0);
                                 }
                                 if block_mode && index != 1 && index != 2 {
+                                    request_settings.connect_timeout = Some(Duration::from_secs(3));
                                     request_settings.timeout = Some(Duration::from_secs(3));
                                     request_settings.retries = Some(1);
                                 }
@@ -1183,7 +1190,8 @@ pub async fn run_strategy_task<'s>(
                                                 },
                                                 Err(e) => {
                                                     errs.fetch_add(1, Ordering::SeqCst);
-                                                    tracing::error!("Failed to broadcast transition: {}, Error: {:?}", transition_clone.name(), e);
+                                                    // Error logging seems unnecessary here because rs-dapi-client seems to log all the errors already
+                                                    // tracing::error!("Failed to broadcast transition: {}, Error: {:?}", transition_clone.name(), e);
                                                     Err(e)
                                                 }
                                             }
@@ -1278,7 +1286,7 @@ pub async fn run_strategy_task<'s>(
                                                             if !verify_proofs {
                                                                 tracing::info!(
                                                                     "Successfully processed state transition {} ({}) for {} {} (Actual block height: {})",
-                                                                    index + 1, transition.name(), mode_string, current_block_info.height, metadata.height
+                                                                    index + 1, transition.name(), mode_string, index, metadata.height
                                                                 );    
                                                             }
 
@@ -1448,7 +1456,7 @@ pub async fn run_strategy_task<'s>(
                         tracing::info!(
                             "No state transitions prepared for {} {}",
                             mode_string,
-                            current_block_info.height
+                            index
                         );
                     }
 
@@ -1486,6 +1494,41 @@ pub async fn run_strategy_task<'s>(
                 if !block_mode {
                     tracing::info!("Time-based strategy execution ran for {} seconds and intended to run for {} seconds.", load_execution_run_time.as_secs(), num_blocks_or_seconds);
                 }
+
+                // Log all the newly added identities to current identities
+                // Note these txs were not confirmed. They were just attempted at least.
+                tracing::info!("Newly created identities: {:?}", new_identity_ids);
+
+                // // WIP: This broke testnet :(
+                // // Withdraw all funds from newly created identities back to the wallet
+                // current_identities.remove(0); // Remove loaded identity from the vector
+                // let wallet_lock = app_state.loaded_wallet.lock().await.clone().expect("Expected a loaded wallet while withdrawing");
+                // tracing::info!("Withdrawing funds from newly created identities back to the loaded wallet...");
+                // for identity in current_identities {
+                //     tracing::info!("Identity {} balance before withdrawal: {}", identity.id().to_string(Encoding::Base58), identity.balance());
+                //     let result = identity.withdraw(
+                //         sdk,
+                //         wallet_lock.receive_address(),
+                //         identity.balance() - 1_000_000,
+                //         None,
+                //         None,
+                //         signer.clone(),
+                //         None,
+                //     ).await;
+                //     match result {
+                //         Ok(balance) => tracing::info!("Withdrew {} from identity {}", balance, identity.id().to_string(Encoding::Base58)),
+                //         Err(e) => {
+                //             if !e.to_string().contains("invalid proof") {
+                //                 tracing::info!("Withdrew from identity {} (proof not verified)", identity.id().to_string(Encoding::Base58));
+                //             } else {
+                //                 tracing::error!("Error withdrawing from identity {}: {}", identity.id().to_string(Encoding::Base58), e);
+                //             }
+                //         }
+                //     }
+                //     tracing::info!("Identity {} balance after withdrawal: {}", identity.id().to_string(Encoding::Base58), identity.balance());
+                // }
+                // tracing::info!("Withdrawals finished");
+                // drop(wallet_lock);
 
                 // Refresh the identity at the end
                 drop(loaded_identity_lock);
@@ -1554,7 +1597,7 @@ pub async fn run_strategy_task<'s>(
                     tracing::info!(
                         "-----Strategy '{}' completed-----\n\nMode: {}\nState transitions attempted: {}\nState \
                         transitions succeeded: {}\nNumber of loops: {}\nLoad run time: \
-                        {:?} seconds\nInit run time: {} seconds\nAttempted rate (approx): {} txs/s\nSuccessful rate: {}\nDash spent (Loaded Identity): {}\nDash spent (Wallet): {}\n",
+                        {:?} seconds\nInit run time: {} seconds\nAttempted rate (approx): {} txs/s\nSuccessful rate: {} tx/s\nSuccess percentage: {}%\nDash spent (Loaded Identity): {}\nDash spent (Wallet): {}\n",
                         strategy_name,
                         mode_string,
                         transition_count,
@@ -1565,11 +1608,18 @@ pub async fn run_strategy_task<'s>(
                         (transition_count
                             - strategy.start_contracts.len()
                             - strategy.start_identities.number_of_identities as usize
-                        ) as u64 / (load_run_time),
+                        ) as u64 / (load_run_time), // Attempted rate
                         (success_count
                             - strategy.start_contracts.len()
                             - strategy.start_identities.number_of_identities as usize
-                        ) as u64 / (load_run_time),
+                        ) as u64 / (load_run_time), // Successful rate
+                        (((success_count
+                            - strategy.start_contracts.len()
+                            - strategy.start_identities.number_of_identities as usize
+                        ) as f64 / (transition_count
+                            - strategy.start_contracts.len()
+                            - strategy.start_identities.number_of_identities as usize
+                        ) as f64) * 100.0) as u64, // Success percentage
                         dash_spent_identity,
                         dash_spent_wallet,
                     );    
@@ -1591,6 +1641,13 @@ pub async fn run_strategy_task<'s>(
                             - strategy.start_contracts.len()
                             - strategy.start_identities.number_of_identities as usize
                         ) as u64 / (load_run_time),
+                        success_percent: (((success_count
+                            - strategy.start_contracts.len()
+                            - strategy.start_identities.number_of_identities as usize
+                        ) as f64 / (transition_count
+                            - strategy.start_contracts.len()
+                            - strategy.start_identities.number_of_identities as usize
+                        ) as f64) * 100.0) as u64, // Success percentage
                         run_time: load_execution_run_time,
                         init_time: init_time,
                         dash_spent_identity,

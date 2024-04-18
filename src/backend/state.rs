@@ -458,12 +458,12 @@ impl AppState {
             *app_state_supporting_contracts = supporting_contracts;
         }
 
-        if let Some(wallet) = app_state.loaded_wallet.lock().await.as_mut() {
-            wallet
-                .reload_utxos(insight)
-                .await
-                .expect("expected to reload utxos");
-        }
+        // if let Some(wallet) = app_state.loaded_wallet.lock().await.as_mut() {
+        //     wallet
+        //         .reload_utxos(insight)
+        //         .await
+        //         .expect("expected to reload utxos");
+        // }
 
         app_state
     }

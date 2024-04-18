@@ -1,7 +1,6 @@
 use std::{fs::File, panic, time::Duration};
 
 use crossterm::event::{Event as TuiEvent, EventStream};
-use dash_sdk::{RequestSettings, SdkBuilder};
 use dpp::{identity::accessors::IdentityGettersV0, version::PlatformVersion};
 use futures::{future::OptionFuture, select, FutureExt, StreamExt};
 use rs_platform_explorer::{
@@ -10,6 +9,7 @@ use rs_platform_explorer::{
     ui::{IdentityBalance, Ui, UiFeedback},
     Event,
 };
+use dash_sdk::{RequestSettings, SdkBuilder};
 
 #[tokio::main]
 async fn main() {
