@@ -155,6 +155,8 @@ impl FormController for StrategyOpDocumentFormController {
 pub(super) struct DocumentTypeFormController {
     input: ComposedInput<(
         Field<SelectInput<String>>, // Document types
+        Field<SelectInput<String>>, // Fill size
+        Field<SelectInput<String>>, // Fill type
         Field<SelectInput<u16>>,    // Times per block
         Field<SelectInput<f64>>,    // Chance per block
     )>,
@@ -171,6 +173,18 @@ impl DocumentTypeFormController {
         Self {
             input: ComposedInput::new((
                 Field::new("Select Document Type", SelectInput::new(document_types)),
+                Field::new(
+                    "How much data to populate the document with?",
+                    SelectInput::new(vec![
+                        "Minimum".to_string(),
+                        "Maximum".to_string(),
+                        "Random".to_string(),
+                    ]),
+                ),
+                Field::new(
+                    "Populate not-required fields?",
+                    SelectInput::new(vec!["Yes".to_string(), "No".to_string()]),
+                ),
                 Field::new(
                     "Times per block",
                     SelectInput::new(vec![1, 2, 5, 10, 20, 24]),
@@ -189,7 +203,30 @@ impl DocumentTypeFormController {
 impl FormController for DocumentTypeFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
         match self.input.on_event(event) {
-            InputStatus::Done((document_type, times_per_block, chance_per_block)) => {
+            InputStatus::Done((
+                document_type,
+                fill_size_string,
+                fill_type_string,
+                times_per_block,
+                chance_per_block,
+            )) => {
+                let fill_size = match &fill_size_string as &str {
+                    "Minimium" => DocumentFieldFillSize::MinDocumentFillSize,
+                    "Maximum" => DocumentFieldFillSize::MaxDocumentFillSize,
+                    "Random" => DocumentFieldFillSize::AnyDocumentFillSize,
+                    _ => {
+                        tracing::error!("Fill size string invalid in document creation. Setting to AnyDocumentFillSize.");
+                        DocumentFieldFillSize::AnyDocumentFillSize
+                    }
+                };
+                let fill_type = match &fill_type_string as &str {
+                    "Yes" => DocumentFieldFillType::FillIfNotRequired,
+                    "No" => DocumentFieldFillType::DoNotFillIfNotRequired,
+                    _ => {
+                        tracing::error!("Fill size string invalid in document creation. Setting to DoNotFillIfNotRequired.");
+                        DocumentFieldFillType::DoNotFillIfNotRequired
+                    }
+                };
                 FormStatus::Done {
                     task: Task::Strategy(StrategyTask::AddOperation {
                         strategy_name: self.selected_strategy_name.clone(),
@@ -201,8 +238,7 @@ impl FormController for DocumentTypeFormController {
                                     .document_type_cloned_for_name(&document_type)
                                     .expect("Expected the document type to be there"),
                                 action: DocumentAction::DocumentActionInsertRandom(
-                                    DocumentFieldFillType::FillIfNotRequired,
-                                    DocumentFieldFillSize::MinDocumentFillSize,
+                                    fill_type, fill_size,
                                 ),
                             }),
                             frequency: Frequency {

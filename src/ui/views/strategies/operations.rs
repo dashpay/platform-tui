@@ -12,6 +12,9 @@ mod identity_withdrawal;
 use std::collections::BTreeMap;
 
 use dash_sdk::platform::DataContract;
+use dpp::data_contract::document_type::random_document::{
+    DocumentFieldFillSize, DocumentFieldFillType,
+};
 use tracing::error;
 use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
@@ -26,7 +29,7 @@ use self::{
 };
 use crate::{
     backend::{StrategyContractNames, StrategyTask, Task},
-    ui::form::{FormController, FormStatus, Input, InputStatus, SelectInput},
+    ui::form::{ComposedInput, Field, FormController, FormStatus, Input, InputStatus, SelectInput},
 };
 
 #[derive(Debug, strum::Display, Clone, strum::EnumIter, Copy)]
@@ -200,7 +203,11 @@ impl FormController for StrategyAddOperationFormController {
 
 pub(super) struct StrategyAutomaticDocumentsFormController {
     strategy_name: String,
-    input: SelectInput<u16>,
+    input: ComposedInput<(
+        Field<SelectInput<u16>>,    // Num documents
+        Field<SelectInput<String>>, // Fill size
+        Field<SelectInput<String>>, // Fill type
+    )>,
 }
 
 impl StrategyAutomaticDocumentsFormController {
@@ -208,7 +215,24 @@ impl StrategyAutomaticDocumentsFormController {
         let num_docs = vec![1, 3, 5, 10, 15, 20, 24];
         Self {
             strategy_name,
-            input: SelectInput::new(num_docs),
+            input: ComposedInput::new((
+                Field::new(
+                    "Select number of docs to add to each contract",
+                    SelectInput::new(num_docs),
+                ),
+                Field::new(
+                    "How much data to populate the document with?",
+                    SelectInput::new(vec![
+                        "Minimum".to_string(),
+                        "Maximum".to_string(),
+                        "Random".to_string(),
+                    ]),
+                ),
+                Field::new(
+                    "Populate not-required fields?",
+                    SelectInput::new(vec!["Yes".to_string(), "No".to_string()]),
+                ),
+            )),
         }
     }
 }
@@ -216,13 +240,35 @@ impl StrategyAutomaticDocumentsFormController {
 impl FormController for StrategyAutomaticDocumentsFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
         match self.input.on_event(event) {
-            InputStatus::Done((num_docs)) => FormStatus::Done {
-                task: Task::Strategy(StrategyTask::RegisterDocsToAllContracts(
-                    self.strategy_name.clone(),
-                    num_docs,
-                )),
-                block: false,
-            },
+            InputStatus::Done((num_docs, fill_size_string, fill_type_string)) => {
+                let fill_size = match &fill_size_string as &str {
+                    "Minimium" => DocumentFieldFillSize::MinDocumentFillSize,
+                    "Maximum" => DocumentFieldFillSize::MaxDocumentFillSize,
+                    "Random" => DocumentFieldFillSize::AnyDocumentFillSize,
+                    _ => {
+                        tracing::error!("Fill size string invalid in document creation. Setting to AnyDocumentFillSize.");
+                        DocumentFieldFillSize::AnyDocumentFillSize
+                    }
+                };
+                let fill_type = match &fill_type_string as &str {
+                    "Yes" => DocumentFieldFillType::FillIfNotRequired,
+                    "No" => DocumentFieldFillType::DoNotFillIfNotRequired,
+                    _ => {
+                        tracing::error!("Fill size string invalid in document creation. Setting to DoNotFillIfNotRequired.");
+                        DocumentFieldFillType::DoNotFillIfNotRequired
+                    }
+                };
+
+                FormStatus::Done {
+                    task: Task::Strategy(StrategyTask::RegisterDocsToAllContracts(
+                        self.strategy_name.clone(),
+                        num_docs,
+                        fill_size,
+                        fill_type,
+                    )),
+                    block: false,
+                }
+            }
             status => status.into(),
         }
     }
@@ -236,14 +282,14 @@ impl FormController for StrategyAutomaticDocumentsFormController {
     }
 
     fn step_name(&self) -> &'static str {
-        "Select number of docs to add to each contract"
+        self.input.step_name()
     }
 
     fn step_index(&self) -> u8 {
-        1
+        self.input.step_index()
     }
 
     fn steps_number(&self) -> u8 {
-        1
+        self.input.steps_number()
     }
 }

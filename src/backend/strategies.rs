@@ -71,7 +71,7 @@ pub enum StrategyTask {
         strategy_name: String,
         operation: Operation,
     },
-    RegisterDocsToAllContracts(String, u16),
+    RegisterDocsToAllContracts(String, u16, DocumentFieldFillSize, DocumentFieldFillType),
     RunStrategy(String, u64, bool, bool),
     RemoveLastContract(String),
     ClearContracts(String),
@@ -530,7 +530,7 @@ pub async fn run_strategy_task<'s>(
                 BackendEvent::None
             }
         }
-        StrategyTask::RegisterDocsToAllContracts(strategy_name, num_docs)=> {
+        StrategyTask::RegisterDocsToAllContracts(strategy_name, num_docs, fill_size, fill_type)=> {
             let mut strategies_lock = app_state.available_strategies.lock().await;
             if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
                 for contract_with_updates in &strategy.start_contracts {
@@ -539,8 +539,8 @@ pub async fn run_strategy_task<'s>(
                     let document_type = document_types.values().next()
                         .expect("Expected to get a document type in RegisterDocsToAllContracts");
                     let action = DocumentAction::DocumentActionInsertRandom(
-                            DocumentFieldFillType::FillIfNotRequired,
-                            DocumentFieldFillSize::MinDocumentFillSize,
+                            fill_type,
+                            fill_size,
                         );
                     let operation = Operation {
                         op_type: OperationType::Document(DocumentOp {
@@ -1191,7 +1191,8 @@ pub async fn run_strategy_task<'s>(
                                                 Err(e) => {
                                                     errs.fetch_add(1, Ordering::SeqCst);
                                                     // Error logging seems unnecessary here because rs-dapi-client seems to log all the errors already
-                                                    // tracing::error!("Failed to broadcast transition: {}, Error: {:?}", transition_clone.name(), e);
+                                                    // But it is necessary. `rs-dapi-client` does not log all the errors already. For example, IdentityNotFound errors
+                                                    tracing::error!("Failed to broadcast transition: {}, Error: {:?}", transition_clone.name(), e);
                                                     Err(e)
                                                 }
                                             }
@@ -1499,36 +1500,33 @@ pub async fn run_strategy_task<'s>(
                 // Note these txs were not confirmed. They were just attempted at least.
                 tracing::info!("Newly created identities: {:?}", new_identity_ids);
 
-                // // WIP: This broke testnet :(
-                // // Withdraw all funds from newly created identities back to the wallet
-                // current_identities.remove(0); // Remove loaded identity from the vector
-                // let wallet_lock = app_state.loaded_wallet.lock().await.clone().expect("Expected a loaded wallet while withdrawing");
-                // tracing::info!("Withdrawing funds from newly created identities back to the loaded wallet...");
-                // for identity in current_identities {
-                //     tracing::info!("Identity {} balance before withdrawal: {}", identity.id().to_string(Encoding::Base58), identity.balance());
-                //     let result = identity.withdraw(
-                //         sdk,
-                //         wallet_lock.receive_address(),
-                //         identity.balance() - 1_000_000,
-                //         None,
-                //         None,
-                //         signer.clone(),
-                //         None,
-                //     ).await;
-                //     match result {
-                //         Ok(balance) => tracing::info!("Withdrew {} from identity {}", balance, identity.id().to_string(Encoding::Base58)),
-                //         Err(e) => {
-                //             if !e.to_string().contains("invalid proof") {
-                //                 tracing::info!("Withdrew from identity {} (proof not verified)", identity.id().to_string(Encoding::Base58));
-                //             } else {
-                //                 tracing::error!("Error withdrawing from identity {}: {}", identity.id().to_string(Encoding::Base58), e);
-                //             }
-                //         }
-                //     }
-                //     tracing::info!("Identity {} balance after withdrawal: {}", identity.id().to_string(Encoding::Base58), identity.balance());
-                // }
-                // tracing::info!("Withdrawals finished");
-                // drop(wallet_lock);
+                // Withdraw all funds from newly created identities back to the wallet
+                current_identities.remove(0); // Remove loaded identity from the vector
+                let wallet_lock = app_state.loaded_wallet.lock().await.clone().expect("Expected a loaded wallet while withdrawing");
+                tracing::info!("Withdrawing funds from newly created identities back to the loaded wallet...");
+                for identity in current_identities {
+                    let result = identity.withdraw(
+                        sdk,
+                        wallet_lock.receive_address(),
+                        identity.balance() - 1_000_000, // not sure what this should be
+                        None,
+                        None,
+                        signer.clone(),
+                        None,
+                    ).await;
+                    match result {
+                        Ok(balance) => tracing::info!("Withdrew {} from identity {}", balance, identity.id().to_string(Encoding::Base58)),
+                        Err(e) => {
+                            if e.to_string().contains("invalid proof") {
+                                tracing::info!("Withdrew from identity {} (proof not verified)", identity.id().to_string(Encoding::Base58));
+                            } else {
+                                tracing::error!("Error withdrawing from identity {}: {}", identity.id().to_string(Encoding::Base58), e);
+                            }
+                        }
+                    }
+                }
+                tracing::info!("Withdrawals finished");
+                drop(wallet_lock);
 
                 // Refresh the identity at the end
                 drop(loaded_identity_lock);
