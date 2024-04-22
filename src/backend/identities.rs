@@ -1,6 +1,9 @@
 //! Identities backend logic.
 
-use std::{collections::BTreeMap, time::Duration};
+use std::{
+    collections::{BTreeMap, HashSet},
+    time::Duration,
+};
 
 use dapi_grpc::{
     core::v0::{
@@ -12,26 +15,6 @@ use dapi_grpc::{
         GetIdentityBalanceRequest,
     },
 };
-use dpp::{
-    dashcore::{psbt::serialize::Serialize, Address, PrivateKey, Transaction},
-    identity::{
-        accessors::{IdentityGettersV0, IdentitySettersV0},
-        identity_public_key::{accessors::v0::IdentityPublicKeyGettersV0, v0::IdentityPublicKeyV0},
-        KeyType, PartialIdentity, Purpose as KeyPurpose, SecurityLevel as KeySecurityLevel,
-    },
-    platform_value::{string_encoding::Encoding, Identifier},
-    prelude::{AssetLockProof, Identity, IdentityPublicKey},
-    state_transition::{
-        identity_update_transition::{
-            methods::IdentityUpdateTransitionMethodsV0, v0::IdentityUpdateTransitionV0,
-        },
-        proof_result::StateTransitionProofResult,
-        public_key_in_creation::v0::IdentityPublicKeyInCreationV0,
-    },
-    version::PlatformVersion,
-};
-use rand::{rngs::StdRng, SeedableRng};
-use rs_dapi_client::{DapiRequestExecutor, RequestSettings};
 use dash_sdk::{
     platform::{
         transition::{
@@ -42,6 +25,34 @@ use dash_sdk::{
     },
     Sdk,
 };
+use dpp::identity::SecurityLevel;
+use dpp::{
+    consensus::basic::state_transition,
+    dashcore::{psbt::serialize::Serialize, Address, PrivateKey, Transaction},
+    identity::{
+        accessors::{IdentityGettersV0, IdentitySettersV0},
+        identity_public_key::{accessors::v0::IdentityPublicKeyGettersV0, v0::IdentityPublicKeyV0},
+        KeyType, PartialIdentity, Purpose as KeyPurpose, SecurityLevel as KeySecurityLevel,
+    },
+    platform_value::{string_encoding::Encoding, Identifier},
+    prelude::{AssetLockProof, Identity, IdentityPublicKey},
+    state_transition::{
+        identity_credit_transfer_transition::{
+            accessors::IdentityCreditTransferTransitionAccessorsV0,
+            IdentityCreditTransferTransition,
+        },
+        identity_update_transition::{
+            methods::IdentityUpdateTransitionMethodsV0, v0::IdentityUpdateTransitionV0,
+        },
+        proof_result::StateTransitionProofResult,
+        public_key_in_creation::v0::IdentityPublicKeyInCreationV0,
+        StateTransition,
+    },
+    version::PlatformVersion,
+};
+use dpp::{identity::Purpose, ProtocolError};
+use rand::{rngs::StdRng, SeedableRng};
+use rs_dapi_client::{DapiRequestExecutor, RequestSettings};
 use simple_signer::signer::SimpleSigner;
 use tokio::sync::{MappedMutexGuard, MutexGuard};
 
@@ -56,13 +67,13 @@ pub(super) async fn fetch_identity_by_b58_id(
     base58_id: &str,
 ) -> Result<(Option<Identity>, String), String> {
     let id_bytes = Identifier::from_string(base58_id, Encoding::Base58)
-        .map_err(|_| "can't parse identifier as base58 string".to_owned())?;
+        .map_err(|_| "Can't parse identifier as base58 string".to_owned())?;
 
     let fetch_result = Identity::fetch(sdk, id_bytes).await;
     stringify_result_keep_item(fetch_result)
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum IdentityTask {
     RegisterIdentity(u64),
     TopUpIdentity(u64),
@@ -75,6 +86,7 @@ pub enum IdentityTask {
         purpose: KeyPurpose,
     },
     ClearLoadedIdentity,
+    TransferCredits(String, f64),
 }
 
 impl AppState {
@@ -214,6 +226,96 @@ impl AppState {
                         task: Task::Identity(task),
                         execution_result: Err(e),
                     },
+                }
+            }
+            IdentityTask::TransferCredits(ref recipient, amount) => {
+                let recipient_id = match Identifier::from_string(&recipient, Encoding::Base58) {
+                    Ok(id) => id,
+                    Err(_) => {
+                        return BackendEvent::TaskCompleted {
+                            task: Task::Identity(task),
+                            execution_result: Ok(CompletedTaskPayload::String(
+                                "Can't parse identifier as base58 string".to_string(),
+                            )),
+                        }
+                    }
+                };
+                let mut transfer_transition =
+                    IdentityCreditTransferTransition::default_versioned(sdk.version())
+                        .expect("Expected to create a default credit transfer transition");
+                transfer_transition.set_amount((amount * 100_000_000_000.0) as u64);
+                transfer_transition.set_recipient_id(recipient_id);
+                let loaded_identity = self.loaded_identity.lock().await;
+                if let Some(identity) = loaded_identity.as_ref() {
+                    transfer_transition.set_identity_id(identity.id());
+                    let nonce = sdk
+                        .get_identity_nonce(identity.id(), true, None)
+                        .await
+                        .expect("Expected to get an identity nonce in creating credit transfer");
+                    transfer_transition.set_nonce(nonce);
+
+                    let mut transition =
+                        StateTransition::IdentityCreditTransfer(transfer_transition);
+
+                    let identity_public_key = identity
+                        .get_first_public_key_matching(
+                            Purpose::TRANSFER,
+                            HashSet::from([SecurityLevel::CRITICAL]),
+                            HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
+                        )
+                        .expect("Expected to get a signing key");
+
+                    let loaded_identity_private_keys = self.identity_private_keys.lock().await;
+                    let Some(private_key) = loaded_identity_private_keys
+                        .get(&(identity.id(), identity_public_key.id()))
+                    else {
+                        return BackendEvent::TaskCompleted {
+                            task: Task::Identity(task),
+                            execution_result: Ok(CompletedTaskPayload::String(
+                                "No private key for transfer".to_string(),
+                            )),
+                        };
+                    };
+
+                    let mut signer = SimpleSigner::default();
+
+                    signer.add_key(identity_public_key.clone(), private_key.to_vec());
+
+                    if let Err(e) = transition.sign_external(
+                        identity_public_key,
+                        &signer,
+                        None::<fn(Identifier, String) -> Result<SecurityLevel, ProtocolError>>,
+                    ) {
+                        tracing::error!("Error executing credit transfer: {e}");
+                        BackendEvent::TaskCompleted {
+                            task: Task::Identity(task),
+                            execution_result: Err(e.to_string()),
+                        }
+                    } else {
+                        match transition.broadcast_and_wait(sdk, None).await {
+                            Ok(_) => BackendEvent::TaskCompletedStateChange {
+                                task: Task::Identity(task),
+                                execution_result: Ok(CompletedTaskPayload::String(
+                                    "Credit transfer successful.".to_owned(),
+                                )),
+                                app_state_update: AppStateUpdate::IdentityCreditsTransferred,
+                            },
+                            Err(e) => {
+                                tracing::error!("Error executing credit transfer: {e}");
+                                BackendEvent::TaskCompleted {
+                                    task: Task::Identity(task),
+                                    execution_result: Err(e.to_string()),
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    BackendEvent::TaskCompleted {
+                        task: Task::Identity(task),
+                        execution_result: Ok(CompletedTaskPayload::String(
+                            "No loaded identity for credit transfer".to_string(),
+                        )),
+                    }
                 }
             }
         }

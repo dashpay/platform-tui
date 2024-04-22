@@ -97,6 +97,24 @@ impl ScreenController for IdentitiesScreenController {
                 self.info = Info::new_from_result(execution_result);
                 ScreenFeedback::Redraw
             }
+
+            Event::Backend(BackendEvent::TaskCompleted {
+                task: Task::Identity(IdentityTask::TransferCredits(..)),
+                execution_result,
+            }) => {
+                self.info = Info::new_from_result(execution_result);
+                ScreenFeedback::Redraw
+            }
+
+            Event::Backend(BackendEvent::TaskCompletedStateChange {
+                task: Task::Identity(IdentityTask::TransferCredits(..)),
+                execution_result,
+                app_state_update: _,
+            }) => {
+                self.info = Info::new_from_result(execution_result);
+                ScreenFeedback::Redraw
+            }
+
             _ => ScreenFeedback::None,
         }
     }
