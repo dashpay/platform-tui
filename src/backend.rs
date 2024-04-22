@@ -17,12 +17,12 @@ use std::{
     time::Duration,
 };
 
+use dash_sdk::Sdk;
 use dpp::{
     document::Document,
     identity::accessors::IdentityGettersV0,
     prelude::{Identifier, Identity},
 };
-use dash_sdk::Sdk;
 use serde::Serialize;
 pub(crate) use state::AppState;
 use strategy_tests::Strategy;
@@ -134,6 +134,7 @@ pub(crate) enum AppStateUpdate<'s> {
     FailedToRefreshIdentity,
     ClearedLoadedIdentity,
     ClearedLoadedWallet,
+    IdentityCreditsTransferred,
 }
 
 /// Represents the result of completing a strategy.

@@ -7,11 +7,11 @@ use tuirealm::{
 };
 
 use crate::{
-    backend::{BackendEvent, Task},
+    backend::{identities::IdentityTask, BackendEvent, Task},
     ui::{
         form::{
-            parsers::DefaultTextInputParser, FormController, FormStatus, Input, InputStatus,
-            TextInput,
+            parsers::DefaultTextInputParser, ComposedInput, Field, FormController, FormStatus,
+            Input, InputStatus, TextInput,
         },
         screen::{
             utils::impl_builder_no_args, widgets::info::Info, ScreenCommandKey, ScreenController,
@@ -21,9 +21,10 @@ use crate::{
     Event,
 };
 
-const COMMAND_KEYS: [ScreenCommandKey; 2] = [
+const COMMAND_KEYS: [ScreenCommandKey; 3] = [
     ScreenCommandKey::new("q", "Back to Main"),
     ScreenCommandKey::new("i", "Get Identity by ID"),
+    ScreenCommandKey::new("t", "Transfer credits"),
 ];
 
 pub(crate) struct IdentitiesScreenController {
@@ -66,6 +67,11 @@ impl ScreenController for IdentitiesScreenController {
                 code: Key::Char('i'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::Form(Box::new(GetIdentityByIdFormController::new())),
+
+            Event::Key(KeyEvent {
+                code: Key::Char('t'),
+                modifiers: KeyModifiers::NONE,
+            }) => ScreenFeedback::Form(Box::new(TransferCreditsFormController::new())),
 
             Event::Key(KeyEvent {
                 code: Key::Char('p'),
@@ -141,5 +147,58 @@ impl FormController for GetIdentityByIdFormController {
 
     fn steps_number(&self) -> u8 {
         1
+    }
+}
+
+pub(crate) struct TransferCreditsFormController {
+    input: ComposedInput<(
+        Field<TextInput<DefaultTextInputParser<String>>>,
+        Field<TextInput<DefaultTextInputParser<f64>>>,
+    )>,
+}
+
+impl TransferCreditsFormController {
+    fn new() -> Self {
+        Self {
+            input: ComposedInput::new((
+                Field::new("Enter the recipient base58 ID", TextInput::new("Base58 ID")),
+                Field::new(
+                    "Enter the amount to transfer in Dash (Ex: .5)",
+                    TextInput::new("Amount to transfer in Dash"),
+                ),
+            )),
+        }
+    }
+}
+
+impl FormController for TransferCreditsFormController {
+    fn on_event(&mut self, event: KeyEvent) -> FormStatus {
+        match self.input.on_event(event) {
+            InputStatus::Done((recipient, amount)) => FormStatus::Done {
+                task: Task::Identity(IdentityTask::TransferCredits(recipient, amount)),
+                block: true,
+            },
+            status => status.into(),
+        }
+    }
+
+    fn step_view(&mut self, frame: &mut Frame, area: tuirealm::tui::prelude::Rect) {
+        self.input.view(frame, area);
+    }
+
+    fn form_name(&self) -> &'static str {
+        "Transfer Credits"
+    }
+
+    fn step_name(&self) -> &'static str {
+        self.input.step_name()
+    }
+
+    fn step_index(&self) -> u8 {
+        self.input.step_index()
+    }
+
+    fn steps_number(&self) -> u8 {
+        2
     }
 }
