@@ -242,7 +242,7 @@ impl FormController for StrategyAutomaticDocumentsFormController {
         match self.input.on_event(event) {
             InputStatus::Done((num_docs, fill_size_string, fill_type_string)) => {
                 let fill_size = match &fill_size_string as &str {
-                    "Minimium" => DocumentFieldFillSize::MinDocumentFillSize,
+                    "Minimum" => DocumentFieldFillSize::MinDocumentFillSize,
                     "Maximum" => DocumentFieldFillSize::MaxDocumentFillSize,
                     "Random" => DocumentFieldFillSize::AnyDocumentFillSize,
                     _ => {

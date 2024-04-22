@@ -211,7 +211,7 @@ impl FormController for DocumentTypeFormController {
                 chance_per_block,
             )) => {
                 let fill_size = match &fill_size_string as &str {
-                    "Minimium" => DocumentFieldFillSize::MinDocumentFillSize,
+                    "Minimum" => DocumentFieldFillSize::MinDocumentFillSize,
                     "Maximum" => DocumentFieldFillSize::MaxDocumentFillSize,
                     "Random" => DocumentFieldFillSize::AnyDocumentFillSize,
                     _ => {
@@ -223,7 +223,7 @@ impl FormController for DocumentTypeFormController {
                     "Yes" => DocumentFieldFillType::FillIfNotRequired,
                     "No" => DocumentFieldFillType::DoNotFillIfNotRequired,
                     _ => {
-                        tracing::error!("Fill size string invalid in document creation. Setting to DoNotFillIfNotRequired.");
+                        tracing::error!("Fill type string invalid in document creation. Setting to DoNotFillIfNotRequired.");
                         DocumentFieldFillType::DoNotFillIfNotRequired
                     }
                 };
