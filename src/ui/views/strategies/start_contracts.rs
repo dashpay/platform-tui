@@ -353,7 +353,7 @@ impl FormController for ContractsWithUpdatesFormController {
                     FormStatus::Redraw
                 } else {
                     FormStatus::Done {
-                        task: Task::Strategy(StrategyTask::SetContractsWithUpdates(
+                        task: Task::Strategy(StrategyTask::SetStartContracts(
                             self.selected_strategy.clone(),
                             self.selected_contracts.clone(),
                         )),
@@ -435,7 +435,7 @@ impl FormController for RandomContractsFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
         match self.input.on_event(event) {
             InputStatus::Done((selected_contract_name, variants_count)) => FormStatus::Done {
-                task: Task::Strategy(StrategyTask::SetContractsWithUpdatesRandom(
+                task: Task::Strategy(StrategyTask::SetStartContractsRandom(
                     self.selected_strategy.clone(),
                     selected_contract_name,
                     variants_count,

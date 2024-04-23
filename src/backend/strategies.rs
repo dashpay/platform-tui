@@ -16,7 +16,7 @@ use dpp::{
         accessors::v0::{DataContractV0Getters, DataContractV0Setters}, created_data_contract::CreatedDataContract, document_type::random_document::{DocumentFieldFillSize, DocumentFieldFillType}, DataContract
     }, identity::{
         accessors::IdentityGettersV0, state_transition::asset_lock_proof::AssetLockProof, Identity, KeyType, PartialIdentity, Purpose, SecurityLevel
-    }, platform_value::{string_encoding::Encoding, Identifier}, serialization::{PlatformDeserializableWithPotentialValidationFromVersionedStructure, PlatformSerializableWithPlatformVersion}, state_transition::{data_contract_create_transition::DataContractCreateTransition, documents_batch_transition::{document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods, document_transition::DocumentTransition, DocumentCreateTransition, DocumentsBatchTransition}, StateTransition, StateTransitionLike}, version::PlatformVersion
+    }, platform_value::{string_encoding::Encoding, Identifier}, prelude::IdentityNonce, serialization::{PlatformDeserializableWithPotentialValidationFromVersionedStructure, PlatformSerializableWithPlatformVersion}, state_transition::{data_contract_create_transition::DataContractCreateTransition, documents_batch_transition::{document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods, document_transition::DocumentTransition, DocumentCreateTransition, DocumentsBatchTransition}, StateTransition, StateTransitionLike}, version::PlatformVersion
 };
 use drive::{
     drive::{
@@ -53,8 +53,8 @@ pub enum StrategyTask {
     SelectStrategy(String),
     DeleteStrategy(String),
     CloneStrategy(String),
-    SetContractsWithUpdates(String, Vec<String>),
-    SetContractsWithUpdatesRandom(String, String, u8),
+    SetStartContracts(String, Vec<String>),
+    SetStartContractsRandom(String, String, u8),
     SetIdentityInserts {
         strategy_name: String,
         identity_inserts_frequency: Frequency,
@@ -296,7 +296,7 @@ pub async fn run_strategy_task<'s>(
                 BackendEvent::None
             }
         }
-        StrategyTask::SetContractsWithUpdates(strategy_name, selected_contract_names) => {
+        StrategyTask::SetStartContracts(strategy_name, selected_contract_names) => {
             // Attain state locks
             let mut strategies_lock = app_state.available_strategies.lock().await;
             let known_contracts_lock = app_state.known_contracts.lock().await;
@@ -398,7 +398,7 @@ pub async fn run_strategy_task<'s>(
                 BackendEvent::None
             }
         }
-        StrategyTask::SetContractsWithUpdatesRandom(strategy_name, selected_contract_name, variants) => {
+        StrategyTask::SetStartContractsRandom(strategy_name, selected_contract_name, variants) => {
             let mut strategies_lock = app_state.available_strategies.lock().await;
             let known_contracts_lock = app_state.known_contracts.lock().await;
             let mut supporting_contracts_lock = app_state.supporting_contracts.lock().await;
@@ -417,29 +417,14 @@ pub async fn run_strategy_task<'s>(
                         .cloned()
                 };
 
-                // Get the loaded identity nonce
-                // This is only used for initially setting up the contracts.
-                // During strategy execution, all the start identities will be used and the contract will be updated
-                let loaded_identity_lock = match app_state.refresh_identity(&sdk).await {
-                    Ok(lock) => lock,
-                    Err(e) => {
-                        tracing::error!("Failed to refresh identity: {:?}", e);
-                        return BackendEvent::StrategyError {
-                            strategy_name: strategy_name.clone(),
-                            error: format!("Failed to refresh identity: {:?}", e),
-                        };
-                    }
-                };
-                let mut identity_nonce = sdk
-                    .get_identity_nonce(loaded_identity_lock.id(), true, None)
-                    .await
-                    .expect("Couldn't get current identity nonce");
+                // Set a fake identity nonce for now. We will set real identity nonces during strategy execution.
+                let mut fake_identity_nonce = 1;
 
                 // Add the contracts to the strategy start_contracts
                 if let Some(data_contract) = get_contract(&selected_contract_name) {
                     match CreatedDataContract::from_contract_and_identity_nonce(
                         data_contract,
-                        identity_nonce,
+                        fake_identity_nonce,
                         platform_version,
                     ) {
                         Ok(original_contract) => {
@@ -451,11 +436,11 @@ pub async fn run_strategy_task<'s>(
                             // Add i variants of the original contract to the strategy
                             for i in 0..variants-1 {
                                 let mut new_data_contract = original_contract.data_contract().clone();
-                                let new_id = DataContract::generate_data_contract_id_v0(loaded_identity_lock.id(), identity_nonce);
+                                let new_id = DataContract::generate_data_contract_id_v0(Identifier::random(), fake_identity_nonce);
                                 new_data_contract.set_id(new_id);
                                 match CreatedDataContract::from_contract_and_identity_nonce(
                                     new_data_contract.clone(),
-                                    identity_nonce,
+                                    fake_identity_nonce,
                                     platform_version,
                                 ) {
                                     Ok(contract) => {
@@ -465,7 +450,7 @@ pub async fn run_strategy_task<'s>(
                                         // Insert into supporting_contracts so we can register documents to them. We will clear
                                         // supporting contracts at the end of strategy execution.
                                         supporting_contracts_lock.insert(new_contract_name, new_data_contract);
-                                        identity_nonce += 1;
+                                        fake_identity_nonce += 1;
                                     }
                                     Err(e) => {
                                         tracing::error!(
