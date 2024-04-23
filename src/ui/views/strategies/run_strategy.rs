@@ -19,6 +19,8 @@ use crate::{
     Event,
 };
 
+use super::selected_strategy::SelectedStrategyScreenController;
+
 const COMMAND_KEYS: [ScreenCommandKey; 2] = [
     ScreenCommandKey::new("q", "Back to Strategy"),
     ScreenCommandKey::new("r", "Rerun strategy"),
@@ -41,7 +43,7 @@ impl RunStrategyScreenController {
                 let info = Info::new_fixed("Strategy is running, please wait.");
                 (info, true, Some(current_strategy.clone()))
             } else {
-                let info = Info::new_fixed("Run strategy not confirmed.");
+                let info = Info::new_error("Run strategy not confirmed.");
                 (info, false, None)
             };
 
@@ -148,7 +150,7 @@ impl ScreenController for RunStrategyScreenController {
             }) => {
                 self.strategy_running = false;
 
-                self.info = Info::new_fixed(&format!(
+                self.info = Info::new_error(&format!(
                     "Error running strategy {}: {}",
                     strategy_name, &error
                 ));
@@ -257,7 +259,7 @@ impl FormController for RunStrategyFormController {
                         }
                     }
                 } else {
-                    FormStatus::Exit
+                    FormStatus::PreviousScreen
                 }
             }
             InputStatus::Redraw => FormStatus::Redraw,

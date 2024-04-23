@@ -222,6 +222,17 @@ impl Ui {
                     self.screen_stack.push(old_screen);
                     UiFeedback::Redraw
                 }
+                FormStatus::PreviousScreen => {
+                    self.form = None;
+                    self.status_bar_state.to_parent();
+                    if let Some(previous_screen) = self.screen_stack.pop() {
+                        self.screen = previous_screen;
+                    } else {
+                        // Exit if no previous screen
+                        return UiFeedback::Quit;
+                    }
+                    UiFeedback::Redraw
+                }
                 FormStatus::Redraw => UiFeedback::Redraw,
                 FormStatus::None => UiFeedback::None,
                 FormStatus::Exit => {

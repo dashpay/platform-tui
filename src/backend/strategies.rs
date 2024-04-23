@@ -661,10 +661,10 @@ pub async fn run_strategy_task<'s>(
                     lock
                 },                
                 Err(e) => {
-                    tracing::error!("Failed to refresh identity: {:?}", e);
+                    tracing::error!("Failed to refresh loaded identity: {:?}", e);
                     return BackendEvent::StrategyError {
                         strategy_name: strategy_name.clone(),
-                        error: format!("Failed to refresh identity: {:?}", e),
+                        error: format!("Failed to refresh loaded identity: {:?}", e),
                     };
                 }
             };
