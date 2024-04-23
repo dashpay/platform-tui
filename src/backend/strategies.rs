@@ -962,7 +962,7 @@ pub async fn run_strategy_task<'s>(
 
                 // Now loop through the number of blocks or seconds the user asked for, preparing and processing state transitions
                 while (block_mode && current_block_info.height < (initial_block_info.height + num_blocks_or_seconds + 2)) // +2 because we don't count the first two initialization blocks
-                    || (!block_mode && load_start_time.elapsed().as_secs() < num_blocks_or_seconds) {
+                    || (!block_mode && load_start_time.elapsed().as_secs() < num_blocks_or_seconds) || index <= 2 {
 
                     let oks_clone = oks.clone();
                     let errs_clone = errs.clone();
@@ -1552,13 +1552,12 @@ pub async fn run_strategy_task<'s>(
                 }
 
                 // Make sure we don't divide by 0 when we determine the tx/s rate
-                let mut load_run_time = 2;
-                if (load_execution_run_time.as_secs()) > 2 {
+                let mut load_run_time = 1;
+                if (load_execution_run_time.as_secs()) > 1 {
                     load_run_time = load_execution_run_time.as_secs();
                 }
 
                 // Calculate transactions per second
-                // To do: this for success rate and percentage
                 let mut tps = 0;
                 if transition_count > (strategy.start_contracts.len() as u16 + strategy.start_identities.number_of_identities as u16) {
                     tps = (transition_count
