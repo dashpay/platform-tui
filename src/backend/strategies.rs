@@ -962,6 +962,7 @@ pub async fn run_strategy_task<'s>(
                 let mut load_start_time = Instant::now(); // Time when the load test begins (all blocks after the second block)
                 let mut index = 1; // Index of the loop iteration. Represents blocks for block mode and seconds for time mode
                 let mut new_identity_ids = Vec::new(); // Will capture the ids of identities added to current_identities
+                let mut new_contract_ids = Vec::new(); // Will capture the ids of newly created data contracts
                 let oks = Arc::new(AtomicUsize::new(0)); // Atomic counter for successful broadcasts
                 let errs = Arc::new(AtomicUsize::new(0)); // Atomic counter for failed broadcasts
 
@@ -1005,6 +1006,17 @@ pub async fn run_strategy_task<'s>(
                         new_identity_ids.push(identity.id().to_string(Encoding::Base58))
                     }
                     current_identities.append(&mut new_identities);
+
+                    for transition in &transitions {
+                        match transition {
+                            StateTransition::DataContractCreate(contract_create_transition) => {
+                                new_contract_ids.extend(contract_create_transition.modified_data_ids().iter().map(|id| id.to_string(Encoding::Base58)));
+                            },
+                            _ => {
+                                // nothing
+                            },
+                        };
+                    }
 
                     // TO-DO: for DocumentDelete and DocumentReplace strategy operations, we need to 
                     // add documents from state transitions to the local Drive instance here
@@ -1228,7 +1240,7 @@ pub async fn run_strategy_task<'s>(
                                             continue;
                                         }
 
-                                        // Extract the data contract ID from the transition
+                                        // I think what's happening here is we're using this data_contract_clone for proof verification later
                                         let data_contract_id_option = match &transition {
                                             StateTransition::DocumentsBatch(DocumentsBatchTransition::V0(documents_batch)) => {
                                                 documents_batch.transitions.get(0).and_then(|document_transition| {
@@ -1244,16 +1256,13 @@ pub async fn run_strategy_task<'s>(
                                             // Handle other state transition types that involve data contracts here
                                             _ => None,
                                         };
-
                                         let known_contracts_lock = app_state.known_contracts.lock().await;
-
                                         let data_contract_clone = if let Some(data_contract_id) = data_contract_id_option {
                                             let data_contract_id_str = data_contract_id.to_string(Encoding::Base58);
                                             known_contracts_lock.get(&data_contract_id_str).cloned()
                                         } else {
                                             None
                                         };
-
                                         drop(known_contracts_lock);
 
                                         let wait_future = async move {
@@ -1327,49 +1336,49 @@ pub async fn run_strategy_task<'s>(
                                                                         Ok(_) => {
                                                                             tracing::info!("Successfully processed and verified proof for state transition {} ({}), {} {} (Actual block height: {})", index + 1, transition_type, mode_string, index, metadata.height);
                                                                             
-                                                                            // If a data contract was registered, add it to
-                                                                            // known_contracts
-                                                                            if let StateTransition::DataContractCreate(
-                                                                                DataContractCreateTransition::V0(
-                                                                                    data_contract_create_transition,
-                                                                                ),
-                                                                            ) = &transition
-                                                                            {
-                                                                                // Extract the data contract from the transition
-                                                                                let data_contract_serialized =
-                                                                                    &data_contract_create_transition
-                                                                                        .data_contract;
-                                                                                let data_contract_result =
-                                                                                    DataContract::try_from_platform_versioned(
-                                                                                        data_contract_serialized.clone(),
-                                                                                        false,
-                                                                                        &mut vec![],
-                                                                                        PlatformVersion::latest(),
-                                                                                    );
+                                                                            // // If a data contract was registered, add it to known_contracts
+                                                                            // // Not sure if this is necessary
+                                                                            // if let StateTransition::DataContractCreate(
+                                                                            //     DataContractCreateTransition::V0(
+                                                                            //         data_contract_create_transition,
+                                                                            //     ),
+                                                                            // ) = &transition
+                                                                            // {
+                                                                            //     // Extract the data contract from the transition
+                                                                            //     let data_contract_serialized =
+                                                                            //         &data_contract_create_transition
+                                                                            //             .data_contract;
+                                                                            //     let data_contract_result =
+                                                                            //         DataContract::try_from_platform_versioned(
+                                                                            //             data_contract_serialized.clone(),
+                                                                            //             false,
+                                                                            //             &mut vec![],
+                                                                            //             PlatformVersion::latest(),
+                                                                            //         );
 
-                                                                                match data_contract_result {
-                                                                                    Ok(data_contract) => {
-                                                                                        let mut known_contracts_lock =
-                                                                                            app_state
-                                                                                                .known_contracts
-                                                                                                .lock()
-                                                                                                .await;
-                                                                                        known_contracts_lock.insert(
-                                                                                            data_contract
-                                                                                                .id()
-                                                                                                .to_string(Encoding::Base58),
-                                                                                            data_contract,
-                                                                                        );
-                                                                                    }
-                                                                                    Err(e) => {
-                                                                                        tracing::error!(
-                                                                                            "Error deserializing data \
-                                                                                            contract: {:?}",
-                                                                                            e
-                                                                                        );
-                                                                                    }
-                                                                                }
-                                                                            }
+                                                                            //     match data_contract_result {
+                                                                            //         Ok(data_contract) => {
+                                                                            //             let mut known_contracts_lock =
+                                                                            //                 app_state
+                                                                            //                     .known_contracts
+                                                                            //                     .lock()
+                                                                            //                     .await;
+                                                                            //             known_contracts_lock.insert(
+                                                                            //                 data_contract
+                                                                            //                     .id()
+                                                                            //                     .to_string(Encoding::Base58),
+                                                                            //                 data_contract,
+                                                                            //             );
+                                                                            //         }
+                                                                            //         Err(e) => {
+                                                                            //             tracing::error!(
+                                                                            //                 "Error deserializing data \
+                                                                            //                 contract: {:?}",
+                                                                            //                 e
+                                                                            //             );
+                                                                            //         }
+                                                                            //     }
+                                                                            // }
                                                                         }
                                                                         Err(e) => tracing::error!("Error verifying state transition execution proof: {}", e),
                                                                     }
@@ -1485,18 +1494,20 @@ pub async fn run_strategy_task<'s>(
                     tracing::info!("Time-based strategy execution ran for {} seconds and intended to run for {} seconds.", load_execution_run_time.as_secs(), num_blocks_or_seconds);
                 }
 
-                // Log all the newly added identities to current identities
+                // Log all the newly created identities and contracts.
                 // Note these txs were not confirmed. They were just attempted at least.
-                tracing::info!("Newly created identities: {:?}", new_identity_ids);
+                tracing::info!("Newly created identities (attempted): {:?}", new_identity_ids);
+                tracing::info!("Newly created contracts (attempted): {:?}", new_contract_ids);
 
                 // Withdraw all funds from newly created identities back to the wallet
                 current_identities.remove(0); // Remove loaded identity from the vector
                 let wallet_lock = app_state.loaded_wallet.lock().await.clone().expect("Expected a loaded wallet while withdrawing");
-                tracing::info!("Withdrawing funds from newly created identities back to the loaded wallet...");
+                tracing::info!("Withdrawing funds from newly created identities back to the loaded wallet (if they have transfer keys)...");
+                let mut withdrawals_count = 0;
                 for identity in current_identities {
                     if identity.get_first_public_key_matching(
                         Purpose::TRANSFER,
-                        SecurityLevel::full_range().into(),
+                        [SecurityLevel::CRITICAL].into(),
                         KeyType::all_key_types().into()
                     ).is_some() {
                         let result = identity.withdraw(
@@ -1509,10 +1520,14 @@ pub async fn run_strategy_task<'s>(
                             None,
                         ).await;
                         match result {
-                            Ok(balance) => tracing::info!("Withdrew {} from identity {}", balance, identity.id().to_string(Encoding::Base58)),
+                            Ok(balance) => {
+                                tracing::info!("Withdrew {} from identity {}", balance, identity.id().to_string(Encoding::Base58));
+                                withdrawals_count += 1;
+                            },
                             Err(e) => {
                                 if e.to_string().contains("invalid proof") {
                                     tracing::info!("Withdrew from identity {} but proof not verified", identity.id().to_string(Encoding::Base58));
+                                    withdrawals_count += 1;
                                 } else {
                                     tracing::error!("Error withdrawing from identity {}: {}", identity.id().to_string(Encoding::Base58), e);
                                 }
@@ -1520,6 +1535,7 @@ pub async fn run_strategy_task<'s>(
                         }    
                     }
                 }
+                tracing::info!("Completed {} withdrawals.", withdrawals_count);
                 drop(wallet_lock);
 
                 // Refresh the identity at the end
