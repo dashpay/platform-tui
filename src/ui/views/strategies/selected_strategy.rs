@@ -19,12 +19,10 @@ use tuirealm::{
 };
 
 use super::{
-    clone_strategy::CloneStrategyFormController,
-    identity_inserts_screen::IdentityInsertsScreenController,
-    operations_screen::OperationsScreenController, run_strategy::RunStrategyFormController,
-    run_strategy_screen::RunStrategyScreenController,
-    start_contracts_screen::ContractsWithUpdatesScreenController,
-    start_identities_screen::StartIdentitiesScreenController,
+    identity_inserts::IdentityInsertsScreenController, operations::OperationsScreenController,
+    run_strategy::RunStrategyFormController, run_strategy::RunStrategyScreenController,
+    start_contracts::ContractsWithUpdatesScreenController,
+    start_identities::StartIdentitiesScreenController,
 };
 use crate::{
     backend::{AppState, AppStateUpdate, BackendEvent},
@@ -33,6 +31,13 @@ use crate::{
         ScreenFeedback, ScreenToggleKey,
     },
     Event,
+};
+
+use crate::{
+    backend::{StrategyTask, Task},
+    ui::form::{
+        parsers::DefaultTextInputParser, FormController, FormStatus, Input, InputStatus, TextInput,
+    },
 };
 
 const COMMAND_KEYS: [ScreenCommandKey; 7] = [
@@ -326,4 +331,48 @@ fn display_strategy(
             + strategy.start_identities.extra_keys.len() as u8,
         strategy.start_identities.starting_balances as f64 / 100_000_000.0,
     )
+}
+
+pub(crate) struct CloneStrategyFormController {
+    input: TextInput<DefaultTextInputParser<String>>,
+}
+
+impl CloneStrategyFormController {
+    pub(crate) fn new() -> Self {
+        CloneStrategyFormController {
+            input: TextInput::new("strategy name"),
+        }
+    }
+}
+
+impl FormController for CloneStrategyFormController {
+    fn on_event(&mut self, event: KeyEvent) -> FormStatus {
+        match self.input.on_event(event) {
+            InputStatus::Done(strategy_name) => FormStatus::Done {
+                task: Task::Strategy(StrategyTask::CloneStrategy(strategy_name)),
+                block: false,
+            },
+            status => status.into(),
+        }
+    }
+
+    fn form_name(&self) -> &'static str {
+        "Clone strategy"
+    }
+
+    fn step_view(&mut self, frame: &mut Frame, area: Rect) {
+        self.input.view(frame, area)
+    }
+
+    fn step_name(&self) -> &'static str {
+        "Strategy name"
+    }
+
+    fn step_index(&self) -> u8 {
+        0
+    }
+
+    fn steps_number(&self) -> u8 {
+        1
+    }
 }
