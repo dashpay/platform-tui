@@ -320,7 +320,6 @@ pub async fn run_strategy_task<'s>(
 
                 if let Some(first_contract_name) = selected_contract_names.first() {
                     if let Some(data_contract) = get_contract(first_contract_name) {
-                        tracing::info!("get_contract callback worked");
                         match CreatedDataContract::from_contract_and_identity_nonce(
                             data_contract,
                             fake_identity_nonce,
