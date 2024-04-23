@@ -16,7 +16,7 @@ use dpp::{
         accessors::v0::{DataContractV0Getters, DataContractV0Setters}, created_data_contract::CreatedDataContract, document_type::random_document::{DocumentFieldFillSize, DocumentFieldFillType}, DataContract
     }, identity::{
         accessors::IdentityGettersV0, state_transition::asset_lock_proof::AssetLockProof, Identity, KeyType, PartialIdentity, Purpose, SecurityLevel
-    }, platform_value::{string_encoding::Encoding, Identifier}, prelude::IdentityNonce, serialization::{PlatformDeserializableWithPotentialValidationFromVersionedStructure, PlatformSerializableWithPlatformVersion}, state_transition::{data_contract_create_transition::DataContractCreateTransition, documents_batch_transition::{document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods, document_transition::DocumentTransition, DocumentCreateTransition, DocumentsBatchTransition}, StateTransition, StateTransitionLike}, version::PlatformVersion
+    }, platform_value::{string_encoding::Encoding, Identifier}, serialization::{PlatformDeserializableWithPotentialValidationFromVersionedStructure, PlatformSerializableWithPlatformVersion}, state_transition::{data_contract_create_transition::DataContractCreateTransition, documents_batch_transition::{document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods, document_transition::DocumentTransition, DocumentCreateTransition, DocumentsBatchTransition}, StateTransition, StateTransitionLike}, version::PlatformVersion
 };
 use drive::{
     drive::{
@@ -315,14 +315,18 @@ pub async fn run_strategy_task<'s>(
                         .cloned()
                 };
 
+                // Set a fake identity nonce for now. We will set real identity nonces during strategy execution.
+                let fake_identity_nonce = 1;
+
                 if let Some(first_contract_name) = selected_contract_names.first() {
                     if let Some(data_contract) = get_contract(first_contract_name) {
+                        tracing::info!("get_contract callback worked");
                         match CreatedDataContract::from_contract_and_identity_nonce(
                             data_contract,
-                            u64::default(),
+                            fake_identity_nonce,
                             platform_version,
                         ) {
-                            Ok(initial_contract) => {
+                            Ok(original_contract) => {
                                 let mut updates = BTreeMap::new();
 
                                 for (order, contract_name) in
@@ -331,7 +335,7 @@ pub async fn run_strategy_task<'s>(
                                     if let Some(update_contract) = get_contract(contract_name) {
                                         match CreatedDataContract::from_contract_and_identity_nonce(
                                             update_contract,
-                                            u64::default(),
+                                            fake_identity_nonce,
                                             platform_version,
                                         ) {
                                             Ok(created_update_contract) => {
@@ -350,7 +354,7 @@ pub async fn run_strategy_task<'s>(
                                 }
 
                                 strategy.start_contracts.push((
-                                    initial_contract,
+                                    original_contract,
                                     if updates.is_empty() {
                                         None
                                     } else {
@@ -399,11 +403,11 @@ pub async fn run_strategy_task<'s>(
             }
         }
         StrategyTask::SetStartContractsRandom(strategy_name, selected_contract_name, variants) => {
+            // Attain state locks
             let mut strategies_lock = app_state.available_strategies.lock().await;
             let known_contracts_lock = app_state.known_contracts.lock().await;
             let mut supporting_contracts_lock = app_state.supporting_contracts.lock().await;
-            let mut contract_names_lock =
-                app_state.available_strategies_contract_names.lock().await;
+            let mut contract_names_lock = app_state.available_strategies_contract_names.lock().await;
 
             if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
                 let platform_version = PlatformVersion::latest();
@@ -957,7 +961,7 @@ pub async fn run_strategy_task<'s>(
                 let errs = Arc::new(AtomicUsize::new(0)); // Atomic counter for failed broadcasts
 
                 // Now loop through the number of blocks or seconds the user asked for, preparing and processing state transitions
-                while (block_mode && current_block_info.height < (initial_block_info.height + num_blocks_or_seconds))
+                while (block_mode && current_block_info.height < (initial_block_info.height + num_blocks_or_seconds + 2)) // +2 because we don't count the first two initialization blocks
                     || (!block_mode && load_start_time.elapsed().as_secs() < num_blocks_or_seconds) {
 
                     let oks_clone = oks.clone();
@@ -1551,7 +1555,35 @@ pub async fn run_strategy_task<'s>(
                 let mut load_run_time = 2;
                 if (load_execution_run_time.as_secs()) > 2 {
                     load_run_time = load_execution_run_time.as_secs();
-                }                                
+                }
+
+                // Calculate transactions per second
+                // To do: this for success rate and percentage
+                let mut tps = 0;
+                if transition_count > (strategy.start_contracts.len() as u16 + strategy.start_identities.number_of_identities as u16) {
+                    tps = (transition_count
+                        - strategy.start_contracts.len() as u16
+                        - strategy.start_identities.number_of_identities as u16
+                    ) as u64 / (load_run_time)
+                };
+                let mut successful_tps = 0;
+                if success_count as u16 > (strategy.start_contracts.len() as u16 + strategy.start_identities.number_of_identities as u16) {
+                    successful_tps = (success_count
+                        - strategy.start_contracts.len()
+                        - strategy.start_identities.number_of_identities as usize
+                    ) as u64 / (load_run_time)
+                };
+                let mut success_percent = 0;
+                if success_count as u16 > (strategy.start_contracts.len() as u16 + strategy.start_identities.number_of_identities as u16) {
+                    success_percent = (((success_count
+                        - strategy.start_contracts.len()
+                        - strategy.start_identities.number_of_identities as usize
+                    ) as f64 / (transition_count
+                        - strategy.start_contracts.len() as u16
+                        - strategy.start_identities.number_of_identities as u16
+                    ) as f64) * 100.0) as u64
+    
+                };
 
                 // Clear app_state.supporting_contracts
                 let mut supporting_contracts_lock = app_state.supporting_contracts.lock().await;
@@ -1568,10 +1600,7 @@ pub async fn run_strategy_task<'s>(
                         success_count,
                         (current_block_info.height - initial_block_info.height),
                         load_run_time, // Processing time after the second block
-                        (transition_count
-                            - strategy.start_contracts.len()
-                            - strategy.start_identities.number_of_identities as usize
-                        ) as u64 / (load_run_time), // tps besides the first two blocks
+                        tps, // tps besides the first two blocks
                         dash_spent_identity,
                         dash_spent_wallet,
                     );    
@@ -1588,21 +1617,9 @@ pub async fn run_strategy_task<'s>(
                         index-1, // Minus 1 because we added 1 at the end of the last loop
                         load_run_time,
                         init_time.as_secs(),
-                        (transition_count
-                            - strategy.start_contracts.len()
-                            - strategy.start_identities.number_of_identities as usize
-                        ) as u64 / (load_run_time), // Attempted rate
-                        (success_count
-                            - strategy.start_contracts.len()
-                            - strategy.start_identities.number_of_identities as usize
-                        ) as u64 / (load_run_time), // Successful rate
-                        (((success_count
-                            - strategy.start_contracts.len()
-                            - strategy.start_identities.number_of_identities as usize
-                        ) as f64 / (transition_count
-                            - strategy.start_contracts.len()
-                            - strategy.start_identities.number_of_identities as usize
-                        ) as f64) * 100.0) as u64, // Success percentage
+                        tps,
+                        successful_tps,
+                        success_percent,
                         dash_spent_identity,
                         dash_spent_wallet,
                     );    
@@ -1616,21 +1633,9 @@ pub async fn run_strategy_task<'s>(
                         start_block_height: initial_block_info.height,
                         success_count: success_count.try_into().unwrap(),
                         transition_count: transition_count.try_into().unwrap(),
-                        rate: (transition_count
-                            - strategy.start_contracts.len()
-                            - strategy.start_identities.number_of_identities as usize
-                        ) as u64 / (load_run_time),
-                        success_rate: (success_count
-                            - strategy.start_contracts.len()
-                            - strategy.start_identities.number_of_identities as usize
-                        ) as u64 / (load_run_time),
-                        success_percent: (((success_count
-                            - strategy.start_contracts.len()
-                            - strategy.start_identities.number_of_identities as usize
-                        ) as f64 / (transition_count
-                            - strategy.start_contracts.len()
-                            - strategy.start_identities.number_of_identities as usize
-                        ) as f64) * 100.0) as u64, // Success percentage
+                        rate: tps,
+                        success_rate: successful_tps,
+                        success_percent: success_percent,
                         run_time: load_execution_run_time,
                         init_time: init_time,
                         dash_spent_identity,

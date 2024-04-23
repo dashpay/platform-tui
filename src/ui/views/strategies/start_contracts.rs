@@ -276,7 +276,7 @@ pub(super) struct ContractsWithUpdatesFormController {
     selected_strategy: String,
     known_contracts: BTreeMap<String, DataContract>,
     supporting_contracts: BTreeMap<String, DataContract>,
-    selected_contracts: Vec<String>,
+    selected_contract_names: Vec<String>,
     input: ComposedInput<(Field<SelectInput<String>>, Field<SelectInput<String>>)>,
 }
 
@@ -305,7 +305,7 @@ impl ContractsWithUpdatesFormController {
             selected_strategy,
             known_contracts,
             supporting_contracts,
-            selected_contracts: Vec::new(),
+            selected_contract_names: Vec::new(),
             input: ComposedInput::new((
                 Field::new("Select Contract", SelectInput::new(contract_names)),
                 Field::new(
@@ -322,7 +322,7 @@ impl FormController for ContractsWithUpdatesFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
         match self.input.on_event(event) {
             InputStatus::Done((selected_contract, add_another_answer)) => {
-                self.selected_contracts.push(selected_contract);
+                self.selected_contract_names.push(selected_contract);
 
                 if add_another_answer == "Yes" {
                     // Collect contract names from known_contracts
@@ -355,7 +355,7 @@ impl FormController for ContractsWithUpdatesFormController {
                     FormStatus::Done {
                         task: Task::Strategy(StrategyTask::SetStartContracts(
                             self.selected_strategy.clone(),
-                            self.selected_contracts.clone(),
+                            self.selected_contract_names.clone(),
                         )),
                         block: false,
                     }
