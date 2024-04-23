@@ -114,14 +114,14 @@ impl ScreenController for RunStrategyScreenController {
                         };
                         format!(
                             "Strategy '{}' completed:\n\nMode: {}\nState transitions attempted: {}\nState \
-                             transitions succeeded: {}\nNumber of blocks (or seconds): {}\nRun time: \
-                             {:?}\nInitialization time: {}\nAttempted rate (approx): {} txs/s\nSuccessful rate: {} tx/s\nSuccess percentage: {}%\nDash spent (Identity): {}\nDash spent (Wallet): {}",
+                             transitions succeeded: {}\nNumber of blocks (or loops): {}\nRun time: \
+                             {}s\nInitialization time: {}\nAttempted rate (approx): {} tx/s\nSuccessful rate: {} tx/s\nSuccess percentage: {}%\nDash spent (Identity): {}\nDash spent (Wallet): {}",
                             strategy_name,
                             mode,
                             transition_count,
                             success_count,
-                            (final_block_height - start_block_height),
-                            run_time,
+                            (final_block_height - start_block_height - 2), // -2 so we don't count the 2 init blocks
+                            run_time.as_secs(),
                             init_time.as_secs(),
                             rate,
                             success_rate,

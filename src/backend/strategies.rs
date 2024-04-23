@@ -767,39 +767,42 @@ pub async fn run_strategy_task<'s>(
 
                 // Set the nonce counters
                 let used_contract_ids = strategy.used_contract_ids();
-                tracing::info!("Fetching {} identity contract nonces from Platform...", used_contract_ids.len());
-                let nonce_fetching_time = Instant::now();
-                let identity_future = sdk.get_identity_nonce(
-                    loaded_identity_clone.id(),
-                    false,
-                    Some(dash_sdk::platform::transition::put_settings::PutSettings {
-                        request_settings: RequestSettings::default(),
-                        identity_nonce_stale_time_s: Some(0),
-                        user_fee_increase: None,
-                    }),
-                );
-                let contract_futures = used_contract_ids.clone().into_iter().map(|used_contract_id| {
-                    let identity_id = loaded_identity_clone.id();
-                    async move {
-                        let current_nonce = sdk.get_identity_contract_nonce(
-                            identity_id,
-                            used_contract_id,
-                            false,
-                            Some(dash_sdk::platform::transition::put_settings::PutSettings {
-                                request_settings: RequestSettings::default(),
-                                identity_nonce_stale_time_s: Some(0),
-                                user_fee_increase: None,
-                            })
-                        ).await.expect("Couldn't get current identity contract nonce");
-                        ((identity_id, used_contract_id), current_nonce)
-                    }
-                });
-                let identity_result = identity_future.await.expect("Couldn't get current identity nonce");
                 let mut identity_nonce_counter = BTreeMap::new();
-                identity_nonce_counter.insert(loaded_identity_clone.id(), identity_result);
-                let contract_results = join_all(contract_futures).await;
-                let mut contract_nonce_counter: BTreeMap<(Identifier, Identifier), u64> = contract_results.into_iter().collect();
-                tracing::info!("Took {} seconds to obtain {} identity contract nonces", nonce_fetching_time.elapsed().as_secs(), used_contract_ids.len());
+                let mut contract_nonce_counter: BTreeMap<(Identifier, Identifier), u64> = BTreeMap::new();
+                if used_contract_ids.len() > 0 {
+                    tracing::info!("Fetching {} identity contract nonces from Platform...", used_contract_ids.len());
+                    let nonce_fetching_time = Instant::now();
+                    let identity_future = sdk.get_identity_nonce(
+                        loaded_identity_clone.id(),
+                        false,
+                        Some(dash_sdk::platform::transition::put_settings::PutSettings {
+                            request_settings: RequestSettings::default(),
+                            identity_nonce_stale_time_s: Some(0),
+                            user_fee_increase: None,
+                        }),
+                    );
+                    let contract_futures = used_contract_ids.clone().into_iter().map(|used_contract_id| {
+                        let identity_id = loaded_identity_clone.id();
+                        async move {
+                            let current_nonce = sdk.get_identity_contract_nonce(
+                                identity_id,
+                                used_contract_id,
+                                false,
+                                Some(dash_sdk::platform::transition::put_settings::PutSettings {
+                                    request_settings: RequestSettings::default(),
+                                    identity_nonce_stale_time_s: Some(0),
+                                    user_fee_increase: None,
+                                })
+                            ).await.expect("Couldn't get current identity contract nonce");
+                            ((identity_id, used_contract_id), current_nonce)
+                        }
+                    });
+                    let identity_result = identity_future.await.expect("Couldn't get current identity nonce");
+                    identity_nonce_counter.insert(loaded_identity_clone.id(), identity_result);
+                    let contract_results = join_all(contract_futures).await;
+                    contract_nonce_counter = contract_results.into_iter().collect();
+                    tracing::info!("Took {} seconds to obtain {} identity contract nonces", nonce_fetching_time.elapsed().as_secs(), used_contract_ids.len());    
+                }
 
                 // Get a lock on the local drive for the following two callbacks
                 let drive_lock = app_state.drive.lock().await;
@@ -898,48 +901,50 @@ pub async fn run_strategy_task<'s>(
                 }
                 let num_asset_lock_proofs_needed = num_identity_inserts * num_blocks_or_seconds + num_start_identities + num_top_ups;
                 let mut asset_lock_proofs: Vec<(AssetLockProof, PrivateKey)> = Vec::new();
-                let mut wallet_lock = app_state.loaded_wallet.lock().await;
-                let num_available_utxos = match wallet_lock.clone().expect("No wallet loaded while getting asset lock proofs") {
-                    Wallet::SingleKeyWallet(SingleKeyWallet { utxos, .. }) => utxos.len(),
-                };
-                if num_available_utxos < num_asset_lock_proofs_needed.try_into().expect("Couldn't convert num_asset_lock_proofs_needed into usize") {
-                    match wallet_lock.clone().expect("No wallet loaded while getting asset lock proofs") {
-                        Wallet::SingleKeyWallet(mut wallet) => {
-                            if let Err(e) = wallet.split_utxos(sdk, num_asset_lock_proofs_needed.try_into().unwrap()).await {
-                                tracing::error!("Error splitting utxos for asset lock proofs: {}", e);
-                            };
-                        },
-                    }
-                }
-                tracing::info!("Obtaining {} asset lock proofs for the strategy...", num_asset_lock_proofs_needed);
-                let asset_lock_proof_time = Instant::now();
-                let mut num_asset_lock_proofs_obtained = 0;
-                for i in 0..(num_asset_lock_proofs_needed) {
-                    if let Some(wallet) = wallet_lock.as_mut() {
-                        // TO-DO: separate this into a function for start_identities, top ups, and inserts, because the balances should all be different
-                        match wallet.asset_lock_transaction(None, strategy.start_identities.starting_balances) {
-                            Ok((asset_lock_transaction, asset_lock_proof_private_key)) => {
-                                match AppState::broadcast_and_retrieve_asset_lock(sdk, &asset_lock_transaction, &wallet.receive_address()).await {
-                                    Ok(asset_lock_proof) => {
-                                        tracing::info!("Successfully obtained asset lock proof number {}", i+1);
-                                        num_asset_lock_proofs_obtained += 1;
-                                        asset_lock_proofs.push((asset_lock_proof, asset_lock_proof_private_key));
-                                    },
-                                    Err(_) => {
-                                        // this error is handled from within the function
-                                    },
-                                }
-                            },
-                            Err(e) => {
-                                tracing::error!("Error creating asset lock transaction: {:?}", e)
+                if num_asset_lock_proofs_needed > 0 {
+                    let mut wallet_lock = app_state.loaded_wallet.lock().await;
+                    let num_available_utxos = match wallet_lock.clone().expect("No wallet loaded while getting asset lock proofs") {
+                        Wallet::SingleKeyWallet(SingleKeyWallet { utxos, .. }) => utxos.len(),
+                    };
+                    if num_available_utxos < num_asset_lock_proofs_needed.try_into().expect("Couldn't convert num_asset_lock_proofs_needed into usize") {
+                        match wallet_lock.clone().expect("No wallet loaded while getting asset lock proofs") {
+                            Wallet::SingleKeyWallet(mut wallet) => {
+                                if let Err(e) = wallet.split_utxos(sdk, num_asset_lock_proofs_needed.try_into().unwrap()).await {
+                                    tracing::error!("Error splitting utxos for asset lock proofs: {}", e);
+                                };
                             },
                         }
-                    } else {
-                        tracing::error!("Wallet not loaded");
                     }
+                    tracing::info!("Obtaining {} asset lock proofs for the strategy...", num_asset_lock_proofs_needed);
+                    let asset_lock_proof_time = Instant::now();
+                    let mut num_asset_lock_proofs_obtained = 0;
+                    for i in 0..(num_asset_lock_proofs_needed) {
+                        if let Some(wallet) = wallet_lock.as_mut() {
+                            // TO-DO: separate this into a function for start_identities, top ups, and inserts, because the balances should all be different
+                            match wallet.asset_lock_transaction(None, strategy.start_identities.starting_balances) {
+                                Ok((asset_lock_transaction, asset_lock_proof_private_key)) => {
+                                    match AppState::broadcast_and_retrieve_asset_lock(sdk, &asset_lock_transaction, &wallet.receive_address()).await {
+                                        Ok(asset_lock_proof) => {
+                                            tracing::info!("Successfully obtained asset lock proof number {}", i+1);
+                                            num_asset_lock_proofs_obtained += 1;
+                                            asset_lock_proofs.push((asset_lock_proof, asset_lock_proof_private_key));
+                                        },
+                                        Err(_) => {
+                                            // this error is handled from within the function
+                                        },
+                                    }
+                                },
+                                Err(e) => {
+                                    tracing::error!("Error creating asset lock transaction: {:?}", e)
+                                },
+                            }
+                        } else {
+                            tracing::error!("Wallet not loaded");
+                        }
+                    }
+                    tracing::info!("Took {} seconds to obtain {} asset lock proofs", asset_lock_proof_time.elapsed().as_secs(), num_asset_lock_proofs_obtained);
+                    drop(wallet_lock); // I don't think this is necessary anymore after moving into the if statement    
                 }
-                tracing::info!("Took {} seconds to obtain {} asset lock proofs", asset_lock_proof_time.elapsed().as_secs(), num_asset_lock_proofs_obtained);
-                drop(wallet_lock);
 
                 // Get the execution mode as a string for logging
                 let mut mode_string = String::new();
@@ -1202,9 +1207,9 @@ pub async fn run_strategy_task<'s>(
                         // Concurrently execute all broadcast requests for independent transitions
                         let broadcast_results = join_all(broadcast_futures).await;
 
-                        // If we're in block mode, we're going to wait for state transition results and potentially verify proofs too.
-                        // If we're in time mode, we're just broadcasting.
-                        if block_mode {
+                        // If we're in block mode, or index 1 or 2 of time mode, we're going to wait for state transition results and potentially verify proofs too.
+                        // If we're in time mode and index 3+, we're just broadcasting.
+                        if block_mode || index == 1 || index == 2 {
                             let mut wait_futures = Vec::new();
                             for (index, result) in broadcast_results.into_iter().enumerate() {
                                 match result {
@@ -1427,24 +1432,19 @@ pub async fn run_strategy_task<'s>(
                                 }
                             }    
                         } else {
-                            // Time mode
+                            // Time mode.
+                            // Don't wait.
                         }
 
-                        // Sleep for some time on first and second blocks to make sure we don't submit documents or updates in the same block as contract or identity creation
-                        if index == 1 {
-                            tracing::info!("Sleeping 60 seconds to allow start_identities to register.");
-                            tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
-                            load_start_time = Instant::now();
-                        } else if index == 2 {
-                            tracing::info!("Sleeping 60 seconds to allow start_contracts to register.");
-                            tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
+                        // Reset the load_start_time
+                        if index == 1 || index == 2 {
                             load_start_time = Instant::now();
                         }
-                        
+
                     } else {
                         // No transitions prepared for the block (or second)
                         tracing::info!(
-                            "No state transitions prepared for {} {}",
+                            "Prepared 0 state transitions for {} {}",
                             mode_string,
                             index
                         );
@@ -1494,27 +1494,32 @@ pub async fn run_strategy_task<'s>(
                 let wallet_lock = app_state.loaded_wallet.lock().await.clone().expect("Expected a loaded wallet while withdrawing");
                 tracing::info!("Withdrawing funds from newly created identities back to the loaded wallet...");
                 for identity in current_identities {
-                    let result = identity.withdraw(
-                        sdk,
-                        wallet_lock.receive_address(),
-                        identity.balance() - 1_000_000, // not sure what this should be
-                        None,
-                        None,
-                        signer.clone(),
-                        None,
-                    ).await;
-                    match result {
-                        Ok(balance) => tracing::info!("Withdrew {} from identity {}", balance, identity.id().to_string(Encoding::Base58)),
-                        Err(e) => {
-                            if e.to_string().contains("invalid proof") {
-                                tracing::info!("Withdrew from identity {} (proof not verified)", identity.id().to_string(Encoding::Base58));
-                            } else {
-                                tracing::error!("Error withdrawing from identity {}: {}", identity.id().to_string(Encoding::Base58), e);
+                    if identity.get_first_public_key_matching(
+                        Purpose::TRANSFER,
+                        SecurityLevel::full_range().into(),
+                        KeyType::all_key_types().into()
+                    ).is_some() {
+                        let result = identity.withdraw(
+                            sdk,
+                            wallet_lock.receive_address(),
+                            identity.balance() - 1_000_000, // not sure what this should be
+                            None,
+                            None,
+                            signer.clone(),
+                            None,
+                        ).await;
+                        match result {
+                            Ok(balance) => tracing::info!("Withdrew {} from identity {}", balance, identity.id().to_string(Encoding::Base58)),
+                            Err(e) => {
+                                if e.to_string().contains("invalid proof") {
+                                    tracing::info!("Withdrew from identity {} but proof not verified", identity.id().to_string(Encoding::Base58));
+                                } else {
+                                    tracing::error!("Error withdrawing from identity {}: {}", identity.id().to_string(Encoding::Base58), e);
+                                }
                             }
-                        }
+                        }    
                     }
                 }
-                tracing::info!("Withdrawals finished");
                 drop(wallet_lock);
 
                 // Refresh the identity at the end
@@ -1613,7 +1618,7 @@ pub async fn run_strategy_task<'s>(
                         mode_string,
                         transition_count,
                         success_count,
-                        index-1, // Minus 1 because we added 1 at the end of the last loop
+                        index-3, // Minus 3 because we still incremented one at the end of the last loop, and don't count the first two blocks
                         load_run_time,
                         init_time.as_secs(),
                         tps,
