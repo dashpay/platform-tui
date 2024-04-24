@@ -17,7 +17,7 @@ use dapi_grpc::tonic::{Code, Status as TransportError};
 use dashmap::DashMap;
 use futures::future::join_all;
 use governor::{Quota, RateLimiter};
-use rs_dapi_client::{DapiClient, DapiClientError, DapiRequest, RequestSettings};
+use rs_dapi_client::{AddressList, DapiClient, DapiClientError, DapiRequest, RequestSettings};
 use rs_platform_explorer::config::Config;
 use tokio::time::{interval, Instant};
 use tokio_util::sync::CancellationToken;
@@ -153,7 +153,7 @@ async fn query_identities(
     cancel_at(cancel_test.clone(), start_time + duration);
 
     let request_settings = RequestSettings {
-        connect_timeout: Some(Duration::from_secs(60)),
+        connect_timeout: Some(Duration::from_secs(30)),
         timeout: Some(Duration::from_secs(30)),
         retries: Some(0),
         ban_failed_address: Some(false),
@@ -181,12 +181,21 @@ async fn query_identities(
 
     tasks.push(report_task);
 
+    let global_address_list = config.dapi_address_list();
+
     for connection_id in 0..concurrent_connections {
         let rate_limiter = Arc::clone(&rate_limiter);
         let cancel_task = cancel_test.clone();
         let summary = Arc::clone(&summary);
 
-        let client = DapiClient::new(config.dapi_address_list(), request_settings);
+        let random_address = global_address_list
+            .get_live_address()
+            .expect("no available addresses");
+
+        let mut connection_address_list = AddressList::new();
+        connection_address_list.add(random_address.clone());
+
+        let client = DapiClient::new(connection_address_list, request_settings);
         let client = Arc::new(client);
 
         let task = tokio::spawn(async move {
