@@ -19,8 +19,8 @@ use tuirealm::{
 };
 
 use super::{
-    identity_inserts::IdentityInsertsScreenController, operations::OperationsScreenController,
-    run_strategy::RunStrategyFormController, run_strategy::RunStrategyScreenController,
+    identity_inserts::IdentityInsertsScreenController, run_strategy::RunStrategyFormController,
+    run_strategy::RunStrategyScreenController,
     start_contracts::ContractsWithUpdatesScreenController,
     start_identities::StartIdentitiesScreenController,
 };
@@ -129,7 +129,7 @@ impl ScreenController for SelectedStrategyScreenController {
             Event::Key(KeyEvent {
                 code: Key::Char('o'),
                 modifiers: KeyModifiers::NONE,
-            }) => ScreenFeedback::NextScreen(OperationsScreenController::builder()),
+            }) => ScreenFeedback::NextScreen(StartIdentitiesScreenController::builder()), // TODO: ScreenFeedback::NextScreen(OperationsScreenController::builder()),
             Event::Key(KeyEvent {
                 code: Key::Char('r'),
                 modifiers: KeyModifiers::NONE,
@@ -319,7 +319,7 @@ fn display_strategy(
     format!(
         r#"{strategy_name}:
     Start identities: {} (Keys: {}, Balance: {:.2} dash)
-    
+
     Start contracts ({start_contracts_len}):
 {start_contracts_lines}
     Identity inserts:
