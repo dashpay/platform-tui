@@ -221,6 +221,7 @@ async fn query_identities(
         let client = DapiClient::new(connection_address_list, request_settings);
         let client = Arc::new(client);
 
+        // Send requests for connection in a loop
         let task = tokio::spawn(async move {
             while !cancel_task.is_cancelled() {
                 // Wait for the rate limiter to allow further processing
@@ -337,9 +338,15 @@ impl TestSummary {
 
         let rate = total.checked_div(elapsed_secs).unwrap_or(0);
 
+        let error_message = if !error_messages.is_empty() {
+            format!(": {}", error_messages.join(", "))
+        } else {
+            String::new()
+        };
+
         format!(
-            "{elapsed_secs} secs passed. {total} processed ({rate} q/s): {oks} successful, {errors} failed: {}",
-            error_messages.join(", ")
+            "{elapsed_secs} secs passed. {total} processed ({rate} q/s): {oks} successful, {errors} failed{}",
+            error_message
         )
     }
 }
