@@ -62,8 +62,12 @@ struct Args {
         help = "Number of requests to send per unit"
     )]
     rate: u32,
-    #[arg(help = "The duration (in seconds) for which to handle the load test")]
-    time: u16,
+    #[arg(
+        long,
+        short,
+        help = "The duration (in seconds) for which to handle the load test"
+    )]
+    time: Option<u16>,
 }
 
 #[tokio::main]
@@ -110,7 +114,7 @@ async fn main() {
 
     query_identities(
         &config,
-        Duration::from_secs(args.time.into()),
+        args.time.map(|t| Duration::from_secs(t.into())),
         args.connections,
         args.rate,
         args.rate_unit,
@@ -120,7 +124,7 @@ async fn main() {
 
 async fn query_identities(
     config: &Config,
-    duration: Duration,
+    duration: Option<Duration>,
     concurrent_connections: u16,
     rate: u32,
     rate_unit: RateUnit,
@@ -128,12 +132,18 @@ async fn query_identities(
     let start_time = Instant::now();
     let cancel_test = CancellationToken::new();
 
+    let duration_message = if let Some(duration) = duration {
+        format!(" for {} seconds", duration.as_secs_f32())
+    } else {
+        String::new()
+    };
+
     tracing::info!(
-        "query {} per {} non existing identities with {} parallel connections for {} secs",
+        "query {} per {} non existing identities with {} parallel connections{}",
         rate,
         rate_unit,
         concurrent_connections,
-        duration.as_secs_f32()
+        duration_message
     );
 
     // Rate limiter
@@ -150,7 +160,9 @@ async fn query_identities(
     };
 
     // Cancel the token after the duration
-    cancel_at(cancel_test.clone(), start_time + duration);
+    if let Some(duration) = duration {
+        cancel_at(cancel_test.clone(), start_time + duration);
+    }
 
     let request_settings = RequestSettings {
         connect_timeout: Some(Duration::from_secs(30)),
