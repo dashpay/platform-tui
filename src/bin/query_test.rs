@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 use std::{
     fmt,
@@ -132,9 +132,8 @@ async fn query_identities(
     };
 
     tracing::info!(
-        "query {} per {} non existing identities with {} parallel connections{}",
-        rate.rate,
-        rate.unit,
+        "query {} non existing identities with {} parallel connections{}",
+        rate,
         concurrent_connections,
         duration_message
     );
@@ -289,6 +288,12 @@ struct Rate {
     rate: u32,
     unit: RateUnit,
     limiter: RateLimiter<NotKeyed, InMemoryState, DefaultClock>,
+}
+
+impl Display for Rate {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{} per {}", self.rate, self.unit)
+    }
 }
 
 impl Rate {
