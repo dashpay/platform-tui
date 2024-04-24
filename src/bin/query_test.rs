@@ -211,6 +211,7 @@ async fn query_identities(
         let cancel_task = cancel_test.clone();
         let summary = Arc::clone(&summary);
 
+        // Pick an address obe by one for each connection
         let connection_address = dapi_addresses
             .get(connection_id as usize % dapi_addresses.len())
             .expect("address must be present");
@@ -218,10 +219,11 @@ async fn query_identities(
         let mut connection_address_list = AddressList::new();
         connection_address_list.add(connection_address.clone());
 
+        // Create one client per connection
         let client = DapiClient::new(connection_address_list, request_settings);
         let client = Arc::new(client);
 
-        // Send requests for connection in a loop
+        // Send requests through the connection in a loop
         let task = tokio::spawn(async move {
             while !cancel_task.is_cancelled() {
                 // Wait for the rate limiter to allow further processing
@@ -233,6 +235,8 @@ async fn query_identities(
                 let client = Arc::clone(&client);
                 let summary = Arc::clone(&summary);
 
+                // Send a request without waiting for the response,
+                // so we can send many requests in parallel through one connection
                 tokio::spawn(async move {
                     let span = tracing::span!(
                         tracing::Level::TRACE,
