@@ -12,8 +12,10 @@ use std::{
 };
 
 use clap::Parser;
-use dapi_grpc::platform::v0::get_identity_request::{GetIdentityRequestV0, Version};
-use dapi_grpc::platform::v0::GetIdentityRequest;
+use dapi_grpc::platform::v0::get_identity_request;
+use dapi_grpc::platform::v0::get_identity_response;
+use dapi_grpc::platform::v0::get_identity_response::get_identity_response_v0;
+use dapi_grpc::platform::v0::{GetIdentityRequest, GetIdentityResponse};
 use dapi_grpc::tonic::transport::Uri;
 use dapi_grpc::tonic::{Code, Status as TransportError};
 use dashmap::DashMap;
@@ -261,14 +263,37 @@ async fn query_identities(
 
 async fn query_identity(client: Arc<DapiClient>, settings: RequestSettings, summary: &TestSummary) {
     let request = GetIdentityRequest {
-        version: Some(Version::V0(GetIdentityRequestV0 {
-            id: dpp::system_data_contracts::dashpay_contract::OWNER_ID_BYTES.to_vec(),
-            prove: false,
-        })),
+        version: Some(get_identity_request::Version::V0(
+            get_identity_request::GetIdentityRequestV0 {
+                id: dpp::system_data_contracts::dashpay_contract::OWNER_ID_BYTES.to_vec(),
+                prove: false,
+            },
+        )),
     };
 
     match request.execute(client.as_ref(), settings).await {
-        Ok(_) => summary.add_ok(),
+        Ok(response) => {
+            // Validate response
+            let GetIdentityResponse {
+                version:
+                    Some(get_identity_response::Version::V0(
+                        get_identity_response::GetIdentityResponseV0 {
+                            result: Some(get_identity_response_v0::Result::Identity(response_bytes)),
+                            ..
+                        },
+                    )),
+                ..
+            } = response
+            else {
+                panic!("unexpected response: {:?}", response);
+            };
+
+            if response_bytes.is_empty() {
+                panic!("unexpected empty response");
+            }
+
+            summary.add_ok()
+        }
         Err(DapiClientError::Transport(e, ..)) => summary.add_error(e),
         Err(e) => panic!("unexpected error: {}", e),
     }
