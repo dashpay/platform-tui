@@ -269,6 +269,8 @@ fn cancel_at(cancellation_token: CancellationToken, deadline: Instant) {
     });
 }
 
+// TODO: Move to crate and reuse in load test and strategy
+
 #[derive(clap::ValueEnum, Clone, Debug)]
 enum RateUnit {
     Second,
