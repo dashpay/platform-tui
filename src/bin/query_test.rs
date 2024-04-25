@@ -132,7 +132,7 @@ async fn query_identities(
     };
 
     tracing::info!(
-        "query {} non existing identities with {} parallel connections{}",
+        "query {} identities with {} parallel connections{}",
         rate,
         concurrent_connections,
         duration_message
