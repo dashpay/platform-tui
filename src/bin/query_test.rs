@@ -12,9 +12,9 @@ use std::{
 };
 
 use clap::Parser;
-use dapi_grpc::platform::v0::get_identity_request;
 use dapi_grpc::platform::v0::get_identity_response;
 use dapi_grpc::platform::v0::get_identity_response::get_identity_response_v0;
+use dapi_grpc::platform::v0::{get_identity_request, Proof};
 use dapi_grpc::platform::v0::{GetIdentityRequest, GetIdentityResponse};
 use dapi_grpc::tonic::transport::Uri;
 use dapi_grpc::tonic::{Code, Status as TransportError};
@@ -225,7 +225,7 @@ async fn query_identity(client: Arc<DapiClient>, settings: RequestSettings, summ
         version: Some(get_identity_request::Version::V0(
             get_identity_request::GetIdentityRequestV0 {
                 id: dpp::system_data_contracts::dashpay_contract::OWNER_ID_BYTES.to_vec(),
-                prove: false,
+                prove: true,
             },
         )),
     };
@@ -237,7 +237,11 @@ async fn query_identity(client: Arc<DapiClient>, settings: RequestSettings, summ
                 version:
                     Some(get_identity_response::Version::V0(
                         get_identity_response::GetIdentityResponseV0 {
-                            result: Some(get_identity_response_v0::Result::Identity(response_bytes)),
+                            result:
+                                Some(get_identity_response_v0::Result::Proof(Proof {
+                                    grovedb_proof,
+                                    ..
+                                })),
                             ..
                         },
                     )),
@@ -247,8 +251,8 @@ async fn query_identity(client: Arc<DapiClient>, settings: RequestSettings, summ
                 panic!("unexpected response: {:?}", response);
             };
 
-            if response_bytes.is_empty() {
-                panic!("unexpected empty response");
+            if grovedb_proof.is_empty() {
+                panic!("unexpected empty proof");
             }
 
             summary.add_ok()
