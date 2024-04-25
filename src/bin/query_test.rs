@@ -177,7 +177,9 @@ async fn query_identities(
     for connection_id in 0..concurrent_connections {
         // Pick an address obe by one for each connection
         // and create one client per connection
-        let client = DapiClient::new(addresses.next_one_address_list(), request_settings);
+        let address_list = addresses.next_one_address_list();
+        dbg!(&address_list);
+        let client = DapiClient::new(address_list, request_settings);
         let connection_client = Arc::new(client);
 
         let connection_rate = Arc::clone(&rate);
