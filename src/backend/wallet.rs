@@ -10,6 +10,8 @@ use bincode::{
     error::{DecodeError, EncodeError},
     BorrowDecode, Decode, Encode,
 };
+use dapi_grpc::core::v0::{BroadcastTransactionRequest, GetTransactionRequest};
+use dash_sdk::{RequestSettings, Sdk};
 use dpp::dashcore::{
     hashes::Hash,
     psbt::serialize::Serialize,
@@ -17,12 +19,13 @@ use dpp::dashcore::{
     sighash::SighashCache,
     transaction::special_transaction::{asset_lock::AssetLockPayload, TransactionPayload},
     Address, Network, OutPoint, PrivateKey, PublicKey, ScriptBuf, Transaction, TxIn, TxOut,
+    Witness,
 };
 use rand::{prelude::StdRng, Rng, SeedableRng};
+use rs_dapi_client::DapiRequestExecutor;
 use tokio::sync::{Mutex, MutexGuard};
-use tracing::info;
 
-use super::{AppStateUpdate, BackendEvent, Task};
+use super::{AppStateUpdate, BackendEvent, CompletedTaskPayload, Task};
 use crate::backend::insight::{InsightAPIClient, InsightError};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -30,9 +33,12 @@ pub enum WalletTask {
     AddByPrivateKey(String),
     Refresh,
     CopyAddress,
+    ClearLoadedWallet,
+    SplitUTXOs(u32),
 }
 
 pub(super) async fn run_wallet_task<'s>(
+    sdk: &Sdk,
     wallet_state: &'s Mutex<Option<Wallet>>,
     task: WalletTask,
     insight: &'s InsightAPIClient,
@@ -108,11 +114,43 @@ pub(super) async fn run_wallet_task<'s>(
                 BackendEvent::None
             }
         }
+        WalletTask::ClearLoadedWallet => {
+            let mut wallet_guard = wallet_state.lock().await;
+            *wallet_guard = None;
+            BackendEvent::TaskCompletedStateChange {
+                task: Task::Wallet(task),
+                execution_result: Ok(CompletedTaskPayload::String(
+                    "Cleared loaded wallet".to_string(),
+                )),
+                app_state_update: AppStateUpdate::ClearedLoadedWallet,
+            }
+        }
+        WalletTask::SplitUTXOs(count) => {
+            let mut wallet_guard = wallet_state.lock().await;
+            if let Some(wallet) = &mut *wallet_guard {
+                match wallet {
+                    Wallet::SingleKeyWallet(sk_wallet) => {
+                        match sk_wallet.split_utxos(sdk, count as usize).await {
+                            Ok(_) => BackendEvent::TaskCompleted {
+                                task: Task::Wallet(task),
+                                execution_result: Ok("Split UTXOs".into()),
+                            },
+                            Err(_) => BackendEvent::TaskCompleted {
+                                task: Task::Wallet(task),
+                                execution_result: Err("Failed to split UTXOS properly".into()),
+                            },
+                        }
+                    }
+                }
+            } else {
+                BackendEvent::None
+            }
+        }
     }
 }
 
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum WalletError {
+pub enum WalletError {
     #[error(transparent)]
     Insight(InsightError),
     #[error("not enough balance")]
@@ -142,7 +180,7 @@ impl Wallet {
             None => StdRng::from_entropy(),
             Some(seed_value) => StdRng::seed_from_u64(seed_value),
         };
-        let fee = 3000;
+        let fee = 10_000;
         let random_private_key: [u8; 32] = rng.gen();
         let private_key = PrivateKey::from_slice(&random_private_key, Network::Testnet)
             .expect("expected a private key");
@@ -159,11 +197,11 @@ impl Wallet {
         let change_address = self.change_address();
 
         let payload_output = TxOut {
-            value: amount, // 1 Dash
+            value: amount,
             script_pubkey: ScriptBuf::new_p2pkh(&one_time_key_hash),
         };
         let burn_output = TxOut {
-            value: amount, // 1 Dash
+            value: amount,
             script_pubkey: ScriptBuf::new_op_return(&[]),
         };
         if change < fee {
@@ -180,7 +218,7 @@ impl Wallet {
 
         // we need to get all inputs from utxos to add them to the transaction
 
-        let mut inputs = utxos
+        let inputs = utxos
             .iter()
             .map(|(utxo, _)| {
                 let mut tx_in = TxIn::default();
@@ -486,6 +524,195 @@ impl SingleKeyWallet {
         }
 
         Some((taken_utxos, required.abs() as u64))
+    }
+
+    /// Takes a usize `desired_utxo_count` specifying the desired number of UTXOs one wants the wallet to have
+    /// and splits the existing utxos into that many equally-valued UTXOs.
+    ///
+    /// It does so by executing transactions with itself as the sender and receiver, and
+    /// the existing UTXOs as the inputs and just having `desired_utxo_count` outputs. Since Dash Core only
+    /// allows 24 outputs per transaction, we have to create (`desired_utxo_count` / 24) transactions.
+    ///
+    /// Each new UTXO is given a value of ((current_wallet_balance - fee) / desired_utxo_count) where fee is set to 3000
+    pub async fn split_utxos(
+        &mut self,
+        sdk: &Sdk,
+        desired_utxo_count: usize,
+    ) -> Result<(), WalletError> {
+        tracing::info!("Splitting wallet UTXOs into {} UTXOs", desired_utxo_count);
+
+        // Initialize
+        const MAX_OUTPUTS_PER_TRANSACTION: usize = 24; // Dash Core only allows 24 outputs per tx
+        let current_wallet_balance = self.balance();
+        let mut remaining_utxos_in_wallet = self.utxos.clone();
+        let mut num_utxos_remaining_to_create = desired_utxo_count;
+
+        // Say we want 50 UTXOs, we need 3 transactions (24 + 24 + 2)
+        let number_of_transactions =
+            (desired_utxo_count as f64 / MAX_OUTPUTS_PER_TRANSACTION as f64).ceil() as usize;
+
+        // Amount to fund each UTXO.
+        // Reserve a buffer of 3000 to make sure we never go over the current balance
+        let utxo_split_value = (current_wallet_balance - 1_000_000_000) / desired_utxo_count as u64;
+
+        // Create and execute the transactions
+        tracing::info!("We want to make {} transactions", number_of_transactions);
+        for i in 0..number_of_transactions {
+            // Number of UTXOs to create with this tx
+            let num_utxos_to_create_this_tx =
+                std::cmp::min(MAX_OUTPUTS_PER_TRANSACTION, num_utxos_remaining_to_create);
+
+            // Set the outputs of the transaction
+            // Only loop num_utxos_to_create-1 times because we'll add an output for excess change at the end (the value will be different)
+            let mut new_outputs: Vec<TxOut> = Vec::with_capacity(num_utxos_to_create_this_tx);
+            for _ in 0..num_utxos_to_create_this_tx - 1 {
+                new_outputs.push(TxOut {
+                    value: utxo_split_value,
+                    script_pubkey: self.receive_address().script_pubkey(),
+                });
+            }
+
+            // Select existing UTXOs from the wallet to be the inputs for the transaction
+            let mut total_value_of_tx_inputs: u64 = 0;
+            let mut selected_utxos = Vec::new();
+            let mut remaining_utxos_in_wallet_vec: Vec<_> =
+                remaining_utxos_in_wallet.iter().collect();
+            remaining_utxos_in_wallet_vec.sort_by_key(|&(_, txout)| txout.value);
+            remaining_utxos_in_wallet_vec.reverse(); // Sort greatest to least value utxo
+            for (outpoint, txout) in remaining_utxos_in_wallet_vec.clone() {
+                if total_value_of_tx_inputs >= utxo_split_value * num_utxos_to_create_this_tx as u64
+                {
+                    break; // Selected enough UTXOs
+                }
+                total_value_of_tx_inputs += txout.value;
+                selected_utxos.push(outpoint.clone());
+            }
+
+            // Check if total value of selected UTXOs cover the amount required by new outputs
+            if total_value_of_tx_inputs < utxo_split_value * num_utxos_to_create_this_tx as u64 {
+                tracing::error!("inputs_total_value < utxo_split_value * current_utxo_count");
+                return Err(WalletError::Balance);
+            }
+
+            // Add the output for excess change if any
+            if total_value_of_tx_inputs
+            - (utxo_split_value * (num_utxos_to_create_this_tx - 1) as u64) // Total value of outputs
+            > 20_000
+            {
+                new_outputs.push(TxOut {
+                    value: total_value_of_tx_inputs
+                        - (utxo_split_value * (num_utxos_to_create_this_tx - 1) as u64) // This is the existing total value of tx outputs
+                        - 10_000, // Now inputs should equal outputs, so leave some excess input value to pay the tx fee
+                    script_pubkey: self.receive_address().script_pubkey(),
+                });
+            }
+
+            // Construct the transaction
+            let mut tx = Transaction {
+                version: 1,
+                lock_time: 0,
+                input: selected_utxos
+                    .iter()
+                    .map(|outpoint| TxIn {
+                        previous_output: outpoint.clone(),
+                        script_sig: ScriptBuf::new(), // Placeholder, will be filled by signing
+                        sequence: 0xFFFFFFFF,
+                        witness: Witness::new(),
+                    })
+                    .collect(),
+                output: new_outputs,
+                special_transaction_payload: None,
+            };
+
+            // Sign the transaction
+            let secp = Secp256k1::new();
+            let cache = SighashCache::new(tx.clone());
+            for (i, input) in tx.input.iter_mut().enumerate() {
+                let sighash = cache
+                    .legacy_signature_hash(
+                        i,
+                        &self.receive_address().script_pubkey(),
+                        1, /* SIGHASH_ALL */
+                    )
+                    .unwrap();
+                let message = Message::from_slice(&sighash[..]).unwrap();
+                let sig = secp
+                    .sign_ecdsa(&message, &self.private_key.inner)
+                    .serialize_der();
+                let mut sig_with_sighash = sig.to_vec();
+                sig_with_sighash.push(1); // SIGHASH_ALL
+                input.script_sig = ScriptBuf::from_bytes(
+                    [
+                        &[sig_with_sighash.len() as u8], // Convert to slice for uniform handling
+                        &sig_with_sighash[..], // Convert Vec<u8> to slice for concatenation
+                        &[0x21],               // Single-element slice for the public key length
+                        &self.public_key.serialize()[..], // Public key as slice
+                    ]
+                    .concat(),
+                );
+            }
+
+            // Attempt to broadcast the transaction
+            let request = BroadcastTransactionRequest {
+                transaction: tx.serialize(),
+                allow_high_fees: false,
+                bypass_limits: false,
+            };
+            match sdk.execute(request, RequestSettings::default()).await {
+                Ok(_) => {
+                    tracing::info!(
+                        "Successfully broadcasted UTXO-splitting transaction {}",
+                        i + 1
+                    )
+                }
+                Err(error) if error.to_string().contains("AlreadyExists") => {
+                    // Transaction is already broadcasted. We need to restart the stream from a
+                    // block when it was mined
+                    tracing::warn!("Transaction is already broadcasted");
+
+                    // Try again
+                    match sdk
+                        .execute(
+                            GetTransactionRequest {
+                                id: tx.txid().to_string(),
+                            },
+                            RequestSettings::default(),
+                        )
+                        .await
+                    {
+                        Ok(_) => {
+                            tracing::info!(
+                                "Successfully broadcasted UTXO-splitting transaction {}",
+                                i + 1
+                            )
+                        }
+                        Err(error) => {
+                            tracing::error!("Error executing tx {}", error);
+                        }
+                    }
+                }
+                Err(error) => {
+                    tracing::error!("Transaction broadcast failed: {error}");
+                }
+            };
+
+            // Update the wallet's UTXO set
+            remaining_utxos_in_wallet.retain(|outpoint, _| !selected_utxos.contains(outpoint));
+            let txid = tx.txid();
+            for (index, output) in tx.output.iter().enumerate() {
+                self.utxos.insert(
+                    OutPoint {
+                        txid,
+                        vout: index as u32,
+                    },
+                    output.clone(),
+                );
+            }
+
+            num_utxos_remaining_to_create -= tx.output.len();
+        }
+
+        Ok(())
     }
 
     pub fn change_address(&self) -> Address {

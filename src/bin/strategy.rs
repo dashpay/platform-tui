@@ -1,6 +1,7 @@
 use std::{fs::File, panic, time::Duration};
 
 use clap::{ArgAction, Parser};
+use dash_sdk::{RequestSettings, SdkBuilder};
 use dpp::{identity::accessors::IdentityGettersV0, version::PlatformVersion};
 use rs_platform_explorer::{
     backend::{
@@ -12,7 +13,6 @@ use rs_platform_explorer::{
     },
     config::Config,
 };
-use rs_sdk::{RequestSettings, SdkBuilder};
 
 #[derive(Parser, Debug)]
 #[clap(about, long_about = None)]
@@ -22,6 +22,9 @@ struct Args {
 
     #[arg(short, long, action = ArgAction::SetTrue, help = "Enables state transition proof verification.")]
     prove: bool,
+
+    #[arg(short, long, action = ArgAction::SetTrue, help = "Enables per-second execution of state transitions rather than per-block.")]
+    time_mode: bool,
 
     #[arg(
         short,
@@ -207,6 +210,7 @@ async fn main() {
         }
     }
     if let Some(test_name) = args.test {
+        let block_mode = if args.time_mode { false } else { true };
         backend::strategies::run_strategy_task(
             &sdk,
             &backend.state(),
@@ -214,6 +218,7 @@ async fn main() {
                 test_name.to_string(),
                 args.blocks,
                 args.prove,
+                block_mode,
             ),
             &insight,
         )

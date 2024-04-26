@@ -98,6 +98,7 @@ impl<C: FormController> Form<C> {
 pub(crate) enum FormStatus {
     Done { task: Task, block: bool },
     NextScreen(ScreenControllerBuilder),
+    PreviousScreen,
     Redraw,
     None,
     Exit,

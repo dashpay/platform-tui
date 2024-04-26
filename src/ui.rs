@@ -165,6 +165,19 @@ impl Ui {
             redraw = true;
         }
 
+        // Wallet cleared
+        if let Event::Backend(
+            BackendEvent::AppStateUpdated(AppStateUpdate::ClearedLoadedWallet)
+            | BackendEvent::TaskCompletedStateChange {
+                app_state_update: AppStateUpdate::ClearedLoadedWallet,
+                ..
+            },
+        ) = &event
+        {
+            self.status_bar_state.clear_balance();
+            redraw = true;
+        }
+
         // On failed identity refresh we indicate that balance might be incorrect
         if let Event::Backend(
             BackendEvent::AppStateUpdated(AppStateUpdate::FailedToRefreshIdentity)
@@ -207,6 +220,17 @@ impl Ui {
                     self.status_bar_state.add_child(controller.name());
                     let old_screen = mem::replace(&mut self.screen, Screen::new(controller));
                     self.screen_stack.push(old_screen);
+                    UiFeedback::Redraw
+                }
+                FormStatus::PreviousScreen => {
+                    self.form = None;
+                    self.status_bar_state.to_parent();
+                    if let Some(previous_screen) = self.screen_stack.pop() {
+                        self.screen = previous_screen;
+                    } else {
+                        // Exit if no previous screen
+                        return UiFeedback::Quit;
+                    }
                     UiFeedback::Redraw
                 }
                 FormStatus::Redraw => UiFeedback::Redraw,

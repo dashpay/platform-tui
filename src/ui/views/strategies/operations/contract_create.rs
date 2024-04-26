@@ -14,11 +14,18 @@ use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
 use crate::{
     backend::{StrategyTask, Task},
-    ui::form::{ComposedInput, Field, FormController, FormStatus, Input, InputStatus, SelectInput},
+    ui::form::{
+        parsers::DefaultTextInputParser, ComposedInput, Field, FormController, FormStatus, Input,
+        InputStatus, SelectInput, TextInput,
+    },
 };
 
 pub(super) struct StrategyOpContractCreateFormController {
-    input: ComposedInput<(Field<SelectInput<u16>>, Field<SelectInput<u16>>, Field<SelectInput<f64>>)>,
+    input: ComposedInput<(
+        Field<TextInput<DefaultTextInputParser<u16>>>,
+        Field<TextInput<DefaultTextInputParser<u16>>>,
+        Field<SelectInput<f64>>,
+    )>,
     selected_strategy: String,
 }
 
@@ -28,12 +35,9 @@ impl StrategyOpContractCreateFormController {
             input: ComposedInput::new((
                 Field::new(
                     "Number of document types",
-                    SelectInput::new(vec![1, 5, 10, 15, 20, 25, 30, 50, 100]),
+                    TextInput::new("Enter a whole number."),
                 ),
-                Field::new(
-                    "Times per block",
-                    SelectInput::new(vec![1, 2, 5, 10, 20, 24]),
-                ),
+                Field::new("Times per block", TextInput::new("Enter a whole number")),
                 Field::new(
                     "Chance per block",
                     SelectInput::new(vec![1.0, 0.9, 0.75, 0.5, 0.25, 0.1]),
@@ -87,22 +91,24 @@ impl FormController for StrategyOpContractCreateFormController {
         };
 
         match self.input.on_event(event) {
-            InputStatus::Done((num_document_types, times_per_block, chance_per_block)) => FormStatus::Done {
-                task: Task::Strategy(StrategyTask::AddOperation {
-                    strategy_name: self.selected_strategy.clone(),
-                    operation: Operation {
-                        op_type: OperationType::ContractCreate(
-                            random_doc_type_parameters,
-                            1..num_document_types+1,
-                        ),
-                        frequency: Frequency {
-                            times_per_block_range: 1..times_per_block + 1,
-                            chance_per_block: Some(chance_per_block),
+            InputStatus::Done((num_document_types, times_per_block, chance_per_block)) => {
+                FormStatus::Done {
+                    task: Task::Strategy(StrategyTask::AddOperation {
+                        strategy_name: self.selected_strategy.clone(),
+                        operation: Operation {
+                            op_type: OperationType::ContractCreate(
+                                random_doc_type_parameters,
+                                1..num_document_types + 1,
+                            ),
+                            frequency: Frequency {
+                                times_per_block_range: times_per_block..times_per_block + 1,
+                                chance_per_block: Some(chance_per_block),
+                            },
                         },
-                    },
-                }),
-                block: false,
-            },
+                    }),
+                    block: false,
+                }
+            }
             status => status.into(),
         }
     }

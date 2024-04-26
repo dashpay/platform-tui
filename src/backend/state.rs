@@ -60,7 +60,7 @@ pub struct AppState {
     pub available_strategies: Mutex<StrategiesMap>,
     /// Because we don't store which contract support file was used exactly we
     /// cannot properly restore the state and display a strategy, so this
-    /// field serves as a double of strategies' `contracts_with_updates`,
+    /// field serves as a double of strategies' `start_contracts`,
     /// but using file names
     pub available_strategies_contract_names: Mutex<BTreeMap<String, StrategyContractNames>>,
     pub selected_strategy: Mutex<Option<String>>,
@@ -123,7 +123,7 @@ impl Default for AppState {
             loaded_wallet: Mutex::new(None),
             drive: Mutex::from(drive),
             known_contracts: BTreeMap::new().into(),
-            supporting_contracts: BTreeMap::new().into(),
+            supporting_contracts: supporting_contracts_raw.into(),
             known_identities: BTreeMap::new().into(),
             available_strategies: BTreeMap::new().into(),
             selected_strategy: None.into(),
@@ -458,12 +458,12 @@ impl AppState {
             *app_state_supporting_contracts = supporting_contracts;
         }
 
-        if let Some(wallet) = app_state.loaded_wallet.lock().await.as_mut() {
-            wallet
-                .reload_utxos(insight)
-                .await
-                .expect("expected to reload utxos");
-        }
+        // if let Some(wallet) = app_state.loaded_wallet.lock().await.as_mut() {
+        //     wallet
+        //         .reload_utxos(insight)
+        //         .await
+        //         .expect("expected to reload utxos");
+        // }
 
         app_state
     }

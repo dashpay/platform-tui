@@ -6,15 +6,21 @@ use tuirealm::{
     Frame,
 };
 
+use crate::ui::views::contracts::ContractTask::FetchContract;
 use crate::{
     backend::{BackendEvent, Task},
-    ui::{form::{parsers::DefaultTextInputParser, FormController, FormStatus, Input, InputStatus, TextInput}, screen::{
-        utils::impl_builder_no_args, widgets::info::Info, ScreenCommandKey, ScreenController,
-        ScreenFeedback, ScreenToggleKey,
-    }},
+    ui::{
+        form::{
+            parsers::DefaultTextInputParser, FormController, FormStatus, Input, InputStatus,
+            TextInput,
+        },
+        screen::{
+            utils::impl_builder_no_args, widgets::info::Info, ScreenCommandKey, ScreenController,
+            ScreenFeedback, ScreenToggleKey,
+        },
+    },
     Event,
 };
-use crate::ui::views::contracts::ContractTask::FetchContract;
 
 const COMMAND_KEYS: [ScreenCommandKey; 2] = [
     ScreenCommandKey::new("q", "Back to Contracts"),

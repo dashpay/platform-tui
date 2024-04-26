@@ -1,8 +1,10 @@
 //! Contracts backend.
+use dash_sdk::{platform::Fetch, Sdk};
 use dpp::{
-    platform_value::string_encoding::Encoding, prelude::{DataContract, Identifier}, system_data_contracts::{dashpay_contract, dpns_contract}
+    platform_value::string_encoding::Encoding,
+    prelude::{DataContract, Identifier},
+    system_data_contracts::{dashpay_contract, dpns_contract},
 };
-use rs_sdk::{platform::Fetch, Sdk};
 use tokio::sync::Mutex;
 
 use super::{as_toml, state::KnownContractsMap, AppStateUpdate, BackendEvent, Task};
@@ -85,9 +87,7 @@ pub(super) async fn run_contract_task<'s>(
         ContractTask::FetchContract(ref contract_id_string) => {
             let id = Identifier::from_string(&contract_id_string, Encoding::Base58)
                 .expect("Expected to convert contract_id_string to Identifier");
-            match DataContract::fetch(&sdk, id)
-                .await
-            {
+            match DataContract::fetch(&sdk, id).await {
                 Ok(Some(data_contract)) => {
                     let contract_str = as_toml(&data_contract);
                     let mut contracts_lock = known_contracts.lock().await;

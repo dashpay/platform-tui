@@ -17,12 +17,12 @@ use std::{
     time::Duration,
 };
 
+use dash_sdk::Sdk;
 use dpp::{
     document::Document,
     identity::accessors::IdentityGettersV0,
     prelude::{Identifier, Identity},
 };
-use rs_sdk::Sdk;
 use serde::Serialize;
 pub(crate) use state::AppState;
 use strategy_tests::Strategy;
@@ -133,17 +133,24 @@ pub(crate) enum AppStateUpdate<'s> {
     LoadedIdentity(MappedMutexGuard<'s, Identity>),
     FailedToRefreshIdentity,
     ClearedLoadedIdentity,
+    ClearedLoadedWallet,
+    IdentityCreditsTransferred,
 }
 
 /// Represents the result of completing a strategy.
 #[derive(Debug)]
 pub(crate) enum StrategyCompletionResult {
     Success {
+        block_mode: bool,
         final_block_height: u64,
         start_block_height: u64,
         success_count: u64,
         transition_count: u64,
         run_time: Duration,
+        init_time: Duration,
+        rate: u64,
+        success_rate: u64,
+        success_percent: u64,
         dash_spent_identity: f64,
         dash_spent_wallet: f64,
     },
@@ -205,8 +212,13 @@ impl<'a> Backend<'a> {
                 .await
             }
             Task::Wallet(wallet_task) => {
-                wallet::run_wallet_task(&self.app_state.loaded_wallet, wallet_task, &self.insight)
-                    .await
+                wallet::run_wallet_task(
+                    self.sdk,
+                    &self.app_state.loaded_wallet,
+                    wallet_task,
+                    &self.insight,
+                )
+                .await
             }
             Task::Contract(contract_task) => {
                 contracts::run_contract_task(

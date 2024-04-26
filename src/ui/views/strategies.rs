@@ -1,22 +1,11 @@
 //! Screens and forms related to strategies manipulation.
 
-mod clone_strategy;
-mod contracts_with_updates;
-mod contracts_with_updates_screen;
-mod delete_strategy;
 mod identity_inserts;
-mod identity_inserts_screen;
-mod import_strategy;
-mod export_strategy;
-mod new_strategy;
 mod operations;
-mod operations_screen;
 mod run_strategy;
-mod run_strategy_screen;
-mod select_strategy;
 pub mod selected_strategy;
+mod start_contracts;
 mod start_identities;
-mod start_identities_screen;
 
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
@@ -24,14 +13,7 @@ use tuirealm::{
     Frame,
 };
 
-use self::{
-    delete_strategy::DeleteStrategyFormController,
-    import_strategy::ImportStrategyFormController,
-    export_strategy::ExportStrategyFormController,
-    new_strategy::NewStrategyFormController,
-    select_strategy::SelectStrategyFormController,
-    selected_strategy::SelectedStrategyScreenController
-};
+use self::selected_strategy::SelectedStrategyScreenController;
 use crate::{
     backend::{AppState, AppStateUpdate, BackendEvent},
     ui::screen::{
@@ -39,6 +21,14 @@ use crate::{
         ScreenFeedback, ScreenToggleKey,
     },
     Event,
+};
+
+use crate::{
+    backend::{StrategyTask, Task},
+    ui::form::{
+        parsers::DefaultTextInputParser, FormController, FormStatus, Input, InputStatus,
+        SelectInput, TextInput,
+    },
 };
 
 const COMMAND_KEYS: [ScreenCommandKey; 6] = [
@@ -123,7 +113,9 @@ impl ScreenController for StrategiesScreenController {
                 modifiers: KeyModifiers::NONE,
             }) => {
                 if !self.available_strategies.is_empty() {
-                    ScreenFeedback::Form(Box::new(ExportStrategyFormController::new(self.available_strategies.clone())))
+                    ScreenFeedback::Form(Box::new(ExportStrategyFormController::new(
+                        self.available_strategies.clone(),
+                    )))
                 } else {
                     ScreenFeedback::None
                 }
@@ -194,5 +186,260 @@ impl ScreenController for StrategiesScreenController {
 
     fn view(&mut self, frame: &mut Frame, area: Rect) {
         self.info.view(frame, area)
+    }
+}
+
+pub(crate) struct NewStrategyFormController {
+    input: TextInput<DefaultTextInputParser<String>>,
+}
+
+impl NewStrategyFormController {
+    pub(crate) fn new() -> Self {
+        NewStrategyFormController {
+            input: TextInput::new("strategy name"),
+        }
+    }
+}
+
+impl FormController for NewStrategyFormController {
+    fn on_event(&mut self, event: KeyEvent) -> FormStatus {
+        match self.input.on_event(event) {
+            InputStatus::Done(strategy_name) => FormStatus::Done {
+                task: Task::Strategy(StrategyTask::CreateStrategy(strategy_name)),
+                block: false,
+            },
+            status => status.into(),
+        }
+    }
+
+    fn form_name(&self) -> &'static str {
+        "Create new strategy"
+    }
+
+    fn step_view(&mut self, frame: &mut Frame, area: Rect) {
+        self.input.view(frame, area)
+    }
+
+    fn step_name(&self) -> &'static str {
+        "Strategy name"
+    }
+
+    fn step_index(&self) -> u8 {
+        0
+    }
+
+    fn steps_number(&self) -> u8 {
+        1
+    }
+}
+
+pub(crate) struct ImportStrategyFormController {
+    input: TextInput<DefaultTextInputParser<String>>,
+}
+
+impl ImportStrategyFormController {
+    pub(crate) fn new() -> Self {
+        Self {
+            input: TextInput::new("Raw Github file URL (ex: https://raw.githubusercontent.com/pauldelucia/dash-platform-strategy-tests/main/example)"),
+        }
+    }
+}
+
+impl FormController for ImportStrategyFormController {
+    fn on_event(&mut self, event: KeyEvent) -> FormStatus {
+        match self.input.on_event(event) {
+            InputStatus::Done(url) => FormStatus::Done {
+                task: Task::Strategy(StrategyTask::ImportStrategy(url)),
+                block: false,
+            },
+            status => status.into(),
+        }
+    }
+
+    fn form_name(&self) -> &'static str {
+        "Import strategy"
+    }
+
+    fn step_view(&mut self, frame: &mut Frame, area: Rect) {
+        self.input.view(frame, area)
+    }
+
+    fn step_name(&self) -> &'static str {
+        "Url"
+    }
+
+    fn step_index(&self) -> u8 {
+        0
+    }
+
+    fn steps_number(&self) -> u8 {
+        1
+    }
+}
+
+pub(super) struct ExportStrategyFormController {
+    input: SelectInput<String>,
+}
+
+impl ExportStrategyFormController {
+    pub(super) fn new(strategies: Vec<String>) -> Self {
+        Self {
+            input: SelectInput::new(strategies),
+        }
+    }
+}
+
+impl FormController for ExportStrategyFormController {
+    fn on_event(&mut self, event: KeyEvent) -> FormStatus {
+        match self.input.on_event(event) {
+            InputStatus::Done(strategy_name) => FormStatus::Done {
+                task: Task::Strategy(StrategyTask::ExportStrategy(strategy_name)),
+                block: false,
+            },
+            InputStatus::Exit => FormStatus::Exit,
+            status => status.into(),
+        }
+    }
+
+    fn form_name(&self) -> &'static str {
+        "Strategy export"
+    }
+
+    fn step_view(&mut self, frame: &mut Frame, area: Rect) {
+        self.input.view(frame, area)
+    }
+
+    fn step_name(&self) -> &'static str {
+        ""
+    }
+
+    fn step_index(&self) -> u8 {
+        0
+    }
+
+    fn steps_number(&self) -> u8 {
+        1
+    }
+}
+
+pub(super) struct SelectStrategyFormController {
+    input: SelectInput<String>,
+}
+
+impl SelectStrategyFormController {
+    pub(super) fn new(strategies: Vec<String>) -> Self {
+        SelectStrategyFormController {
+            input: SelectInput::new(strategies),
+        }
+    }
+}
+
+impl FormController for SelectStrategyFormController {
+    fn on_event(&mut self, event: KeyEvent) -> FormStatus {
+        match self.input.on_event(event) {
+            InputStatus::Done(strategy_name) => FormStatus::Done {
+                task: Task::Strategy(StrategyTask::SelectStrategy(strategy_name)),
+                block: false,
+            },
+            InputStatus::Exit => FormStatus::Exit,
+            status => status.into(),
+        }
+    }
+
+    fn form_name(&self) -> &'static str {
+        "Strategy selection"
+    }
+
+    fn step_view(&mut self, frame: &mut Frame, area: Rect) {
+        self.input.view(frame, area)
+    }
+
+    fn step_name(&self) -> &'static str {
+        ""
+    }
+
+    fn step_index(&self) -> u8 {
+        0
+    }
+
+    fn steps_number(&self) -> u8 {
+        1
+    }
+}
+
+pub(super) struct DeleteStrategyFormController {
+    strategy_input: SelectInput<String>,
+    confirm_input: SelectInput<String>,
+    selected_strategy: Option<String>,
+    step: u8,
+}
+
+impl DeleteStrategyFormController {
+    pub(super) fn new(strategies: Vec<String>) -> Self {
+        DeleteStrategyFormController {
+            strategy_input: SelectInput::new(strategies),
+            confirm_input: SelectInput::new(vec!["Yes".to_string(), "No".to_string()]),
+            selected_strategy: None,
+            step: 0,
+        }
+    }
+}
+
+impl FormController for DeleteStrategyFormController {
+    fn on_event(&mut self, event: KeyEvent) -> FormStatus {
+        match self.step {
+            0 => match self.strategy_input.on_event(event) {
+                InputStatus::Done(strategy_name) => {
+                    self.selected_strategy = Some(strategy_name);
+                    self.step = 1;
+                    FormStatus::Redraw
+                }
+                status => status.into(),
+            },
+            1 => match self.confirm_input.on_event(event) {
+                InputStatus::Done(choice) => {
+                    if choice == "Yes" {
+                        FormStatus::Done {
+                            task: Task::Strategy(StrategyTask::DeleteStrategy(
+                                self.selected_strategy.clone().unwrap(),
+                            )),
+                            block: false,
+                        }
+                    } else {
+                        FormStatus::Exit
+                    }
+                }
+                status => status.into(),
+            },
+            _ => FormStatus::None,
+        }
+    }
+
+    fn form_name(&self) -> &'static str {
+        "Strategy deletion"
+    }
+
+    fn step_view(&mut self, frame: &mut Frame, area: Rect) {
+        match self.step {
+            0 => self.strategy_input.view(frame, area),
+            1 => self.confirm_input.view(frame, area),
+            _ => {}
+        }
+    }
+
+    fn step_name(&self) -> &'static str {
+        match self.step {
+            0 => "Select Strategy",
+            1 => "Confirm Deletion",
+            _ => "",
+        }
+    }
+
+    fn step_index(&self) -> u8 {
+        self.step
+    }
+
+    fn steps_number(&self) -> u8 {
+        2
     }
 }

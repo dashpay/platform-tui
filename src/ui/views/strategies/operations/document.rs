@@ -2,14 +2,12 @@
 
 use std::collections::BTreeMap;
 
+use dash_sdk::platform::DataContract;
 use dpp::data_contract::{
     accessors::v0::DataContractV0Getters,
-    document_type::{
-        random_document::{DocumentFieldFillSize, DocumentFieldFillType},
-        DocumentType,
-    },
+    document_type::random_document::{DocumentFieldFillSize, DocumentFieldFillType},
 };
-use rs_sdk::platform::DataContract;
+use itertools::Itertools;
 use strategy_tests::{
     frequency::Frequency,
     operations::{DocumentAction, DocumentOp, Operation, OperationType},
@@ -21,18 +19,13 @@ use crate::{
     ui::form::{ComposedInput, Field, FormController, FormStatus, Input, InputStatus, SelectInput},
 };
 
+// First they need to select a contract, then move to a new form with the document types
 pub(super) struct StrategyOpDocumentFormController {
-    input: ComposedInput<(
-        Field<SelectInput<String>>,
-        Field<SelectInput<String>>,
-        Field<SelectInput<u16>>,
-        Field<SelectInput<f64>>,
-    )>,
-    selected_strategy_name: String,
+    input: SelectInput<String>,
+    contract_specific_form: Option<Box<dyn FormController>>,
+    strategy_name: String,
     known_contracts: BTreeMap<String, DataContract>,
     supporting_contracts: BTreeMap<String, DataContract>,
-    document_types: BTreeMap<String, DocumentType>,
-    strategy_contract_names: StrategyContractNames,
 }
 
 impl StrategyOpDocumentFormController {
@@ -47,7 +40,10 @@ impl StrategyOpDocumentFormController {
 
         // Add only supporting contracts that are also in strategy_contract_names
         for (supporting_contract_name, _) in supporting_contracts.iter() {
-            if strategy_contract_names.iter().any(|(name, _)| name == supporting_contract_name) {
+            if strategy_contract_names
+                .iter()
+                .any(|(name, _)| name == supporting_contract_name)
+            {
                 contract_names.push(supporting_contract_name.clone());
             }
         }
@@ -60,20 +56,135 @@ impl StrategyOpDocumentFormController {
                 }
             }
         }
-        
-        // Remove duplicates
-        let contract_names: Vec<String> = contract_names.into_iter().collect::<std::collections::HashSet<_>>().into_iter().collect();
 
-        let action_types = vec![
-            "Insert Random".to_string(),
-            // "Delete".to_string(),
-            // "Replace".to_string(),
-        ];
+        // Remove duplicates
+        let contract_names: Vec<String> = contract_names
+            .into_iter()
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
 
         Self {
+            input: SelectInput::new(contract_names),
+            contract_specific_form: None,
+            strategy_name: selected_strategy_name,
+            known_contracts,
+            supporting_contracts,
+        }
+    }
+
+    fn set_contract_form(&mut self, contract: DataContract, document_types: Vec<String>) {
+        self.contract_specific_form = Some(Box::new(DocumentTypeFormController::new(
+            self.strategy_name.clone(),
+            contract,
+            document_types,
+        )));
+    }
+}
+
+impl FormController for StrategyOpDocumentFormController {
+    fn on_event(&mut self, event: KeyEvent) -> FormStatus {
+        if let Some(form) = &mut self.contract_specific_form {
+            form.on_event(event)
+        } else {
+            match self.input.on_event(event) {
+                InputStatus::Done(contract_name) => {
+                    let selected_contract = self
+                        .known_contracts
+                        .get(&contract_name)
+                        .or_else(|| self.supporting_contracts.get(&contract_name))
+                        .expect(
+                            "Contract name not found in known_contracts or supporting_contracts.",
+                        );
+
+                    let document_types = selected_contract
+                        .document_types()
+                        .iter()
+                        .map(|(name, _)| name.clone())
+                        .collect_vec();
+
+                    self.set_contract_form(selected_contract.clone(), document_types);
+                    FormStatus::Redraw
+                }
+                status => status.into(),
+            }
+        }
+    }
+
+    fn form_name(&self) -> &'static str {
+        if let Some(form) = &self.contract_specific_form {
+            form.form_name()
+        } else {
+            "Add documents operation"
+        }
+    }
+
+    fn step_view(&mut self, frame: &mut Frame, area: Rect) {
+        if let Some(form) = &mut self.contract_specific_form {
+            form.step_view(frame, area)
+        } else {
+            self.input.view(frame, area)
+        }
+    }
+
+    fn step_name(&self) -> &'static str {
+        if let Some(form) = &self.contract_specific_form {
+            form.step_name()
+        } else {
+            "Select contract"
+        }
+    }
+
+    fn step_index(&self) -> u8 {
+        if let Some(form) = &self.contract_specific_form {
+            form.step_index()
+        } else {
+            0
+        }
+    }
+
+    fn steps_number(&self) -> u8 {
+        if let Some(form) = &self.contract_specific_form {
+            form.steps_number()
+        } else {
+            1
+        }
+    }
+}
+
+pub(super) struct DocumentTypeFormController {
+    input: ComposedInput<(
+        Field<SelectInput<String>>, // Document types
+        Field<SelectInput<String>>, // Fill size
+        Field<SelectInput<String>>, // Fill type
+        Field<SelectInput<u16>>,    // Times per block
+        Field<SelectInput<f64>>,    // Chance per block
+    )>,
+    selected_strategy_name: String,
+    selected_contract: DataContract,
+}
+
+impl DocumentTypeFormController {
+    pub(super) fn new(
+        selected_strategy_name: String,
+        selected_contract: DataContract,
+        document_types: Vec<String>,
+    ) -> Self {
+        Self {
             input: ComposedInput::new((
-                Field::new("Select Contract", SelectInput::new(contract_names)),
-                Field::new("Select Action", SelectInput::new(action_types)),
+                Field::new("Select Document Type", SelectInput::new(document_types)),
+                Field::new(
+                    "How much data to populate the document with?",
+                    SelectInput::new(vec![
+                        "Minimum".to_string(),
+                        "Maximum".to_string(),
+                        "Random".to_string(),
+                    ]),
+                ),
+                Field::new(
+                    "Populate not-required fields?",
+                    SelectInput::new(vec!["Yes".to_string(), "No".to_string()]),
+                ),
                 Field::new(
                     "Times per block",
                     SelectInput::new(vec![1, 2, 5, 10, 20, 24]),
@@ -84,50 +195,54 @@ impl StrategyOpDocumentFormController {
                 ),
             )),
             selected_strategy_name,
-            known_contracts,
-            supporting_contracts,
-            document_types: BTreeMap::new(),
-            strategy_contract_names,
+            selected_contract,
         }
     }
 }
 
-impl FormController for StrategyOpDocumentFormController {
+impl FormController for DocumentTypeFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
         match self.input.on_event(event) {
-            InputStatus::Done((contract_name, action_type, times_per_block, chance_per_block)) => {
-                let selected_contract = self.known_contracts.get(&contract_name)
-                    .or_else(|| self.supporting_contracts.get(&contract_name))
-                    .expect("Contract name not found in known_contracts or supporting_contracts.");
-
-                let document_types = selected_contract.document_types();
-                self.document_types = document_types.clone();
-
-                // To-do: let the user select the document type
-                // Pretty sure this just selects the first document type every time
-                let selected_document_type = self.document_types.values().next().unwrap().clone();
-
-                let action = match action_type.as_ref() {
-                    "Insert Random" => DocumentAction::DocumentActionInsertRandom(
-                        DocumentFieldFillType::FillIfNotRequired,
-                        DocumentFieldFillSize::AnyDocumentFillSize,
-                    ),
-                    // "Delete" => DocumentAction::DocumentActionDelete,
-                    // "Replace" => DocumentAction::DocumentActionReplace,
-                    _ => panic!("Invalid action type"),
+            InputStatus::Done((
+                document_type,
+                fill_size_string,
+                fill_type_string,
+                times_per_block,
+                chance_per_block,
+            )) => {
+                let fill_size = match &fill_size_string as &str {
+                    "Minimum" => DocumentFieldFillSize::MinDocumentFillSize,
+                    "Maximum" => DocumentFieldFillSize::MaxDocumentFillSize,
+                    "Random" => DocumentFieldFillSize::AnyDocumentFillSize,
+                    _ => {
+                        tracing::error!("Fill size string invalid in document creation. Setting to AnyDocumentFillSize.");
+                        DocumentFieldFillSize::AnyDocumentFillSize
+                    }
                 };
-
+                let fill_type = match &fill_type_string as &str {
+                    "Yes" => DocumentFieldFillType::FillIfNotRequired,
+                    "No" => DocumentFieldFillType::DoNotFillIfNotRequired,
+                    _ => {
+                        tracing::error!("Fill type string invalid in document creation. Setting to DoNotFillIfNotRequired.");
+                        DocumentFieldFillType::DoNotFillIfNotRequired
+                    }
+                };
                 FormStatus::Done {
                     task: Task::Strategy(StrategyTask::AddOperation {
                         strategy_name: self.selected_strategy_name.clone(),
                         operation: Operation {
                             op_type: OperationType::Document(DocumentOp {
-                                contract: selected_contract.clone(),
-                                document_type: selected_document_type,
-                                action: action.clone(),
+                                contract: self.selected_contract.clone(),
+                                document_type: self
+                                    .selected_contract
+                                    .document_type_cloned_for_name(&document_type)
+                                    .expect("Expected the document type to be there"),
+                                action: DocumentAction::DocumentActionInsertRandom(
+                                    fill_type, fill_size,
+                                ),
                             }),
                             frequency: Frequency {
-                                times_per_block_range: 1..times_per_block + 1,
+                                times_per_block_range: times_per_block..times_per_block + 1,
                                 chance_per_block: Some(chance_per_block),
                             },
                         },
@@ -135,14 +250,12 @@ impl FormController for StrategyOpDocumentFormController {
                     block: false,
                 }
             }
-            InputStatus::Redraw => FormStatus::Redraw,
-            InputStatus::None => FormStatus::None,
-            InputStatus::Exit => FormStatus::Exit,
+            status => status.into(),
         }
     }
 
     fn form_name(&self) -> &'static str {
-        "Document operations"
+        "Document insert random"
     }
 
     fn step_view(&mut self, frame: &mut Frame, area: Rect) {
@@ -158,6 +271,6 @@ impl FormController for StrategyOpDocumentFormController {
     }
 
     fn steps_number(&self) -> u8 {
-        4
+        self.input.steps_number()
     }
 }
