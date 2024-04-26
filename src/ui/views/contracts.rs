@@ -1,8 +1,8 @@
 //! Contracts views.
 
 mod document_type;
-mod fetch_system_contract;
 mod fetch_contract;
+mod fetch_system_contract;
 
 use std::{
     collections::BTreeMap,
@@ -20,8 +20,7 @@ use tuirealm::{
 };
 
 use self::{
-    document_type::SelectDocumentTypeFormController,
-    fetch_contract::FetchContractScreenController,
+    document_type::SelectDocumentTypeFormController, fetch_contract::FetchContractScreenController,
     fetch_system_contract::FetchSystemContractScreenController,
 };
 use crate::{
