@@ -1188,7 +1188,7 @@ pub async fn run_strategy_task<'s>(
                                             match broadcast_result {
                                                 Ok(_) => {
                                                     oks.fetch_add(1, Ordering::SeqCst);
-                                                    if !block_mode {
+                                                    if !block_mode && index != 1 && index != 2 {
                                                         tracing::info!("Successfully broadcasted transition: {}", transition_clone.name());
                                                     }
                                                     Ok((transition_clone, broadcast_result))
@@ -1288,7 +1288,7 @@ pub async fn run_strategy_task<'s>(
                                                         if let Some(metadata) = &v0_response.metadata {
                                                             if !verify_proofs {
                                                                 tracing::info!(
-                                                                    "Successfully processed state transition {} ({}) for {} {} (Actual block height: {})",
+                                                                    "Successfully broadcasted and processed state transition {} ({}) for {} {} (Actual block height: {})",
                                                                     index + 1, transition.name(), mode_string, index, metadata.height
                                                                 );    
                                                             }
