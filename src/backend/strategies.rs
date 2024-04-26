@@ -864,7 +864,7 @@ pub async fn run_strategy_task<'s>(
                     .count();
                 if used_contract_ids.len() + num_contract_create_operations > 0 {
                     tracing::info!(
-                        "Fetching identity nonce and {} identity contract nonces from Platform...",
+                        "Fetching loaded identity nonce and {} identity contract nonces from Platform...",
                         used_contract_ids.len()
                     );
                     let nonce_fetching_time = Instant::now();
@@ -904,7 +904,7 @@ pub async fn run_strategy_task<'s>(
                     let contract_results = join_all(contract_futures).await;
                     contract_nonce_counter = contract_results.into_iter().collect();
                     tracing::info!(
-                        "Took {} seconds to obtain {} identity contract nonces",
+                        "Took {} seconds to obtain the loaded identity nonce and {} identity contract nonces",
                         nonce_fetching_time.elapsed().as_secs(),
                         used_contract_ids.len()
                     );
@@ -1705,7 +1705,7 @@ pub async fn run_strategy_task<'s>(
                 drop(loaded_identity_lock);
                 let refresh_result = app_state.refresh_identity(&sdk).await;
                 if let Err(ref e) = refresh_result {
-                    tracing::error!("Failed to refresh identity after running strategy: {:?}", e);
+                    tracing::warn!("Failed to refresh identity after running strategy: {:?}", e);
                 }
 
                 // Attempt to retrieve the final balance from the refreshed identity
@@ -1714,10 +1714,7 @@ pub async fn run_strategy_task<'s>(
                         // Successfully refreshed, now access the balance
                         refreshed_identity_lock.balance()
                     }
-                    Err(_) => {
-                        tracing::error!("Error refreshing identity after running strategy");
-                        initial_balance_identity
-                    }
+                    Err(_) => initial_balance_identity,
                 };
 
                 let dash_spent_identity = (initial_balance_identity as f64
@@ -1742,7 +1739,7 @@ pub async fn run_strategy_task<'s>(
                 }
 
                 // Calculate transactions per second
-                let mut tps = 0;
+                let mut tps: f32 = 0.0;
                 if transition_count
                     > (strategy.start_contracts.len() as u16
                         + strategy.start_identities.number_of_identities as u16)
@@ -1750,10 +1747,10 @@ pub async fn run_strategy_task<'s>(
                     tps = (transition_count
                         - strategy.start_contracts.len() as u16
                         - strategy.start_identities.number_of_identities as u16)
-                        as u64
-                        / (load_run_time)
+                        as f32
+                        / (load_run_time as f32)
                 };
-                let mut successful_tps = 0;
+                let mut successful_tps: f32 = 0.0;
                 if success_count as u16
                     > (strategy.start_contracts.len() as u16
                         + strategy.start_identities.number_of_identities as u16)
@@ -1761,8 +1758,8 @@ pub async fn run_strategy_task<'s>(
                     successful_tps = (success_count
                         - strategy.start_contracts.len()
                         - strategy.start_identities.number_of_identities as usize)
-                        as u64
-                        / (load_run_time)
+                        as f32
+                        / (load_run_time as f32)
                 };
                 let mut success_percent = 0;
                 if success_count as u16
@@ -1804,7 +1801,7 @@ pub async fn run_strategy_task<'s>(
                     tracing::info!(
                         "-----Strategy '{}' completed-----\n\nMode: {}\nState transitions attempted: {}\nState \
                         transitions succeeded: {}\nNumber of loops: {}\nLoad run time: \
-                        {:?} seconds\nInit run time: {} seconds\nAttempted rate (approx): {} txs/s\nSuccessful rate: {} tx/s\nSuccess percentage: {}%\nDash spent (Loaded Identity): {}\nDash spent (Wallet): {}\n",
+                        {:?} seconds\nInit run time: {} seconds\nAttempted rate (approx): {:.2} txs/s\nSuccessful rate: {:.2} tx/s\nSuccess percentage: {}%\nDash spent (Loaded Identity): {}\nDash spent (Wallet): {}\n",
                         strategy_name,
                         mode_string,
                         transition_count,
