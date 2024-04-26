@@ -768,8 +768,11 @@ pub async fn run_strategy_task<'s>(
                 let used_contract_ids = strategy.used_contract_ids();
                 let mut identity_nonce_counter = BTreeMap::new();
                 let mut contract_nonce_counter: BTreeMap<(Identifier, Identifier), u64> = BTreeMap::new();
-                if used_contract_ids.len() > 0 {
-                    tracing::info!("Fetching {} identity contract nonces from Platform...", used_contract_ids.len());
+                let num_contract_create_operations = strategy.operations.iter()
+                    .filter(|op| matches!(op.op_type, OperationType::ContractCreate(_, _)))
+                    .count();
+                if used_contract_ids.len() + num_contract_create_operations > 0 {
+                    tracing::info!("Fetching identity nonce and {} identity contract nonces from Platform...", used_contract_ids.len());
                     let nonce_fetching_time = Instant::now();
                     let identity_future = sdk.get_identity_nonce(
                         loaded_identity_clone.id(),
