@@ -42,6 +42,7 @@ use dpp::{
         PlatformSerializableWithPlatformVersion,
     },
     state_transition::{
+        data_contract_create_transition::DataContractCreateTransition,
         documents_batch_transition::{
             document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods,
             document_transition::DocumentTransition, DocumentCreateTransition,
@@ -1379,6 +1380,13 @@ pub async fn run_strategy_task<'s>(
                         // If we're in block mode, or index 1 or 2 of time mode, we're going to wait for state transition results and potentially verify proofs too.
                         // If we're in time mode and index 3+, we're just broadcasting.
                         if block_mode || index == 1 || index == 2 {
+                            let request_settings = RequestSettings {
+                                connect_timeout: Some(Duration::from_secs(3)),
+                                timeout: Some(Duration::from_secs(3)),
+                                retries: Some(1),
+                                ban_failed_address: Some(true),
+                            };
+
                             let mut wait_futures = Vec::new();
                             for (index, result) in broadcast_results.into_iter().enumerate() {
                                 match result {
@@ -1448,7 +1456,7 @@ pub async fn run_strategy_task<'s>(
                                             {
                                                 Ok(wait_request) => {
                                                     wait_request
-                                                        .execute(sdk, RequestSettings::default())
+                                                        .execute(sdk, request_settings)
                                                         .await
                                                 }
                                                 Err(e) => {
@@ -1512,6 +1520,50 @@ pub async fn run_strategy_task<'s>(
                                                                     match verified {
                                                                         Ok(_) => {
                                                                             tracing::info!("Successfully processed and verified proof for state transition {} ({}), {} {} (Actual block height: {})", index + 1, transition_type, mode_string, index, metadata.height);
+
+                                                                            // If a data contract was registered, add it to known_contracts
+                                                                            // Not sure if this is necessary
+                                                                            if let StateTransition::DataContractCreate(
+                                                                                DataContractCreateTransition::V0(
+                                                                                    data_contract_create_transition,
+                                                                                ),
+                                                                            ) = &transition
+                                                                            {
+                                                                                // Extract the data contract from the transition
+                                                                                let data_contract_serialized =
+                                                                                    &data_contract_create_transition
+                                                                                        .data_contract;
+                                                                                let data_contract_result =
+                                                                                    DataContract::try_from_platform_versioned(
+                                                                                        data_contract_serialized.clone(),
+                                                                                        false,
+                                                                                        &mut vec![],
+                                                                                        PlatformVersion::latest(),
+                                                                                    );
+
+                                                                                match data_contract_result {
+                                                                                    Ok(data_contract) => {
+                                                                                        let mut known_contracts_lock =
+                                                                                            app_state
+                                                                                                .known_contracts
+                                                                                                .lock()
+                                                                                                .await;
+                                                                                        known_contracts_lock.insert(
+                                                                                            data_contract
+                                                                                                .id()
+                                                                                                .to_string(Encoding::Base58),
+                                                                                            data_contract,
+                                                                                        );
+                                                                                    }
+                                                                                    Err(e) => {
+                                                                                        tracing::error!(
+                                                                                            "Error deserializing data \
+                                                                                            contract: {:?}",
+                                                                                            e
+                                                                                        );
+                                                                                    }
+                                                                                }
+                                                                            }
                                                                         }
                                                                         Err(e) => tracing::error!("Error verifying state transition execution proof: {}", e),
                                                                     }

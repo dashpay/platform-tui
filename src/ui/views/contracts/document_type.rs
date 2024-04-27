@@ -136,7 +136,14 @@ impl DocumentTypeScreenController {
             .document_type_for_name(&document_type_name)
             .expect("expected a document type")
             .to_owned_document_type();
-        let document_type_str = as_toml(document_type.properties());
+        let document_type_str = match toml::to_string_pretty(document_type.properties()) {
+            Ok(string) => string,
+            Err(e) => {
+                tracing::error!("Error serializing to toml: {e}");
+                tracing::info!("{:?}", document_type.properties());
+                as_toml(document_type.properties())
+            }
+        };
         let info = Info::new_scrollable(&document_type_str);
 
         DocumentTypeScreenController {
