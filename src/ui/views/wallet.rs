@@ -38,7 +38,7 @@ const WALLET_LOADED_COMMANDS: [ScreenCommandKey; 6] = [
     ScreenCommandKey::new("i", "Register identity"),
     ScreenCommandKey::new("l", "Load known identity"),
     ScreenCommandKey::new("u", "Get more utxos"),
-    ScreenCommandKey::new("m", "Clear loaded wallet"),
+    ScreenCommandKey::new("C-m", "Clear loaded wallet"),
 ];
 
 const IDENTITY_LOADED_COMMANDS: [ScreenCommandKey; 5] = [
@@ -46,7 +46,7 @@ const IDENTITY_LOADED_COMMANDS: [ScreenCommandKey; 5] = [
     ScreenCommandKey::new("w", "Withdraw balance"),
     ScreenCommandKey::new("d", "Copy Identity ID"),
     ScreenCommandKey::new("k", "Add Identity key"),
-    ScreenCommandKey::new("e", "Clear loaded identity"),
+    ScreenCommandKey::new("C-e", "Clear loaded identity"),
 ];
 
 #[memoize::memoize]
@@ -407,7 +407,7 @@ impl ScreenController for WalletScreenController {
 
             Event::Key(KeyEvent {
                 code: Key::Char('e'),
-                modifiers: KeyModifiers::NONE,
+                modifiers: KeyModifiers::CONTROL,
             }) if self.identity_loaded => {
                 self.identity_loaded = false;
                 ScreenFeedback::Task {
@@ -418,7 +418,7 @@ impl ScreenController for WalletScreenController {
 
             Event::Key(KeyEvent {
                 code: Key::Char('m'),
-                modifiers: KeyModifiers::NONE,
+                modifiers: KeyModifiers::CONTROL,
             }) if self.wallet_loaded => {
                 self.wallet_loaded = false;
                 ScreenFeedback::Task {

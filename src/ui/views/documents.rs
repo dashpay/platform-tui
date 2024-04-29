@@ -371,7 +371,7 @@ impl FormController for SetDocumentPriceFormController {
         match self.input.on_event(event) {
             InputStatus::Done(amount) => FormStatus::Done {
                 task: Task::Document(DocumentTask::SetDocumentPrice {
-                    amount: (amount * 100000000.0) as u64,
+                    amount: (amount * 100_000_000_000.0) as u64,
                     data_contract: self.data_contract.clone(),
                     document_type: self.document_type.clone(),
                     document: self.document.clone(),
