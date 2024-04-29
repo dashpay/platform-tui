@@ -1329,15 +1329,17 @@ pub async fn run_strategy_task<'s>(
 
                                 let mut request_settings = RequestSettings::default();
                                 if !block_mode && index != 1 && index != 2 {
+                                    // time mode loading
                                     request_settings.connect_timeout = Some(Duration::from_secs(1));
                                     request_settings.timeout = Some(Duration::from_secs(1));
                                     request_settings.retries = Some(0);
                                 }
-                                if block_mode && index != 1 && index != 2 {
-                                    request_settings.connect_timeout = Some(Duration::from_secs(3));
-                                    request_settings.timeout = Some(Duration::from_secs(3));
-                                    request_settings.retries = Some(1);
-                                }
+                                // if block_mode && index != 1 && index != 2 {
+                                //     // block mode loading
+                                //     request_settings.connect_timeout = Some(Duration::from_secs(3));
+                                //     request_settings.timeout = Some(Duration::from_secs(3));
+                                //     request_settings.retries = Some(1);
+                                // }
 
                                 // Prepare futures for broadcasting independent transitions
                                 let future = async move {
@@ -1523,6 +1525,8 @@ pub async fn run_strategy_task<'s>(
 
                                                                             // If a data contract was registered, add it to known_contracts
                                                                             // Not sure if this is necessary
+                                                                            // I may just have it here because we need it for proof verification
+                                                                            // But maybe we want to add them in the case of no verification as well
                                                                             if let StateTransition::DataContractCreate(
                                                                                 DataContractCreateTransition::V0(
                                                                                     data_contract_create_transition,

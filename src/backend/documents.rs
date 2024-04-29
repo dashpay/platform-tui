@@ -6,7 +6,13 @@ use std::{
 };
 
 use dash_sdk::{
-    platform::{transition::put_document::PutDocument, DocumentQuery, FetchMany},
+    platform::{
+        transition::{
+            purchase_document::PurchaseDocument, put_document::PutDocument,
+            update_price_of_document::UpdatePriceOfDocument,
+        },
+        DocumentQuery, FetchMany,
+    },
     Sdk,
 };
 use dpp::{
@@ -18,11 +24,14 @@ use dpp::{
             DocumentType,
         },
     },
-    document::Document,
+    document::{Document, DocumentV0Getters, DocumentV0Setters},
+    fee::Credits,
     identity::{
         accessors::IdentityGettersV0,
         identity_public_key::accessors::v0::IdentityPublicKeyGettersV0, KeyType, Purpose,
+        SecurityLevel,
     },
+    platform_value::btreemap_extensions::BTreeValueMapHelper,
     prelude::{DataContract, Identity, IdentityPublicKey},
 };
 use futures::{stream::FuturesUnordered, Future, StreamExt};
@@ -39,6 +48,17 @@ pub(crate) enum DocumentTask {
         data_contract_name: String,
         document_type_name: String,
         count: u16,
+    },
+    PurchaseDocument {
+        data_contract: DataContract,
+        document_type: DocumentType,
+        document: Document,
+    },
+    SetDocumentPrice {
+        amount: u64,
+        data_contract: DataContract,
+        document_type: DocumentType,
+        document: Document,
     },
 }
 
@@ -125,6 +145,215 @@ impl AppState {
                                 e.to_string()
                             )),
                         }
+                    }
+                }
+            }
+            DocumentTask::PurchaseDocument {
+                data_contract,
+                document_type,
+                document,
+            } => {
+                if let Some(loaded_identity) = self.loaded_identity.lock().await.as_ref() {
+                    if let Some(public_key) = loaded_identity.get_first_public_key_matching(
+                        Purpose::AUTHENTICATION,
+                        HashSet::from([SecurityLevel::CRITICAL]),
+                        HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
+                    ) {
+                        let price = match document
+                            .properties()
+                            .get_optional_integer::<Credits>("$price")
+                        {
+                            Ok(price) => {
+                                if let Some(price) = price {
+                                    price
+                                } else {
+                                    // no price set
+                                    tracing::error!("Document is not for sale");
+                                    return BackendEvent::TaskCompleted {
+                                        task: Task::Document(task),
+                                        execution_result: Err(format!("Document is not for sale")),
+                                    };
+                                }
+                            }
+                            Err(e) => {
+                                // no optional price field found
+                                return BackendEvent::TaskCompleted {
+                                    task: Task::Document(task),
+                                    execution_result: Err(format!(
+                                        "No price field found in the document: {e}",
+                                    )),
+                                };
+                            }
+                        };
+
+                        // Get signer from loaded_identity
+                        let identity_private_keys_lock = self.identity_private_keys.lock().await;
+                        let mut signer = SimpleSigner::default();
+                        let Identity::V0(identity_v0) = loaded_identity;
+                        for (key_id, public_key) in &identity_v0.public_keys {
+                            let identity_key_tuple = (identity_v0.id, *key_id);
+                            if let Some(private_key_bytes) =
+                                identity_private_keys_lock.get(&identity_key_tuple)
+                            {
+                                signer
+                                    .private_keys
+                                    .insert(public_key.clone(), private_key_bytes.clone());
+                            }
+                        }
+                        drop(identity_private_keys_lock);
+
+                        let data_contract_arc = Arc::new(data_contract.clone());
+
+                        let mut new_document = document.clone();
+                        new_document.bump_revision();
+
+                        match new_document
+                            .purchase_document_and_wait_for_response(
+                                price,
+                                sdk,
+                                document_type.clone(),
+                                loaded_identity.id(),
+                                public_key.clone(),
+                                data_contract_arc,
+                                &signer,
+                            )
+                            .await
+                        {
+                            Ok(document) => {
+                                tracing::info!(
+                                    "Successfully purchased document with id {}",
+                                    document.id().to_string(
+                                        dpp::platform_value::string_encoding::Encoding::Base58
+                                    )
+                                );
+                                BackendEvent::TaskCompleted {
+                                    task: Task::Document(task),
+                                    execution_result: Ok(format!(
+                                        "Successfully purchased document with id {}",
+                                        document.id().to_string(
+                                            dpp::platform_value::string_encoding::Encoding::Base58
+                                        )
+                                    )
+                                    .into()),
+                                }
+                            }
+                            Err(e) => {
+                                tracing::error!(
+                                    "Error from purchase_document_and_wait_for_response: {}",
+                                    e.to_string()
+                                );
+                                BackendEvent::TaskCompleted {
+                                    task: Task::Document(task),
+                                    execution_result: Err(format!(
+                                        "Error from purchase_document_and_wait_for_response: {}",
+                                        e.to_string()
+                                    )),
+                                }
+                            }
+                        }
+                    } else {
+                        // no matching key
+                        BackendEvent::TaskCompleted {
+                            task: Task::Document(task),
+                            execution_result: Err(format!(
+                                "No key suitable for purchasing documents in the loaded identity"
+                            )),
+                        }
+                    }
+                } else {
+                    // no loaded identity
+                    BackendEvent::TaskCompleted {
+                        task: Task::Document(task),
+                        execution_result: Err(format!(
+                            "No loaded identity for purchasing documents"
+                        )),
+                    }
+                }
+            }
+            DocumentTask::SetDocumentPrice {
+                amount,
+                data_contract,
+                document_type,
+                document,
+            } => {
+                if let Some(loaded_identity) = self.loaded_identity.lock().await.as_ref() {
+                    if let Some(public_key) = loaded_identity.get_first_public_key_matching(
+                        Purpose::AUTHENTICATION,
+                        HashSet::from([SecurityLevel::CRITICAL]),
+                        HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
+                    ) {
+                        // Get signer from loaded_identity
+                        let identity_private_keys_lock = self.identity_private_keys.lock().await;
+                        let mut signer = SimpleSigner::default();
+                        let Identity::V0(identity_v0) = loaded_identity;
+                        for (key_id, public_key) in &identity_v0.public_keys {
+                            let identity_key_tuple = (identity_v0.id, *key_id);
+                            if let Some(private_key_bytes) =
+                                identity_private_keys_lock.get(&identity_key_tuple)
+                            {
+                                signer
+                                    .private_keys
+                                    .insert(public_key.clone(), private_key_bytes.clone());
+                            }
+                        }
+                        drop(identity_private_keys_lock);
+
+                        let data_contract_arc = Arc::new(data_contract.clone());
+
+                        let mut new_document = document.clone();
+                        new_document.bump_revision();
+
+                        match new_document
+                            .update_price_of_document_and_wait_for_response(
+                                *amount,
+                                sdk,
+                                document_type.clone(),
+                                public_key.clone(),
+                                data_contract_arc,
+                                &signer,
+                            )
+                            .await
+                        {
+                            Ok(document) => BackendEvent::TaskCompleted {
+                                task: Task::Document(task),
+                                execution_result: Ok(format!(
+                                    "Successfully updated price of document with id {}",
+                                    document.id().to_string(
+                                        dpp::platform_value::string_encoding::Encoding::Base58
+                                    )
+                                )
+                                .into()),
+                            },
+                            Err(e) => {
+                                tracing::error!(
+                                    "Error from update_price_of_document_and_wait_for_response: {}",
+                                    e.to_string()
+                                );
+                                BackendEvent::TaskCompleted {
+                                    task: Task::Document(task),
+                                    execution_result: Err(format!(
+                                        "Error from update_price_of_document_and_wait_for_response: {}",
+                                        e.to_string()
+                                    )),
+                                }
+                            }
+                        }
+                    } else {
+                        // no matching key
+                        BackendEvent::TaskCompleted {
+                            task: Task::Document(task),
+                            execution_result: Err(format!(
+                                "No key suitable for updating document prices in the loaded identity"
+                            )),
+                        }
+                    }
+                } else {
+                    // no loaded identity
+                    BackendEvent::TaskCompleted {
+                        task: Task::Document(task),
+                        execution_result: Err(format!(
+                            "No loaded identity for updating document prices"
+                        )),
                     }
                 }
             }
