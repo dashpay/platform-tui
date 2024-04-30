@@ -261,12 +261,14 @@ async fn main() {
         }.into(),
     ];
 
+    let request_plan = RequestPlan::new(requests);
+
     send_many_request_to_drive(
         &config,
         args.time.map(|t| Duration::from_secs(t.into())),
         args.connections,
         rate,
-        requests,
+        request_plan,
     )
     .await;
 }
@@ -276,7 +278,7 @@ async fn send_many_request_to_drive(
     duration: Option<Duration>,
     concurrent_connections: u16,
     rate: Rate,
-    requests: Vec<AnyDapiRequest>,
+    requests: RequestPlan,
 ) {
     let start_time = Instant::now();
     let cancel_test = CancellationToken::new();
@@ -357,10 +359,7 @@ async fn send_many_request_to_drive(
                 let request_summary = Arc::clone(&connection_summary);
 
                 // Select a random request from the list
-                let request = connections_requests
-                    .choose(&mut rand::thread_rng())
-                    .unwrap()
-                    .clone();
+                let request = connections_requests.random();
 
                 // Send a request without waiting for the response,
                 // so we can send many requests in parallel through one connection
@@ -416,6 +415,31 @@ fn cancel_at(cancellation_token: CancellationToken, deadline: Instant) {
 }
 
 // TODO: Move to crate and reuse in load test and strategy
+
+struct RequestPlan {
+    requests: Vec<AnyDapiRequest>,
+}
+
+impl RequestPlan {
+    pub fn new(requests: Vec<AnyDapiRequest>) -> Self {
+        if requests.is_empty() {
+            panic!("request list must not be empty");
+        }
+
+        Self { requests }
+    }
+
+    pub fn random(&self) -> AnyDapiRequest {
+        self.random_with_rng(&mut rand::thread_rng())
+    }
+
+    pub fn random_with_rng(&self, rng: &mut impl rand::Rng) -> AnyDapiRequest {
+        self.requests
+            .choose(rng)
+            .expect("request list must not be empty")
+            .clone()
+    }
+}
 
 #[derive(Clone, Debug)]
 #[allow(clippy::enum_variant_names)]
