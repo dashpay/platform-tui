@@ -274,3 +274,7 @@ fn stringify_result_keep_item<T: Serialize, E: Display>(
 pub(crate) fn as_toml<T: Serialize>(value: &T) -> String {
     toml::to_string_pretty(&value).unwrap_or("Cannot serialize as TOML".to_owned())
 }
+
+pub(crate) fn as_json_string<T: Serialize>(value: &T) -> String {
+    serde_json::to_string_pretty(&value).unwrap_or("Cannot serialize as json string".to_owned())
+}

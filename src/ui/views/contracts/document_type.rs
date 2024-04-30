@@ -22,7 +22,7 @@ use tuirealm::{
 use self::broadcast_random_documents::BroadcastRandomDocumentsCountForm;
 use crate::{
     backend::{
-        as_toml, documents::DocumentTask, AppState, BackendEvent, CompletedTaskPayload, Task,
+        as_json_string, documents::DocumentTask, AppState, BackendEvent, CompletedTaskPayload, Task,
     },
     ui::{
         form::{
@@ -142,17 +142,34 @@ impl DocumentTypeScreenController {
             .document_type_for_name(&document_type_name)
             .expect("expected a document type")
             .to_owned_document_type();
-        let document_type_str = match toml::to_string_pretty(document_type.properties()) {
-            Ok(string) => string,
+        let document_type_properties_str =
+            match serde_json::to_string_pretty(document_type.properties()) {
+                Ok(string) => format!("========= Properties =========\n\n{}", string),
+                Err(e) => {
+                    tracing::error!(
+                        "Error serializing to json string: {e} properties: {:?}",
+                        document_type.properties()
+                    );
+                    as_json_string(document_type.properties())
+                }
+            };
+        let document_type_indices_str = match serde_json::to_string_pretty(document_type.indices())
+        {
+            Ok(string) => format!("\n========= Indexes =========\n\n{}", string),
             Err(e) => {
                 tracing::error!(
-                    "Error serializing to toml: {e} properties: {:?}",
-                    document_type.properties()
+                    "Error serializing to json string: {e} indices: {:?}",
+                    document_type.indices()
                 );
-                as_toml(document_type.properties())
+                as_json_string(document_type.indices())
             }
         };
-        let info = Info::new_scrollable(&document_type_str);
+        let document_type_info = format!(
+            "{}\n{}",
+            document_type_properties_str, &document_type_indices_str
+        );
+
+        let info = Info::new_scrollable(&document_type_info);
 
         Self {
             identity_identifier,
