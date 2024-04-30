@@ -1,4 +1,4 @@
-use std::fmt::{Display, Formatter};
+use std::fmt::Display;
 use std::str::FromStr;
 use std::{
     fmt,
@@ -12,19 +12,29 @@ use std::{
 };
 
 use clap::Parser;
-use dapi_grpc::platform::v0::get_identity_response;
-use dapi_grpc::platform::v0::get_identity_response::get_identity_response_v0;
-use dapi_grpc::platform::v0::{get_identity_request, Proof};
-use dapi_grpc::platform::v0::{GetIdentityRequest, GetIdentityResponse};
+use dapi_grpc::platform::v0::get_identity_request;
+use dapi_grpc::platform::v0::GetIdentityRequest;
+use dapi_grpc::platform::v0::{
+    get_data_contract_request, get_data_contracts_request,
+    get_identity_balance_and_revision_request, get_identity_balance_request,
+    get_identity_contract_nonce_request, get_identity_keys_request, get_identity_nonce_request,
+    key_request_type, AllKeys, GetDataContractRequest, GetDataContractsRequest,
+    GetIdentityBalanceAndRevisionRequest, GetIdentityBalanceRequest,
+    GetIdentityContractNonceRequest, GetIdentityKeysRequest, GetIdentityNonceRequest,
+    KeyRequestType,
+};
 use dapi_grpc::tonic::transport::Uri;
 use dapi_grpc::tonic::{Code, Status as TransportError};
 use dashmap::DashMap;
-use futures::future::join_all;
+use futures::future::{join_all, BoxFuture};
+use futures::FutureExt;
 use governor::clock::DefaultClock;
 use governor::state::{InMemoryState, NotKeyed};
 use governor::{Quota, RateLimiter};
+use rand::seq::SliceRandom;
 use rs_dapi_client::{
-    Address, AddressList, DapiClient, DapiClientError, DapiRequest, RequestSettings,
+    Address, AddressList, DapiClient, DapiClientError, DapiRequest, DapiRequestExecutor,
+    RequestSettings,
 };
 use rs_platform_explorer::config::Config;
 use tokio::time::{interval, Instant};
@@ -106,24 +116,172 @@ async fn main() {
 
     let rate = Rate::new(args.rate, args.rate_unit);
 
-    query_identities(
+    let requests = vec![
+        // Existing DPNS identity
+        GetIdentityRequest {
+            version: Some(get_identity_request::Version::V0(
+                get_identity_request::GetIdentityRequestV0 {
+                    id: dpp::system_data_contracts::dpns_contract::OWNER_ID_BYTES.to_vec(),
+                    prove: true,
+                },
+            )),
+        }.into(),
+        // Existing DashPay identity
+        GetIdentityRequest {
+            version: Some(get_identity_request::Version::V0(
+                get_identity_request::GetIdentityRequestV0 {
+                    id: dpp::system_data_contracts::dashpay_contract::OWNER_ID_BYTES.to_vec(),
+                    prove: true,
+                },
+            )),
+        }.into(),
+        // Existing Masternode reward shares identity
+        GetIdentityRequest {
+            version: Some(get_identity_request::Version::V0(
+                get_identity_request::GetIdentityRequestV0 {
+                    id: dpp::system_data_contracts::masternode_reward_shares_contract::OWNER_ID_BYTES.to_vec(),
+                    prove: true,
+                },
+            )),
+        }.into(),
+        // Non-existing identity
+        GetIdentityRequest {
+            version: Some(get_identity_request::Version::V0(
+                get_identity_request::GetIdentityRequestV0 {
+                    id: vec![0; 32],
+                    prove: false,
+                },
+            )),
+        }.into(),
+        // Get identity nonce
+        GetIdentityNonceRequest {
+            version: Some(get_identity_nonce_request::Version::V0(get_identity_nonce_request::GetIdentityNonceRequestV0 {
+                identity_id: dpp::system_data_contracts::dashpay_contract::OWNER_ID_BYTES.to_vec(),
+                prove: true,
+            })),
+        }.into(),
+        // Get identity contract nonce
+        GetIdentityContractNonceRequest {
+            version: Some(
+                get_identity_contract_nonce_request::Version::V0(get_identity_contract_nonce_request::GetIdentityContractNonceRequestV0 {
+                    identity_id: dpp::system_data_contracts::dashpay_contract::OWNER_ID_BYTES
+                        .to_vec(),
+                    contract_id: dpp::system_data_contracts::dashpay_contract::ID.to_vec(),
+                    prove: true,
+                },
+            )),
+        }.into(),
+        // Get identity contract nonce
+        GetIdentityContractNonceRequest {
+            version: Some(
+                get_identity_contract_nonce_request::Version::V0(get_identity_contract_nonce_request::GetIdentityContractNonceRequestV0 {
+                    identity_id: dpp::system_data_contracts::dpns_contract::OWNER_ID_BYTES
+                        .to_vec(),
+                    contract_id: dpp::system_data_contracts::dpns_contract::ID.to_vec(),
+                    prove: true,
+                },
+            )),
+        }.into(),
+        // Non existing identity contract nonce
+        GetIdentityContractNonceRequest {
+            version: Some(
+                get_identity_contract_nonce_request::Version::V0(get_identity_contract_nonce_request::GetIdentityContractNonceRequestV0 {
+                    identity_id: dpp::system_data_contracts::dashpay_contract::OWNER_ID_BYTES
+                        .to_vec(),
+                    contract_id: vec![0; 32],
+                    prove: false,
+                },
+            )),
+        }.into(),
+        // Get DashPay identity balance
+        GetIdentityBalanceRequest {
+            version: Some(get_identity_balance_request::Version::V0(get_identity_balance_request::GetIdentityBalanceRequestV0 {
+                id: dpp::system_data_contracts::dashpay_contract::OWNER_ID_BYTES
+                    .to_vec(),
+                prove: true,
+            })),
+        }.into(),
+        // Get DashPay identity balance and revision
+        GetIdentityBalanceAndRevisionRequest {
+            version: Some(get_identity_balance_and_revision_request::Version::V0(get_identity_balance_and_revision_request::GetIdentityBalanceAndRevisionRequestV0 {
+                id: dpp::system_data_contracts::dashpay_contract::OWNER_ID_BYTES
+                    .to_vec(),
+                prove: true,
+            })),
+        }.into(),
+        GetIdentityKeysRequest {
+            version: Some(get_identity_keys_request::Version::V0(get_identity_keys_request::GetIdentityKeysRequestV0 {
+                identity_id: dpp::system_data_contracts::dashpay_contract::OWNER_ID_BYTES
+                    .to_vec(),
+                request_type: Some(KeyRequestType { request: Some(key_request_type::Request::AllKeys(AllKeys {})) }),
+                limit: None,
+                offset: None,
+                prove: true,
+            })),
+        }.into(),
+        // Dashpay contract
+        GetDataContractRequest {
+            version: Some(get_data_contract_request::Version::V0(get_data_contract_request::GetDataContractRequestV0 {
+                id: dpp::system_data_contracts::dashpay_contract::ID
+                    .to_vec(),
+                prove: true,
+            })),
+        }.into(),
+        // DPNS contract
+        GetDataContractRequest {
+            version: Some(get_data_contract_request::Version::V0(get_data_contract_request::GetDataContractRequestV0 {
+                id: dpp::system_data_contracts::dpns_contract::ID
+                    .to_vec(),
+                prove: true,
+            })),
+        }.into(),
+        // Masternode reward shares contract
+        GetDataContractRequest {
+            version: Some(get_data_contract_request::Version::V0(get_data_contract_request::GetDataContractRequestV0 {
+                id: dpp::system_data_contracts::masternode_reward_shares_contract::ID
+                    .to_vec(),
+                prove: true,
+            })),
+        }.into(),
+        // Non existing contract
+        GetDataContractRequest {
+            version: Some(get_data_contract_request::Version::V0(get_data_contract_request::GetDataContractRequestV0 {
+                id: vec![0; 32],
+                prove: false,
+            })),
+        }.into(),
+        // Non existing contract
+        GetDataContractsRequest {
+            version: Some(get_data_contracts_request::Version::V0(get_data_contracts_request::GetDataContractsRequestV0 {
+                ids: vec![dpp::system_data_contracts::dpns_contract::ID
+                    .to_vec(), dpp::system_data_contracts::masternode_reward_shares_contract::ID
+                    .to_vec(), vec![0; 32]],
+                prove: true,
+            })),
+        }.into(),
+    ];
+
+    send_many_request_to_drive(
         &config,
         args.time.map(|t| Duration::from_secs(t.into())),
         args.connections,
         rate,
+        requests,
     )
     .await;
 }
 
-async fn query_identities(
+async fn send_many_request_to_drive(
     config: &Config,
     duration: Option<Duration>,
     concurrent_connections: u16,
     rate: Rate,
+    requests: Vec<AnyDapiRequest>,
 ) {
     let start_time = Instant::now();
     let cancel_test = CancellationToken::new();
     let rate = Arc::new(rate);
+    let requests = Arc::new(requests);
 
     let duration_message = if let Some(duration) = duration {
         format!(" for {} seconds", duration.as_secs_f32())
@@ -184,6 +342,7 @@ async fn query_identities(
         let connection_rate = Arc::clone(&rate);
         let cancel_connection = cancel_test.clone();
         let connection_summary = Arc::clone(&summary);
+        let connections_requests = Arc::clone(&requests);
 
         // Send requests through the connection in a loop
         let connection_task = tokio::spawn(async move {
@@ -197,6 +356,12 @@ async fn query_identities(
                 let request_client = Arc::clone(&connection_client);
                 let request_summary = Arc::clone(&connection_summary);
 
+                // Select a random request from the list
+                let request = connections_requests
+                    .choose(&mut rand::thread_rng())
+                    .unwrap()
+                    .clone();
+
                 // Send a request without waiting for the response,
                 // so we can send many requests in parallel through one connection
                 tokio::spawn(async move {
@@ -206,9 +371,14 @@ async fn query_identities(
                         connection_id = connection_id
                     );
 
-                    query_identity(request_client, request_settings, &request_summary)
-                        .instrument(span)
-                        .await
+                    send_request(
+                        request_client,
+                        request_settings,
+                        request.clone(),
+                        &request_summary,
+                    )
+                    .instrument(span)
+                    .await
                 });
             }
         });
@@ -221,43 +391,14 @@ async fn query_identities(
     tracing::info!("[DONE] {}", summary.report_message());
 }
 
-async fn query_identity(client: Arc<DapiClient>, settings: RequestSettings, summary: &TestSummary) {
-    let request = GetIdentityRequest {
-        version: Some(get_identity_request::Version::V0(
-            get_identity_request::GetIdentityRequestV0 {
-                id: dpp::system_data_contracts::dashpay_contract::OWNER_ID_BYTES.to_vec(),
-                prove: true,
-            },
-        )),
-    };
-
+async fn send_request(
+    client: Arc<DapiClient>,
+    settings: RequestSettings,
+    request: AnyDapiRequest,
+    summary: &TestSummary,
+) {
     match request.execute(client.as_ref(), settings).await {
-        Ok(response) => {
-            // Validate response
-            let GetIdentityResponse {
-                version:
-                    Some(get_identity_response::Version::V0(
-                        get_identity_response::GetIdentityResponseV0 {
-                            result:
-                                Some(get_identity_response_v0::Result::Proof(Proof {
-                                    grovedb_proof,
-                                    ..
-                                })),
-                            ..
-                        },
-                    )),
-                ..
-            } = response
-            else {
-                panic!("unexpected response: {:?}", response);
-            };
-
-            if grovedb_proof.is_empty() {
-                panic!("unexpected empty proof");
-            }
-
-            summary.add_ok()
-        }
+        Ok(_) => summary.add_ok(),
         Err(DapiClientError::Transport(e, ..)) => summary.add_error(e),
         Err(e) => panic!("unexpected error: {}", e),
     }
@@ -275,6 +416,116 @@ fn cancel_at(cancellation_token: CancellationToken, deadline: Instant) {
 }
 
 // TODO: Move to crate and reuse in load test and strategy
+
+#[derive(Clone, Debug)]
+#[allow(clippy::enum_variant_names)]
+enum AnyDapiRequest {
+    GetIdentityRequest(GetIdentityRequest),
+    GetIdentityNonceRequest(GetIdentityNonceRequest),
+    GetIdentityContractNonceRequest(GetIdentityContractNonceRequest),
+    GetIdentityBalanceRequest(GetIdentityBalanceRequest),
+    GetIdentityBalanceAndRevisionRequest(GetIdentityBalanceAndRevisionRequest),
+    GetIdentityKeysRequest(GetIdentityKeysRequest),
+    GetDataContractRequest(GetDataContractRequest),
+    GetDataContractsRequest(GetDataContractsRequest),
+}
+
+impl From<GetIdentityRequest> for AnyDapiRequest {
+    fn from(value: GetIdentityRequest) -> Self {
+        AnyDapiRequest::GetIdentityRequest(value)
+    }
+}
+
+impl From<GetIdentityNonceRequest> for AnyDapiRequest {
+    fn from(value: GetIdentityNonceRequest) -> Self {
+        AnyDapiRequest::GetIdentityNonceRequest(value)
+    }
+}
+
+impl From<GetIdentityContractNonceRequest> for AnyDapiRequest {
+    fn from(value: GetIdentityContractNonceRequest) -> Self {
+        AnyDapiRequest::GetIdentityContractNonceRequest(value)
+    }
+}
+
+impl From<GetIdentityBalanceRequest> for AnyDapiRequest {
+    fn from(value: GetIdentityBalanceRequest) -> Self {
+        AnyDapiRequest::GetIdentityBalanceRequest(value)
+    }
+}
+
+impl From<GetIdentityBalanceAndRevisionRequest> for AnyDapiRequest {
+    fn from(value: GetIdentityBalanceAndRevisionRequest) -> Self {
+        AnyDapiRequest::GetIdentityBalanceAndRevisionRequest(value)
+    }
+}
+
+impl From<GetIdentityKeysRequest> for AnyDapiRequest {
+    fn from(value: GetIdentityKeysRequest) -> Self {
+        AnyDapiRequest::GetIdentityKeysRequest(value)
+    }
+}
+
+impl From<GetDataContractRequest> for AnyDapiRequest {
+    fn from(value: GetDataContractRequest) -> Self {
+        AnyDapiRequest::GetDataContractRequest(value)
+    }
+}
+
+impl From<GetDataContractsRequest> for AnyDapiRequest {
+    fn from(value: GetDataContractsRequest) -> Self {
+        AnyDapiRequest::GetDataContractsRequest(value)
+    }
+}
+
+impl DapiRequest for AnyDapiRequest {
+    type Response = ();
+    type TransportError = dapi_grpc::tonic::Status;
+
+    fn execute<'c, D: DapiRequestExecutor>(
+        self,
+        dapi_client: &'c D,
+        settings: RequestSettings,
+    ) -> BoxFuture<'c, Result<Self::Response, DapiClientError<Self::TransportError>>>
+    where
+        Self: 'c,
+    {
+        match self {
+            AnyDapiRequest::GetIdentityRequest(request) => request
+                .execute(dapi_client, settings)
+                .map(|result| result.map(|_| ()))
+                .boxed(),
+            AnyDapiRequest::GetIdentityNonceRequest(request) => request
+                .execute(dapi_client, settings)
+                .map(|result| result.map(|_| ()))
+                .boxed(),
+            AnyDapiRequest::GetIdentityContractNonceRequest(request) => request
+                .execute(dapi_client, settings)
+                .map(|result| result.map(|_| ()))
+                .boxed(),
+            AnyDapiRequest::GetIdentityBalanceRequest(request) => request
+                .execute(dapi_client, settings)
+                .map(|result| result.map(|_| ()))
+                .boxed(),
+            AnyDapiRequest::GetIdentityBalanceAndRevisionRequest(request) => request
+                .execute(dapi_client, settings)
+                .map(|result| result.map(|_| ()))
+                .boxed(),
+            AnyDapiRequest::GetIdentityKeysRequest(request) => request
+                .execute(dapi_client, settings)
+                .map(|result| result.map(|_| ()))
+                .boxed(),
+            AnyDapiRequest::GetDataContractRequest(request) => request
+                .execute(dapi_client, settings)
+                .map(|result| result.map(|_| ()))
+                .boxed(),
+            AnyDapiRequest::GetDataContractsRequest(request) => request
+                .execute(dapi_client, settings)
+                .map(|result| result.map(|_| ()))
+                .boxed(),
+        }
+    }
+}
 
 #[derive(clap::ValueEnum, Clone, Debug)]
 enum RateUnit {
@@ -298,7 +549,7 @@ struct Rate {
 }
 
 impl Display for Rate {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{} per {}", self.rate, self.unit)
     }
 }
