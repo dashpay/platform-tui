@@ -27,7 +27,6 @@ use dash_sdk::{
 };
 use dpp::identity::SecurityLevel;
 use dpp::{
-    consensus::basic::state_transition,
     dashcore::{psbt::serialize::Serialize, Address, PrivateKey, Transaction},
     identity::{
         accessors::{IdentityGettersV0, IdentitySettersV0},

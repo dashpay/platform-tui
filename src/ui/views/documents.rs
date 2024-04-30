@@ -49,13 +49,14 @@ const PURCHASE_COMMAND_KEYS: [ScreenCommandKey; 6] = [
     ScreenCommandKey::new("p", "Purchase"),
 ];
 
-const SET_PRICE_COMMAND_KEYS: [ScreenCommandKey; 6] = [
+const DOCUMENT_OWNED_COMMAND_KEYS: [ScreenCommandKey; 7] = [
     ScreenCommandKey::new("q", "Back to Contracts"),
     ScreenCommandKey::new("C-n", "Next document"),
     ScreenCommandKey::new("C-p", "Prev document"),
     ScreenCommandKey::new("↓", "Scroll doc down"),
     ScreenCommandKey::new("↑", "Scroll doc up"),
     ScreenCommandKey::new("s", "Set price"),
+    ScreenCommandKey::new("t", "Transfer"),
 ];
 
 pub(crate) struct DocumentsQuerysetScreenController {
@@ -173,7 +174,7 @@ impl ScreenController for DocumentsQuerysetScreenController {
         if purchasable {
             PURCHASE_COMMAND_KEYS.as_ref()
         } else if self.document_is_ours(idx) {
-            SET_PRICE_COMMAND_KEYS.as_ref()
+            DOCUMENT_OWNED_COMMAND_KEYS.as_ref()
         } else {
             BASE_COMMAND_KEYS.as_ref()
         }
@@ -227,6 +228,25 @@ impl ScreenController for DocumentsQuerysetScreenController {
                     ScreenFeedback::None
                 }
             }
+            Event::Key(KeyEvent {
+                code: Key::Char('t'),
+                modifiers: KeyModifiers::NONE,
+            }) => {
+                let idx = self.document_select.state().unwrap_one().unwrap_usize();
+                if self.document_is_ours(idx) {
+                    if let Some(Some(doc)) = self.current_batch.get(idx) {
+                        ScreenFeedback::Form(Box::new(TransferDocumentFormController::new(
+                            self.data_contract.clone(),
+                            self.document_type.clone(),
+                            doc.clone(),
+                        )))
+                    } else {
+                        panic!("Selected document didn't exist?")
+                    }
+                } else {
+                    ScreenFeedback::None
+                }
+            }
 
             // Document view keys
             Event::Key(
@@ -269,6 +289,13 @@ impl ScreenController for DocumentsQuerysetScreenController {
             }
             Event::Backend(BackendEvent::TaskCompleted {
                 task: Task::Document(DocumentTask::SetDocumentPrice { .. }),
+                execution_result,
+            }) => {
+                self.document_view = Info::new_from_result(execution_result);
+                ScreenFeedback::Redraw
+            }
+            Event::Backend(BackendEvent::TaskCompleted {
+                task: Task::Document(DocumentTask::TransferDocument { .. }),
                 execution_result,
             }) => {
                 self.document_view = Info::new_from_result(execution_result);
@@ -392,6 +419,65 @@ impl FormController for SetDocumentPriceFormController {
 
     fn step_name(&self) -> &'static str {
         "Amount"
+    }
+
+    fn step_index(&self) -> u8 {
+        0
+    }
+
+    fn steps_number(&self) -> u8 {
+        1
+    }
+}
+
+pub struct TransferDocumentFormController {
+    input: TextInput<DefaultTextInputParser<String>>,
+    data_contract: DataContract,
+    document_type: DocumentType,
+    document: Document,
+}
+
+impl TransferDocumentFormController {
+    pub fn new(
+        data_contract: DataContract,
+        document_type: DocumentType,
+        document: Document,
+    ) -> Self {
+        Self {
+            input: TextInput::new("Base58 ID"),
+            data_contract,
+            document_type,
+            document,
+        }
+    }
+}
+
+impl FormController for TransferDocumentFormController {
+    fn on_event(&mut self, event: KeyEvent) -> FormStatus {
+        match self.input.on_event(event) {
+            InputStatus::Done(recipient_address) => FormStatus::Done {
+                task: Task::Document(DocumentTask::TransferDocument {
+                    recipient_address,
+                    data_contract: self.data_contract.clone(),
+                    document_type: self.document_type.clone(),
+                    document: self.document.clone(),
+                }),
+                block: true,
+            },
+            status => status.into(),
+        }
+    }
+
+    fn form_name(&self) -> &'static str {
+        "Transfer document"
+    }
+
+    fn step_view(&mut self, frame: &mut Frame, area: Rect) {
+        self.input.view(frame, area)
+    }
+
+    fn step_name(&self) -> &'static str {
+        "Recipient address"
     }
 
     fn step_index(&self) -> u8 {

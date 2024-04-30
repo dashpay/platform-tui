@@ -9,7 +9,7 @@ use dash_sdk::{
     platform::{
         transition::{
             purchase_document::PurchaseDocument, put_document::PutDocument,
-            update_price_of_document::UpdatePriceOfDocument,
+            transfer_document::TransferDocument, update_price_of_document::UpdatePriceOfDocument,
         },
         DocumentQuery, FetchMany,
     },
@@ -26,14 +26,16 @@ use dpp::{
     },
     document::{Document, DocumentV0Getters, DocumentV0Setters},
     fee::Credits,
+    identifier::Identifier,
     identity::{
         accessors::IdentityGettersV0,
         identity_public_key::accessors::v0::IdentityPublicKeyGettersV0, KeyType, Purpose,
         SecurityLevel,
     },
-    platform_value::btreemap_extensions::BTreeValueMapHelper,
+    platform_value::{btreemap_extensions::BTreeValueMapHelper, string_encoding::Encoding},
     prelude::{DataContract, Identity, IdentityPublicKey},
 };
+
 use futures::{stream::FuturesUnordered, Future, StreamExt};
 use rand::{prelude::StdRng, Rng, SeedableRng};
 use simple_signer::signer::SimpleSigner;
@@ -56,6 +58,12 @@ pub(crate) enum DocumentTask {
     },
     SetDocumentPrice {
         amount: u64,
+        data_contract: DataContract,
+        document_type: DocumentType,
+        document: Document,
+    },
+    TransferDocument {
+        recipient_address: String,
         data_contract: DataContract,
         document_type: DocumentType,
         document: Document,
@@ -353,6 +361,94 @@ impl AppState {
                         task: Task::Document(task),
                         execution_result: Err(format!(
                             "No loaded identity for updating document prices"
+                        )),
+                    }
+                }
+            }
+            DocumentTask::TransferDocument {
+                recipient_address,
+                data_contract,
+                document_type,
+                document,
+            } => {
+                let recipient_id =
+                    match Identifier::from_string(&recipient_address, Encoding::Base58) {
+                        Ok(id) => id,
+                        Err(_) => {
+                            return BackendEvent::TaskCompleted {
+                                task: Task::Document(task),
+                                execution_result: Ok(CompletedTaskPayload::String(
+                                    "Can't parse identifier as base58 string".to_string(),
+                                )),
+                            }
+                        }
+                    };
+                let loaded_identity = self.loaded_identity.lock().await;
+                if let Some(identity) = loaded_identity.as_ref() {
+                    let identity_public_key = match identity.get_first_public_key_matching(
+                        Purpose::AUTHENTICATION,
+                        HashSet::from([SecurityLevel::CRITICAL]),
+                        HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
+                    ) {
+                        Some(key) => key,
+                        None => {
+                            return BackendEvent::TaskCompleted {
+                                task: Task::Document(task),
+                                execution_result: Err(format!(
+                                    "Error: identity doesn't have a key for document transfers"
+                                )),
+                            }
+                        }
+                    };
+
+                    let loaded_identity_private_keys = self.identity_private_keys.lock().await;
+                    let Some(private_key) = loaded_identity_private_keys
+                        .get(&(identity.id(), identity_public_key.id()))
+                    else {
+                        return BackendEvent::TaskCompleted {
+                            task: Task::Document(task),
+                            execution_result: Ok(CompletedTaskPayload::String(
+                                "Error: corresponding private key not found for document transfer transition".to_string(),
+                            )),
+                        };
+                    };
+                    let mut signer = SimpleSigner::default();
+                    signer.add_key(identity_public_key.clone(), private_key.to_vec());
+
+                    let data_contract_arc = Arc::new(data_contract.clone());
+
+                    let mut new_document = document.clone();
+                    new_document.bump_revision();
+
+                    match new_document
+                        .transfer_document_to_identity_and_wait_for_response(
+                            recipient_id,
+                            sdk,
+                            document_type.clone(),
+                            identity_public_key.clone(),
+                            data_contract_arc,
+                            &signer,
+                        )
+                        .await
+                    {
+                        Ok(document) => BackendEvent::TaskCompleted {
+                            task: Task::Document(task),
+                            execution_result: Ok(CompletedTaskPayload::String(
+                                format!("Successfully transferred document {}", document.id().to_string(Encoding::Base58)),
+                            )),
+                        },
+                        Err(e) => BackendEvent::TaskCompleted {
+                            task: Task::Document(task),
+                            execution_result: Err(CompletedTaskPayload::String(
+                                format!("Error during transfer_document_to_identity_and_wait_for_response: {}", e.to_string()),
+                            ).to_string()),
+                        },
+                    }
+                } else {
+                    BackendEvent::TaskCompleted {
+                        task: Task::Document(task),
+                        execution_result: Ok(CompletedTaskPayload::String(
+                            "No loaded identity for document transfer".to_string(),
                         )),
                     }
                 }
