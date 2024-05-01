@@ -3761,6 +3761,7 @@ dependencies = [
  "crossterm 0.27.0",
  "dapi-grpc",
  "dash-sdk",
+ "dashmap",
  "dotenvy",
  "dpp",
  "drive",

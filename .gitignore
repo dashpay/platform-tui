@@ -24,6 +24,8 @@ Cargo.lock
 
 # Explorer state
 *_explorer.state
+*_explorer.state.*
+explorer.drive
 
 # Logs
 explorer.log
