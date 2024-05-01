@@ -71,6 +71,7 @@ struct Args {
         help = "The duration (in seconds) for which to handle the load test"
     )]
     time: Option<u16>,
+    // TODO: Configure report time
 }
 
 #[tokio::main]
@@ -370,14 +371,9 @@ async fn send_many_request_to_drive(
                         connection_id = connection_id
                     );
 
-                    send_request(
-                        request_client,
-                        request_settings,
-                        request.clone(),
-                        &request_summary,
-                    )
-                    .instrument(span)
-                    .await
+                    send_request(request_client, request_settings, request, &request_summary)
+                        .instrument(span)
+                        .await
                 });
             }
         });
@@ -396,6 +392,7 @@ async fn send_request(
     request: AnyDapiRequest,
     summary: &TestSummary,
 ) {
+    // TODO: Record response duration and then report average and histogram?
     match request.execute(client.as_ref(), settings).await {
         Ok(_) => summary.add_ok(),
         Err(DapiClientError::Transport(e, ..)) => summary.add_error(e),
@@ -633,6 +630,7 @@ impl TestSummary {
             .sum()
     }
 
+    // TODO: Drop intermediate values after report so we show only difference and then summary?
     fn report_message(&self) -> String {
         let elapsed_secs = self.start_time.elapsed().as_secs();
 
