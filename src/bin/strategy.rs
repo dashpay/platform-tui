@@ -1,6 +1,7 @@
 use std::{fs::File, panic, time::Duration};
 
 use clap::{ArgAction, Parser};
+use dash_sdk::{RequestSettings, SdkBuilder};
 use dpp::{identity::accessors::IdentityGettersV0, version::PlatformVersion};
 use rs_platform_explorer::{
     backend::{
@@ -12,7 +13,6 @@ use rs_platform_explorer::{
     },
     config::Config,
 };
-use dash_sdk::{RequestSettings, SdkBuilder};
 
 #[derive(Parser, Debug)]
 #[clap(about, long_about = None)]

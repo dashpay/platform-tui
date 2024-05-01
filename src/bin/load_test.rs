@@ -12,6 +12,14 @@ use std::{
 };
 
 use clap::Parser;
+use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
+use dash_sdk::{
+    platform::{
+        transition::{put_document::PutDocument, put_settings::PutSettings},
+        Fetch, Identifier,
+    },
+    Sdk, SdkBuilder,
+};
 use dpp::prelude::IdentityNonce;
 use dpp::state_transition::StateTransition;
 use dpp::{
@@ -47,14 +55,6 @@ use rs_platform_explorer::{
         identities::IdentityTask, insight::InsightAPIClient, wallet::WalletTask, Backend, Task,
     },
     config::Config,
-};
-use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
-use dash_sdk::{
-    platform::{
-        transition::{put_document::PutDocument, put_settings::PutSettings},
-        Fetch, Identifier,
-    },
-    Sdk, SdkBuilder,
 };
 use simple_signer::signer::SimpleSigner;
 use tokio::{sync::Semaphore, time::Instant};

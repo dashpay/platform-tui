@@ -11,6 +11,7 @@ use bincode::{
     BorrowDecode, Decode, Encode,
 };
 use dapi_grpc::core::v0::{BroadcastTransactionRequest, GetTransactionRequest};
+use dash_sdk::{RequestSettings, Sdk};
 use dpp::dashcore::{
     hashes::Hash,
     psbt::serialize::Serialize,
@@ -22,7 +23,6 @@ use dpp::dashcore::{
 };
 use rand::{prelude::StdRng, Rng, SeedableRng};
 use rs_dapi_client::DapiRequestExecutor;
-use dash_sdk::{RequestSettings, Sdk};
 use tokio::sync::{Mutex, MutexGuard};
 
 use super::{AppStateUpdate, BackendEvent, CompletedTaskPayload, Task};
