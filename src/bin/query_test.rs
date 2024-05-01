@@ -336,6 +336,7 @@ async fn send_many_request_to_drive(
     let mut addresses = AddressPool::from(config.dapi_addresses.as_str());
 
     for connection_id in 0..concurrent_connections {
+        // TODO: Use SDK but it should be able to return TransportError
         // Pick an address obe by one for each connection
         // and create one client per connection
         let address_list = addresses.next_one_address_list();
