@@ -117,6 +117,7 @@ async fn main() {
 
     let rate = Rate::new(args.rate, args.rate_unit);
 
+    // TODO: It should be configurable and all request types should be added
     let requests = vec![
         // Existing DPNS identity
         GetIdentityRequest {
