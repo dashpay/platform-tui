@@ -7,11 +7,11 @@ use std::{
 
 use dapi_grpc::{
     core::v0::{
-        BroadcastTransactionRequest, GetStatusRequest, GetTransactionRequest,
+        BroadcastTransactionRequest, GetBlockchainStatusRequest, GetTransactionRequest,
         GetTransactionResponse,
     },
     platform::v0::{
-        get_identity_balance_request, get_identity_balance_request::GetIdentityBalanceRequestV0,
+        get_identity_balance_request::{self, GetIdentityBalanceRequestV0},
         GetIdentityBalanceRequest,
     },
 };
@@ -480,6 +480,7 @@ impl AppState {
                         KeyPurpose::TRANSFER,
                         KeySecurityLevel::CRITICAL,
                         KeyType::ECDSA_SECP256K1,
+                        None,
                         sdk.version(),
                     )?;
                 identity.add_public_key(transfer_key.clone());
@@ -747,7 +748,7 @@ impl AppState {
         .entered();
 
         let block_hash = sdk
-            .execute(GetStatusRequest {}, RequestSettings::default())
+            .execute(GetBlockchainStatusRequest {}, RequestSettings::default())
             .await?
             .chain
             .map(|chain| chain.best_block_hash)
