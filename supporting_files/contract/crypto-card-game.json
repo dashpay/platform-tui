@@ -26,30 +26,6 @@
                     "maxLength": 256,
                     "position": 1
                 },
-                "imageUrl": {
-                    "type": "string",
-                    "description": "URL of the image associated with the card",
-                    "minLength": 0,
-                    "maxLength": 2048,
-                    "format": "uri",
-                    "position": 2
-                },
-                "imageHash": {
-                    "type": "array",
-                    "description": "SHA256 hash of the bytes of the image specified by imageUrl",
-                    "byteArray": true,
-                    "minItems": 32,
-                    "maxItems": 32,
-                    "position": 3
-                },
-                "imageFingerprint": {
-                    "type": "array",
-                    "description": "dHash of the image specified by imageUrl",
-                    "byteArray": true,
-                    "minItems": 8,
-                    "maxItems": 8,
-                    "position": 4
-                },
                 "attack": {
                     "type": "integer",
                     "description": "Attack power of the card",

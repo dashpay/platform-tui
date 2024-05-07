@@ -1,5 +1,6 @@
 //! UI defenitions for selected data contract.
 
+mod broadcast_document;
 mod broadcast_random_documents;
 
 use dpp::{
@@ -13,13 +14,17 @@ use dpp::{
     prelude::DataContract,
 };
 use futures::FutureExt;
+use itertools::Itertools;
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
     tui::prelude::Rect,
     Frame,
 };
 
-use self::broadcast_random_documents::BroadcastRandomDocumentsCountForm;
+use self::{
+    broadcast_document::BroadcastSpecificDocumentForm,
+    broadcast_random_documents::BroadcastRandomDocumentsCountForm,
+};
 use crate::{
     backend::{
         as_json_string, documents::DocumentTask, AppState, BackendEvent, CompletedTaskPayload, Task,
@@ -104,17 +109,19 @@ impl FormController for SelectDocumentTypeFormController {
     }
 }
 
-const LOADED_IDENTITY_COMMANDS: [ScreenCommandKey; 4] = [
+const LOADED_IDENTITY_COMMANDS: [ScreenCommandKey; 5] = [
     ScreenCommandKey::new("q", "Back to Contracts"),
     ScreenCommandKey::new("f", "Query"),
     ScreenCommandKey::new("o", "Query ours"),
-    ScreenCommandKey::new("b", "Broadcast Random Documents"),
+    ScreenCommandKey::new("r", "Broadcast Random Documents"),
+    ScreenCommandKey::new("b", "Broadcast Document"),
 ];
 
-const NO_LOADED_IDENTITY_COMMANDS: [ScreenCommandKey; 3] = [
+const NO_LOADED_IDENTITY_COMMANDS: [ScreenCommandKey; 4] = [
     ScreenCommandKey::new("q", "Back to Contracts"),
     ScreenCommandKey::new("f", "Query"),
-    ScreenCommandKey::new("b", "Broadcast Random Documents"),
+    ScreenCommandKey::new("r", "Broadcast Random Documents"),
+    ScreenCommandKey::new("b", "Broadcast Document"),
 ];
 
 pub(super) struct DocumentTypeScreenController {
@@ -221,11 +228,24 @@ impl ScreenController for DocumentTypeScreenController {
             ))),
 
             Event::Key(KeyEvent {
-                code: Key::Char('b'),
+                code: Key::Char('r'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::Form(Box::new(BroadcastRandomDocumentsCountForm::new(
                 self.data_contract_name.clone(),
                 self.document_type_name.clone(),
+            ))),
+
+            Event::Key(KeyEvent {
+                code: Key::Char('b'),
+                modifiers: KeyModifiers::NONE,
+            }) => ScreenFeedback::Form(Box::new(BroadcastSpecificDocumentForm::new(
+                self.data_contract_name.clone(),
+                self.document_type_name.clone(),
+                self.document_type
+                    .properties()
+                    .keys()
+                    .cloned()
+                    .collect_vec(),
             ))),
 
             Event::Key(KeyEvent {
