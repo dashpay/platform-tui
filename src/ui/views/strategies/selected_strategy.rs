@@ -256,7 +256,7 @@ fn display_strategy(
                             "InsertRandom".to_string()
                         }
                         DocumentAction::DocumentActionDelete => "Delete".to_string(),
-                        DocumentAction::DocumentActionReplace => "Replace".to_string(),
+                        // DocumentAction::DocumentActionReplace => "Replace".to_string(),
                         _ => panic!("invalid document action selected"),
                     };
                     format!(

@@ -100,6 +100,7 @@ impl FormController for StrategyOpContractUpdateDocTypesFormController {
             },
             keep_history_chance: rand::thread_rng().gen_range(0.01..=1.0),
             documents_mutable_chance: rand::thread_rng().gen_range(0.01..=1.0),
+            documents_can_be_deleted_chance: rand::thread_rng().gen_range(0.01..=1.0),
         };
 
         match self.input.on_event(event) {
