@@ -120,7 +120,7 @@ async fn main() {
 
     let insight = InsightAPIClient::new(config.insight_api_uri());
 
-    let backend = Backend::new(sdk.as_ref(), insight.clone(), config.clone()).await;
+    let backend = Backend::new(&sdk, insight.clone(), config.clone()).await;
 
     // Create wallet if not initialized
     if backend.state().loaded_wallet.lock().await.is_none() {

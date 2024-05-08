@@ -998,6 +998,7 @@ dependencies = [
 [[package]]
 name = "dapi-grpc"
 version = "1.0.0-dev.12"
+source = "git+https://github.com/dashpay/platform?branch=feat/public-document-price-update#ddc9c0c88f76001218b4921b8c097e22363c2f17"
 dependencies = [
  "dapi-grpc-macros",
  "futures-core",
@@ -1014,6 +1015,7 @@ dependencies = [
 [[package]]
 name = "dapi-grpc-macros"
 version = "1.0.0-dev.12"
+source = "git+https://github.com/dashpay/platform?branch=feat/public-document-price-update#ddc9c0c88f76001218b4921b8c097e22363c2f17"
 dependencies = [
  "heck 0.5.0",
  "quote",
@@ -1058,6 +1060,7 @@ dependencies = [
 [[package]]
 name = "dash-sdk"
 version = "1.0.0-dev.12"
+source = "git+https://github.com/dashpay/platform?branch=feat/public-document-price-update#ddc9c0c88f76001218b4921b8c097e22363c2f17"
 dependencies = [
  "async-trait",
  "bincode",
@@ -1162,6 +1165,7 @@ dependencies = [
 [[package]]
 name = "dashpay-contract"
 version = "1.0.0-dev.12"
+source = "git+https://github.com/dashpay/platform?branch=feat/public-document-price-update#ddc9c0c88f76001218b4921b8c097e22363c2f17"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -1172,6 +1176,7 @@ dependencies = [
 [[package]]
 name = "data-contracts"
 version = "1.0.0-dev.12"
+source = "git+https://github.com/dashpay/platform?branch=feat/public-document-price-update#ddc9c0c88f76001218b4921b8c097e22363c2f17"
 dependencies = [
  "dashpay-contract",
  "dpns-contract",
@@ -1253,6 +1258,7 @@ checksum = "75b325c5dbd37f80359721ad39aca5a29fb04c89279657cffdda8736d0c0b9d2"
 [[package]]
 name = "dpns-contract"
 version = "1.0.0-dev.12"
+source = "git+https://github.com/dashpay/platform?branch=feat/public-document-price-update#ddc9c0c88f76001218b4921b8c097e22363c2f17"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -1263,6 +1269,7 @@ dependencies = [
 [[package]]
 name = "dpp"
 version = "1.0.0-dev.12"
+source = "git+https://github.com/dashpay/platform?branch=feat/public-document-price-update#ddc9c0c88f76001218b4921b8c097e22363c2f17"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1309,6 +1316,7 @@ dependencies = [
 [[package]]
 name = "drive"
 version = "1.0.0-dev.12"
+source = "git+https://github.com/dashpay/platform?branch=feat/public-document-price-update#ddc9c0c88f76001218b4921b8c097e22363c2f17"
 dependencies = [
  "arc-swap",
  "base64 0.21.7",
@@ -1343,6 +1351,7 @@ dependencies = [
 [[package]]
 name = "drive-proof-verifier"
 version = "1.0.0-dev.12"
+source = "git+https://github.com/dashpay/platform?branch=feat/public-document-price-update#ddc9c0c88f76001218b4921b8c097e22363c2f17"
 dependencies = [
  "dapi-grpc",
  "dpp",
@@ -1563,6 +1572,7 @@ checksum = "658bd65b1cf4c852a3cc96f18a8ce7b5640f6b703f905c7d74532294c2a63984"
 [[package]]
 name = "feature-flags-contract"
 version = "1.0.0-dev.12"
+source = "git+https://github.com/dashpay/platform?branch=feat/public-document-price-update#ddc9c0c88f76001218b4921b8c097e22363c2f17"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -2389,6 +2399,7 @@ dependencies = [
 [[package]]
 name = "json-schema-compatibility-validator"
 version = "0.25.16-rc.4"
+source = "git+https://github.com/dashpay/platform?branch=feat/public-document-price-update#ddc9c0c88f76001218b4921b8c097e22363c2f17"
 dependencies = [
  "json-patch",
  "once_cell",
@@ -2594,6 +2605,7 @@ dependencies = [
 [[package]]
 name = "masternode-reward-shares-contract"
 version = "1.0.0-dev.12"
+source = "git+https://github.com/dashpay/platform?branch=feat/public-document-price-update#ddc9c0c88f76001218b4921b8c097e22363c2f17"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -3139,6 +3151,7 @@ checksum = "d231b230927b5e4ad203db57bbcbee2802f6bce620b1e4a9024a07d94e2907ec"
 [[package]]
 name = "platform-serialization"
 version = "1.0.0-dev.12"
+source = "git+https://github.com/dashpay/platform?branch=feat/public-document-price-update#ddc9c0c88f76001218b4921b8c097e22363c2f17"
 dependencies = [
  "bincode",
  "platform-version",
@@ -3147,6 +3160,7 @@ dependencies = [
 [[package]]
 name = "platform-serialization-derive"
 version = "1.0.0-dev.12"
+source = "git+https://github.com/dashpay/platform?branch=feat/public-document-price-update#ddc9c0c88f76001218b4921b8c097e22363c2f17"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3157,6 +3171,7 @@ dependencies = [
 [[package]]
 name = "platform-value"
 version = "1.0.0-dev.12"
+source = "git+https://github.com/dashpay/platform?branch=feat/public-document-price-update#ddc9c0c88f76001218b4921b8c097e22363c2f17"
 dependencies = [
  "base64 0.22.0",
  "bincode",
@@ -3178,6 +3193,7 @@ dependencies = [
 [[package]]
 name = "platform-version"
 version = "1.0.0-dev.12"
+source = "git+https://github.com/dashpay/platform?branch=feat/public-document-price-update#ddc9c0c88f76001218b4921b8c097e22363c2f17"
 dependencies = [
  "thiserror",
 ]
@@ -3185,6 +3201,7 @@ dependencies = [
 [[package]]
 name = "platform-versioning"
 version = "1.0.0-dev.12"
+source = "git+https://github.com/dashpay/platform?branch=feat/public-document-price-update#ddc9c0c88f76001218b4921b8c097e22363c2f17"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3715,6 +3732,7 @@ dependencies = [
 [[package]]
 name = "rs-dapi-client"
 version = "1.0.0-dev.12"
+source = "git+https://github.com/dashpay/platform?branch=feat/public-document-price-update#ddc9c0c88f76001218b4921b8c097e22363c2f17"
 dependencies = [
  "backon",
  "chrono",
@@ -4190,6 +4208,7 @@ checksum = "f27f6278552951f1f2b8cf9da965d10969b2efdea95a6ec47987ab46edfe263a"
 [[package]]
 name = "simple-signer"
 version = "1.0.0-dev.12"
+source = "git+https://github.com/dashpay/platform?branch=feat/public-document-price-update#ddc9c0c88f76001218b4921b8c097e22363c2f17"
 dependencies = [
  "bincode",
  "dashcore-rpc",
@@ -4311,6 +4330,7 @@ checksum = "9e08d8363704e6c71fc928674353e6b7c23dcea9d82d7012c8faf2a3a025f8d0"
 [[package]]
 name = "strategy-tests"
 version = "1.0.0-dev.12"
+source = "git+https://github.com/dashpay/platform?branch=feat/public-document-price-update#ddc9c0c88f76001218b4921b8c097e22363c2f17"
 dependencies = [
  "bincode",
  "dpp",
@@ -5555,6 +5575,7 @@ dependencies = [
 [[package]]
 name = "withdrawals-contract"
 version = "1.0.0-dev.12"
+source = "git+https://github.com/dashpay/platform?branch=feat/public-document-price-update#ddc9c0c88f76001218b4921b8c097e22363c2f17"
 dependencies = [
  "num_enum",
  "platform-value",
