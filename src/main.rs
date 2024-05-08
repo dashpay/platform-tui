@@ -75,7 +75,7 @@ async fn main() {
 
     let insight = InsightAPIClient::new(config.insight_api_uri());
 
-    let backend = Backend::new(sdk.as_ref(), insight, config).await;
+    let backend = Backend::new(&sdk, insight, config).await;
 
     // Add loaded identity to known identities if it's not already there
     // And set selected_strategy to None
