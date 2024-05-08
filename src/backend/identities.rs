@@ -11,7 +11,7 @@ use dapi_grpc::{
         GetTransactionResponse,
     },
     platform::v0::{
-        get_identity_balance_request, get_identity_balance_request::GetIdentityBalanceRequestV0,
+        get_identity_balance_request::{self, GetIdentityBalanceRequestV0},
         GetIdentityBalanceRequest,
     },
 };

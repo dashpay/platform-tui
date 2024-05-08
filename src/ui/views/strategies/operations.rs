@@ -303,6 +303,7 @@ fn format_operation_name(op_type: &StrategyOperationType) -> String {
             let op_type = match op.action {
                 DocumentAction::DocumentActionInsertRandom(..) => "InsertRandom",
                 DocumentAction::DocumentActionDelete => "Delete",
+                // DocumentAction::DocumentActionReplace => "Replace",
                 _ => "Unknown",
             };
             format!(
