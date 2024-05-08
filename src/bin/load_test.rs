@@ -162,7 +162,7 @@ async fn main() {
 
     let insight = InsightAPIClient::new(config.insight_api_uri());
 
-    let backend = Backend::new(sdk.as_ref(), insight, config.clone()).await;
+    let backend = Backend::new(&sdk, insight, config.clone()).await;
 
     // Create wallet if not initialized
     if backend.state().loaded_wallet.lock().await.is_none() {
@@ -275,7 +275,7 @@ async fn main() {
     let contract_count = args.contracts;
 
     let document_types = broadcast_contract_variants(
-        Arc::clone(&sdk),
+        &sdk,
         &identity,
         arc_signer.clone(),
         &data_contract,
@@ -294,7 +294,7 @@ async fn main() {
     .collect::<Vec<Arc<_>>>();
 
     broadcast_random_documents_load_test(
-        Arc::clone(&sdk),
+        &sdk,
         &identity,
         arc_signer,
         document_type,
@@ -307,7 +307,7 @@ async fn main() {
 }
 
 async fn broadcast_contract_variants(
-    sdk: Arc<Sdk>,
+    sdk: &Sdk,
     identity: &Identity,
     signer: Arc<SimpleSigner>,
     data_contract: &DataContract,
@@ -487,7 +487,7 @@ async fn broadcast_contract_variants(
 }
 
 async fn broadcast_random_documents_load_test(
-    sdk: Arc<Sdk>,
+    sdk: &Sdk,
     identity: &Identity,
     signer: Arc<SimpleSigner>,
     document_type: DocumentType,
@@ -585,7 +585,7 @@ async fn broadcast_random_documents_load_test(
 
             let rate_limiter = rate_limit.clone();
             let cancel_task = cancel.clone();
-            let sdk = Arc::clone(&sdk);
+            let sdk = sdk.clone();
 
             let task = tokio::task::spawn(async move {
                 let mut std_rng = StdRng::from_entropy();
