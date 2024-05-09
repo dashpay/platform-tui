@@ -10,7 +10,10 @@ use bincode::{
     error::{DecodeError, EncodeError},
     BorrowDecode, Decode, Encode,
 };
-use dapi_grpc::core::v0::{BroadcastTransactionRequest, GetTransactionRequest};
+use dapi_grpc::core::v0::{
+    BroadcastTransactionRequest, BroadcastTransactionResponse, GetTransactionRequest,
+    GetTransactionResponse,
+};
 use dash_sdk::{RequestSettings, Sdk};
 use dpp::dashcore::{
     hashes::Hash,
@@ -191,7 +194,7 @@ impl Wallet {
         let one_time_key_hash = asset_lock_public_key.pubkey_hash();
 
         let (mut utxos, change) = self
-            .take_unspent_utxos_for(amount)
+            .take_unspent_utxos_for(amount + fee)
             .ok_or(WalletError::Balance)?;
 
         let change_address = self.change_address();
@@ -205,6 +208,7 @@ impl Wallet {
             script_pubkey: ScriptBuf::new_op_return(&[]),
         };
         if change < fee {
+            tracing::error!("change < fee");
             return Err(WalletError::Balance);
         }
         let change_output = TxOut {
@@ -343,7 +347,10 @@ impl Wallet {
         }
     }
 
-    pub async fn reload_utxos(&mut self, insight: &InsightAPIClient) -> Result<(), InsightError> {
+    pub async fn reload_utxos(
+        &mut self,
+        insight: &InsightAPIClient,
+    ) -> Result<HashMap<OutPoint, TxOut>, InsightError> {
         match self {
             Wallet::SingleKeyWallet(wallet) => {
                 match insight
@@ -351,8 +358,8 @@ impl Wallet {
                     .await
                 {
                     Ok(utxos) => {
-                        wallet.utxos = utxos;
-                        Ok(())
+                        wallet.utxos = utxos.clone();
+                        Ok(utxos)
                     }
                     Err(err) => Err(err),
                 }
@@ -533,7 +540,9 @@ impl SingleKeyWallet {
     /// the existing UTXOs as the inputs and just having `desired_utxo_count` outputs. Since Dash Core only
     /// allows 24 outputs per transaction, we have to create (`desired_utxo_count` / 24) transactions.
     ///
-    /// Each new UTXO is given a value of ((current_wallet_balance - fee) / desired_utxo_count) where fee is set to 3000
+    /// Each new UTXO is given a value of ((current_wallet_balance - fee) / desired_utxo_count) where fee is set to 1_000_000_000
+    ///
+    /// Newly created UTXOs are then used for the creation of more UTXOs
     pub async fn split_utxos(
         &mut self,
         sdk: &Sdk,
@@ -552,7 +561,7 @@ impl SingleKeyWallet {
             (desired_utxo_count as f64 / MAX_OUTPUTS_PER_TRANSACTION as f64).ceil() as usize;
 
         // Amount to fund each UTXO.
-        // Reserve a buffer of 3000 to make sure we never go over the current balance
+        // Reserve a buffer of 1_000_000_000 to make sure we never go over the current balance
         let utxo_split_value = (current_wallet_balance - 1_000_000_000) / desired_utxo_count as u64;
 
         // Create and execute the transactions
@@ -575,7 +584,7 @@ impl SingleKeyWallet {
             // Select existing UTXOs from the wallet to be the inputs for the transaction
             let mut total_value_of_tx_inputs: u64 = 0;
             let mut selected_utxos = Vec::new();
-            let mut remaining_utxos_in_wallet_vec: Vec<_> =
+            let mut remaining_utxos_in_wallet_vec: Vec<(&OutPoint, &TxOut)> =
                 remaining_utxos_in_wallet.iter().collect();
             remaining_utxos_in_wallet_vec.sort_by_key(|&(_, txout)| txout.value);
             remaining_utxos_in_wallet_vec.reverse(); // Sort greatest to least value utxo
@@ -659,37 +668,21 @@ impl SingleKeyWallet {
                 bypass_limits: false,
             };
             match sdk.execute(request, RequestSettings::default()).await {
-                Ok(_) => {
-                    tracing::info!(
-                        "Successfully broadcasted UTXO-splitting transaction {}",
-                        i + 1
-                    )
-                }
-                Err(error) if error.to_string().contains("AlreadyExists") => {
-                    // Transaction is already broadcasted. We need to restart the stream from a
-                    // block when it was mined
-                    tracing::warn!("Transaction is already broadcasted");
-
-                    // Try again
-                    match sdk
-                        .execute(
-                            GetTransactionRequest {
-                                id: tx.txid().to_string(),
-                            },
-                            RequestSettings::default(),
-                        )
+                Ok(BroadcastTransactionResponse { transaction_id: id }) => {
+                    let GetTransactionResponse { .. } = match sdk
+                        .execute(GetTransactionRequest { id }, RequestSettings::default())
                         .await
                     {
-                        Ok(_) => {
-                            tracing::info!(
-                                "Successfully broadcasted UTXO-splitting transaction {}",
-                                i + 1
-                            )
+                        Ok(response) => response,
+                        Err(e) => {
+                            tracing::error!("Error getting UTXO-splitting transaction: {e}");
+                            return Err(WalletError::Balance);
                         }
-                        Err(error) => {
-                            tracing::error!("Error executing tx {}", error);
-                        }
-                    }
+                    };
+                    tracing::info!(
+                        "Successfully broadcasted UTXO-splitting transaction {}.",
+                        i + 1,
+                    )
                 }
                 Err(error) => {
                     tracing::error!("Transaction broadcast failed: {error}");
@@ -697,9 +690,19 @@ impl SingleKeyWallet {
             };
 
             // Update the wallet's UTXO set
-            remaining_utxos_in_wallet.retain(|outpoint, _| !selected_utxos.contains(outpoint));
+            for outpoint in selected_utxos.iter() {
+                remaining_utxos_in_wallet.remove(outpoint);
+                self.utxos.remove(outpoint);
+            }
             let txid = tx.txid();
             for (index, output) in tx.output.iter().enumerate() {
+                remaining_utxos_in_wallet.insert(
+                    OutPoint {
+                        txid,
+                        vout: index as u32,
+                    },
+                    output.clone(),
+                );
                 self.utxos.insert(
                     OutPoint {
                         txid,
