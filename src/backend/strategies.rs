@@ -1022,25 +1022,10 @@ pub async fn run_strategy_task<'s>(
                             .try_into()
                             .expect("Couldn't convert num_asset_lock_proofs_needed into usize")
                     {
-                        match wallet_lock
-                            .clone()
-                            .expect("No wallet loaded while getting asset lock proofs")
-                        {
-                            Wallet::SingleKeyWallet(mut wallet) => {
-                                if let Err(e) = wallet
-                                    .split_utxos(
-                                        sdk,
-                                        num_asset_lock_proofs_needed.try_into().unwrap(),
-                                    )
-                                    .await
-                                {
-                                    tracing::error!(
-                                        "Error splitting utxos for asset lock proofs: {}",
-                                        e
-                                    );
-                                };
-                            }
-                        }
+                        return BackendEvent::StrategyError {
+                            strategy_name: strategy_name.clone(),
+                            error: format!("Not enough UTXOs available in wallet. Available: {}. Need: {}. Go to Wallet screen and create more.", num_available_utxos, num_asset_lock_proofs_needed),
+                        };
                     }
                     tracing::info!(
                         "Obtaining {} asset lock proofs for the strategy...",

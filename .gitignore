@@ -29,3 +29,6 @@ explorer.drive
 
 # Logs
 explorer.log
+
+# Supporting files
+supporting_files/strategy_exports/
