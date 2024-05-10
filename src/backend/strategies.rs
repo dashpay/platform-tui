@@ -143,18 +143,13 @@ pub async fn run_strategy_task<'s>(
             ))
         }
         StrategyTask::ImportStrategy(url) => {
-            let platform_version = PlatformVersion::latest();
-
             match reqwest::get(&url).await {
                 Ok(response) => {
                     if response.status().is_success() {
                         match response.bytes().await {
                             Ok(bytes) => {
-                                match Strategy::versioned_deserialize(
-                                    &bytes,
-                                    true,
-                                    &platform_version,
-                                ) {
+                                match Strategy::versioned_deserialize(&bytes, true, &sdk.version())
+                                {
                                     Ok(strategy) => {
                                         let strategy_name = url.split('/').last()
                                             .map(|s| s.rsplit_once('.').map_or(s, |(name, _)| name))
@@ -223,23 +218,31 @@ pub async fn run_strategy_task<'s>(
                                     }
                                     Err(e) => {
                                         tracing::error!("Failed to deserialize strategy: {}", e);
-                                        BackendEvent::None
+                                        BackendEvent::StrategyError {
+                                            error: format!("Failed to deserialize strategy: {}", e),
+                                        }
                                     }
                                 }
                             }
                             Err(e) => {
                                 tracing::error!("Failed to fetch strategy data: {}", e);
-                                BackendEvent::None
+                                BackendEvent::StrategyError {
+                                    error: format!("Failed to fetch strategy data: {}", e),
+                                }
                             }
                         }
                     } else {
                         tracing::error!("Failed to fetch strategy: HTTP {}", response.status());
-                        BackendEvent::None
+                        BackendEvent::StrategyError {
+                            error: format!("Failed to fetch strategy: HTTP {}", response.status()),
+                        }
                     }
                 }
                 Err(e) => {
                     tracing::error!("Failed to fetch strategy: {}", e);
-                    BackendEvent::None
+                    BackendEvent::StrategyError {
+                        error: format!("Failed to fetch strategy: {}", e),
+                    }
                 }
             }
         }
@@ -742,7 +745,6 @@ pub async fn run_strategy_task<'s>(
                 Err(e) => {
                     tracing::error!("Failed to update known contracts: {:?}", e);
                     return BackendEvent::StrategyError {
-                        strategy_name: strategy_name.clone(),
                         error: format!("Failed to update known contracts: {:?}", e),
                     };
                 }
@@ -754,7 +756,6 @@ pub async fn run_strategy_task<'s>(
                 Err(e) => {
                     tracing::error!("Failed to refresh loaded identity: {:?}", e);
                     return BackendEvent::StrategyError {
-                        strategy_name: strategy_name.clone(),
                         error: format!("Failed to refresh loaded identity: {:?}", e),
                     };
                 }
@@ -816,7 +817,6 @@ pub async fn run_strategy_task<'s>(
                         Err(e) => {
                             tracing::error!("Failed to execute request after retries: {:?}", e);
                             return BackendEvent::StrategyError {
-                                strategy_name: strategy_name.clone(),
                                 error: format!("Failed to execute request after retries: {:?}", e),
                             };
                         }

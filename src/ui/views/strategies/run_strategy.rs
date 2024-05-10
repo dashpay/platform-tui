@@ -144,16 +144,10 @@ impl ScreenController for RunStrategyScreenController {
                 self.info = Info::new_fixed(&display_text);
                 ScreenFeedback::Redraw
             }
-            Event::Backend(BackendEvent::StrategyError {
-                strategy_name,
-                error,
-            }) => {
+            Event::Backend(BackendEvent::StrategyError { error }) => {
                 self.strategy_running = false;
 
-                self.info = Info::new_error(&format!(
-                    "Error running strategy {}: {}",
-                    strategy_name, &error
-                ));
+                self.info = Info::new_error(&format!("Strategy error: {}", &error));
                 ScreenFeedback::Redraw
             }
             _ => ScreenFeedback::None,
@@ -192,11 +186,11 @@ impl RunStrategyFormController {
                 ),
                 Field::new(
                     "Verify state transition proofs? (Only applies to block mode)",
-                    SelectInput::new(vec!["Yes".to_string(), "No".to_string()]),
+                    SelectInput::new(vec!["No".to_string(), "Yes".to_string()]),
                 ),
                 Field::new(
                     "Confirm you would like to run the strategy",
-                    SelectInput::new(vec!["Yes".to_string(), "No".to_string()]),
+                    SelectInput::new(vec!["No".to_string(), "Yes".to_string()]),
                 ),
             )),
             selected_strategy,

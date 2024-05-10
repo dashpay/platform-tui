@@ -173,6 +173,10 @@ impl ScreenController for SelectedStrategyScreenController {
                 self.available_strategies = strategies.keys().cloned().collect();
                 ScreenFeedback::Redraw
             }
+            Event::Backend(BackendEvent::StrategyError { error }) => {
+                self.info = Info::new_error(&format!("Error: {}", &error));
+                ScreenFeedback::Redraw
+            }
             _ => ScreenFeedback::None,
         }
     }

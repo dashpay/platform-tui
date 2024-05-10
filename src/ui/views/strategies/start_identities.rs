@@ -202,7 +202,7 @@ impl StrategyStartIdentitiesFormController {
                 ),
                 Field::new(
                     "Add transfer key?",
-                    SelectInput::new(vec!["Yes".to_string(), "No".to_string()]),
+                    SelectInput::new(vec!["No".to_string(), "Yes".to_string()]),
                 ),
             )),
             selected_strategy,
