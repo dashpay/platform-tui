@@ -184,7 +184,10 @@ impl AppState {
                         execution_result: Ok("Copied Identity Id".into()),
                     }
                 } else {
-                    BackendEvent::None
+                    BackendEvent::TaskCompleted {
+                        task: Task::Identity(task),
+                        execution_result: Err("Failed to copy Identity Id".into()),
+                    }
                 }
             }
             IdentityTask::AddIdentityKey {

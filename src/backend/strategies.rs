@@ -76,7 +76,7 @@ use crate::backend::{wallet::SingleKeyWallet, Wallet};
 use super::{
     insight::InsightAPIClient,
     state::{ContractFileName, KnownContractsMap},
-    AppState, AppStateUpdate, BackendEvent, StrategyCompletionResult, StrategyContractNames,
+    AppState, AppStateUpdate, BackendEvent, StrategyCompletionResult, StrategyContractNames, Task,
 };
 
 #[derive(Debug, PartialEq, Clone)]
@@ -262,18 +262,31 @@ pub async fn run_strategy_task<'s>(
                         Ok(mut file) => {
                             if let Err(e) = file.write_all(&binary_data) {
                                 tracing::error!("Failed to write strategy to file: {}", e);
+                                return BackendEvent::StrategyError {
+                                    error: format!("Failed to write strategy to file: {}", e),
+                                };
                             }
-                            BackendEvent::None
+                            BackendEvent::TaskCompleted {
+                                task: Task::Strategy(task),
+                                execution_result: Ok(format!(
+                                    "Exported strategy file to supporting_files/strategy_exports"
+                                )
+                                .into()),
+                            }
                         }
                         Err(e) => {
                             tracing::error!("Failed to create file: {}", e);
-                            BackendEvent::None
+                            BackendEvent::StrategyError {
+                                error: format!("Failed to create file: {}", e),
+                            }
                         }
                     }
                 }
                 Err(e) => {
                     tracing::error!("Failed to serialize strategy: {}", e);
-                    BackendEvent::None
+                    BackendEvent::StrategyError {
+                        error: format!("Failed to serialize strategy: {}", e),
+                    }
                 }
             }
         }
@@ -294,7 +307,9 @@ pub async fn run_strategy_task<'s>(
                     ),
                 ))
             } else {
-                BackendEvent::None
+                BackendEvent::StrategyError {
+                    error: format!("Strategy doesn't exist in app state."),
+                }
             }
         }
         StrategyTask::DeleteStrategy(strategy_name) => {
@@ -320,7 +335,9 @@ pub async fn run_strategy_task<'s>(
                     contract_names_lock,
                 ))
             } else {
-                BackendEvent::None
+                BackendEvent::StrategyError {
+                    error: format!("Strategy doesn't exist in app state."),
+                }
             }
         }
         StrategyTask::CloneStrategy(new_strategy_name) => {
@@ -356,10 +373,14 @@ pub async fn run_strategy_task<'s>(
                         }),
                     ))
                 } else {
-                    BackendEvent::None
+                    BackendEvent::StrategyError {
+                        error: format!("Strategy doesn't exist in app state."),
+                    }
                 }
             } else {
-                BackendEvent::None
+                BackendEvent::StrategyError {
+                    error: format!("No selected strategy in app state."),
+                }
             }
         }
         StrategyTask::SetStartContracts(strategy_name, selected_contract_names) => {
@@ -414,6 +435,9 @@ pub async fn run_strategy_task<'s>(
                                                      CreatedDataContract for update: {:?}",
                                                     e
                                                 );
+                                                return BackendEvent::StrategyError {
+                                                    error: format!("Error converting DataContract to CreatedDataContract for update: {:?}", e)
+                                                };
                                             }
                                         }
                                     }
@@ -433,6 +457,9 @@ pub async fn run_strategy_task<'s>(
                                     "Error converting DataContract to CreatedDataContract: {:?}",
                                     e
                                 );
+                                return BackendEvent::StrategyError {
+                                    error: format!("Error converting DataContract to CreatedDataContract: {:?}", e)
+                                };
                             }
                         }
                     }
@@ -465,7 +492,9 @@ pub async fn run_strategy_task<'s>(
                     }),
                 ))
             } else {
-                BackendEvent::None
+                BackendEvent::StrategyError {
+                    error: format!("Strategy doesn't exist in app state."),
+                }
             }
         }
         StrategyTask::SetStartContractsRandom(strategy_name, selected_contract_name, variants) => {
@@ -538,6 +567,9 @@ pub async fn run_strategy_task<'s>(
                                             "Error converting DataContract to CreatedDataContract variant: {:?}",
                                             e
                                         );
+                                        return BackendEvent::StrategyError {
+                                            error: format!("Error converting DataContract to CreatedDataContract variant: {:?}", e)
+                                        };
                                     }
                                 };
                             }
@@ -565,10 +597,16 @@ pub async fn run_strategy_task<'s>(
                                 "Error converting original DataContract to CreatedDataContract: {:?}",
                                 e
                             );
+                            return BackendEvent::StrategyError {
+                                error: format!("Error converting original DataContract to CreatedDataContract: {:?}", e)
+                            };
                         }
                     }
                 } else {
                     tracing::error!("Contract wasn't retrieved by name in StrategyTask::SetContractsWithUpdatesRandom");
+                    return BackendEvent::StrategyError {
+                        error: format!("Contract wasn't retrieved by name in StrategyTask::SetContractsWithUpdatesRandom")
+                    };
                 }
 
                 BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
@@ -581,7 +619,9 @@ pub async fn run_strategy_task<'s>(
                     }),
                 ))
             } else {
-                BackendEvent::None
+                BackendEvent::StrategyError {
+                    error: format!("Strategy doesn't exist in app state."),
+                }
             }
         }
         StrategyTask::AddOperation {
@@ -602,7 +642,9 @@ pub async fn run_strategy_task<'s>(
                     ),
                 ))
             } else {
-                BackendEvent::None
+                BackendEvent::StrategyError {
+                    error: format!("Strategy doesn't exist in app state."),
+                }
             }
         }
         StrategyTask::RegisterDocsToAllContracts(strategy_name, num_docs, fill_size, fill_type) => {
@@ -640,7 +682,9 @@ pub async fn run_strategy_task<'s>(
                     ),
                 ))
             } else {
-                BackendEvent::None
+                BackendEvent::StrategyError {
+                    error: format!("Strategy doesn't exist in app state."),
+                }
             }
         }
         StrategyTask::SetIdentityInserts {
@@ -665,7 +709,9 @@ pub async fn run_strategy_task<'s>(
                     ),
                 ))
             } else {
-                BackendEvent::None
+                BackendEvent::StrategyError {
+                    error: format!("Strategy doesn't exist in app state."),
+                }
             }
         }
         StrategyTask::SetStartIdentities {
@@ -701,7 +747,9 @@ pub async fn run_strategy_task<'s>(
                     ),
                 ))
             } else {
-                BackendEvent::None
+                BackendEvent::StrategyError {
+                    error: format!("Strategy doesn't exist in app state."),
+                }
             }
         }
         StrategyTask::SetStartIdentitiesBalance(strategy_name, balance) => {
@@ -724,7 +772,9 @@ pub async fn run_strategy_task<'s>(
                     ),
                 ))
             } else {
-                BackendEvent::None
+                BackendEvent::StrategyError {
+                    error: format!("Strategy doesn't exist in app state."),
+                }
             }
         }
         StrategyTask::RunStrategy(
@@ -1839,7 +1889,9 @@ pub async fn run_strategy_task<'s>(
                 }
             } else {
                 tracing::error!("No strategy loaded with name \"{}\"", strategy_name);
-                BackendEvent::None
+                BackendEvent::StrategyError {
+                    error: format!("No strategy loaded with name \"{}\"", strategy_name),
+                }
             }
         }
         StrategyTask::RemoveLastContract(strategy_name) => {
@@ -1868,7 +1920,9 @@ pub async fn run_strategy_task<'s>(
                     }),
                 ))
             } else {
-                BackendEvent::None
+                BackendEvent::StrategyError {
+                    error: format!("Strategy doesn't exist in app state"),
+                }
             }
         }
         StrategyTask::ClearContracts(strategy_name) => {
@@ -1895,7 +1949,9 @@ pub async fn run_strategy_task<'s>(
                     }),
                 ))
             } else {
-                BackendEvent::None
+                BackendEvent::StrategyError {
+                    error: format!("Strategy doesn't exist in app state"),
+                }
             }
         }
         StrategyTask::ClearOperations(strategy_name) => {
@@ -1916,7 +1972,9 @@ pub async fn run_strategy_task<'s>(
                     }),
                 ))
             } else {
-                BackendEvent::None
+                BackendEvent::StrategyError {
+                    error: format!("Strategy doesn't exist in app state"),
+                }
             }
         }
         StrategyTask::RemoveIdentityInserts(strategy_name) => {
@@ -1934,7 +1992,9 @@ pub async fn run_strategy_task<'s>(
                     ),
                 ))
             } else {
-                BackendEvent::None
+                BackendEvent::StrategyError {
+                    error: format!("Strategy doesn't exist in app state"),
+                }
             }
         }
         StrategyTask::RemoveStartIdentities(strategy_name) => {
@@ -1952,7 +2012,9 @@ pub async fn run_strategy_task<'s>(
                     ),
                 ))
             } else {
-                BackendEvent::None
+                BackendEvent::StrategyError {
+                    error: format!("Strategy doesn't exist in app state"),
+                }
             }
         }
         StrategyTask::RemoveLastOperation(strategy_name) => {
@@ -1970,7 +2032,9 @@ pub async fn run_strategy_task<'s>(
                     ),
                 ))
             } else {
-                BackendEvent::None
+                BackendEvent::StrategyError {
+                    error: format!("Strategy doesn't exist in app state"),
+                }
             }
         }
     }
