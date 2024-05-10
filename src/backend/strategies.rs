@@ -251,7 +251,7 @@ pub async fn run_strategy_task<'s>(
             let strategy = strategies_lock
                 .get(strategy_name)
                 .expect("Strategy name doesn't exist in app_state.available_strategies");
-            let platform_version = PlatformVersion::latest();
+            let platform_version = sdk.version();
 
             match strategy.serialize_to_bytes_with_platform_version(&platform_version) {
                 Ok(binary_data) => {
@@ -371,7 +371,7 @@ pub async fn run_strategy_task<'s>(
                 app_state.available_strategies_contract_names.lock().await;
 
             if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
-                let platform_version = PlatformVersion::latest();
+                let platform_version = sdk.version();
 
                 // Function to retrieve the contract from either known_contracts or
                 // supporting_contracts
@@ -477,7 +477,7 @@ pub async fn run_strategy_task<'s>(
                 app_state.available_strategies_contract_names.lock().await;
 
             if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
-                let platform_version = PlatformVersion::latest();
+                let platform_version = sdk.version();
 
                 // Function to retrieve the contract from either known_contracts or
                 // supporting_contracts
@@ -961,7 +961,7 @@ pub async fn run_strategy_task<'s>(
                         match drive_lock.fetch_identity_with_balance(
                             identity_id_bytes,
                             None,
-                            PlatformVersion::latest(),
+                            sdk.version(),
                         ) {
                             Ok(maybe_partial_identity) => {
                                 let partial_identity =
@@ -1146,7 +1146,7 @@ pub async fn run_strategy_task<'s>(
                                 start_block_height: initial_block_info.height,
                                 number_of_blocks: num_blocks_or_seconds,
                             },
-                            PlatformVersion::latest(),
+                            sdk.version(),
                         )
                         .await;
 
