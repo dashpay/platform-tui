@@ -683,7 +683,7 @@ pub async fn run_strategy_task<'s>(
                     );
                 }
                 strategy.start_identities = StartIdentities {
-                    number_of_identities: count,
+                    number_of_identities: count as u16,
                     keys_per_identity: keys_count,
                     starting_balances: balance,
                     extra_keys,
@@ -1346,14 +1346,19 @@ pub async fn run_strategy_task<'s>(
                                                     }
                                                     if transition_clone.name() == "DocumentsBatch" {
                                                         let contract_ids = match transition_clone.clone() {
-                                                            StateTransition::DocumentsBatch(documents_batch_transition) => documents_batch_transition.modified_data_ids(),
+                                                            StateTransition::DocumentsBatch(DocumentsBatchTransition::V0(transition)) => transition.transitions.iter().map(|document_transition| 
+                                                                match document_transition {
+                                                                    DocumentTransition::Create(DocumentCreateTransition::V0(create_tx)) => create_tx.base.data_contract_id(),
+                                                                    _ => panic!("This should never happen")
+                                                                }
+                                                            ).collect_vec(),
                                                             _ => panic!("This shouldn't happen")
                                                         };
                                                         for contract_id in contract_ids {
                                                             let mut mempool_counter_clone_lock = mempool_counter_clone.lock().await;
                                                             let count = mempool_counter_clone_lock.entry((transition_clone.owner_id(), contract_id)).or_insert(0);
                                                             *count += 1;
-                                                            tracing::info!("Incremented identity {} tx counter for contract {}. Count: {}", transition_owner_id, contract_id.to_string(Encoding::Base58), count);
+                                                            tracing::info!(" + Incremented identity {} tx counter for contract {}. Count: {}", transition_owner_id, contract_id.to_string(Encoding::Base58), count);
                                                         }
                                                     }
                                                     Ok((transition_clone, broadcast_result))
@@ -1628,32 +1633,45 @@ pub async fn run_strategy_task<'s>(
                                                             if let Some(wait_for_state_transition_result_response_v0::Result::Proof(_proof)) = &v0_response.result {
                                                                 // Assume the proof is correct in time mode for now
                                                                 // Decrement the transitions counter
-                                                                tracing::info!(" > Transition was included in a block. ID: {:?}", transition_id);
+                                                                tracing::info!(" >>> Transition was included in a block. ID: {:?}", transition_id);
                                                                 if transition_type == "DocumentsBatch" {
                                                                     let contract_ids = match transition.clone() {
-                                                                        StateTransition::DocumentsBatch(documents_batch_transition) => documents_batch_transition.modified_data_ids(),
+                                                                        StateTransition::DocumentsBatch(DocumentsBatchTransition::V0(transition)) => transition.transitions.iter().map(|document_transition| 
+                                                                            match document_transition {
+                                                                                DocumentTransition::Create(DocumentCreateTransition::V0(create_tx)) => create_tx.base.data_contract_id(),
+                                                                                _ => panic!("This should never happen")
+                                                                            }
+                                                                        ).collect_vec(),
                                                                         _ => panic!("This shouldn't happen")
                                                                     };
                                                                     for contract_id in contract_ids {
                                                                         let mut mempool_counter_lock = mempool_counter_clone.lock().await;
                                                                         let count = mempool_counter_lock.entry((transition.owner_id(), contract_id)).or_insert(0);
                                                                         *count -= 1;
-                                                                        tracing::info!("Decremented identity {} tx counter for contract {}. Count: {}", transition_owner_id, contract_id.to_string(Encoding::Base58), count);
+                                                                        tracing::info!(" - Decremented identity {} tx counter for contract {}. Count: {}", transition_owner_id, contract_id.to_string(Encoding::Base58), count);
                                                                     }
                                                                 }
                                                             } else if let Some(wait_for_state_transition_result_response_v0::Result::Error(e)) = &v0_response.result {
-                                                                tracing::error!(" > Transition failed in mempool with error: {:?}. ID: {:?}", e, transition_id);
+                                                                tracing::error!(" >>> Transition failed in mempool with error: {:?}. ID: {:?}", e, transition_id);
                                                                 if transition_type == "DocumentsBatch" {
-                                                                    let contract_ids = transition.unique_identifiers().iter().map(|string| Identifier::from_string(string, Encoding::Base58).expect("Expected to convert string to Identifier")).collect_vec();
+                                                                    let contract_ids = match transition.clone() {
+                                                                        StateTransition::DocumentsBatch(DocumentsBatchTransition::V0(transition)) => transition.transitions.iter().map(|document_transition| 
+                                                                            match document_transition {
+                                                                                DocumentTransition::Create(DocumentCreateTransition::V0(create_tx)) => create_tx.base.data_contract_id(),
+                                                                                _ => panic!("This should never happen")
+                                                                            }
+                                                                        ).collect_vec(),
+                                                                        _ => panic!("This shouldn't happen")
+                                                                    };
                                                                     for contract_id in contract_ids {
                                                                         let mut mempool_counter_lock = mempool_counter_clone.lock().await;
                                                                         let count = mempool_counter_lock.entry((transition.owner_id(), contract_id)).or_insert(0);
                                                                         *count -= 1;
-                                                                        tracing::info!("Decremented identity {} tx counter for contract {}. Count: {}", transition_owner_id, contract_id.to_string(Encoding::Base58), count);
+                                                                        tracing::info!(" - Decremented identity {} tx counter for contract {}. Count: {}", transition_owner_id, contract_id.to_string(Encoding::Base58), count);
                                                                     }
                                                                 }
                                                             } else {
-                                                                tracing::info!(" > Received empty response for transition with ID: {:?}", transition_id);
+                                                                tracing::info!(" >>> Received empty response for transition with ID: {:?}", transition_id);
                                                             }
                                                         }
                                                     }
