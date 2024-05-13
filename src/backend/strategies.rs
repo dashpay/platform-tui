@@ -1112,7 +1112,7 @@ pub async fn run_strategy_task<'s>(
                     let oks_clone = oks.clone();
                     let errs_clone = errs.clone();
 
-                    // In time mode, filter identities that have fewer than 24 transitions
+                    // In time mode, filter out identities that have 24+ txs in mempool
                     let mut eligible_identities = Vec::new();
                     if !block_mode {
                         let mut transitions_counter_lock = transitions_counter.lock().await;
@@ -1130,15 +1130,22 @@ pub async fn run_strategy_task<'s>(
 
                     tracing::info!("Eligible identities: {}", eligible_identities.len());
                     if eligible_identities.is_empty() {
-                        return BackendEvent::StrategyCompleted {
-                            strategy_name,
-                            result: StrategyCompletionResult::PartiallyCompleted {
-                                reached_block_height: index,
-                                reason: format!(
-                                    "Ran out of identities for submitting state transitions"
-                                ),
-                            },
-                        };
+                        tracing::info!("Skip this round of broadcasting. Sleep until one second passes.");
+                        let elapsed = loop_start_time.elapsed();
+                        if elapsed < Duration::from_secs(1) {
+                            let remaining_time = Duration::from_secs(1) - elapsed;
+                            tokio::time::sleep(remaining_time).await;
+                        }
+                        continue
+                        // return BackendEvent::StrategyCompleted {
+                        //     strategy_name,
+                        //     result: StrategyCompletionResult::PartiallyCompleted {
+                        //         reached_block_height: index,
+                        //         reason: format!(
+                        //             "Ran out of identities for submitting state transitions"
+                        //         ),
+                        //     },
+                        // };
                     }
 
                     // Need to pass app_state.known_contracts to state_transitions_for_block
@@ -1239,6 +1246,10 @@ pub async fn run_strategy_task<'s>(
                             st_queue_index += 1; // Start at 1 and iterate upwards since we're only using this for logs
                             let transition_clone = transition.clone();
                             let transition_type = transition_clone.name().to_owned();
+                            let transition_id = match transition.transaction_id() {
+                                Ok(id) => id,
+                                Err(_) => [0 as u8; 32]
+                            };
                             let transitions_counter_clone = transitions_counter.clone();
 
                             // Determine if the transitions is a dependent transition.
@@ -1311,7 +1322,7 @@ pub async fn run_strategy_task<'s>(
 
                                                                 // Sleep because we need to give the chain state time to update revisions
                                                                 // It seems this is only necessary for certain STs. Like AddKeys and DisableKeys seem to need it, but Transfer does not. Not sure about Withdraw or ContractUpdate yet.
-                                                                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                                                                tokio::time::sleep(Duration::from_secs(1)).await;
                                                             }
                                                         } else {
                                                             tracing::info!("Response version other than V0 received or absent for state transition {} ({})", st_queue_index, transition_type);
@@ -1343,11 +1354,13 @@ pub async fn run_strategy_task<'s>(
                                 let errs = errs_clone.clone();
 
                                 let mut request_settings = RequestSettings::default();
+                                // Time-based strategy body
                                 if !block_mode && index != 1 && index != 2 {
                                     request_settings.connect_timeout = Some(Duration::from_secs(1));
                                     request_settings.timeout = Some(Duration::from_secs(1));
                                     request_settings.retries = Some(0);
                                 }
+                                // Block-based strategy body
                                 if block_mode && index != 1 && index != 2 {
                                     request_settings.connect_timeout = Some(Duration::from_secs(3));
                                     request_settings.timeout = Some(Duration::from_secs(3));
@@ -1362,20 +1375,22 @@ pub async fn run_strategy_task<'s>(
                                             match broadcast_result {
                                                 Ok(_) => {
                                                     oks.fetch_add(1, Ordering::SeqCst);
-                                                    if !block_mode && index != 1 && index != 2 {
-                                                        tracing::info!("Successfully broadcasted transition: {}", transition_clone.name());
-                                                    }
                                                     let identity_id = transition_clone.owner_id().to_string(Encoding::Base58);
+                                                    if !block_mode && index != 1 && index != 2 {
+                                                        tracing::info!("Successfully broadcasted transition: {}. ID: {:?}. Owner ID: {:?}", transition_clone.name(), transition_id, identity_id);
+                                                    }
                                                     let mut transitions_counter_clone_lock = transitions_counter_clone.lock().await;
-                                                    let count = transitions_counter_clone_lock.entry(identity_id).or_insert(0);
+                                                    let count = transitions_counter_clone_lock.entry(identity_id.clone()).or_insert(0);
                                                     *count += 1;
+                                                    tracing::info!("Incremented identity {} tx counter. Count: {}", identity_id, count);
                                                     Ok((transition_clone, broadcast_result))
                                                 },
                                                 Err(e) => {
                                                     errs.fetch_add(1, Ordering::SeqCst);
                                                     // Error logging seems unnecessary here because rs-dapi-client seems to log all the errors already
                                                     // But it is necessary. `rs-dapi-client` does not log all the errors already. For example, IdentityNotFound errors
-                                                    tracing::error!("Failed to broadcast transition: {}, Error: {:?}", transition_clone.name(), e);
+                                                    // Update: rs-dapi-client logs have been turned off
+                                                    tracing::error!("Error: Failed to broadcast {} transition: {:?}. ID: {:?}", transition_clone.name(), e, transition_id);
                                                     Err(e)
                                                 }
                                             }
@@ -1404,15 +1419,20 @@ pub async fn run_strategy_task<'s>(
                                 match result {
                                     Ok((transition, broadcast_result)) => {
                                         let transition_type = transition.name().to_owned();
+                                        let transition_id = match transition.transaction_id() {
+                                            Ok(id) => id,
+                                            Err(_) => [0 as u8; 32]
+                                        };
 
                                         if broadcast_result.is_err() {
                                             tracing::error!(
-                                                "Error broadcasting state transition {} ({}) for {} {}: {:?}",
+                                                "Error broadcasting state transition {} ({}) for {} {}: {:?}. ID: {:?}",
                                                 index + 1,
                                                 transition_type,
                                                 mode_string,
                                                 index,
-                                                broadcast_result.err().unwrap()
+                                                broadcast_result.err().unwrap(),
+                                                transition_id
                                             );
                                             continue;
                                         }
@@ -1473,8 +1493,8 @@ pub async fn run_strategy_task<'s>(
                                                 }
                                                 Err(e) => {
                                                     tracing::error!(
-                                                        "Error creating wait request for state transition {} {} {}: {:?}",
-                                                        index + 1, mode_string, index, e
+                                                        "Error creating wait request for state transition {} {} {}: {:?}. ID: {:?}",
+                                                        index + 1, mode_string, index, e, transition_id
                                                     );
                                                     return None;
                                                 }
@@ -1484,13 +1504,6 @@ pub async fn run_strategy_task<'s>(
                                                 Ok(wait_response) => {
                                                     Some(if let Some(wait_for_state_transition_result_response::Version::V0(v0_response)) = &wait_response.version {
                                                         if let Some(metadata) = &v0_response.metadata {
-                                                            if !verify_proofs {
-                                                                tracing::info!(
-                                                                    "Successfully broadcasted and processed state transition {} ({}) for {} {} (Actual block height: {})",
-                                                                    index + 1, transition.name(), mode_string, index, metadata.height
-                                                                );
-                                                            }
-
                                                             // Verification of the proof
                                                             if let Some(wait_for_state_transition_result_response_v0::Result::Proof(proof)) = &v0_response.result {
                                                                 if verify_proofs {
@@ -1531,11 +1544,20 @@ pub async fn run_strategy_task<'s>(
 
                                                                     match verified {
                                                                         Ok(_) => {
-                                                                            tracing::info!("Successfully processed and verified proof for state transition {} ({}), {} {} (Actual block height: {})", index + 1, transition_type, mode_string, index, metadata.height);
+                                                                            tracing::info!("Successfully processed and verified proof for state transition {} ({}), {} {} (Actual block height: {}). ID: {:?}", index + 1, transition_type, mode_string, index, metadata.height, transition_id);
                                                                         }
                                                                         Err(e) => tracing::error!("Error verifying state transition execution proof: {}", e),
                                                                     }
+                                                                } else {
+                                                                    tracing::info!(
+                                                                        "Successfully broadcasted and processed state transition {} ({}) for {} {} (Actual block height: {}). ID: {:?}",
+                                                                        index + 1, transition.name(), mode_string, index, metadata.height, transition_id
+                                                                    );    
                                                                 }
+                                                            } else if let Some(wait_for_state_transition_result_response_v0::Result::Error(e)) = &v0_response.result {
+                                                                tracing::error!("Transition failed in mempool with error: {:?}. ID: {:?}", e, transition_id);
+                                                            } else {
+                                                                tracing::info!("Received empty response for transition with ID: {:?}", transition_id);
                                                             }
 
                                                             // Log the Base58 encoded IDs of any created contracts or identities
@@ -1558,6 +1580,8 @@ pub async fn run_strategy_task<'s>(
                                                                     // nothing
                                                                 }
                                                             }
+                                                        } else {
+                                                            tracing::info!("Broadcasted transition and received response but no metadata");
                                                         }
                                                     })
                                                 }
@@ -1595,12 +1619,24 @@ pub async fn run_strategy_task<'s>(
                             }
                         } else {
                             // Time mode when index is greater than 2
+                            let request_settings = RequestSettings {
+                                connect_timeout: Some(Duration::from_secs(5)),
+                                timeout: Some(Duration::from_secs(10)),
+                                retries: Some(30),
+                                ban_failed_address: Some(false),
+                            };
+
                             let sdk_clone = sdk.clone();
                             for (index, result) in broadcast_results.into_iter().enumerate() {
                                 let transitions_counter_clone = transitions_counter.clone();
                                 match result {
                                     Ok((transition, _broadcast_result)) => {
                                         let transition_type = transition.name().to_owned();
+                                        let transition_id = match transition.transaction_id() {
+                                            Ok(id) => id,
+                                            Err(_) => [0 as u8; 32]
+                                        };
+                                        let identity_id = transition.owner_id().to_string(Encoding::Base58);
                                         let sdk_clone_inner = sdk_clone.clone();
 
                                         tokio::spawn(async move {
@@ -1610,7 +1646,7 @@ pub async fn run_strategy_task<'s>(
                                                 match wait_request
                                                     .execute(
                                                         &sdk_clone_inner,
-                                                        RequestSettings::default(),
+                                                        request_settings,
                                                     )
                                                     .await
                                                 {
@@ -1618,11 +1654,22 @@ pub async fn run_strategy_task<'s>(
                                                         if let Some(wait_for_state_transition_result_response::Version::V0(v0_response)) = &wait_response.version {
                                                             if let Some(wait_for_state_transition_result_response_v0::Result::Proof(_proof)) = &v0_response.result {
                                                                 // Assume the proof is correct in time mode for now
-                                                                let identity_id = transition.owner_id().to_string(Encoding::Base58);
+                                                                // Decrement the transitions counter
+                                                                tracing::info!(" > Transition was included in a block. ID: {:?}", transition_id);
                                                                 let mut transitions_counter_lock = transitions_counter_clone.lock().await;
                                                                 if let Some(count) = transitions_counter_lock.get_mut(&identity_id) {
-                                                                    *count -= 1; // Decrement the transition count on successful verification
+                                                                    *count -= 1;
+                                                                    tracing::info!("Decremented identity {} tx counter. Count: {}", identity_id, count);
                                                                 }
+                                                            } else if let Some(wait_for_state_transition_result_response_v0::Result::Error(e)) = &v0_response.result {
+                                                                tracing::error!(" > Transition failed in mempool with error: {:?}. ID: {:?}", e, transition_id);
+                                                                let mut transitions_counter_lock = transitions_counter_clone.lock().await;
+                                                                if let Some(count) = transitions_counter_lock.get_mut(&identity_id) {
+                                                                    *count -= 1;
+                                                                    tracing::info!("Decremented identity {} tx counter. Count: {}", identity_id, count);
+                                                                }
+                                                            } else {
+                                                                tracing::info!(" > Received empty response for transition with ID: {:?}", transition_id);
                                                             }
                                                         }
                                                     }
@@ -1635,12 +1682,8 @@ pub async fn run_strategy_task<'s>(
                                             }
                                         });
                                     }
-                                    Err(e) => {
-                                        tracing::error!(
-                                            "Error broadcasting state transition {}: {:?}",
-                                            index + 1,
-                                            e,
-                                        );
+                                    Err(_) => {
+                                        // This is already logged
                                     }
                                 }
                             }
