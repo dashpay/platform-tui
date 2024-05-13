@@ -135,8 +135,8 @@ impl ScreenController for RunStrategyScreenController {
                         reason,
                     } => {
                         format!(
-                            "Strategy '{}' failed to complete. Reached block height {}. Reason: {}",
-                            strategy_name, reached_block_height, reason
+                            "Strategy '{}' failed to complete. Reason: {}",
+                            strategy_name, reason
                         )
                     }
                 };

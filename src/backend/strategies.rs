@@ -1,7 +1,7 @@
 //! Strategies management backend module.
 
 use std::{
-    collections::{BTreeMap, BTreeSet, VecDeque},
+    collections::{BTreeMap, BTreeSet, HashMap, VecDeque},
     fs::File,
     io::Write,
     sync::{
@@ -1102,14 +1102,44 @@ pub async fn run_strategy_task<'s>(
                 let mut new_contract_ids = Vec::new(); // Will capture the ids of newly created data contracts
                 let oks = Arc::new(AtomicUsize::new(0)); // Atomic counter for successful broadcasts
                 let errs = Arc::new(AtomicUsize::new(0)); // Atomic counter for failed broadcasts
+                let transitions_counter = Arc::new(Mutex::new(HashMap::<String, usize>::new())); // Hashmap to track how many transitions an identity is waiting for results for
 
                 // Now loop through the number of blocks or seconds the user asked for, preparing and processing state transitions
                 while (block_mode && current_block_info.height < (initial_block_info.height + num_blocks_or_seconds + 2)) // +2 because we don't count the first two initialization blocks
                     || (!block_mode && load_start_time.elapsed().as_secs() < num_blocks_or_seconds) || index <= 2
                 {
+                    let loop_start_time = Instant::now();
                     let oks_clone = oks.clone();
                     let errs_clone = errs.clone();
-                    let loop_start_time = Instant::now();
+
+                    // In time mode, filter identities that have fewer than 24 transitions
+                    let mut eligible_identities = Vec::new();
+                    if !block_mode {
+                        let mut transitions_counter_lock = transitions_counter.lock().await;
+                        for identity in &current_identities {
+                            let count = transitions_counter_lock
+                                .entry(identity.id().to_string(Encoding::Base58))
+                                .or_insert(0);
+                            if *count < 24 {
+                                eligible_identities.push(identity.clone());
+                            }
+                        }
+                    } else {
+                        eligible_identities = current_identities.clone();
+                    }
+
+                    tracing::info!("Eligible identities: {}", eligible_identities.len());
+                    if eligible_identities.is_empty() {
+                        return BackendEvent::StrategyCompleted {
+                            strategy_name,
+                            result: StrategyCompletionResult::PartiallyCompleted {
+                                reached_block_height: index,
+                                reason: format!(
+                                    "Ran out of identities for submitting state transitions"
+                                ),
+                            },
+                        };
+                    }
 
                     // Need to pass app_state.known_contracts to state_transitions_for_block
                     let mut known_contracts_lock = app_state.known_contracts.lock().await;
@@ -1121,7 +1151,7 @@ pub async fn run_strategy_task<'s>(
                             &mut identity_fetch_callback,
                             &mut asset_lock_proofs,
                             &current_block_info,
-                            &mut current_identities,
+                            &mut eligible_identities,
                             &mut known_contracts_lock,
                             &mut signer,
                             &mut identity_nonce_counter,
@@ -1209,6 +1239,7 @@ pub async fn run_strategy_task<'s>(
                             st_queue_index += 1; // Start at 1 and iterate upwards since we're only using this for logs
                             let transition_clone = transition.clone();
                             let transition_type = transition_clone.name().to_owned();
+                            let transitions_counter_clone = transitions_counter.clone();
 
                             // Determine if the transitions is a dependent transition.
                             // Dependent state transitions are those that get their revision checked. Sending multiple
@@ -1334,6 +1365,10 @@ pub async fn run_strategy_task<'s>(
                                                     if !block_mode && index != 1 && index != 2 {
                                                         tracing::info!("Successfully broadcasted transition: {}", transition_clone.name());
                                                     }
+                                                    let identity_id = transition_clone.owner_id().to_string(Encoding::Base58);
+                                                    let mut transitions_counter_clone_lock = transitions_counter_clone.lock().await;
+                                                    let count = transitions_counter_clone_lock.entry(identity_id).or_insert(0);
+                                                    *count += 1;
                                                     Ok((transition_clone, broadcast_result))
                                                 },
                                                 Err(e) => {
@@ -1559,13 +1594,63 @@ pub async fn run_strategy_task<'s>(
                                 }
                             }
                         } else {
-                            // Time mode.
-                            // Don't wait.
+                            // Time mode when index is greater than 2
+                            let sdk_clone = sdk.clone();
+                            for (index, result) in broadcast_results.into_iter().enumerate() {
+                                let transitions_counter_clone = transitions_counter.clone();
+                                match result {
+                                    Ok((transition, _broadcast_result)) => {
+                                        let transition_type = transition.name().to_owned();
+                                        let sdk_clone_inner = sdk_clone.clone();
+
+                                        tokio::spawn(async move {
+                                            if let Ok(wait_request) = transition
+                                                .wait_for_state_transition_result_request()
+                                            {
+                                                match wait_request
+                                                    .execute(
+                                                        &sdk_clone_inner,
+                                                        RequestSettings::default(),
+                                                    )
+                                                    .await
+                                                {
+                                                    Ok(wait_response) => {
+                                                        if let Some(wait_for_state_transition_result_response::Version::V0(v0_response)) = &wait_response.version {
+                                                            if let Some(wait_for_state_transition_result_response_v0::Result::Proof(_proof)) = &v0_response.result {
+                                                                // Assume the proof is correct in time mode for now
+                                                                let identity_id = transition.owner_id().to_string(Encoding::Base58);
+                                                                let mut transitions_counter_lock = transitions_counter_clone.lock().await;
+                                                                if let Some(count) = transitions_counter_lock.get_mut(&identity_id) {
+                                                                    *count -= 1; // Decrement the transition count on successful verification
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                    Err(e) => {
+                                                        tracing::error!("Error waiting for state transition result: {:?}, for transition {}: {}", e, index + 1, transition_type);
+                                                    }
+                                                }
+                                            } else {
+                                                tracing::error!("Failed to create wait request for state transition {}: {}", index + 1, transition_type);
+                                            }
+                                        });
+                                    }
+                                    Err(e) => {
+                                        tracing::error!(
+                                            "Error broadcasting state transition {}: {:?}",
+                                            index + 1,
+                                            e,
+                                        );
+                                    }
+                                }
+                            }
                         }
 
                         // Reset the load_start_time
+                        // Also, sleep 10 seconds to let nodes update state
                         if index == 1 || index == 2 {
                             load_start_time = Instant::now();
+                            tokio::time::sleep(Duration::from_secs(10)).await;
                         }
                     } else {
                         // No transitions prepared for the block (or second)
