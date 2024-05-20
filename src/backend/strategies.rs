@@ -11,6 +11,7 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
+use crossterm::style::Stylize;
 use dapi_grpc::platform::v0::{
     get_epochs_info_request, get_epochs_info_response,
     wait_for_state_transition_result_response::{
@@ -1033,7 +1034,6 @@ pub async fn run_strategy_task<'s>(
                         num_asset_lock_proofs_needed
                     );
                     let asset_lock_proof_time = Instant::now();
-                    let mut num_asset_lock_proofs_obtained = 0;
                     for i in 0..(num_asset_lock_proofs_needed) {
                         if let Some(wallet) = wallet_lock.as_mut() {
                             // TO-DO: separate this into a function for start_identities, top ups, and inserts, because the balances should all be different
@@ -1054,14 +1054,72 @@ pub async fn run_strategy_task<'s>(
                                                 "Successfully obtained asset lock proof number {}",
                                                 i + 1
                                             );
-                                            num_asset_lock_proofs_obtained += 1;
                                             asset_lock_proofs.push((
                                                 asset_lock_proof,
                                                 asset_lock_proof_private_key,
                                             ));
                                         }
                                         Err(_) => {
-                                            // this error is handled from within the function
+                                            tracing::error!(
+                                                "Failed to obtain asset lock proof number {}",
+                                                i + 1
+                                            );
+                                            tracing::info!(
+                                                "Retrying to obtain asset lock proof number {}",
+                                                i + 1
+                                            );
+                                            match AppState::broadcast_and_retrieve_asset_lock(
+                                                sdk,
+                                                &asset_lock_transaction,
+                                                &wallet.receive_address(),
+                                            )
+                                            .await
+                                            {
+                                                Ok(asset_lock_proof) => {
+                                                    tracing::info!(
+                                                        "Successfully obtained asset lock proof number {}",
+                                                        i + 1
+                                                    );
+                                                    asset_lock_proofs.push((
+                                                        asset_lock_proof,
+                                                        asset_lock_proof_private_key,
+                                                    ));
+                                                }
+                                                Err(_) => {
+                                                    tracing::error!(
+                                                        "Failed to obtain asset lock proof number {}",
+                                                        i + 1
+                                                    );
+                                                    tracing::info!(
+                                                        "Retrying to obtain asset lock proof number {}",
+                                                        i + 1
+                                                    );
+                                                    match AppState::broadcast_and_retrieve_asset_lock(
+                                                        sdk,
+                                                        &asset_lock_transaction,
+                                                        &wallet.receive_address(),
+                                                    )
+                                                    .await
+                                                    {
+                                                        Ok(asset_lock_proof) => {
+                                                            tracing::info!(
+                                                                "Successfully obtained asset lock proof number {}",
+                                                                i + 1
+                                                            );
+                                                            asset_lock_proofs.push((
+                                                                asset_lock_proof,
+                                                                asset_lock_proof_private_key,
+                                                            ));
+                                                        }
+                                                        Err(_) => {
+                                                            tracing::error!(
+                                                                "Failed to obtain asset lock proof number {}",
+                                                                i + 1
+                                                            );
+                                                        }
+                                                    }        
+                                                }
+                                            }        
                                         }
                                     }
                                 }
@@ -1079,7 +1137,7 @@ pub async fn run_strategy_task<'s>(
                     tracing::info!(
                         "Took {} seconds to obtain {} asset lock proofs",
                         asset_lock_proof_time.elapsed().as_secs(),
-                        num_asset_lock_proofs_obtained
+                        asset_lock_proofs.len()
                     );
                     drop(wallet_lock); // I don't think this is necessary anymore after moving into the if statement
                 }
@@ -1103,7 +1161,7 @@ pub async fn run_strategy_task<'s>(
                 let mut new_contract_ids = Vec::new(); // Will capture the ids of newly created data contracts
                 let oks = Arc::new(AtomicUsize::new(0)); // Atomic counter for successful broadcasts
                 let errs = Arc::new(AtomicUsize::new(0)); // Atomic counter for failed broadcasts
-                let mempool_counter = Arc::new(Mutex::new(BTreeMap::<(Identifier, Identifier), u64>::new())); // Map to track how many documents an identity has in the mempool per contract
+                let mempool_document_counter = Arc::new(Mutex::new(BTreeMap::<(Identifier, Identifier), u64>::new())); // Map to track how many documents an identity has in the mempool per contract
 
                 // Now loop through the number of blocks or seconds the user asked for, preparing and processing state transitions
                 while (block_mode && current_block_info.height < (initial_block_info.height + num_blocks_or_seconds + 2)) // +2 because we don't count the first two initialization blocks
@@ -1115,6 +1173,8 @@ pub async fn run_strategy_task<'s>(
 
                     // Need to pass app_state.known_contracts to state_transitions_for_block
                     let mut known_contracts_lock = app_state.known_contracts.lock().await;
+
+                    let mempool_document_counter_lock = mempool_document_counter.lock().await;
 
                     // Get the state transitions for the block (or second)
                     let (transitions, finalize_operations, mut new_identities) = strategy
@@ -1138,6 +1198,7 @@ pub async fn run_strategy_task<'s>(
                         .await;
 
                     drop(known_contracts_lock);
+                    drop(mempool_document_counter_lock);
 
                     // Add the identities that will be created to current_identities.
                     // TO-DO: This should be moved to execution after we confirm they were registered.
@@ -1211,11 +1272,8 @@ pub async fn run_strategy_task<'s>(
                             st_queue_index += 1; // Start at 1 and iterate upwards since we're only using this for logs
                             let transition_clone = transition.clone();
                             let transition_type = transition_clone.name().to_owned();
-                            let transition_id = match transition.transaction_id() {
-                                Ok(id) => id,
-                                Err(_) => [0 as u8; 32]
-                            };
-                            let mempool_counter_clone = mempool_counter.clone();
+                            let transition_id = hex::encode(transition.transaction_id().expect("Expected transaction to serialize")).to_string().reverse();
+                            let mempool_document_counter_clone = mempool_document_counter.clone();
 
                             // Determine if the transitions is a dependent transition.
                             // Dependent state transitions are those that get their revision checked. Sending multiple
@@ -1342,7 +1400,7 @@ pub async fn run_strategy_task<'s>(
                                                     oks.fetch_add(1, Ordering::SeqCst);
                                                     let transition_owner_id = transition_clone.owner_id().to_string(Encoding::Base58);
                                                     if !block_mode && index != 1 && index != 2 {
-                                                        tracing::info!("Successfully broadcasted transition: {}. ID: {:?}. Owner ID: {:?}", transition_clone.name(), transition_id, transition_owner_id);
+                                                        tracing::info!("Successfully broadcasted transition: {}. ID: {}. Owner ID: {:?}", transition_clone.name(), transition_id, transition_owner_id);
                                                     }
                                                     if transition_clone.name() == "DocumentsBatch" {
                                                         let contract_ids = match transition_clone.clone() {
@@ -1355,8 +1413,8 @@ pub async fn run_strategy_task<'s>(
                                                             _ => panic!("This shouldn't happen")
                                                         };
                                                         for contract_id in contract_ids {
-                                                            let mut mempool_counter_clone_lock = mempool_counter_clone.lock().await;
-                                                            let count = mempool_counter_clone_lock.entry((transition_clone.owner_id(), contract_id)).or_insert(0);
+                                                            let mut mempool_document_counter_clone_lock = mempool_document_counter_clone.lock().await;
+                                                            let count = mempool_document_counter_clone_lock.entry((transition_clone.owner_id(), contract_id)).or_insert(0);
                                                             *count += 1;
                                                             tracing::info!(" + Incremented identity {} tx counter for contract {}. Count: {}", transition_owner_id, contract_id.to_string(Encoding::Base58), count);
                                                         }
@@ -1368,7 +1426,7 @@ pub async fn run_strategy_task<'s>(
                                                     // Error logging seems unnecessary here because rs-dapi-client seems to log all the errors already
                                                     // But it is necessary. `rs-dapi-client` does not log all the errors already. For example, IdentityNotFound errors
                                                     // Update: rs-dapi-client logs have been turned off
-                                                    tracing::error!("Error: Failed to broadcast {} transition: {:?}. ID: {:?}", transition_clone.name(), e, transition_id);
+                                                    tracing::error!("Error: Failed to broadcast {} transition: {:?}. ID: {}", transition_clone.name(), e, transition_id);
                                                     Err(e)
                                                 }
                                             }
@@ -1397,14 +1455,11 @@ pub async fn run_strategy_task<'s>(
                                 match result {
                                     Ok((transition, broadcast_result)) => {
                                         let transition_type = transition.name().to_owned();
-                                        let transition_id = match transition.transaction_id() {
-                                            Ok(id) => id,
-                                            Err(_) => [0 as u8; 32]
-                                        };
+                                        let transition_id = hex::encode(transition.transaction_id().expect("Expected transaction to serialize")).to_string().reverse();
 
                                         if broadcast_result.is_err() {
                                             tracing::error!(
-                                                "Error broadcasting state transition {} ({}) for {} {}: {:?}. ID: {:?}",
+                                                "Error broadcasting state transition {} ({}) for {} {}: {:?}. ID: {}",
                                                 index + 1,
                                                 transition_type,
                                                 mode_string,
@@ -1471,7 +1526,7 @@ pub async fn run_strategy_task<'s>(
                                                 }
                                                 Err(e) => {
                                                     tracing::error!(
-                                                        "Error creating wait request for state transition {} {} {}: {:?}. ID: {:?}",
+                                                        "Error creating wait request for state transition {} {} {}: {:?}. ID: {}",
                                                         index + 1, mode_string, index, e, transition_id
                                                     );
                                                     return None;
@@ -1522,20 +1577,20 @@ pub async fn run_strategy_task<'s>(
 
                                                                     match verified {
                                                                         Ok(_) => {
-                                                                            tracing::info!("Successfully processed and verified proof for state transition {} ({}), {} {} (Actual block height: {}). ID: {:?}", index + 1, transition_type, mode_string, index, metadata.height, transition_id);
+                                                                            tracing::info!("Successfully processed and verified proof for state transition {} ({}), {} {} (Actual block height: {}). ID: {}", index + 1, transition_type, mode_string, index, metadata.height, transition_id);
                                                                         }
                                                                         Err(e) => tracing::error!("Error verifying state transition execution proof: {}", e),
                                                                     }
                                                                 } else {
                                                                     tracing::info!(
-                                                                        "Successfully broadcasted and processed state transition {} ({}) for {} {} (Actual block height: {}). ID: {:?}",
+                                                                        "Successfully broadcasted and processed state transition {} ({}) for {} {} (Actual block height: {}). ID: {}",
                                                                         index + 1, transition.name(), mode_string, index, metadata.height, transition_id
                                                                     );    
                                                                 }
                                                             } else if let Some(wait_for_state_transition_result_response_v0::Result::Error(e)) = &v0_response.result {
-                                                                tracing::error!("Transition failed in mempool with error: {:?}. ID: {:?}", e, transition_id);
+                                                                tracing::error!("Transition failed in mempool with error: {:?}. ID: {}", e, transition_id);
                                                             } else {
-                                                                tracing::info!("Received empty response for transition with ID: {:?}", transition_id);
+                                                                tracing::info!("Received empty response for transition with ID: {}", transition_id);
                                                             }
 
                                                             // Log the Base58 encoded IDs of any created contracts or identities
@@ -1598,22 +1653,19 @@ pub async fn run_strategy_task<'s>(
                         } else {
                             // Time mode when index is greater than 2
                             let request_settings = RequestSettings {
-                                connect_timeout: Some(Duration::from_secs(10)),
-                                timeout: Some(Duration::from_secs(360)),
-                                retries: Some(0),
+                                connect_timeout: Some(Duration::from_secs(30)),
+                                timeout: Some(Duration::from_secs(60)),
+                                retries: Some(5),
                                 ban_failed_address: Some(false),
                             };
 
                             let sdk_clone = sdk.clone();
                             for (index, result) in broadcast_results.into_iter().enumerate() {
-                                let mempool_counter_clone = mempool_counter.clone();
+                                let mempool_document_counter_clone = mempool_document_counter.clone();
                                 match result {
                                     Ok((transition, _broadcast_result)) => {
                                         let transition_type = transition.name().to_owned();
-                                        let transition_id = match transition.transaction_id() {
-                                            Ok(id) => id,
-                                            Err(_) => [0 as u8; 32]
-                                        };
+                                        let transition_id = hex::encode(transition.transaction_id().expect("Expected transaction to serialize")).to_string().reverse();
                                         let transition_owner_id = transition.owner_id().to_string(Encoding::Base58);
                                         let sdk_clone_inner = sdk_clone.clone();
 
@@ -1633,7 +1685,7 @@ pub async fn run_strategy_task<'s>(
                                                             if let Some(wait_for_state_transition_result_response_v0::Result::Proof(_proof)) = &v0_response.result {
                                                                 // Assume the proof is correct in time mode for now
                                                                 // Decrement the transitions counter
-                                                                tracing::info!(" >>> Transition was included in a block. ID: {:?}", transition_id);
+                                                                tracing::info!(" >>> Transition was included in a block. ID: {}", transition_id);
                                                                 if transition_type == "DocumentsBatch" {
                                                                     let contract_ids = match transition.clone() {
                                                                         StateTransition::DocumentsBatch(DocumentsBatchTransition::V0(transition)) => transition.transitions.iter().map(|document_transition| 
@@ -1645,14 +1697,14 @@ pub async fn run_strategy_task<'s>(
                                                                         _ => panic!("This shouldn't happen")
                                                                     };
                                                                     for contract_id in contract_ids {
-                                                                        let mut mempool_counter_lock = mempool_counter_clone.lock().await;
-                                                                        let count = mempool_counter_lock.entry((transition.owner_id(), contract_id)).or_insert(0);
+                                                                        let mut mempool_document_counter_lock = mempool_document_counter_clone.lock().await;
+                                                                        let count = mempool_document_counter_lock.entry((transition.owner_id(), contract_id)).or_insert(0);
                                                                         *count -= 1;
                                                                         tracing::info!(" - Decremented identity {} tx counter for contract {}. Count: {}", transition_owner_id, contract_id.to_string(Encoding::Base58), count);
                                                                     }
                                                                 }
                                                             } else if let Some(wait_for_state_transition_result_response_v0::Result::Error(e)) = &v0_response.result {
-                                                                tracing::error!(" >>> Transition failed in mempool with error: {:?}. ID: {:?}", e, transition_id);
+                                                                tracing::error!(" >>> Transition failed in mempool with error: {:?}. ID: {}", e, transition_id);
                                                                 if transition_type == "DocumentsBatch" {
                                                                     let contract_ids = match transition.clone() {
                                                                         StateTransition::DocumentsBatch(DocumentsBatchTransition::V0(transition)) => transition.transitions.iter().map(|document_transition| 
@@ -1664,19 +1716,19 @@ pub async fn run_strategy_task<'s>(
                                                                         _ => panic!("This shouldn't happen")
                                                                     };
                                                                     for contract_id in contract_ids {
-                                                                        let mut mempool_counter_lock = mempool_counter_clone.lock().await;
-                                                                        let count = mempool_counter_lock.entry((transition.owner_id(), contract_id)).or_insert(0);
+                                                                        let mut mempool_document_counter_lock = mempool_document_counter_clone.lock().await;
+                                                                        let count = mempool_document_counter_lock.entry((transition.owner_id(), contract_id)).or_insert(0);
                                                                         *count -= 1;
                                                                         tracing::info!(" - Decremented identity {} tx counter for contract {}. Count: {}", transition_owner_id, contract_id.to_string(Encoding::Base58), count);
                                                                     }
                                                                 }
                                                             } else {
-                                                                tracing::info!(" >>> Received empty response for transition with ID: {:?}", transition_id);
+                                                                tracing::info!(" >>> Received empty response for transition with ID: {}", transition_id);
                                                             }
                                                         }
                                                     }
                                                     Err(e) => {
-                                                        tracing::error!("Error waiting for state transition result: {:?}, for transition {}: {}", e, index + 1, transition_type);
+                                                        tracing::error!("Error waiting for state transition result: {:?}, {}, Tx ID: {}", e, transition_type, transition_id);
                                                     }
                                                 }
                                             } else {
