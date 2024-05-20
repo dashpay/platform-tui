@@ -26,7 +26,7 @@ use dash_sdk::{
 };
 use dpp::{
     block::{block_info::BlockInfo, epoch::Epoch},
-    dashcore::PrivateKey,
+    dashcore::{Address, PrivateKey, Transaction},
     data_contract::{
         accessors::v0::{DataContractV0Getters, DataContractV0Setters},
         created_data_contract::CreatedDataContract,
@@ -1042,84 +1042,17 @@ pub async fn run_strategy_task<'s>(
                                 strategy.start_identities.starting_balances,
                             ) {
                                 Ok((asset_lock_transaction, asset_lock_proof_private_key)) => {
-                                    match AppState::broadcast_and_retrieve_asset_lock(
-                                        sdk,
-                                        &asset_lock_transaction,
-                                        &wallet.receive_address(),
-                                    )
-                                    .await
-                                    {
+                                    match try_broadcast_and_retrieve_asset_lock(sdk, &asset_lock_transaction, &wallet.receive_address(), 2).await {
                                         Ok(asset_lock_proof) => {
-                                            tracing::info!(
-                                                "Successfully obtained asset lock proof number {}",
-                                                i + 1
-                                            );
-                                            asset_lock_proofs.push((
-                                                asset_lock_proof,
-                                                asset_lock_proof_private_key,
-                                            ));
+                                            tracing::info!("Successfully obtained asset lock proof number {}", i + 1);
+                                            asset_lock_proofs.push((asset_lock_proof, asset_lock_proof_private_key));
                                         }
                                         Err(_) => {
-                                            tracing::error!(
-                                                "Failed to obtain asset lock proof number {}",
-                                                i + 1
-                                            );
-                                            tracing::info!(
-                                                "Retrying to obtain asset lock proof number {}",
-                                                i + 1
-                                            );
-                                            match AppState::broadcast_and_retrieve_asset_lock(
-                                                sdk,
-                                                &asset_lock_transaction,
-                                                &wallet.receive_address(),
-                                            )
-                                            .await
-                                            {
-                                                Ok(asset_lock_proof) => {
-                                                    tracing::info!(
-                                                        "Successfully obtained asset lock proof number {}",
-                                                        i + 1
-                                                    );
-                                                    asset_lock_proofs.push((
-                                                        asset_lock_proof,
-                                                        asset_lock_proof_private_key,
-                                                    ));
-                                                }
-                                                Err(_) => {
-                                                    tracing::error!(
-                                                        "Failed to obtain asset lock proof number {}",
-                                                        i + 1
-                                                    );
-                                                    tracing::info!(
-                                                        "Retrying to obtain asset lock proof number {}",
-                                                        i + 1
-                                                    );
-                                                    match AppState::broadcast_and_retrieve_asset_lock(
-                                                        sdk,
-                                                        &asset_lock_transaction,
-                                                        &wallet.receive_address(),
-                                                    )
-                                                    .await
-                                                    {
-                                                        Ok(asset_lock_proof) => {
-                                                            tracing::info!(
-                                                                "Successfully obtained asset lock proof number {}",
-                                                                i + 1
-                                                            );
-                                                            asset_lock_proofs.push((
-                                                                asset_lock_proof,
-                                                                asset_lock_proof_private_key,
-                                                            ));
-                                                        }
-                                                        Err(_) => {
-                                                            tracing::error!(
-                                                                "Failed to obtain asset lock proof number {}",
-                                                                i + 1
-                                                            );
-                                                        }
-                                                    }        
-                                                }
-                                            }        
+                                            tracing::error!("Failed to obtain asset lock proof number {} after retries", i + 1);
+                                            return BackendEvent::StrategyError {
+                                                strategy_name: strategy_name.clone(),
+                                                error: format!("Failed to obtain all asset lock proofs. Suggest to try rerunning."),
+                                            };                        
                                         }
                                     }
                                 }
@@ -2143,7 +2076,7 @@ pub async fn run_strategy_task<'s>(
     }
 }
 
-pub async fn update_known_contracts(
+async fn update_known_contracts(
     sdk: &Sdk,
     known_contracts: &Mutex<KnownContractsMap>,
 ) -> Result<(), String> {
@@ -2179,4 +2112,26 @@ pub async fn update_known_contracts(
     }
 
     Ok(())
+}
+
+async fn try_broadcast_and_retrieve_asset_lock(
+    sdk: &Sdk,
+    asset_lock_transaction: &Transaction,
+    receive_address: &Address,
+    retries: usize,
+) -> Result<AssetLockProof, ()> {
+    for attempt in 0..=retries {
+        match AppState::broadcast_and_retrieve_asset_lock(sdk, asset_lock_transaction, receive_address).await {
+            Ok(asset_lock_proof) => {
+                return Ok(asset_lock_proof);
+            }
+            Err(_) => {
+                tracing::error!("Failed to obtain asset lock proof on attempt {}", attempt + 1);
+                if attempt < retries {
+                    tracing::info!("Retrying to obtain asset lock proof (attempt {})", attempt + 2);
+                }
+            }
+        }
+    }
+    Err(())
 }
