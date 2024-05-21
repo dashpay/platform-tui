@@ -5,7 +5,7 @@ use std::{
     fs::File,
     io::Write,
     sync::{
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicU32, Ordering},
         Arc,
     },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -856,7 +856,7 @@ pub async fn run_strategy_task<'s>(
                 // Set initial current_identities to loaded_identity
                 // During strategy execution, newly created identities will be added to current_identities
                 let mut loaded_identity_clone = loaded_identity_lock.clone();
-                let mut current_identities: Vec<Identity> = vec![loaded_identity_clone.clone()];
+                let current_identities = Arc::new(Mutex::new(vec![loaded_identity_clone.clone()]));
 
                 // Set the nonce counters
                 let used_contract_ids = strategy.used_contract_ids();
@@ -1081,14 +1081,14 @@ pub async fn run_strategy_task<'s>(
                 // Some final initialization
                 let mut rng = StdRng::from_entropy(); // Will be passed to state_transitions_for_block
                 let mut current_block_info = initial_block_info.clone(); // Used for transition creation and logging
-                let mut transition_count = 0; // Used for logging how many transitions we attempted
-                let mut success_count = 0; // Used for logging how many transitions were successful
+                let mut transition_count: u32 = 0; // Used for logging how many transitions we attempted
+                let mut success_count: u32 = 0; // Used for logging how many transitions were successful
                 let mut load_start_time = Instant::now(); // Time when the load test begins (all blocks after the second block)
                 let mut index = 1; // Index of the loop iteration. Represents blocks for block mode and seconds for time mode
                 let mut new_identity_ids = Vec::new(); // Will capture the ids of identities added to current_identities
                 let mut new_contract_ids = Vec::new(); // Will capture the ids of newly created data contracts
-                let oks = Arc::new(AtomicUsize::new(0)); // Atomic counter for successful broadcasts
-                let errs = Arc::new(AtomicUsize::new(0)); // Atomic counter for failed broadcasts
+                let oks = Arc::new(AtomicU32::new(0)); // Atomic counter for successful broadcasts
+                let errs = Arc::new(AtomicU32::new(0)); // Atomic counter for failed broadcasts
                 let mempool_document_counter = Arc::new(Mutex::new(BTreeMap::<(Identifier, Identifier), u64>::new())); // Map to track how many documents an identity has in the mempool per contract
 
                 // Now loop through the number of blocks or seconds the user asked for, preparing and processing state transitions
@@ -1103,6 +1103,7 @@ pub async fn run_strategy_task<'s>(
                     let mut known_contracts_lock = app_state.known_contracts.lock().await;
 
                     let mempool_document_counter_lock = mempool_document_counter.lock().await;
+                    let mut current_identities_lock = current_identities.lock().await;
 
                     // Get the state transitions for the block (or second)
                     let (transitions, finalize_operations, mut new_identities) = strategy
@@ -1111,7 +1112,7 @@ pub async fn run_strategy_task<'s>(
                             &mut identity_fetch_callback,
                             &mut asset_lock_proofs,
                             &current_block_info,
-                            &mut current_identities,
+                            &mut current_identities_lock,
                             &mut known_contracts_lock,
                             &mut signer,
                             &mut identity_nonce_counter,
@@ -1134,7 +1135,7 @@ pub async fn run_strategy_task<'s>(
                     for identity in &new_identities {
                         new_identity_ids.push(identity.id().to_string(Encoding::Base58))
                     }
-                    current_identities.append(&mut new_identities);
+                    current_identities_lock.append(&mut new_identities);
 
                     for transition in &transitions {
                         match transition {
@@ -1159,7 +1160,7 @@ pub async fn run_strategy_task<'s>(
                     for operation in finalize_operations {
                         match operation {
                             FinalizeBlockOperation::IdentityAddKeys(identifier, keys) => {
-                                if let Some(identity) = current_identities
+                                if let Some(identity) = current_identities_lock
                                     .iter_mut()
                                     .find(|id| id.id() == identifier)
                                 {
@@ -1172,13 +1173,15 @@ pub async fn run_strategy_task<'s>(
                     }
 
                     // Update the loaded_identity_clone and loaded_identity_lock with the latest state of the identity
-                    if let Some(modified_identity) = current_identities
+                    if let Some(modified_identity) = current_identities_lock
                         .iter()
                         .find(|identity| identity.id() == loaded_identity_clone.id())
                     {
                         loaded_identity_clone = modified_identity.clone();
                         *loaded_identity_lock = modified_identity.clone();
                     }
+
+                    drop(current_identities_lock);
 
                     // Now process the state transitions
                     if !transitions.is_empty() {
@@ -1203,6 +1206,7 @@ pub async fn run_strategy_task<'s>(
                             let transition_type = transition_clone.name().to_owned();
                             let transition_id = hex::encode(transition.transaction_id().expect("Expected transaction to serialize")).to_string().reverse();
                             let mempool_document_counter_clone = mempool_document_counter.clone();
+                            let current_identities_clone = Arc::clone(&current_identities);
 
                             // Determine if the transitions is a dependent transition.
                             // Dependent state transitions are those that get their revision checked. Sending multiple
@@ -1366,6 +1370,10 @@ pub async fn run_strategy_task<'s>(
                                                     // But it is necessary. `rs-dapi-client` does not log all the errors already. For example, IdentityNotFound errors
                                                     // Update: rs-dapi-client logs have been turned off
                                                     tracing::error!("Error: Failed to broadcast {} transition: {:?}. ID: {}", transition_clone.name(), e, transition_id);
+                                                    if e.to_string().contains("Insufficient identity balance") {
+                                                        let mut current_identities = current_identities_clone.lock().await;
+                                                        current_identities.retain(|identity| identity.id() != transition_clone.owner_id());
+                                                    }
                                                     Err(e)
                                                 }
                                             }
@@ -1578,7 +1586,7 @@ pub async fn run_strategy_task<'s>(
                             }
 
                             // Wait for all state transition result futures to complete
-                            let wait_results = join_all(wait_futures).await;
+                            let _wait_results = join_all(wait_futures).await;
                         } else {
                             // Time mode when index is greater than 2
                             let request_settings = RequestSettings {
@@ -1738,6 +1746,7 @@ pub async fn run_strategy_task<'s>(
                 );
 
                 // Withdraw all funds from newly created identities back to the wallet
+                let mut current_identities = current_identities.lock().await;
                 current_identities.remove(0); // Remove loaded identity from the vector
                 let wallet_lock = app_state
                     .loaded_wallet
@@ -1747,7 +1756,7 @@ pub async fn run_strategy_task<'s>(
                     .expect("Expected a loaded wallet while withdrawing");
                 tracing::info!("Withdrawing funds from newly created identities back to the loaded wallet (if they have transfer keys)...");
                 let mut withdrawals_count = 0;
-                for identity in current_identities {
+                for identity in current_identities.clone() {
                     if identity
                         .get_first_public_key_matching(
                             Purpose::TRANSFER,
@@ -1840,38 +1849,38 @@ pub async fn run_strategy_task<'s>(
                 // Calculate transactions per second
                 let mut tps = 0;
                 if transition_count
-                    > (strategy.start_contracts.len() as u16
-                        + strategy.start_identities.number_of_identities as u16)
+                    > (strategy.start_contracts.len() as u32
+                        + strategy.start_identities.number_of_identities as u32)
                 {
                     tps = (transition_count
-                        - strategy.start_contracts.len() as u16
-                        - strategy.start_identities.number_of_identities as u16)
+                        - strategy.start_contracts.len() as u32
+                        - strategy.start_identities.number_of_identities as u32)
                         as u64
                         / (load_run_time)
                 };
                 let mut successful_tps = 0;
-                if success_count as u16
-                    > (strategy.start_contracts.len() as u16
-                        + strategy.start_identities.number_of_identities as u16)
+                if success_count
+                    > (strategy.start_contracts.len() as u32
+                        + strategy.start_identities.number_of_identities as u32)
                 {
                     successful_tps = (success_count
-                        - strategy.start_contracts.len()
-                        - strategy.start_identities.number_of_identities as usize)
+                        - strategy.start_contracts.len() as u32
+                        - strategy.start_identities.number_of_identities as u32)
                         as u64
                         / (load_run_time)
                 };
                 let mut success_percent = 0;
-                if success_count as u16
-                    > (strategy.start_contracts.len() as u16
-                        + strategy.start_identities.number_of_identities as u16)
+                if success_count as u32
+                    > (strategy.start_contracts.len() as u32
+                        + strategy.start_identities.number_of_identities as u32)
                 {
                     success_percent = (((success_count
-                        - strategy.start_contracts.len()
-                        - strategy.start_identities.number_of_identities as usize)
+                        - strategy.start_contracts.len() as u32
+                        - strategy.start_identities.number_of_identities as u32)
                         as f64
                         / (transition_count
-                            - strategy.start_contracts.len() as u16
-                            - strategy.start_identities.number_of_identities as u16)
+                            - strategy.start_contracts.len() as u32
+                            - strategy.start_identities.number_of_identities as u32)
                             as f64)
                         * 100.0) as u64
                 };
