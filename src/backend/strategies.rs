@@ -1310,6 +1310,7 @@ pub async fn run_strategy_task<'s>(
                                     );
                                 }
                             } else {
+                                // Independent state transitions
                                 let oks = oks_clone.clone();
                                 let errs = errs_clone.clone();
 
@@ -1335,6 +1336,7 @@ pub async fn run_strategy_task<'s>(
                                             match broadcast_result {
                                                 Ok(_) => {
                                                     oks.fetch_add(1, Ordering::SeqCst);
+                                                    success_count += 1;
                                                     let transition_owner_id = transition_clone.owner_id().to_string(Encoding::Base58);
                                                     if !block_mode && index != 1 && index != 2 {
                                                         tracing::info!("Successfully broadcasted transition: {}. ID: {}. Owner ID: {:?}", transition_clone.name(), transition_id, transition_owner_id);
@@ -1577,16 +1579,6 @@ pub async fn run_strategy_task<'s>(
 
                             // Wait for all state transition result futures to complete
                             let wait_results = join_all(wait_futures).await;
-
-                            // Log the actual block height for each state transition
-                            for (_, actual_block_height) in wait_results.into_iter().enumerate() {
-                                match actual_block_height {
-                                    Some(_) => {
-                                        success_count += 1;
-                                    }
-                                    None => continue,
-                                }
-                            }
                         } else {
                             // Time mode when index is greater than 2
                             let request_settings = RequestSettings {
