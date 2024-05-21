@@ -861,60 +861,51 @@ pub async fn run_strategy_task<'s>(
                 // Set the nonce counters
                 let used_contract_ids = strategy.used_contract_ids();
                 let mut identity_nonce_counter = BTreeMap::new();
-                let mut contract_nonce_counter: BTreeMap<(Identifier, Identifier), u64> =
-                    BTreeMap::new();
-                let num_contract_create_operations = strategy
-                    .operations
-                    .iter()
-                    .filter(|op| matches!(op.op_type, OperationType::ContractCreate(_, _)))
-                    .count();
-                if used_contract_ids.len() + num_contract_create_operations > 0 {
-                    tracing::info!(
-                        "Fetching identity nonce and {} identity contract nonces from Platform...",
-                        used_contract_ids.len()
-                    );
-                    let nonce_fetching_time = Instant::now();
-                    let identity_future = sdk.get_identity_nonce(
-                        loaded_identity_clone.id(),
-                        false,
-                        Some(dash_sdk::platform::transition::put_settings::PutSettings {
-                            request_settings: RequestSettings::default(),
-                            identity_nonce_stale_time_s: Some(0),
-                            user_fee_increase: None,
-                        }),
-                    );
-                    let contract_futures =
-                        used_contract_ids
-                            .clone()
-                            .into_iter()
-                            .map(|used_contract_id| {
-                                let identity_id = loaded_identity_clone.id();
-                                async move {
-                                    let current_nonce = sdk.get_identity_contract_nonce(
-                                identity_id,
-                                used_contract_id,
-                                false,
-                                Some(dash_sdk::platform::transition::put_settings::PutSettings {
-                                    request_settings: RequestSettings::default(),
-                                    identity_nonce_stale_time_s: Some(0),
-                                    user_fee_increase: None,
-                                })
-                            ).await.expect("Couldn't get current identity contract nonce");
-                                    ((identity_id, used_contract_id), current_nonce)
-                                }
-                            });
-                    let identity_result = identity_future
-                        .await
-                        .expect("Couldn't get current identity nonce");
-                    identity_nonce_counter.insert(loaded_identity_clone.id(), identity_result);
-                    let contract_results = join_all(contract_futures).await;
-                    contract_nonce_counter = contract_results.into_iter().collect();
-                    tracing::info!(
-                        "Took {} seconds to obtain {} identity contract nonces",
-                        nonce_fetching_time.elapsed().as_secs(),
-                        used_contract_ids.len()
-                    );
-                }
+                tracing::info!(
+                    "Fetching identity nonce and {} identity contract nonces from Platform...",
+                    used_contract_ids.len()
+                );
+                let nonce_fetching_time = Instant::now();
+                let identity_future = sdk.get_identity_nonce(
+                    loaded_identity_clone.id(),
+                    false,
+                    Some(dash_sdk::platform::transition::put_settings::PutSettings {
+                        request_settings: RequestSettings::default(),
+                        identity_nonce_stale_time_s: Some(0),
+                        user_fee_increase: None,
+                    }),
+                );
+                let contract_futures =
+                    used_contract_ids
+                        .clone()
+                        .into_iter()
+                        .map(|used_contract_id| {
+                            let identity_id = loaded_identity_clone.id();
+                            async move {
+                                let current_nonce = sdk.get_identity_contract_nonce(
+                            identity_id,
+                            used_contract_id,
+                            false,
+                            Some(dash_sdk::platform::transition::put_settings::PutSettings {
+                                request_settings: RequestSettings::default(),
+                                identity_nonce_stale_time_s: Some(0),
+                                user_fee_increase: None,
+                            })
+                        ).await.expect("Couldn't get current identity contract nonce");
+                                ((identity_id, used_contract_id), current_nonce)
+                            }
+                        });
+                let identity_result = identity_future
+                    .await
+                    .expect("Couldn't get current identity nonce");
+                identity_nonce_counter.insert(loaded_identity_clone.id(), identity_result);
+                let contract_results = join_all(contract_futures).await;
+                let mut contract_nonce_counter: BTreeMap<(Identifier, Identifier), u64> = contract_results.into_iter().collect();
+                tracing::info!(
+                    "Took {} seconds to obtain {} identity contract nonces",
+                    nonce_fetching_time.elapsed().as_secs(),
+                    used_contract_ids.len()
+                );
 
                 // Get a lock on the local drive for the following two callbacks
                 let drive_lock = app_state.drive.lock().await;
