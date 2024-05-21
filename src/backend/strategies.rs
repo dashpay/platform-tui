@@ -385,7 +385,9 @@ pub async fn run_strategy_task<'s>(
                 let fake_identity_nonce = 1;
 
                 if let Some(first_contract_name) = selected_contract_names.first() {
-                    if let Some(data_contract) = get_contract(first_contract_name) {
+                    if let Some(mut data_contract) = get_contract(first_contract_name) {
+                        data_contract.set_version(1);
+
                         match CreatedDataContract::from_contract_and_identity_nonce(
                             data_contract,
                             fake_identity_nonce,
@@ -491,7 +493,9 @@ pub async fn run_strategy_task<'s>(
                 let mut fake_identity_nonce = 1;
 
                 // Add the contracts to the strategy start_contracts
-                if let Some(data_contract) = get_contract(&selected_contract_name) {
+                if let Some(mut data_contract) = get_contract(&selected_contract_name) {
+                    data_contract.set_version(1);
+
                     match CreatedDataContract::from_contract_and_identity_nonce(
                         data_contract,
                         fake_identity_nonce,
@@ -1240,41 +1244,49 @@ pub async fn run_strategy_task<'s>(
                                                 {
                                                     Ok(wait_response) => {
                                                         if let Some(wait_for_state_transition_result_response::Version::V0(v0_response)) = &wait_response.version {
-                                                            if let Some(metadata) = &v0_response.metadata {
-                                                                success_count += 1;
-                                                                if !verify_proofs {
-                                                                    tracing::info!("Successfully processed state transition {} ({}) for {} {} (Actual block height: {})", st_queue_index, transition_type, mode_string, index, metadata.height);
-                                                                }
-                                                                match &v0_response.result {
-                                                                    Some(wait_for_state_transition_result_response_v0::Result::Error(error)) => {
-                                                                        tracing::error!("WaitForStateTransitionResultResponse error: {:?}", error);
-                                                                    }
-                                                                    Some(wait_for_state_transition_result_response_v0::Result::Proof(proof)) => {
+                                                            if let Some(result) = &v0_response.result {
+                                                                match result {
+                                                                    wait_for_state_transition_result_response_v0::Result::Proof(proof) => {
                                                                         if verify_proofs {
-                                                                            let epoch = Epoch::new(metadata.epoch as u16).expect("Expected to get epoch from metadata in proof verification");
-                                                                            let verified = Drive::verify_state_transition_was_executed_with_proof(
-                                                                                &transition_clone,
-                                                                                &BlockInfo {
-                                                                                    time_ms: metadata.time_ms,
-                                                                                    height: metadata.height,
-                                                                                    core_height: metadata.core_chain_locked_height,
-                                                                                    epoch,
-                                                                                },
-                                                                                proof.grovedb_proof.as_slice(),
-                                                                                &|_| Ok(None),
-                                                                                sdk.version(),
-                                                                            );
-                                                                            match verified {
-                                                                                Ok(_) => {
-                                                                                    tracing::info!("Successfully processed and verified proof for state transition {} ({}), {} {} (Actual block height: {})", st_queue_index, transition_type, mode_string, index, metadata.height);
-                                                                                }
-                                                                                Err(e) => {
-                                                                                    tracing::error!("Error verifying state transition execution proof: {}", e);
-                                                                                }
+                                                                            if let Some(metadata) = &v0_response.metadata {
+                                                                                let epoch = Epoch::new(metadata.epoch as u16).expect("Expected to get epoch from metadata in proof verification");
+                                                                                let verified = Drive::verify_state_transition_was_executed_with_proof(
+                                                                                    &transition_clone,
+                                                                                    &BlockInfo {
+                                                                                        time_ms: metadata.time_ms,
+                                                                                        height: metadata.height,
+                                                                                        core_height: metadata.core_chain_locked_height,
+                                                                                        epoch,
+                                                                                    },
+                                                                                    proof.grovedb_proof.as_slice(),
+                                                                                    &|_| Ok(None),
+                                                                                    sdk.version(),
+                                                                                );
+                                                                                match verified {
+                                                                                    Ok(_) => {
+                                                                                        tracing::info!("Successfully processed and verified proof for state transition {} ({}), {} {} (Actual block height: {})", st_queue_index, transition_type, mode_string, index, metadata.height);
+                                                                                        success_count += 1;
+                                                                                    }
+                                                                                    Err(e) => {
+                                                                                        tracing::error!("Error verifying state transition execution proof: {}", e);
+                                                                                    }
+                                                                                }    
+                                                                            } else {
+                                                                                tracing::error!("Unable to verify proof due to no metadata in response");
+                                                                            }
+                                                                        } else {
+                                                                            if let Some(metadata) = &v0_response.metadata {
+                                                                                tracing::info!("Successfully processed state transition {} ({}) for {} {} (Actual block height: {})", st_queue_index, transition_type, mode_string, index, metadata.height);
+                                                                                success_count += 1;    
+                                                                            } else {
+                                                                                tracing::info!("Successfully processed state transition {} ({}) for {} {}", st_queue_index, transition_type, mode_string, index);
+                                                                                success_count += 1;    
                                                                             }
                                                                         }
                                                                     }
-                                                                    _ => {}
+                                                                    wait_for_state_transition_result_response_v0::Result::Error(error) => {
+                                                                        tracing::error!("WaitForStateTransitionResultResponse error: {:?}", error);
+                                                                    }
                                                                 }
 
                                                                 // Sleep because we need to give the chain state time to update revisions
