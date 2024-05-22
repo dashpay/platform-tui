@@ -1370,7 +1370,7 @@ pub async fn run_strategy_task<'s>(
                                                     // But it is necessary. `rs-dapi-client` does not log all the errors already. For example, IdentityNotFound errors
                                                     // Update: rs-dapi-client logs have been turned off
                                                     tracing::error!("Error: Failed to broadcast {} transition: {:?}. ID: {}", transition_clone.name(), e, transition_id);
-                                                    if e.to_string().contains("Insufficient identity balance") {
+                                                    if e.to_string().contains("Insufficient identity") {
                                                         let mut current_identities = current_identities_clone.lock().await;
                                                         current_identities.retain(|identity| identity.id() != transition_clone.owner_id());
                                                     }
