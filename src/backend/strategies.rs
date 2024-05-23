@@ -1117,7 +1117,7 @@ pub async fn run_strategy_task<'s>(
                             &mut signer,
                             &mut identity_nonce_counter,
                             &mut contract_nonce_counter,
-                            mempool_document_counter_lock.clone(),
+                            &mempool_document_counter_lock,
                             &mut rng,
                             &StrategyConfig {
                                 start_block_height: initial_block_info.height,
