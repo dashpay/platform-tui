@@ -1989,6 +1989,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "hdrhistogram"
+version = "7.5.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "765c9198f173dd59ce26ff9f95ef0aafd0a0fe01fb9d72841bc5066a4c06511d"
+dependencies = [
+ "base64 0.21.7",
+ "byteorder",
+ "crossbeam-channel",
+ "flate2",
+ "nom",
+ "num-traits",
+]
+
+[[package]]
 name = "heck"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3761,6 +3775,7 @@ dependencies = [
  "crossterm 0.27.0",
  "dapi-grpc",
  "dash-sdk",
+ "dashcore-rpc",
  "dashmap",
  "dotenvy",
  "dpp",
@@ -3768,9 +3783,11 @@ dependencies = [
  "envy",
  "futures",
  "governor",
+ "hdrhistogram",
  "hex",
  "itertools 0.12.1",
  "memoize",
+ "parking_lot",
  "rand",
  "reqwest",
  "rs-dapi-client",
