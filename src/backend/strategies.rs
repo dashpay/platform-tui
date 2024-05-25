@@ -1091,6 +1091,12 @@ pub async fn run_strategy_task<'s>(
                 let errs = Arc::new(AtomicU32::new(0)); // Atomic counter for failed broadcasts
                 let mempool_document_counter = Arc::new(Mutex::new(BTreeMap::<(Identifier, Identifier), u64>::new())); // Map to track how many documents an identity has in the mempool per contract
 
+                // Broadcast error counters
+                let mut identity_nonce_error_count: u64 = 0;
+                let mut insufficient_balance_error_count: u64 = 0;
+                let mut local_rate_limit_error_count: u64 = 0;
+                let mut broadcast_timeout_error_count: u64 = 0;
+
                 // Now loop through the number of blocks or seconds the user asked for, preparing and processing state transitions
                 while (block_mode && current_block_info.height < (initial_block_info.height + num_blocks_or_seconds + 2)) // +2 because we don't count the first two initialization blocks
                     || (!block_mode && load_start_time.elapsed().as_secs() < num_blocks_or_seconds) || index <= 2
@@ -1124,8 +1130,7 @@ pub async fn run_strategy_task<'s>(
                                 number_of_blocks: num_blocks_or_seconds,
                             },
                             PlatformVersion::latest(),
-                        )
-                        .await;
+                        );
 
                     drop(known_contracts_lock);
                     drop(mempool_document_counter_lock);
@@ -1371,8 +1376,15 @@ pub async fn run_strategy_task<'s>(
                                                     // Update: rs-dapi-client logs have been turned off
                                                     tracing::error!("Error: Failed to broadcast {} transition: {:?}. ID: {}", transition_clone.name(), e, transition_id);
                                                     if e.to_string().contains("Insufficient identity") {
+                                                        insufficient_balance_error_count += 1;
                                                         let mut current_identities = current_identities_clone.lock().await;
                                                         current_identities.retain(|identity| identity.id() != transition_clone.owner_id());
+                                                    } else if e.to_string().contains("invalid identity nonce") {
+                                                        identity_nonce_error_count += 1;
+                                                    } else if e.to_string().contains("") {
+                                                        local_rate_limit_error_count += 1;
+                                                    } else if e.to_string().contains("") {
+                                                        broadcast_timeout_error_count += 1;
                                                     }
                                                     Err(e)
                                                 }
@@ -1893,7 +1905,8 @@ pub async fn run_strategy_task<'s>(
                     tracing::info!(
                         "-----Strategy '{}' completed-----\n\nMode: {}\nState transitions attempted: {}\nState \
                         transitions succeeded: {}\nNumber of blocks: {}\nRun time: \
-                        {:?} seconds\nTPS rate (approx): {} tps\nDash spent (Loaded Identity): {}\nDash spent (Wallet): {}\n",
+                        {:?} seconds\nTPS rate (approx): {} tps\nDash spent (Loaded Identity): {}\nDash spent (Wallet): {}\nNonce \
+                        errors: {}\nBalance errors: {}\nRate limit errors: {}\nBroadcast timeout errors: {}",
                         strategy_name,
                         mode_string,
                         transition_count,
@@ -1903,6 +1916,10 @@ pub async fn run_strategy_task<'s>(
                         tps, // tps besides the first two blocks
                         dash_spent_identity,
                         dash_spent_wallet,
+                        identity_nonce_error_count,
+                        insufficient_balance_error_count,
+                        local_rate_limit_error_count,
+                        broadcast_timeout_error_count
                     );
                 } else {
                     // Time mode
