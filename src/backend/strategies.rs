@@ -117,6 +117,8 @@ pub enum StrategyTask {
     RemoveLastOperation(String),
 }
 
+pub type MempoolDocumentCounter = BTreeMap<(Identifier, Identifier), u64>; // maps (identity id, contract id) to documents_count
+
 pub async fn run_strategy_task<'s>(
     sdk: &Sdk,
     app_state: &'s AppState,
@@ -1089,7 +1091,7 @@ pub async fn run_strategy_task<'s>(
                 let mut new_contract_ids = Vec::new(); // Will capture the ids of newly created data contracts
                 let oks = Arc::new(AtomicU32::new(0)); // Atomic counter for successful broadcasts
                 let errs = Arc::new(AtomicU32::new(0)); // Atomic counter for failed broadcasts
-                let mempool_document_counter = Arc::new(Mutex::new(BTreeMap::<(Identifier, Identifier), u64>::new())); // Map to track how many documents an identity has in the mempool per contract
+                let mempool_document_counter = Arc::new(Mutex::new(MempoolDocumentCounter::new())); // Map to track how many documents an identity has in the mempool per contract
 
                 // Now loop through the number of blocks or seconds the user asked for, preparing and processing state transitions
                 while (block_mode && current_block_info.height < (initial_block_info.height + num_blocks_or_seconds + 2)) // +2 because we don't count the first two initialization blocks
