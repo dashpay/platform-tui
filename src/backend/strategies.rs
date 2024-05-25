@@ -19,7 +19,7 @@ use dapi_grpc::platform::v0::{
     },
     GetEpochsInfoRequest,
 };
-use dash_sdk::platform::transition::withdraw_from_identity::WithdrawFromIdentity;
+use dash_sdk::platform::transition::{top_up_identity::TopUpIdentity, withdraw_from_identity::WithdrawFromIdentity};
 use dash_sdk::{
     platform::{transition::broadcast_request::BroadcastRequestForStateTransition, Fetch},
     Sdk,
@@ -108,7 +108,7 @@ pub enum StrategyTask {
         operation: Operation,
     },
     RegisterDocsToAllContracts(String, u16, DocumentFieldFillSize, DocumentFieldFillType),
-    RunStrategy(String, u64, bool, bool),
+    RunStrategy(String, u64, bool, bool, u64),
     RemoveLastContract(String),
     ClearContracts(String),
     ClearOperations(String),
@@ -735,6 +735,7 @@ pub async fn run_strategy_task<'s>(
             num_blocks_or_seconds,
             verify_proofs,
             block_mode,
+            top_up_amount,
         ) => {
             tracing::info!("-----Starting strategy '{}'-----", strategy_name);
             let init_start_time = Instant::now(); // Start time of strategy initialization plus execution of first two blocks
@@ -1377,8 +1378,48 @@ pub async fn run_strategy_task<'s>(
                                                     tracing::error!("Error: Failed to broadcast {} transition: {:?}. ID: {}", transition_clone.name(), e, transition_id);
                                                     if e.to_string().contains("Insufficient identity") {
                                                         insufficient_balance_error_count += 1;
+                                                        let mut wallet_lock = app_state.loaded_wallet.lock().await;
                                                         let mut current_identities = current_identities_clone.lock().await;
-                                                        current_identities.retain(|identity| identity.id() != transition_clone.owner_id());
+                                                        if top_up_amount > 0 {
+                                                            // Top up
+                                                            if let Some(wallet) = wallet_lock.as_mut() {
+                                                                match wallet.asset_lock_transaction(
+                                                                    None,
+                                                                    top_up_amount,
+                                                                ) {
+                                                                    Ok((asset_lock_transaction, asset_lock_proof_private_key)) => {
+                                                                        match try_broadcast_and_retrieve_asset_lock(sdk, &asset_lock_transaction, &wallet.receive_address(), 2).await {
+                                                                            Ok(asset_lock_proof) => {
+                                                                                tracing::info!("Successfully obtained asset lock proof for top up");
+                                                                                let identity = current_identities.iter_mut().find(|identity| identity.id() == transition_clone.owner_id()).expect("Expected to find identity ID matching transition owner ID");
+                                                                                match identity.top_up_identity(
+                                                                                    sdk,
+                                                                                    asset_lock_proof,
+                                                                                    &asset_lock_proof_private_key,
+                                                                                    None,
+                                                                                ).await {
+                                                                                    Ok(balance) => tracing::info!("Topped up identity {}. New balance: {}", identity.id().to_string(Encoding::Base58), balance),
+                                                                                    Err(e) => tracing::error!("Failed to top up identity {}: {}", identity.id().to_string(Encoding::Base58), e)
+                                                                                }
+                                                                            }
+                                                                            Err(_) => {
+                                                                                tracing::error!("Failed to obtain asset lock proof for top up");
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                    Err(e) => {
+                                                                        tracing::error!(
+                                                                            "Error creating asset lock transaction: {:?}",
+                                                                            e
+                                                                        )
+                                                                    }
+                                                                }
+                                                            } else {
+                                                                tracing::error!("Wallet not loaded");
+                                                            }
+                                                        } else {
+                                                            current_identities.retain(|identity| identity.id() != transition_clone.owner_id());    
+                                                        }
                                                     } else if e.to_string().contains("invalid identity nonce") {
                                                         identity_nonce_error_count += 1;
                                                     } else if e.to_string().contains("") {
