@@ -171,7 +171,7 @@ pub(super) struct RunStrategyFormController {
         Field<SelectInput<String>>,
         Field<TextInput<DefaultTextInputParser<u64>>>,
         Field<SelectInput<String>>,
-        Field<TextInput<DefaultTextInputParser<f64>>>,
+        // Field<TextInput<DefaultTextInputParser<f64>>>,
         Field<SelectInput<String>>,
     )>,
     selected_strategy: String,
@@ -193,10 +193,10 @@ impl RunStrategyFormController {
                     "Verify state transition proofs? (Only applies to block mode)",
                     SelectInput::new(vec!["Yes".to_string(), "No".to_string()]),
                 ),
-                Field::new(
-                    "Amount of Dash to top up identities who run out. Enter 0 for no top ups.",
-                    TextInput::new("Enter Dash amount (decimals ok)"),
-                ),
+                // Field::new(
+                //     "Amount of Dash to top up identities who run out. Enter 0 for no top ups.",
+                //     TextInput::new("Enter Dash amount (decimals ok)"),
+                // ),
                 Field::new(
                     "Confirm you would like to run the strategy",
                     SelectInput::new(vec!["Yes".to_string(), "No".to_string()]),
@@ -210,8 +210,8 @@ impl RunStrategyFormController {
 impl FormController for RunStrategyFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
         match self.input.on_event(event) {
-            InputStatus::Done((mode, num_blocks, verify_proofs, top_up_amount, confirm)) => {
-                let credit_amount = (top_up_amount * 100_000_000_000.0) as u64;
+            InputStatus::Done((mode, num_blocks, verify_proofs, confirm)) => {
+                let credit_amount = (0.0 * 100_000_000_000.0) as u64;
                 if confirm == "Yes" {
                     if verify_proofs == "Yes" {
                         if mode == "Block" {
