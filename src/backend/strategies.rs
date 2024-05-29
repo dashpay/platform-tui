@@ -1378,48 +1378,48 @@ pub async fn run_strategy_task<'s>(
                                                     tracing::error!("Error: Failed to broadcast {} transition: {:?}. ID: {}", transition_clone.name(), e, transition_id);
                                                     if e.to_string().contains("Insufficient identity") {
                                                         insufficient_balance_error_count += 1;
-                                                        let mut wallet_lock = app_state.loaded_wallet.lock().await;
+                                                        // let mut wallet_lock = app_state.loaded_wallet.lock().await;
                                                         let mut current_identities = current_identities_clone.lock().await;
-                                                        if top_up_amount > 0 {
-                                                            // Top up
-                                                            if let Some(wallet) = wallet_lock.as_mut() {
-                                                                match wallet.asset_lock_transaction(
-                                                                    None,
-                                                                    top_up_amount,
-                                                                ) {
-                                                                    Ok((asset_lock_transaction, asset_lock_proof_private_key)) => {
-                                                                        match try_broadcast_and_retrieve_asset_lock(sdk, &asset_lock_transaction, &wallet.receive_address(), 2).await {
-                                                                            Ok(asset_lock_proof) => {
-                                                                                tracing::info!("Successfully obtained asset lock proof for top up");
-                                                                                let identity = current_identities.iter_mut().find(|identity| identity.id() == transition_clone.owner_id()).expect("Expected to find identity ID matching transition owner ID");
-                                                                                match identity.top_up_identity(
-                                                                                    sdk,
-                                                                                    asset_lock_proof,
-                                                                                    &asset_lock_proof_private_key,
-                                                                                    None,
-                                                                                ).await {
-                                                                                    Ok(balance) => tracing::info!("Topped up identity {}. New balance: {}", identity.id().to_string(Encoding::Base58), balance),
-                                                                                    Err(e) => tracing::error!("Failed to top up identity {}: {}", identity.id().to_string(Encoding::Base58), e)
-                                                                                }
-                                                                            }
-                                                                            Err(_) => {
-                                                                                tracing::error!("Failed to obtain asset lock proof for top up");
-                                                                            }
-                                                                        }
-                                                                    }
-                                                                    Err(e) => {
-                                                                        tracing::error!(
-                                                                            "Error creating asset lock transaction: {:?}",
-                                                                            e
-                                                                        )
-                                                                    }
-                                                                }
-                                                            } else {
-                                                                tracing::error!("Wallet not loaded");
-                                                            }
-                                                        } else {
+                                                        // if top_up_amount > 0 {
+                                                        //     // Top up
+                                                        //     if let Some(wallet) = wallet_lock.as_mut() {
+                                                        //         match wallet.asset_lock_transaction(
+                                                        //             None,
+                                                        //             top_up_amount,
+                                                        //         ) {
+                                                        //             Ok((asset_lock_transaction, asset_lock_proof_private_key)) => {
+                                                        //                 match try_broadcast_and_retrieve_asset_lock(sdk, &asset_lock_transaction, &wallet.receive_address(), 2).await {
+                                                        //                     Ok(asset_lock_proof) => {
+                                                        //                         tracing::info!("Successfully obtained asset lock proof for top up");
+                                                        //                         let identity = current_identities.iter_mut().find(|identity| identity.id() == transition_clone.owner_id()).expect("Expected to find identity ID matching transition owner ID");
+                                                        //                         match identity.top_up_identity(
+                                                        //                             sdk,
+                                                        //                             asset_lock_proof,
+                                                        //                             &asset_lock_proof_private_key,
+                                                        //                             None,
+                                                        //                         ).await {
+                                                        //                             Ok(balance) => tracing::info!("Topped up identity {}. New balance: {}", identity.id().to_string(Encoding::Base58), balance),
+                                                        //                             Err(e) => tracing::error!("Failed to top up identity {}: {}", identity.id().to_string(Encoding::Base58), e)
+                                                        //                         }
+                                                        //                     }
+                                                        //                     Err(_) => {
+                                                        //                         tracing::error!("Failed to obtain asset lock proof for top up");
+                                                        //                     }
+                                                        //                 }
+                                                        //             }
+                                                        //             Err(e) => {
+                                                        //                 tracing::error!(
+                                                        //                     "Error creating asset lock transaction: {:?}",
+                                                        //                     e
+                                                        //                 )
+                                                        //             }
+                                                        //         }
+                                                        //     } else {
+                                                        //         tracing::error!("Wallet not loaded");
+                                                        //     }
+                                                        // } else {
                                                             current_identities.retain(|identity| identity.id() != transition_clone.owner_id());    
-                                                        }
+                                                        // }
                                                     } else if e.to_string().contains("invalid identity nonce") {
                                                         identity_nonce_error_count += 1;
                                                     } else if e.to_string().contains("") {
@@ -1967,7 +1967,8 @@ pub async fn run_strategy_task<'s>(
                     tracing::info!(
                         "-----Strategy '{}' completed-----\n\nMode: {}\nState transitions attempted: {}\nState \
                         transitions succeeded: {}\nNumber of loops: {}\nLoad run time: \
-                        {:?} seconds\nInit run time: {} seconds\nAttempted rate (approx): {} txs/s\nSuccessful rate: {} tx/s\nSuccess percentage: {}%\nDash spent (Loaded Identity): {}\nDash spent (Wallet): {}\n",
+                        {:?} seconds\nInit run time: {} seconds\nAttempted rate (approx): {} txs/s\nSuccessful rate: {} tx/s\nSuccess percentage: {}%\nDash spent (Loaded Identity): {}\nDash spent (Wallet): {}\nNonce \
+                        errors: {}\nBalance errors: {}\nRate limit errors: {}\nBroadcast timeout errors: {}",
                         strategy_name,
                         mode_string,
                         transition_count,
@@ -1980,6 +1981,10 @@ pub async fn run_strategy_task<'s>(
                         success_percent,
                         dash_spent_identity,
                         dash_spent_wallet,
+                        identity_nonce_error_count,
+                        insufficient_balance_error_count,
+                        local_rate_limit_error_count,
+                        broadcast_timeout_error_count
                     );
                 }
 
