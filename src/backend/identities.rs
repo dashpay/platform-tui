@@ -334,7 +334,22 @@ impl AppState {
                 }
             }
             IdentityTask::RegisterDPNSName(ref name) => {
-                let result = self.register_dpns_name(sdk, name).await;
+                let loaded_identity_lock = self.loaded_identity.lock().await;
+                let identity = match loaded_identity_lock.as_ref() {
+                    Some(identity) => identity,
+                    None => {
+                        return BackendEvent::TaskCompleted {
+                            task: Task::Identity(task),
+                            execution_result: Ok(CompletedTaskPayload::String(
+                                "No loaded identity".to_string(),
+                            )),
+                        }
+                    }
+                };
+                let identity_id = identity.id();
+                drop(loaded_identity_lock);
+
+                let result = self.register_dpns_name(sdk, &identity_id, name).await;
                 let execution_result = result
                     .as_ref()
                     .map(|_| "DPNS name registration successful".into())
@@ -353,7 +368,12 @@ impl AppState {
         }
     }
 
-    pub(crate) async fn register_dpns_name(&self, sdk: &Sdk, name: &str) -> Result<(), Error> {
+    pub(crate) async fn register_dpns_name(
+        &self,
+        sdk: &Sdk,
+        identifier: &Identifier, // once contract names are enabled, we can use this field
+        name: &str,
+    ) -> Result<(), Error> {
         let mut rng = StdRng::from_entropy();
         let platform_version = PlatformVersion::latest();
 
