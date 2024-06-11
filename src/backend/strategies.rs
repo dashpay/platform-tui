@@ -682,7 +682,7 @@ pub async fn run_strategy_task<'s>(
                     );
                 }
                 strategy.start_identities = StartIdentities {
-                    number_of_identities: count as u16,
+                    number_of_identities: count,
                     keys_per_identity: keys_count,
                     starting_balances: balance,
                     extra_keys,
@@ -1127,7 +1127,7 @@ pub async fn run_strategy_task<'s>(
                             &mut signer,
                             &mut identity_nonce_counter,
                             &mut contract_nonce_counter,
-                            mempool_document_counter.clone(),
+                            // mempool_document_counter.clone(),
                             &mut rng,
                             &StrategyConfig {
                                 start_block_height: initial_block_info.height,
