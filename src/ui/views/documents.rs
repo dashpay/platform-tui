@@ -19,12 +19,15 @@ use crate::{
     Event,
 };
 
-const COMMAND_KEYS: [ScreenCommandKey; 5] = [
+use super::contracts::document_type::contested_documents::ContestedDocumentVoteFormController;
+
+const COMMAND_KEYS: [ScreenCommandKey; 6] = [
     ScreenCommandKey::new("q", "Back to Contracts"),
     ScreenCommandKey::new("C-n", "Next document"),
     ScreenCommandKey::new("C-p", "Prev document"),
     ScreenCommandKey::new("↓", "Scroll doc down"),
     ScreenCommandKey::new("↑", "Scroll doc up"),
+    ScreenCommandKey::new("v", "Vote on contested document"),
 ];
 
 pub(crate) struct DocumentsQuerysetScreenController {
@@ -105,6 +108,16 @@ impl ScreenController for DocumentsQuerysetScreenController {
                 code: Key::Char('q'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::PreviousScreen,
+
+            Event::Key(KeyEvent {
+                code: Key::Char('v'),
+                modifiers: KeyModifiers::NONE,
+            }) => {
+                let contesting_identities = { todo!() };
+                ScreenFeedback::Form(Box::new(ContestedDocumentVoteFormController::new(
+                    contesting_identities,
+                )))
+            }
 
             // Document view keys
             Event::Key(

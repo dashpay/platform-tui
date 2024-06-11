@@ -1,6 +1,7 @@
-//! UI defenitions for selected data contract.
+//! UI definitions for selected data contract.
 
 mod broadcast_random_documents;
+pub mod contested_documents;
 
 use dpp::{
     data_contract::{
@@ -104,10 +105,11 @@ impl FormController for SelectDocumentTypeFormController {
     }
 }
 
-const COMMANDS: [ScreenCommandKey; 4] = [
+const COMMANDS: [ScreenCommandKey; 5] = [
     ScreenCommandKey::new("q", "Back to Contracts"),
     ScreenCommandKey::new("f", "Query"),
     ScreenCommandKey::new("o", "Query ours"),
+    ScreenCommandKey::new("c", "Query contested documents"),
     ScreenCommandKey::new("b", "Broadcast Random Documents"),
 ];
 
@@ -181,14 +183,7 @@ impl ScreenController for DocumentTypeScreenController {
                 self.data_contract.clone(),
                 self.document_type.clone(),
                 None,
-            ))),
-
-            Event::Key(KeyEvent {
-                code: Key::Char('b'),
-                modifiers: KeyModifiers::NONE,
-            }) => ScreenFeedback::Form(Box::new(BroadcastRandomDocumentsCountForm::new(
-                self.data_contract_name.clone(),
-                self.document_type_name.clone(),
+                false,
             ))),
 
             Event::Key(KeyEvent {
@@ -198,6 +193,25 @@ impl ScreenController for DocumentTypeScreenController {
                 self.data_contract.clone(),
                 self.document_type.clone(),
                 self.identity_identifier.clone(),
+                false,
+            ))),
+
+            Event::Key(KeyEvent {
+                code: Key::Char('c'),
+                modifiers: KeyModifiers::NONE,
+            }) => ScreenFeedback::Form(Box::new(QueryDocumentTypeFormController::new(
+                self.data_contract.clone(),
+                self.document_type.clone(),
+                None,
+                true,
+            ))),
+
+            Event::Key(KeyEvent {
+                code: Key::Char('b'),
+                modifiers: KeyModifiers::NONE,
+            }) => ScreenFeedback::Form(Box::new(BroadcastRandomDocumentsCountForm::new(
+                self.data_contract_name.clone(),
+                self.document_type_name.clone(),
             ))),
 
             // Forward event to upper part of the screen for scrolls and stuff
@@ -262,20 +276,38 @@ impl QueryDocumentTypeFormController {
         data_contract: DataContract,
         document_type: DocumentType,
         ours_query: Option<Identifier>,
+        contested_documents_query: bool,
     ) -> Self {
-        let ours_query_part = if let Some(ours_identifier) = ours_query {
-            format!(
-                "where `$ownerId` = '{}' ",
-                ours_identifier.to_string(Encoding::Base58)
-            )
+        if contested_documents_query {
+            let contested_query_part = format!(
+                "where `$contested` = '{}' ", // pseudocode
+                true
+            );
+            let query = format!(
+                "Select * from {} {}",
+                document_type.name(),
+                contested_query_part
+            );
+            let parser = DocumentQueryTextInputParser::new(data_contract);
+            QueryDocumentTypeFormController {
+                _document_type: document_type,
+                input: TextInput::new_str_value_with_parser(parser, "Document Query", &query),
+            }
         } else {
-            String::default()
-        };
-        let query = format!("Select * from {} {}", document_type.name(), ours_query_part);
-        let parser = DocumentQueryTextInputParser::new(data_contract);
-        QueryDocumentTypeFormController {
-            _document_type: document_type,
-            input: TextInput::new_str_value_with_parser(parser, "Document Query", &query),
+            let ours_query_part = if let Some(ours_identifier) = ours_query {
+                format!(
+                    "where `$ownerId` = '{}' ",
+                    ours_identifier.to_string(Encoding::Base58)
+                )
+            } else {
+                String::default()
+            };
+            let query = format!("Select * from {} {}", document_type.name(), ours_query_part);
+            let parser = DocumentQueryTextInputParser::new(data_contract);
+            QueryDocumentTypeFormController {
+                _document_type: document_type,
+                input: TextInput::new_str_value_with_parser(parser, "Document Query", &query),
+            }
         }
     }
 }

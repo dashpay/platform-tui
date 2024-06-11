@@ -40,6 +40,7 @@ pub(crate) enum DocumentTask {
         document_type_name: String,
         count: u16,
     },
+    VoteOnContestedDocument(String),
 }
 
 impl AppState {
@@ -126,6 +127,18 @@ impl AppState {
                             )),
                         }
                     }
+                }
+            }
+            DocumentTask::VoteOnContestedDocument(vote) => {
+                let resource_vote = Vote::default();
+
+                let execution_result = Document::fetch_many(&sdk, document_query.clone())
+                    .await
+                    .map(CompletedTaskPayload::Documents)
+                    .map_err(|e| e.to_string());
+                BackendEvent::TaskCompleted {
+                    task: Task::Document(task),
+                    execution_result,
                 }
             }
         }
