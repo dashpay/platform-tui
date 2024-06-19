@@ -1040,9 +1040,11 @@ pub async fn run_strategy_task<'s>(
                     // Broadcast asset locks and receive proofs. 24 at the time.
                     let permits = Arc::new(Semaphore::new(24));
                     let starting_balance = strategy.start_identities.starting_balances;
+                    let processed = Arc::new(AtomicUsize::new(0));
                     let tasks: FuturesUnordered<_> = (0..num_asset_lock_proofs_needed)
-                        .map(|i| {
+                        .map(|_| {
                             let permits = Arc::clone(&permits);
+                            let processed = Arc::clone(&processed);
 
                             async move {
                                 let _permit = permits.acquire_owned().await.ok()?;
@@ -1074,9 +1076,11 @@ pub async fn run_strategy_task<'s>(
                                 .await
                                 .ok()?;
 
+                                let prev = processed.fetch_add(1, Ordering::Relaxed);
+
                                 tracing::info!(
-                                    "Successfully obtained asset lock proof number {} from {}",
-                                    i + 1,
+                                    "Successfully obtained asset lock proof {} from {}",
+                                    prev,
                                     num_asset_lock_proofs_needed,
                                 );
 
