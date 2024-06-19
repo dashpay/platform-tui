@@ -23,6 +23,7 @@ dapi-grpc = { path = "../platform/packages/dapi-grpc", features = [
     "client",
 ] }
 rs-dapi-client = { path = "../platform/packages/rs-dapi-client" }
+drive-proof-verifier = { path = "../platform/packages/rs-drive-proof-verifier" }
 tokio = { version = "1.36.0", features = ["full"] }
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
 strategy-tests = { path = "../platform/packages/strategy-tests" }

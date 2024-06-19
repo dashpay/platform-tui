@@ -19,15 +19,12 @@ use crate::{
     Event,
 };
 
-use super::contracts::document_type::contested_documents::ContestedDocumentVoteFormController;
-
-const COMMAND_KEYS: [ScreenCommandKey; 6] = [
+const COMMAND_KEYS: [ScreenCommandKey; 5] = [
     ScreenCommandKey::new("q", "Back to Contracts"),
     ScreenCommandKey::new("C-n", "Next document"),
     ScreenCommandKey::new("C-p", "Prev document"),
     ScreenCommandKey::new("↓", "Scroll doc down"),
     ScreenCommandKey::new("↑", "Scroll doc up"),
-    ScreenCommandKey::new("v", "Vote on contested document"),
 ];
 
 pub(crate) struct DocumentsQuerysetScreenController {
@@ -77,6 +74,14 @@ impl DocumentsQuerysetScreenController {
                 .unwrap_or_else(String::new),
         );
     }
+
+    fn get_selected_document(&self) -> Option<&Document> {
+        let state = self.document_select.state();
+        let selected_index = state.unwrap_one().unwrap_usize();
+        self.current_batch
+            .get(selected_index)
+            .and_then(|doc| doc.as_ref())
+    }
 }
 
 impl ScreenController for DocumentsQuerysetScreenController {
@@ -109,16 +114,6 @@ impl ScreenController for DocumentsQuerysetScreenController {
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::PreviousScreen,
 
-            Event::Key(KeyEvent {
-                code: Key::Char('v'),
-                modifiers: KeyModifiers::NONE,
-            }) => {
-                let contesting_identities = { todo!() };
-                ScreenFeedback::Form(Box::new(ContestedDocumentVoteFormController::new(
-                    contesting_identities,
-                )))
-            }
-
             // Document view keys
             Event::Key(
                 key_event @ KeyEvent {
@@ -149,6 +144,7 @@ impl ScreenController for DocumentsQuerysetScreenController {
                 self.update_document_view();
                 ScreenFeedback::Redraw
             }
+
             _ => ScreenFeedback::None,
         }
     }

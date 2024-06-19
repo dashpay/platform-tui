@@ -115,6 +115,7 @@ pub(super) async fn run_platform_task<'s>(sdk: &Sdk, task: PlatformInfoTask) -> 
         PlatformInfoTask::FetchManyEpochInfo(epoch_num, limit) => {
             let query: LimitQuery<EpochIndex> = LimitQuery {
                 query: epoch_num,
+                start_info: None,
                 limit: Some(limit),
             };
 
