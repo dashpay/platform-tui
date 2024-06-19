@@ -1,5 +1,6 @@
 //! Strategies management backend module.
 
+use std::future::Future;
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     fs::File,
@@ -61,6 +62,8 @@ use drive::{
     query::DriveQuery,
 };
 use futures::future::join_all;
+use futures::stream::FuturesUnordered;
+use futures::FutureExt;
 use rand::{rngs::StdRng, SeedableRng};
 use rs_dapi_client::{DapiRequest, DapiRequestExecutor, RequestSettings};
 use simple_signer::signer::SimpleSigner;
@@ -69,7 +72,7 @@ use strategy_tests::{
     operations::{DocumentAction, DocumentOp, FinalizeBlockOperation, Operation, OperationType},
     IdentityInsertInfo, LocalDocumentQuery, StartIdentities, Strategy, StrategyConfig,
 };
-use tokio::sync::{Mutex, MutexGuard};
+use tokio::sync::{Mutex, MutexGuard, Semaphore};
 
 use crate::backend::{wallet::SingleKeyWallet, Wallet};
 
@@ -1010,13 +1013,14 @@ pub async fn run_strategy_task<'s>(
                     + num_top_ups;
                 let mut asset_lock_proofs: Vec<(AssetLockProof, PrivateKey)> = Vec::new();
                 if num_asset_lock_proofs_needed > 0 {
-                    let mut wallet_lock = app_state.loaded_wallet.lock().await;
+                    let wallet_lock = app_state.loaded_wallet.lock().await;
                     let num_available_utxos = match wallet_lock
-                        .clone()
+                        .as_ref()
                         .expect("No wallet loaded while getting asset lock proofs")
                     {
                         Wallet::SingleKeyWallet(SingleKeyWallet { utxos, .. }) => utxos.len(),
                     };
+                    drop(wallet_lock);
                     if num_available_utxos
                         < num_asset_lock_proofs_needed
                             .try_into()
@@ -1032,55 +1036,64 @@ pub async fn run_strategy_task<'s>(
                         num_asset_lock_proofs_needed
                     );
                     let asset_lock_proof_time = Instant::now();
-                    let mut num_asset_lock_proofs_obtained = 0;
-                    for i in 0..(num_asset_lock_proofs_needed) {
-                        if let Some(wallet) = wallet_lock.as_mut() {
-                            // TO-DO: separate this into a function for start_identities, top ups, and inserts, because the balances should all be different
-                            match wallet.asset_lock_transaction(
-                                None,
-                                strategy.start_identities.starting_balances,
-                            ) {
-                                Ok((asset_lock_transaction, asset_lock_proof_private_key)) => {
-                                    match AppState::broadcast_and_retrieve_asset_lock(
-                                        sdk,
-                                        &asset_lock_transaction,
-                                        &wallet.receive_address(),
-                                    )
-                                    .await
-                                    {
-                                        Ok(asset_lock_proof) => {
-                                            tracing::info!(
-                                                "Successfully obtained asset lock proof number {}",
-                                                i + 1
-                                            );
-                                            num_asset_lock_proofs_obtained += 1;
-                                            asset_lock_proofs.push((
-                                                asset_lock_proof,
-                                                asset_lock_proof_private_key,
-                                            ));
-                                        }
-                                        Err(_) => {
-                                            // this error is handled from within the function
-                                        }
-                                    }
-                                }
-                                Err(e) => {
-                                    tracing::error!(
-                                        "Error creating asset lock transaction: {:?}",
+
+                    // Broadcast asset locks and receive proofs. 24 at the time.
+                    let permits = Arc::new(Semaphore::new(24));
+                    let starting_balance = strategy.start_identities.starting_balances;
+                    let tasks: FuturesUnordered<_> = (0..num_asset_lock_proofs_needed)
+                        .map(|i| {
+                            let permits = Arc::clone(&permits);
+
+                            async move {
+                                let _permit = permits.acquire_owned().await.ok()?;
+
+                                let mut wallet_lock = app_state.loaded_wallet.lock().await;
+
+                                let wallet = wallet_lock.as_mut().expect("Wallet not loaded");
+
+                                let (asset_lock_transaction, asset_lock_proof_private_key) = wallet
+                                    .asset_lock_transaction(None, starting_balance)
+                                    .map_err(|e| {
+                                        tracing::error!(
+                                            "Error creating asset lock transaction: {:?}",
+                                            e
+                                        );
                                         e
-                                    )
-                                }
+                                    })
+                                    .ok()?;
+
+                                let receive_address = wallet.receive_address();
+
+                                drop(wallet_lock);
+
+                                let asset_lock_proof = AppState::broadcast_and_retrieve_asset_lock(
+                                    sdk,
+                                    &asset_lock_transaction,
+                                    &receive_address,
+                                )
+                                .await
+                                .ok()?;
+
+                                tracing::info!(
+                                    "Successfully obtained asset lock proof number {} from {}",
+                                    i + 1,
+                                    num_asset_lock_proofs_needed,
+                                );
+
+                                Some((asset_lock_proof, asset_lock_proof_private_key))
                             }
-                        } else {
-                            tracing::error!("Wallet not loaded");
-                        }
-                    }
+                            .boxed_local()
+                        })
+                        .collect();
+
+                    let asset_lock_proofs: Vec<(AssetLockProof, PrivateKey)> =
+                        join_all(tasks).await.into_iter().flatten().collect();
+
                     tracing::info!(
                         "Took {} seconds to obtain {} asset lock proofs",
                         asset_lock_proof_time.elapsed().as_secs(),
-                        num_asset_lock_proofs_obtained
+                        asset_lock_proofs.len()
                     );
-                    drop(wallet_lock); // I don't think this is necessary anymore after moving into the if statement
                 }
 
                 // Get the execution mode as a string for logging
