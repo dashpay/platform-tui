@@ -1,4 +1,4 @@
-use dashcore_rpc::{Auth, Client, RpcApi};
+use dashcore_rpc::{dashcore, Auth, Client, RpcApi};
 use dashmap::DashMap;
 use hdrhistogram::Histogram;
 use rs_platform_explorer::config::Config;
@@ -70,12 +70,12 @@ async fn test_core_rpc_overload() {
             loop {
                 report_interval.tick().await;
 
-                tracing::info!("{}", report_summary.report_message());
+                tracing::info!("{}", report_summary.report_message(false));
             }
         })
     };
 
-    let permits = Arc::new(Semaphore::new(100));
+    let permits = Arc::new(Semaphore::new(500));
 
     loop {
         let core_client = Arc::clone(&core_client);
@@ -85,13 +85,21 @@ async fn test_core_rpc_overload() {
         let permit = permits.acquire_owned().await.unwrap();
 
         tokio::task::spawn_blocking(move || {
-            let id = "e8d89b4ddf987b5229e169d5dc2c19662d2e51363e4a73d6248147ac9dca32c0";
-            let hash = "3d41a002f10c44e7a8540c14ce9cff9a950bdd0f6b01c64971bba805437da053";
-            let signature = "8880dfe1935e97a4ced3b551aa5b33ddf6685287a110518d68ebb4b1f8f6c9a7195332fbe05c03f9fed14a6c2ab567120035ce460a6814ed18c988e36e430baa4343867e83870d463068d3b6b366947fd4006ad99c345befecc530f87e6999bc";
-
             let start_time = Instant::now();
 
-            let result = core_client.get_verifyislock(id, hash, signature, Some(tip));
+            // let id = "e8d89b4ddf987b5229e169d5dc2c19662d2e51363e4a73d6248147ac9dca32c0";
+            // let hash = "3d41a002f10c44e7a8540c14ce9cff9a950bdd0f6b01c64971bba805437da053";
+            // let signature = "8880dfe1935e97a4ced3b551aa5b33ddf6685287a110518d68ebb4b1f8f6c9a7195332fbe05c03f9fed14a6c2ab567120035ce460a6814ed18c988e36e430baa4343867e83870d463068d3b6b366947fd4006ad99c345befecc530f87e6999bc";
+            //
+            //
+            // let result = core_client.get_verifyislock(id, hash, signature, Some(tip));
+
+            let txid = dashcore::Txid::from_hex(
+                "681a5c75cfb29e0f395a9f284baecc68d2d5d4d6efa94f6e2a3bd6fe7228744a",
+            )
+            .expect("failed to parse txid hex");
+
+            let result = core_client.get_raw_transaction(&txid, None);
 
             match result {
                 Ok(_) => summary.add_ok(start_time.elapsed()),
@@ -103,6 +111,7 @@ async fn test_core_rpc_overload() {
     }
 }
 
+// TODO: Do not duplicate one from query test
 struct TestSummary {
     start_time: Instant,
     oks: AtomicU64,
@@ -148,8 +157,7 @@ impl TestSummary {
             .sum()
     }
 
-    // TODO: Drop intermediate values after report so we show only difference and then summary?
-    fn report_message(&self) -> String {
+    fn report_message(&self, cleanup: bool) -> String {
         let elapsed_secs = self.start_time.elapsed().as_secs();
 
         let oks = self.oks.load(Ordering::Relaxed);
@@ -181,12 +189,14 @@ impl TestSummary {
         let p90 = hist_guard.value_at_quantile(0.90);
         let p99 = hist_guard.value_at_quantile(0.99);
 
-        hist_guard.clear();
+        if cleanup {
+            hist_guard.clear();
+            self.oks.store(0, Ordering::Relaxed);
+            self.errors_per_code.clear();
+            // TODO: start time should be reset
+        }
 
         drop(hist_guard);
-
-        self.oks.store(0, Ordering::Relaxed);
-        self.errors_per_code.clear();
 
         format!(
             "{elapsed_secs} secs passed. {total} processed ({rate} q/s): {oks} successful, {errors} failed{error_message}. Durations: p50={}s, p90={}s, p99={}s",
