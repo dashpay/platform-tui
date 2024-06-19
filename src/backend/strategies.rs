@@ -1094,9 +1094,10 @@ pub async fn run_strategy_task<'s>(
                         join_all(tasks).await.into_iter().flatten().collect();
 
                     tracing::info!(
-                        "Took {} seconds to obtain {} asset lock proofs",
+                        "Took {} seconds to obtain {} asset lock proofs from {} required",
                         asset_lock_proof_time.elapsed().as_secs(),
-                        asset_lock_proofs.len()
+                        asset_lock_proofs.len(),
+                        num_asset_lock_proofs_needed
                     );
                 }
 
