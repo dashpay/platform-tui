@@ -24,6 +24,7 @@ use dpp::{
     identity::{
         accessors::IdentityGettersV0,
         identity_public_key::accessors::v0::IdentityPublicKeyGettersV0, KeyType, Purpose,
+        SecurityLevel,
     },
     platform_value::Value,
     prelude::{DataContract, Identity, IdentityPublicKey},
@@ -170,16 +171,16 @@ impl AppState {
                         ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally,
                 };
 
-                let contenders = match ContenderWithSerializedDocument::fetch_many(sdk, query).await
-                {
-                    Ok(contenders) => contenders,
-                    Err(e) => {
-                        return BackendEvent::TaskCompleted {
-                            task: Task::Document(task),
-                            execution_result: Err(format!("{e}")),
+                let contenders =
+                    match ContenderWithSerializedDocument::fetch_many(sdk, query.clone()).await {
+                        Ok(contenders) => contenders,
+                        Err(e) => {
+                            return BackendEvent::TaskCompleted {
+                                task: Task::Document(task),
+                                execution_result: Err(format!("{e}")),
+                            }
                         }
-                    }
-                };
+                    };
 
                 BackendEvent::TaskCompleted {
                     task: Task::Document(task),
@@ -194,7 +195,7 @@ impl AppState {
                     let query = VotePollsByDocumentTypeQuery {
                         contract_id: data_contract.id(),
                         document_type_name: document_type.name().to_string(),
-                        index_name: contested_index.name,
+                        index_name: contested_index.name.clone(),
                         start_at_value: None,
                         start_index_values: vec![],
                         end_index_values: vec![],
@@ -226,7 +227,7 @@ impl AppState {
                 }
             }
             DocumentTask::VoteOnContestedResource(vote_poll, vote_choice) => {
-                let vote = Vote::default();
+                let mut vote = Vote::default();
 
                 // Get signer from loaded_identity
                 // Convert loaded_identity to SimpleSigner
@@ -235,7 +236,8 @@ impl AppState {
                     .loaded_identity
                     .lock()
                     .await
-                    .expect("Expected to have a loaded identity");
+                    .clone()
+                    .expect("Expected to get a loaded identity");
                 let mut signer = SimpleSigner::default();
                 let Identity::V0(identity_v0) = &loaded_identity_lock;
                 for (key_id, public_key) in &identity_v0.public_keys {
@@ -248,17 +250,27 @@ impl AppState {
                             .insert(public_key.clone(), private_key_bytes.clone());
                     }
                 }
-                drop(loaded_identity_lock);
-                drop(identity_private_keys_lock);
+
+                let voting_public_key = match loaded_identity_lock.get_first_public_key_matching(
+                    Purpose::VOTING,
+                    HashSet::from(SecurityLevel::full_range()),
+                    HashSet::from(KeyType::all_key_types()),
+                ) {
+                    Some(voting_key) => voting_key,
+                    None => return BackendEvent::TaskCompleted {
+                        task: Task::Document(task),
+                        execution_result: Err("No voting key in the loaded identity. It's probably not an evonode identity.".to_string()),
+                    }
+                };
 
                 match vote {
-                    Vote::ResourceVote(resource_vote) => match resource_vote {
-                        ResourceVote::V0(resource_vote_v0) => {
+                    Vote::ResourceVote(ref mut resource_vote) => match resource_vote {
+                        ResourceVote::V0(ref mut resource_vote_v0) => {
                             resource_vote_v0.vote_poll = vote_poll.clone();
                             resource_vote_v0.resource_vote_choice = *vote_choice;
                             match vote
                                 .put_to_platform_and_wait_for_response(
-                                    voter_pro_tx_hash,
+                                    loaded_identity_lock.id(),
                                     voting_public_key,
                                     sdk,
                                     &signer,

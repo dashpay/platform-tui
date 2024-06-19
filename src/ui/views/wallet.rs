@@ -30,12 +30,13 @@ use crate::{
     Event,
 };
 
-const WALLET_LOADED_COMMANDS: [ScreenCommandKey; 5] = [
+const WALLET_LOADED_COMMANDS: [ScreenCommandKey; 6] = [
     ScreenCommandKey::new("b", "Refresh wallet utxos and balance"),
     ScreenCommandKey::new("c", "Copy Receive Address"),
     ScreenCommandKey::new("i", "Register identity"),
     ScreenCommandKey::new("u", "Get more utxos"),
     ScreenCommandKey::new("m", "Clear loaded wallet"),
+    ScreenCommandKey::new("p", "Load Evonode Identity"),
 ];
 
 const IDENTITY_LOADED_COMMANDS: [ScreenCommandKey; 5] = [
@@ -411,6 +412,13 @@ impl ScreenController for WalletScreenController {
                 }
             }
 
+            Event::Key(KeyEvent {
+                code: Key::Char('p'),
+                modifiers: KeyModifiers::NONE,
+            }) if self.wallet_loaded => {
+                ScreenFeedback::Form(Box::new(LoadEvonodeIdentityFormController::new()))
+            }
+
             Event::Backend(
                 BackendEvent::AppStateUpdated(AppStateUpdate::LoadedWallet(wallet))
                 | BackendEvent::TaskCompletedStateChange {
@@ -595,5 +603,49 @@ fn display_wallet(wallet: &Wallet) -> String {
             let utxo_count = single_key_wallet.utxos.len();
             format!("{}\nNumber of UTXOs: {}", description, utxo_count)
         }
+    }
+}
+
+struct LoadEvonodeIdentityFormController {
+    input: TextInput<DefaultTextInputParser<String>>,
+}
+
+impl LoadEvonodeIdentityFormController {
+    fn new() -> Self {
+        Self {
+            input: TextInput::new("Enter Evonode pro-tx-hash (base58 format)"),
+        }
+    }
+}
+
+impl FormController for LoadEvonodeIdentityFormController {
+    fn on_event(&mut self, event: KeyEvent) -> FormStatus {
+        match self.input.on_event(event) {
+            InputStatus::Done(pro_tx_hash) => FormStatus::Done {
+                task: Task::Identity(IdentityTask::LoadEvonodeIdentity(pro_tx_hash)),
+                block: true,
+            },
+            status => status.into(),
+        }
+    }
+
+    fn form_name(&self) -> &'static str {
+        "Load Evonode Identity"
+    }
+
+    fn step_view(&mut self, frame: &mut Frame, area: Rect) {
+        self.input.view(frame, area)
+    }
+
+    fn step_name(&self) -> &'static str {
+        "Pro-tx-hash"
+    }
+
+    fn step_index(&self) -> u8 {
+        0
+    }
+
+    fn steps_number(&self) -> u8 {
+        1
     }
 }

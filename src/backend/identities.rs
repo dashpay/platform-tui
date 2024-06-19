@@ -27,7 +27,6 @@ use dash_sdk::{
 };
 use dpp::identity::SecurityLevel;
 use dpp::{
-    consensus::basic::state_transition,
     dashcore::{psbt::serialize::Serialize, Address, PrivateKey, Transaction},
     identity::{
         accessors::{IdentityGettersV0, IdentitySettersV0},
@@ -87,6 +86,7 @@ pub enum IdentityTask {
     },
     ClearLoadedIdentity,
     TransferCredits(String, f64),
+    LoadEvonodeIdentity(String),
 }
 
 impl AppState {
@@ -316,6 +316,37 @@ impl AppState {
                             "No loaded identity for credit transfer".to_string(),
                         )),
                     }
+                }
+            }
+            IdentityTask::LoadEvonodeIdentity(ref pro_tx_hash) => {
+                let mut loaded_identity = self.loaded_identity.lock().await;
+                let result = fetch_identity_by_b58_id(sdk, &pro_tx_hash).await;
+                match result {
+                    Ok(evonode_identity_option) => {
+                        if let Some(evonode_identity) = evonode_identity_option.0 {
+                            loaded_identity.replace(evonode_identity);
+                            BackendEvent::TaskCompletedStateChange {
+                                task: Task::Identity(task),
+                                execution_result: Ok(CompletedTaskPayload::String(
+                                    "Loaded Evonode Identity".to_string(),
+                                )),
+                                app_state_update: AppStateUpdate::LoadedEvonodeIdentity(
+                                    MutexGuard::map(loaded_identity, |x| {
+                                        x.as_mut().expect("assigned above")
+                                    }),
+                                ),
+                            }
+                        } else {
+                            BackendEvent::TaskCompleted {
+                                task: Task::Identity(task),
+                                execution_result: Err(format!("No identity in Option<Identity>")),
+                            }
+                        }
+                    }
+                    Err(e) => BackendEvent::TaskCompleted {
+                        task: Task::Identity(task),
+                        execution_result: Err(format!("{e}")),
+                    },
                 }
             }
         }
