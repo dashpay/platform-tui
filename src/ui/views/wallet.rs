@@ -19,8 +19,8 @@ use crate::{
     },
     ui::{
         form::{
-            parsers::DefaultTextInputParser, FormController, FormStatus, Input, InputStatus,
-            TextInput,
+            parsers::DefaultTextInputParser, ComposedInput, Field, FormController, FormStatus,
+            Input, InputStatus, TextInput,
         },
         screen::{
             info_display::display_info, utils::impl_builder, widgets::info::Info, ScreenCommandKey,
@@ -607,13 +607,25 @@ fn display_wallet(wallet: &Wallet) -> String {
 }
 
 struct LoadEvonodeIdentityFormController {
-    input: TextInput<DefaultTextInputParser<String>>,
+    input: ComposedInput<(
+        Field<TextInput<DefaultTextInputParser<String>>>,
+        Field<TextInput<DefaultTextInputParser<String>>>,
+    )>,
 }
 
 impl LoadEvonodeIdentityFormController {
     fn new() -> Self {
         Self {
-            input: TextInput::new("Enter Evonode pro-tx-hash (base58 format)"),
+            input: ComposedInput::new((
+                Field::new(
+                    "Enter Evonode proTxHash (base58 format)",
+                    TextInput::new("proTxHash"),
+                ),
+                Field::new(
+                    "Enter the Evonode voting private key",
+                    TextInput::new("Voting private key"),
+                ),
+            )),
         }
     }
 }
@@ -621,8 +633,11 @@ impl LoadEvonodeIdentityFormController {
 impl FormController for LoadEvonodeIdentityFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
         match self.input.on_event(event) {
-            InputStatus::Done(pro_tx_hash) => FormStatus::Done {
-                task: Task::Identity(IdentityTask::LoadEvonodeIdentity(pro_tx_hash)),
+            InputStatus::Done((pro_tx_hash, voting_private_key)) => FormStatus::Done {
+                task: Task::Identity(IdentityTask::LoadEvonodeIdentity(
+                    pro_tx_hash,
+                    voting_private_key,
+                )),
                 block: true,
             },
             status => status.into(),

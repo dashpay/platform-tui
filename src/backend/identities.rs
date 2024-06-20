@@ -86,7 +86,7 @@ pub enum IdentityTask {
     },
     ClearLoadedIdentity,
     TransferCredits(String, f64),
-    LoadEvonodeIdentity(String),
+    LoadEvonodeIdentity(String, String),
 }
 
 impl AppState {
@@ -318,12 +318,27 @@ impl AppState {
                     }
                 }
             }
-            IdentityTask::LoadEvonodeIdentity(ref pro_tx_hash) => {
+            IdentityTask::LoadEvonodeIdentity(ref pro_tx_hash, ref voting_private_key) => {
                 let mut loaded_identity = self.loaded_identity.lock().await;
                 let result = fetch_identity_by_b58_id(sdk, &pro_tx_hash).await;
                 match result {
                     Ok(evonode_identity_option) => {
                         if let Some(evonode_identity) = evonode_identity_option.0 {
+                            let voting_public_key_id = evonode_identity
+                                .get_first_public_key_matching(
+                                    Purpose::VOTING,
+                                    HashSet::from(SecurityLevel::full_range()),
+                                    HashSet::from(KeyType::all_key_types()),
+                                )
+                                .expect("Expected to find a voting key")
+                                .id();
+
+                            let mut identity_private_keys = self.identity_private_keys.lock().await;
+                            identity_private_keys.insert(
+                                (evonode_identity.id(), voting_public_key_id),
+                                voting_private_key.clone().into_bytes(),
+                            );
+
                             loaded_identity.replace(evonode_identity);
                             BackendEvent::TaskCompletedStateChange {
                                 task: Task::Identity(task),
