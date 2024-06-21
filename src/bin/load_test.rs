@@ -378,7 +378,7 @@ async fn broadcast_contract_variants(
             CreatedDataContract::from_contract_and_identity_nonce(
                 data_contract_variant,
                 identity_nonce,
-                PlatformVersion::latest(),
+                sdk.version(),
             )
             .expect("expected to get contract")
         })
@@ -420,7 +420,7 @@ async fn broadcast_contract_variants(
                 &partial_identity,
                 key_to_use.id(),
                 signer.as_ref(),
-                PlatformVersion::latest(),
+                sdk.version(),
                 None,
             )
             .expect("expected transition");

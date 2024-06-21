@@ -101,7 +101,10 @@ pub(super) async fn run_wallet_task<'s>(
                     },
                 }
             } else {
-                BackendEvent::None
+                BackendEvent::TaskCompleted {
+                    task: Task::Wallet(task),
+                    execution_result: Err(format!("No wallet loaded")),
+                }
             }
         }
         WalletTask::CopyAddress => {
@@ -114,7 +117,10 @@ pub(super) async fn run_wallet_task<'s>(
                     execution_result: Ok("Copied Address".into()),
                 }
             } else {
-                BackendEvent::None
+                BackendEvent::TaskCompleted {
+                    task: Task::Wallet(task),
+                    execution_result: Err(format!("No wallet loaded")),
+                }
             }
         }
         WalletTask::ClearLoadedWallet => {
@@ -146,7 +152,10 @@ pub(super) async fn run_wallet_task<'s>(
                     }
                 }
             } else {
-                BackendEvent::None
+                BackendEvent::TaskCompleted {
+                    task: Task::Wallet(task),
+                    execution_result: Err(format!("No wallet loaded")),
+                }
             }
         }
     }
