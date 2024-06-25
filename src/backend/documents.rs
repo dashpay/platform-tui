@@ -196,10 +196,10 @@ impl AppState {
                         document_type_name: document_type.name().to_string(),
                         index_name: contested_index.name.clone(),
                         start_at_value: None,
-                        start_index_values: vec![],
+                        start_index_values: vec!["dash".into()], // hardcoded for dpns
                         end_index_values: vec![],
                         limit: None,
-                        order_ascending: false,
+                        order_ascending: true,
                     };
 
                     let contested_resources = ContestedResource::fetch_many(sdk, query).await;
@@ -256,9 +256,13 @@ impl AppState {
                     HashSet::from(KeyType::all_key_types()),
                 ) {
                     Some(voting_key) => voting_key,
-                    None => return BackendEvent::TaskCompleted {
-                        task: Task::Document(task),
-                        execution_result: Err("No voting key in the loaded identity. It's probably not an evonode identity.".to_string()),
+                    None => {
+                        return BackendEvent::TaskCompleted {
+                            task: Task::Document(task),
+                            execution_result: Err(
+                                "No voting key in the loaded identity.".to_string()
+                            ),
+                        };
                     }
                 };
 

@@ -1,6 +1,7 @@
 //! Identities backend logic.
 
 use dashcore::hashes::Hash;
+use drive::drive::identity::key::fetch;
 use std::{
     collections::{BTreeMap, HashSet},
     time::Duration,
@@ -19,8 +20,9 @@ use dapi_grpc::{
 use dash_sdk::{
     platform::{
         transition::{
-            broadcast::BroadcastStateTransition, put_identity::PutIdentity,
-            top_up_identity::TopUpIdentity, withdraw_from_identity::WithdrawFromIdentity,
+            broadcast::BroadcastStateTransition, put_document::PutDocument,
+            put_identity::PutIdentity, top_up_identity::TopUpIdentity,
+            withdraw_from_identity::WithdrawFromIdentity,
         },
         Fetch,
     },
@@ -337,48 +339,53 @@ impl AppState {
                     }
                 }
             }
-            IdentityTask::LoadEvonodeIdentity(ref pro_tx_hash, ref voting_private_key_in_wif) => {
+            IdentityTask::LoadEvonodeIdentity(ref pro_tx_hash, ref private_key_in_wif) => {
                 // Convert proTxHash to bytes
                 let pro_tx_hash_bytes = hex::decode(pro_tx_hash).expect("Invalid proTxHash string");
 
-                // Get the voting address from the private key
-                let voting_private_key =
-                    PrivateKey::from_wif(voting_private_key_in_wif).expect("expected to convert");
-                let voting_public_key = voting_private_key.public_key(&Secp256k1::new());
-                let voting_pubkey_hash = voting_public_key.pubkey_hash();
-                let voting_address = voting_pubkey_hash.as_byte_array();
+                // Get the address from the private key
+                let private_key =
+                    PrivateKey::from_wif(private_key_in_wif).expect("expected to convert");
+                let public_key = private_key.public_key(&Secp256k1::new());
+                let pubkey_hash = public_key.pubkey_hash();
+                let address = pubkey_hash.as_byte_array();
 
-                // Hash voting address with proTxHash to get identity id of the voting identity
+                // Hash address with proTxHash to get identity id of the identity
                 let mut hasher = Sha256::new();
                 hasher.update(pro_tx_hash_bytes);
-                hasher.update(voting_address);
+                hasher.update(address);
                 let identity_id = hasher.finalize();
 
                 // Convert to bs58
                 let identity_id_bs58 = bs58::encode(identity_id).into_string();
 
-                // Fetch the voting identity from Platform
+                // Fetch the identity from Platform
                 let result = fetch_identity_by_b58_id(sdk, &identity_id_bs58).await;
                 match result {
                     Ok(evonode_identity_option) => {
                         if let Some(evonode_identity) = evonode_identity_option.0 {
-                            tracing::info!("Evonode: {:?}", evonode_identity);
-
-                            // Get the voting IdentityPublicKey from Platform
+                            // Get the IdentityPublicKey from Platform
                             // This is necessary because we need the id, which PublicKey struct doesn't have
-                            let fetched_voting_public_key = evonode_identity
+                            let fetched_voting_public_key_result = evonode_identity
                                 .get_first_public_key_matching(
                                     Purpose::VOTING,
                                     SecurityLevel::full_range().into(),
                                     KeyType::all_key_types().into(),
-                                )
-                                .expect("Expected a voting key");
+                                );
+
+                            let fetched_voting_public_key = match fetched_voting_public_key_result {
+                                Some(key) => key,
+                                None => return BackendEvent::TaskCompleted {
+                                    task: Task::Identity(task),
+                                    execution_result: Err(format!("No voting key found (only voting Evonode identities are currently supported)")),
+                                }
+                            };
 
                             // Insert private key into the state for later use
                             let mut identity_private_keys = self.identity_private_keys.lock().await;
                             identity_private_keys.insert(
                                 (evonode_identity.id(), fetched_voting_public_key.id()),
-                                voting_private_key_in_wif.clone().into_bytes(),
+                                private_key.to_bytes(),
                             );
 
                             // Set loaded identity
@@ -448,7 +455,7 @@ impl AppState {
     pub(crate) async fn register_dpns_name(
         &self,
         sdk: &Sdk,
-        identifier: &Identifier, // once contract names are enabled, we can use this field
+        _identifier: &Identifier, // Once contract names are enabled, we can use this field
         name: &str,
     ) -> Result<(), Error> {
         let mut rng = StdRng::from_entropy();
@@ -545,18 +552,25 @@ impl AppState {
         };
         drop(identity_private_keys_lock);
 
+        let public_key =
+            match identity.get_first_public_key_matching(
+                Purpose::AUTHENTICATION,
+                HashSet::from([SecurityLevel::CRITICAL]),
+                HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
+            ) {
+                Some(key) => key,
+                None => return Err(Error::DPNSError(
+                    "Identity doesn't have an authentication key for signing document transitions"
+                        .to_string(),
+                )),
+            };
+
         let preorder_transition =
             DocumentsBatchTransition::new_document_creation_transition_from_document(
-                preorder_document,
+                preorder_document.clone(),
                 preorder_document_type,
                 entropy.0,
-                identity
-                    .get_first_public_key_matching(
-                        Purpose::AUTHENTICATION,
-                        HashSet::from([SecurityLevel::CRITICAL]),
-                        HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
-                    )
-                    .expect("expected to get a signing key"),
+                public_key,
                 identity_contract_nonce,
                 0,
                 &signer,
@@ -568,7 +582,7 @@ impl AppState {
 
         let domain_transition =
             DocumentsBatchTransition::new_document_creation_transition_from_document(
-                domain_document,
+                domain_document.clone(),
                 domain_document_type,
                 entropy.0,
                 identity
@@ -587,11 +601,51 @@ impl AppState {
                 None,
             )?;
 
-        tracing::info!("Broadcasting preorder document...");
         preorder_transition.broadcast(sdk).await?;
 
-        tracing::info!("Broadcasting domain document...");
+        let _preorder_document =
+            match <dash_sdk::platform::Document as PutDocument<SimpleSigner>>::wait_for_response::<
+                '_,
+                '_,
+                '_,
+            >(
+                &preorder_document,
+                sdk,
+                preorder_transition,
+                dpns_contract.clone().into(),
+            )
+            .await
+            {
+                Ok(document) => document,
+                Err(e) => {
+                    return Err(Error::DPNSError(format!(
+                        "Preorder document failed to process: {e}"
+                    )));
+                }
+            };
+
         domain_transition.broadcast(sdk).await?;
+
+        let _domain_document =
+            match <dash_sdk::platform::Document as PutDocument<SimpleSigner>>::wait_for_response::<
+                '_,
+                '_,
+                '_,
+            >(
+                &domain_document,
+                sdk,
+                domain_transition,
+                dpns_contract.into(),
+            )
+            .await
+            {
+                Ok(document) => document,
+                Err(e) => {
+                    return Err(Error::DPNSError(format!(
+                        "Domain document failed to process: {e}"
+                    )));
+                }
+            };
 
         Ok(())
     }

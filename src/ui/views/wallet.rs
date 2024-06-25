@@ -633,12 +633,12 @@ impl LoadEvonodeIdentityFormController {
         Self {
             input: ComposedInput::new((
                 Field::new(
-                    "Enter Evonode proTxHash (base58 format)",
-                    TextInput::new("proTxHash"),
+                    "proTxHash",
+                    TextInput::new("Enter Evonode proTxHash in base58 format"),
                 ),
                 Field::new(
-                    "Enter the Evonode voting private key",
-                    TextInput::new("Voting private key"),
+                    "Private Key",
+                    TextInput::new("Enter the Evonode private key in WIF format"),
                 ),
             )),
         }
@@ -648,11 +648,8 @@ impl LoadEvonodeIdentityFormController {
 impl FormController for LoadEvonodeIdentityFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
         match self.input.on_event(event) {
-            InputStatus::Done((pro_tx_hash, voting_private_key)) => FormStatus::Done {
-                task: Task::Identity(IdentityTask::LoadEvonodeIdentity(
-                    pro_tx_hash,
-                    voting_private_key,
-                )),
+            InputStatus::Done((pro_tx_hash, private_key)) => FormStatus::Done {
+                task: Task::Identity(IdentityTask::LoadEvonodeIdentity(pro_tx_hash, private_key)),
                 block: true,
             },
             status => status.into(),
@@ -668,14 +665,14 @@ impl FormController for LoadEvonodeIdentityFormController {
     }
 
     fn step_name(&self) -> &'static str {
-        "Pro-tx-hash"
+        self.input.step_name()
     }
 
     fn step_index(&self) -> u8 {
-        0
+        self.input.step_index()
     }
 
     fn steps_number(&self) -> u8 {
-        1
+        self.input.steps_number()
     }
 }

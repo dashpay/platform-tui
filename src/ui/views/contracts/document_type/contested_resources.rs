@@ -166,7 +166,7 @@ impl ScreenController for ContestedResourcesScreenController {
                     .get_selected_resource()
                     .expect("Expected to get a resource from the selection");
 
-                let index_values = vec![resource.clone()]; // don't know if this is right. don't really know what index_values is supposed to be
+                let index_values = vec![Value::from("dash"), resource.clone()]; // hardcoded for dpns
 
                 let index = self
                     .document_type
@@ -220,12 +220,28 @@ impl ScreenController for ContestedResourcesScreenController {
             // Backend events handling
             Event::Backend(BackendEvent::TaskCompleted {
                 task: Task::Document(DocumentTask::QueryVoteContenders(_, _, _, _)),
-                execution_result:
-                    Ok(CompletedTaskPayload::ContestedResourceContenders(vote_poll, contenders)),
-            }) => ScreenFeedback::Form(Box::new(ContestedResourceVoteFormController::new(
-                vote_poll.clone(),
-                contenders.clone(),
-            )) as Box<dyn FormController>),
+                execution_result,
+            }) => match execution_result {
+                Ok(CompletedTaskPayload::ContestedResourceContenders(vote_poll, contenders)) => {
+                    ScreenFeedback::Form(Box::new(ContestedResourceVoteFormController::new(
+                        vote_poll.clone(),
+                        contenders.clone(),
+                    )) as Box<dyn FormController>)
+                }
+                Err(_) => {
+                    self.resource_view = Info::new_from_result(execution_result);
+                    ScreenFeedback::Redraw
+                }
+                _ => ScreenFeedback::None,
+            },
+
+            Event::Backend(BackendEvent::TaskCompleted {
+                task: Task::Document(DocumentTask::VoteOnContestedResource(_, _)),
+                execution_result,
+            }) => {
+                self.resource_view = Info::new_from_result(execution_result);
+                ScreenFeedback::Redraw
+            }
 
             _ => ScreenFeedback::None,
         }
