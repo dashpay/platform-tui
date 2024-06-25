@@ -32,7 +32,7 @@ use tuirealm::{
 };
 
 use crate::{
-    backend::{as_toml, BackendEvent, CompletedTaskPayload},
+    backend::{as_json_string, BackendEvent, CompletedTaskPayload},
     ui::screen::{
         widgets::info::Info, ScreenCommandKey, ScreenController, ScreenFeedback, ScreenToggleKey,
     },
@@ -89,7 +89,7 @@ impl ContestedResourcesScreenController {
                 .0
                 .get(0)
                 .and_then(|v| match v {
-                    ContestedResource::Value(value) => Some(as_toml(value)),
+                    ContestedResource::Value(value) => Some(as_json_string(value)),
                 })
                 .unwrap_or_else(String::new),
         );
@@ -110,7 +110,7 @@ impl ContestedResourcesScreenController {
                 .0
                 .get(self.resource_select.state().unwrap_one().unwrap_usize())
                 .and_then(|v| match v {
-                    ContestedResource::Value(value) => Some(as_toml(value)),
+                    ContestedResource::Value(value) => Some(as_json_string(value)),
                 })
                 .unwrap_or_else(String::new),
         );

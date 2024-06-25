@@ -7,7 +7,7 @@ use dpp::{
 };
 use tokio::sync::Mutex;
 
-use super::{as_toml, state::KnownContractsMap, AppStateUpdate, BackendEvent, Task};
+use super::{as_json_string, state::KnownContractsMap, AppStateUpdate, BackendEvent, Task};
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum ContractTask {
@@ -31,7 +31,7 @@ pub(super) async fn run_contract_task<'s>(
                 .await
             {
                 Ok(Some(data_contract)) => {
-                    let contract_str = as_toml(&data_contract);
+                    let contract_str = as_json_string(&data_contract);
                     let mut contracts_lock = known_contracts.lock().await;
                     contracts_lock.insert(DASHPAY_CONTRACT_NAME.to_owned(), data_contract);
 
@@ -55,7 +55,7 @@ pub(super) async fn run_contract_task<'s>(
             match DataContract::fetch(&sdk, Into::<Identifier>::into(dpns_contract::ID_BYTES)).await
             {
                 Ok(Some(data_contract)) => {
-                    let contract_str = as_toml(&data_contract);
+                    let contract_str = as_json_string(&data_contract);
                     let mut contracts_lock = known_contracts.lock().await;
                     contracts_lock.insert(DPNS_CONTRACT_NAME.to_owned(), data_contract);
 
@@ -89,7 +89,7 @@ pub(super) async fn run_contract_task<'s>(
                 .expect("Expected to convert contract_id_string to Identifier");
             match DataContract::fetch(&sdk, id).await {
                 Ok(Some(data_contract)) => {
-                    let contract_str = as_toml(&data_contract);
+                    let contract_str = as_json_string(&data_contract);
                     let mut contracts_lock = known_contracts.lock().await;
                     contracts_lock.insert(contract_id_string.to_string(), data_contract);
 

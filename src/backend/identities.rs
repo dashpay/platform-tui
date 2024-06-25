@@ -1,5 +1,6 @@
 //! Identities backend logic.
 
+use dashcore::hashes::Hash;
 use std::{
     collections::{BTreeMap, HashSet},
     time::Duration,
@@ -25,7 +26,10 @@ use dash_sdk::{
     },
     Sdk,
 };
-use dpp::identity::SecurityLevel;
+use dpp::{
+    dashcore::{self, key::Secp256k1},
+    identity::SecurityLevel,
+};
 use dpp::{
     dashcore::{psbt::serialize::Serialize, Address, PrivateKey, Transaction},
     identity::{
@@ -52,6 +56,7 @@ use dpp::{
 use dpp::{identity::Purpose, ProtocolError};
 use rand::{rngs::StdRng, SeedableRng};
 use rs_dapi_client::{DapiRequestExecutor, RequestSettings};
+use sha2::{Digest, Sha256};
 use simple_signer::signer::SimpleSigner;
 use tokio::sync::{MappedMutexGuard, MutexGuard};
 
@@ -318,28 +323,55 @@ impl AppState {
                     }
                 }
             }
-            IdentityTask::LoadEvonodeIdentity(ref pro_tx_hash, ref voting_private_key) => {
-                let mut loaded_identity = self.loaded_identity.lock().await;
-                let result = fetch_identity_by_b58_id(sdk, &pro_tx_hash).await;
+            IdentityTask::LoadEvonodeIdentity(ref pro_tx_hash, ref voting_private_key_in_wif) => {
+                // Convert proTxHash to bytes
+                let pro_tx_hash_bytes = hex::decode(pro_tx_hash).expect("Invalid proTxHash string");
+
+                // Get the voting address from the private key
+                let voting_private_key =
+                    PrivateKey::from_wif(voting_private_key_in_wif).expect("expected to convert");
+                let voting_public_key = voting_private_key.public_key(&Secp256k1::new());
+                let voting_pubkey_hash = voting_public_key.pubkey_hash();
+                let voting_address = voting_pubkey_hash.as_byte_array();
+
+                // Hash voting address with proTxHash to get identity id of the voting identity
+                let mut hasher = Sha256::new();
+                hasher.update(pro_tx_hash_bytes);
+                hasher.update(voting_address);
+                let identity_id = hasher.finalize();
+
+                // Convert to bs58
+                let identity_id_bs58 = bs58::encode(identity_id).into_string();
+
+                // Fetch the voting identity from Platform
+                let result = fetch_identity_by_b58_id(sdk, &identity_id_bs58).await;
                 match result {
                     Ok(evonode_identity_option) => {
                         if let Some(evonode_identity) = evonode_identity_option.0 {
-                            let voting_public_key_id = evonode_identity
+                            tracing::info!("Evonode: {:?}", evonode_identity);
+
+                            // Get the voting IdentityPublicKey from Platform
+                            // This is necessary because we need the id, which PublicKey struct doesn't have
+                            let fetched_voting_public_key = evonode_identity
                                 .get_first_public_key_matching(
                                     Purpose::VOTING,
-                                    HashSet::from(SecurityLevel::full_range()),
-                                    HashSet::from(KeyType::all_key_types()),
+                                    SecurityLevel::full_range().into(),
+                                    KeyType::all_key_types().into(),
                                 )
-                                .expect("Expected to find a voting key")
-                                .id();
+                                .expect("Expected a voting key");
 
+                            // Insert private key into the state for later use
                             let mut identity_private_keys = self.identity_private_keys.lock().await;
                             identity_private_keys.insert(
-                                (evonode_identity.id(), voting_public_key_id),
-                                voting_private_key.clone().into_bytes(),
+                                (evonode_identity.id(), fetched_voting_public_key.id()),
+                                voting_private_key_in_wif.clone().into_bytes(),
                             );
 
+                            // Set loaded identity
+                            let mut loaded_identity = self.loaded_identity.lock().await;
                             loaded_identity.replace(evonode_identity);
+
+                            // Return BackendEvent
                             BackendEvent::TaskCompletedStateChange {
                                 task: Task::Identity(task),
                                 execution_result: Ok(CompletedTaskPayload::String(
@@ -354,7 +386,7 @@ impl AppState {
                         } else {
                             BackendEvent::TaskCompleted {
                                 task: Task::Identity(task),
-                                execution_result: Err(format!("No identity in Option<Identity>")),
+                                execution_result: Err(format!("No identity found")),
                             }
                         }
                     }

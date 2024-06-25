@@ -1,10 +1,3 @@
-use std::{
-    collections::{BTreeMap, HashSet},
-    iter,
-    sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
-};
-
 use dash_sdk::platform::transition::vote::PutVote;
 use dash_sdk::{
     platform::{transition::put_document::PutDocument, DocumentQuery, FetchMany},
@@ -47,6 +40,12 @@ use drive_proof_verifier::types::ContestedResource;
 use futures::{stream::FuturesUnordered, Future, StreamExt};
 use rand::{prelude::StdRng, Rng, SeedableRng};
 use simple_signer::signer::SimpleSigner;
+use std::{
+    collections::{BTreeMap, HashSet},
+    iter,
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use super::{state::IdentityPrivateKeysMap, AppStateUpdate, CompletedTaskPayload};
 use crate::backend::{error::Error, AppState, BackendEvent, Task};

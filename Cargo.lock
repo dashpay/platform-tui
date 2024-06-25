@@ -1837,7 +1837,7 @@ dependencies = [
 [[package]]
 name = "grovedb"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#b2483a0486f0f46898b18c1ee8103b101e91c2d1"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#0b32606fd4983899ca2b5865299f04b1a0accc98"
 dependencies = [
  "bincode",
  "bitvec",
@@ -1860,7 +1860,7 @@ dependencies = [
 [[package]]
 name = "grovedb-costs"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#b2483a0486f0f46898b18c1ee8103b101e91c2d1"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#0b32606fd4983899ca2b5865299f04b1a0accc98"
 dependencies = [
  "integer-encoding",
  "intmap",
@@ -1870,7 +1870,7 @@ dependencies = [
 [[package]]
 name = "grovedb-merk"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#b2483a0486f0f46898b18c1ee8103b101e91c2d1"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#0b32606fd4983899ca2b5865299f04b1a0accc98"
 dependencies = [
  "blake3",
  "byteorder",
@@ -1893,12 +1893,12 @@ dependencies = [
 [[package]]
 name = "grovedb-path"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#b2483a0486f0f46898b18c1ee8103b101e91c2d1"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#0b32606fd4983899ca2b5865299f04b1a0accc98"
 
 [[package]]
 name = "grovedb-storage"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#b2483a0486f0f46898b18c1ee8103b101e91c2d1"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#0b32606fd4983899ca2b5865299f04b1a0accc98"
 dependencies = [
  "blake3",
  "grovedb-costs",
@@ -1917,7 +1917,7 @@ dependencies = [
 [[package]]
 name = "grovedb-visualize"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#b2483a0486f0f46898b18c1ee8103b101e91c2d1"
+source = "git+https://github.com/dashpay/grovedb?branch=feat/QuerySumTree#0b32606fd4983899ca2b5865299f04b1a0accc98"
 dependencies = [
  "hex",
  "itertools 0.12.1",
@@ -3772,6 +3772,7 @@ dependencies = [
  "rs-dapi-client",
  "serde",
  "serde_json",
+ "sha2",
  "simple-signer",
  "strategy-tests",
  "strum 0.26.2",

@@ -480,6 +480,21 @@ impl ScreenController for WalletScreenController {
                 ScreenFeedback::Redraw
             }
 
+            Event::Backend(BackendEvent::TaskCompletedStateChange {
+                execution_result,
+                app_state_update: AppStateUpdate::LoadedEvonodeIdentity(identity),
+                ..
+            }) => {
+                self.identity_loaded = true;
+                self.identity_registration_in_progress = false;
+                if execution_result.is_ok() {
+                    self.identity_info = Info::new_fixed(&display_info(identity.deref()));
+                } else {
+                    self.identity_info = Info::new_from_result(execution_result);
+                }
+                ScreenFeedback::Redraw
+            }
+
             Event::Backend(BackendEvent::TaskCompleted {
                 task: Task::Wallet(_),
                 execution_result: Err(e),
