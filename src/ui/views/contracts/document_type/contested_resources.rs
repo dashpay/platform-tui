@@ -268,11 +268,12 @@ impl FormController for ContestedResourceVoteFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
         match self.input.on_event(event) {
             InputStatus::Done(vote_string) => {
-                let vote = match vote_string.as_str() {
+                let parsed_vote_string = vote_string.split_whitespace().next().unwrap_or("");
+                let vote = match parsed_vote_string {
                     "Abstain" => ResourceVoteChoice::Abstain,
                     "Lock" => ResourceVoteChoice::Lock,
                     _ => ResourceVoteChoice::TowardsIdentity(
-                        Identifier::from_string(&vote_string, Encoding::Base58)
+                        Identifier::from_string(&parsed_vote_string, Encoding::Base58)
                             .expect("Expected to convert String to Identifier"),
                     ),
                 };
