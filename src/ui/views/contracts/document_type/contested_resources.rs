@@ -39,12 +39,10 @@ use crate::{
     Event,
 };
 
-const COMMAND_KEYS: [ScreenCommandKey; 6] = [
+const COMMAND_KEYS: [ScreenCommandKey; 4] = [
     ScreenCommandKey::new("q", "Back"),
-    ScreenCommandKey::new("C-n", "Next resource"),
-    ScreenCommandKey::new("C-p", "Prev resource"),
-    ScreenCommandKey::new("↓", "Scroll down"),
-    ScreenCommandKey::new("↑", "Scroll up"),
+    ScreenCommandKey::new("↓", "Next resource"),
+    ScreenCommandKey::new("↑", "Prev resource"),
     ScreenCommandKey::new("v", "Vote"),
 ];
 
@@ -186,21 +184,10 @@ impl ScreenController for ContestedResourcesScreenController {
                 }
             }
 
-            // Resource view keys
-            Event::Key(
-                key_event @ KeyEvent {
-                    code: Key::Down | Key::Up,
-                    modifiers: KeyModifiers::NONE,
-                },
-            ) => {
-                self.resource_view.on_event(key_event);
-                ScreenFeedback::Redraw
-            }
-
             // Resource selection keys
             Event::Key(KeyEvent {
-                code: Key::Char('n'),
-                modifiers: KeyModifiers::CONTROL,
+                code: Key::Down,
+                modifiers: KeyModifiers::NONE,
             }) => {
                 self.resource_select
                     .perform(Cmd::Move(command::Direction::Down));
@@ -208,8 +195,8 @@ impl ScreenController for ContestedResourcesScreenController {
                 ScreenFeedback::Redraw
             }
             Event::Key(KeyEvent {
-                code: Key::Char('p'),
-                modifiers: KeyModifiers::CONTROL,
+                code: Key::Up,
+                modifiers: KeyModifiers::NONE,
             }) => {
                 self.resource_select
                     .perform(Cmd::Move(command::Direction::Up));
@@ -255,10 +242,20 @@ pub struct ContestedResourceVoteFormController {
 
 impl ContestedResourceVoteFormController {
     pub fn new(vote_poll: ContestedDocumentResourceVotePoll, contenders: Contenders) -> Self {
-        let mut options: Vec<String> = vec!["Abstain".to_string(), "Lock".to_string()];
+        let mut options: Vec<String> = vec![
+            format!(
+                "Abstain ({})",
+                contenders.abstain_vote_tally.unwrap_or_default()
+            ),
+            format!("Lock ({})", contenders.lock_vote_tally.unwrap_or_default()),
+        ];
         for contender in contenders.contenders {
             let identity_id = contender.0;
-            options.push(identity_id.to_string(Encoding::Base58));
+            options.push(format!(
+                "{} ({})",
+                identity_id.to_string(Encoding::Base58),
+                contender.1.vote_tally().unwrap_or_default()
+            ));
         }
         Self {
             input: SelectInput::new(options),

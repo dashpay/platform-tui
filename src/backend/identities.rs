@@ -307,7 +307,6 @@ impl AppState {
                         &signer,
                         None::<fn(Identifier, String) -> Result<SecurityLevel, ProtocolError>>,
                     ) {
-                        tracing::error!("Error executing credit transfer: {e}");
                         BackendEvent::TaskCompleted {
                             task: Task::Identity(task),
                             execution_result: Err(e.to_string()),
@@ -321,13 +320,10 @@ impl AppState {
                                 )),
                                 app_state_update: AppStateUpdate::IdentityCreditsTransferred,
                             },
-                            Err(e) => {
-                                tracing::error!("Error executing credit transfer: {e}");
-                                BackendEvent::TaskCompleted {
-                                    task: Task::Identity(task),
-                                    execution_result: Err(e.to_string()),
-                                }
-                            }
+                            Err(e) => BackendEvent::TaskCompleted {
+                                task: Task::Identity(task),
+                                execution_result: Err(e.to_string()),
+                            },
                         }
                     }
                 } else {

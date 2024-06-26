@@ -181,8 +181,6 @@ impl AppState {
                         }
                     };
 
-                tracing::info!("Contenders: {:?}", contenders);
-
                 BackendEvent::TaskCompleted {
                     task: Task::Document(task),
                     execution_result: Ok(CompletedTaskPayload::ContestedResourceContenders(
@@ -239,6 +237,7 @@ impl AppState {
                     .await
                     .clone()
                     .expect("Expected to get a loaded identity");
+
                 let mut signer = SimpleSigner::default();
                 let Identity::V0(identity_v0) = &loaded_identity_lock;
                 for (key_id, public_key) in &identity_v0.public_keys {
@@ -262,7 +261,7 @@ impl AppState {
                         return BackendEvent::TaskCompleted {
                             task: Task::Document(task),
                             execution_result: Err(
-                                "No voting key in the loaded identity.".to_string()
+                                "No voting key in the loaded identity. Are you sure it's a masternode identity?".to_string()
                             ),
                         };
                     }
