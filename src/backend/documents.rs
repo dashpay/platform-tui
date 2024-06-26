@@ -181,6 +181,8 @@ impl AppState {
                         }
                     };
 
+                tracing::info!("Contenders: {:?}", contenders);
+
                 BackendEvent::TaskCompleted {
                     task: Task::Document(task),
                     execution_result: Ok(CompletedTaskPayload::ContestedResourceContenders(
@@ -271,9 +273,14 @@ impl AppState {
                         ResourceVote::V0(ref mut resource_vote_v0) => {
                             resource_vote_v0.vote_poll = vote_poll.clone();
                             resource_vote_v0.resource_vote_choice = *vote_choice;
+                            let pro_tx_hash = self
+                                .loaded_identity_pro_tx_hash
+                                .lock()
+                                .await
+                                .expect("Expected a proTxHash in AppState");
                             match vote
                                 .put_to_platform_and_wait_for_response(
-                                    loaded_identity_lock.id(),
+                                    pro_tx_hash,
                                     voting_public_key,
                                     sdk,
                                     &signer,

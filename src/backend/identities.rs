@@ -341,18 +341,39 @@ impl AppState {
             }
             IdentityTask::LoadEvonodeIdentity(ref pro_tx_hash, ref private_key_in_wif) => {
                 // Convert proTxHash to bytes
-                let pro_tx_hash_bytes = hex::decode(pro_tx_hash).expect("Invalid proTxHash string");
+                let pro_tx_hash_bytes = match hex::decode(pro_tx_hash) {
+                    Ok(hash) => hash,
+                    Err(e) => {
+                        return BackendEvent::TaskCompleted {
+                            task: Task::Identity(task),
+                            execution_result: Err(format!(
+                                "Failed to decode proTxHash from hex: {}",
+                                e
+                            )),
+                        };
+                    }
+                };
 
                 // Get the address from the private key
-                let private_key =
-                    PrivateKey::from_wif(private_key_in_wif).expect("expected to convert");
+                let private_key = match PrivateKey::from_wif(private_key_in_wif) {
+                    Ok(key) => key,
+                    Err(e) => {
+                        return BackendEvent::TaskCompleted {
+                            task: Task::Identity(task),
+                            execution_result: Err(format!(
+                                "Failed to convert private key from WIF: {}",
+                                e
+                            )),
+                        };
+                    }
+                };
                 let public_key = private_key.public_key(&Secp256k1::new());
                 let pubkey_hash = public_key.pubkey_hash();
                 let address = pubkey_hash.as_byte_array();
 
                 // Hash address with proTxHash to get identity id of the identity
                 let mut hasher = Sha256::new();
-                hasher.update(pro_tx_hash_bytes);
+                hasher.update(pro_tx_hash_bytes.clone());
                 hasher.update(address);
                 let identity_id = hasher.finalize();
 
@@ -391,6 +412,14 @@ impl AppState {
                             // Set loaded identity
                             let mut loaded_identity = self.loaded_identity.lock().await;
                             loaded_identity.replace(evonode_identity);
+
+                            // Store proTxHash in AppState
+                            let mut pro_tx_hash_lock =
+                                self.loaded_identity_pro_tx_hash.lock().await;
+                            pro_tx_hash_lock.replace(
+                                Identifier::from_bytes(&pro_tx_hash_bytes)
+                                    .expect("Expected to get Identifier from proTxHash bytes"),
+                            );
 
                             // Return BackendEvent
                             BackendEvent::TaskCompletedStateChange {
