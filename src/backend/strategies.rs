@@ -95,7 +95,7 @@ pub enum StrategyTask {
     },
     SetStartIdentities {
         strategy_name: String,
-        count: u8,
+        count: u16,
         keys_count: u8,
         balance: u64,
         add_transfer_key: bool,

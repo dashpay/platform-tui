@@ -39,10 +39,9 @@ pub(super) async fn run_contract_task<'s>(
                     let contract_str = as_json_string(&data_contract);
                     let mut contracts_lock = known_contracts.lock().await;
 
-                    let contract_name = match get_dpns_name(sdk, &data_contract.id()).await {
-                        Some(name) => name,
-                        None => data_contract.id().to_string(Encoding::Base58),
-                    };
+                    let contract_name = get_dpns_name(sdk, &data_contract.id())
+                        .await
+                        .unwrap_or_else(|| data_contract.id().to_string(Encoding::Base58));
 
                     contracts_lock.insert(contract_name, data_contract);
 
@@ -69,10 +68,9 @@ pub(super) async fn run_contract_task<'s>(
                     let contract_str = as_json_string(&data_contract);
                     let mut contracts_lock = known_contracts.lock().await;
 
-                    let contract_name = match get_dpns_name(sdk, &data_contract.id()).await {
-                        Some(name) => name,
-                        None => data_contract.id().to_string(Encoding::Base58),
-                    };
+                    let contract_name = get_dpns_name(sdk, &data_contract.id())
+                        .await
+                        .unwrap_or_else(|| data_contract.id().to_string(Encoding::Base58));
 
                     contracts_lock.insert(contract_name, data_contract);
 
@@ -130,37 +128,27 @@ pub(super) async fn run_contract_task<'s>(
 }
 
 pub async fn get_dpns_name(sdk: &Sdk, id: &Identifier) -> Option<String> {
-    if let Some(dpns_contract) =
-        match DataContract::fetch(&sdk, Into::<Identifier>::into(dpns_contract::ID_BYTES)).await {
-            Ok(contract) => match contract {
-                Some(contract) => Some(contract),
-                None => None,
-            },
-            Err(_) => None,
-        }
-    {
-        let document_query = DocumentQuery {
-            data_contract: Arc::new(dpns_contract),
-            document_type_name: "domain".to_string(),
-            where_clauses: vec![WhereClause {
-                field: "label".to_string(),
-                operator: WhereOperator::Equal,
-                value: Value::Identifier(id.to_buffer()),
-            }],
-            order_by_clauses: vec![],
-            limit: 1,
-            start: None,
-        };
-        match Document::fetch(sdk, document_query).await {
-            Ok(document) => {
-                let some_document = document.unwrap();
-                let properties = some_document.properties();
-                let label = properties.get("label").unwrap();
-                Some(label.to_string())
-            }
-            Err(_) => None,
-        }
-    } else {
-        None
-    }
+    let dpns_contract =
+        DataContract::fetch(&sdk, Into::<Identifier>::into(dpns_contract::ID_BYTES))
+            .await
+            .ok()??;
+
+    let document_query = DocumentQuery {
+        data_contract: Arc::new(dpns_contract),
+        document_type_name: "domain".to_string(),
+        where_clauses: vec![WhereClause {
+            field: "label".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Identifier(id.to_buffer()),
+        }],
+        order_by_clauses: vec![],
+        limit: 1,
+        start: None,
+    };
+
+    let document = Document::fetch(sdk, document_query).await.ok()??;
+    let properties = document.properties();
+    let label = properties.get("label")?;
+
+    Some(label.to_string())
 }
