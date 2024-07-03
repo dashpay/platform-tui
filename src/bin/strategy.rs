@@ -105,6 +105,7 @@ async fn main() {
         timeout: Some(Duration::from_secs(10)),
         retries: None,
         ban_failed_address: Some(false),
+        ca_certificate: None,
     };
     let sdk = SdkBuilder::new(address_list)
         .with_version(PlatformVersion::get(1).unwrap())

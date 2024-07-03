@@ -310,6 +310,7 @@ async fn send_many_request_to_drive(
         timeout: Some(Duration::from_secs(30)),
         retries: Some(0),
         ban_failed_address: Some(false),
+        ca_certificate: None,
     };
 
     let summary = Arc::new(TestSummary::new(start_time));
@@ -341,7 +342,7 @@ async fn send_many_request_to_drive(
         // Pick an address obe by one for each connection
         // and create one client per connection
         let address_list = addresses.next_one_address_list();
-        let client = DapiClient::new(address_list, request_settings);
+        let client = DapiClient::new(address_list, request_settings.clone());
         let connection_client = Arc::new(client);
 
         let connection_rate = Arc::clone(&rate);
@@ -350,6 +351,7 @@ async fn send_many_request_to_drive(
         let connections_requests = Arc::clone(&requests);
 
         // Send requests through the connection in a loop
+        let request_settings = request_settings.clone();
         let connection_task = tokio::spawn(async move {
             while !cancel_connection.is_cancelled() {
                 // Wait for the rate limiter to allow further processing
@@ -363,7 +365,7 @@ async fn send_many_request_to_drive(
 
                 // Select a random request from the list
                 let request = connections_requests.random();
-
+                let request_settings = request_settings.clone();
                 // Send a request without waiting for the response,
                 // so we can send many requests in parallel through one connection
                 tokio::spawn(async move {

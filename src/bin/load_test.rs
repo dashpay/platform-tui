@@ -547,6 +547,7 @@ async fn broadcast_random_documents_load_test(
         timeout: Some(Duration::from_secs(30)),
         retries: Some(0),
         ban_failed_address: Some(false),
+        ca_certificate: None,
     };
 
     // start a timer to cancel the broadcast after the duration
@@ -586,6 +587,7 @@ async fn broadcast_random_documents_load_test(
             let rate_limiter = rate_limit.clone();
             let cancel_task = cancel.clone();
             let sdk = sdk.clone();
+            let settings = settings.clone();
 
             let task = tokio::task::spawn(async move {
                 let mut std_rng = StdRng::from_entropy();

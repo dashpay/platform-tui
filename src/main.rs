@@ -55,12 +55,19 @@ async fn main() {
 
     // Setup Platform SDK
     let address_list = config.dapi_address_list();
-    let request_settings = RequestSettings {
+    let mut request_settings = RequestSettings {
         connect_timeout: Some(Duration::from_secs(10)),
         timeout: Some(Duration::from_secs(10)),
         retries: None,
         ban_failed_address: Some(false),
+        ca_certificate: None,
     };
+    if let Some(ca_cert_path) = config.dapi_ca_cert_path.as_ref() {
+        request_settings = request_settings
+            .with_ca_certificate(ca_cert_path)
+            .expect(&format!("load ca certificate {}", ca_cert_path));
+    }
+
     let sdk = SdkBuilder::new(address_list)
         .with_version(PlatformVersion::get(1).unwrap())
         .with_core(

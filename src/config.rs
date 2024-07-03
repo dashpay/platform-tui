@@ -17,6 +17,8 @@ use serde::Deserialize;
 pub struct Config {
     /// Hostname of the Dash Platform node to connect to
     pub dapi_addresses: String,
+    /// Path to CA certificate to use when connecting to DAPI
+    pub dapi_ca_cert_path: Option<String>,
     /// Host of the Dash Core RPC interface
     pub core_host: String,
     /// Port of the Dash Core RPC interface
@@ -64,7 +66,11 @@ impl Config {
 
     /// Check if configuration is set
     pub fn is_valid(&self) -> bool {
-        !self.core_rpc_user.is_empty()
+        self.dapi_ca_cert_path
+            .as_ref()
+            .map(|p| PathBuf::from(p).exists())
+            .unwrap_or(true)
+            && !self.core_rpc_user.is_empty()
             && !self.core_rpc_password.is_empty()
             && self.core_rpc_port != 0
             && !self.dapi_addresses.is_empty()
