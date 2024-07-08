@@ -95,7 +95,7 @@ pub enum StrategyTask {
     },
     SetStartIdentities {
         strategy_name: String,
-        count: u8,
+        count: u16,
         keys_count: u8,
         balance: u64,
         add_transfer_key: bool,
@@ -1073,7 +1073,6 @@ pub async fn run_strategy_task<'s>(
                             .expect("Couldn't convert num_asset_lock_proofs_needed into usize")
                     {
                         return BackendEvent::StrategyError {
-                            strategy_name: strategy_name.clone(),
                             error: format!("Not enough UTXOs available in wallet. Available: {}. Need: {}. Go to Wallet screen and create more.", num_available_utxos, num_asset_lock_proofs_needed),
                         };
                     }
