@@ -112,7 +112,6 @@ pub enum BackendEvent<'s> {
         result: StrategyCompletionResult,
     },
     StrategyError {
-        strategy_name: String,
         error: String,
     },
     None,

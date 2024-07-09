@@ -205,7 +205,10 @@ impl AppState {
                         execution_result: Ok("Copied Identity Id".into()),
                     }
                 } else {
-                    BackendEvent::None
+                    BackendEvent::TaskCompleted {
+                        task: Task::Identity(task),
+                        execution_result: Err("Failed to copy Identity Id".into()),
+                    }
                 }
             }
             IdentityTask::AddIdentityKey {
@@ -1211,7 +1214,7 @@ async fn add_identity_key<'a>(
     purpose: KeyPurpose,
 ) -> Result<AppStateUpdate<'a>, String> {
     let mut rng = StdRng::from_entropy();
-    let platform_version = PlatformVersion::latest();
+    let platform_version = sdk.version();
 
     let (public_key, private_key) = key_type
         .random_public_and_private_key_data(&mut rng, &platform_version)

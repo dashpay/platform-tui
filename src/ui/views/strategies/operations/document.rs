@@ -183,7 +183,7 @@ impl DocumentTypeFormController {
                 ),
                 Field::new(
                     "Populate not-required fields?",
-                    SelectInput::new(vec!["Yes".to_string(), "No".to_string()]),
+                    SelectInput::new(vec!["No".to_string(), "Yes".to_string()]),
                 ),
                 Field::new(
                     "Times per block",
