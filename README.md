@@ -92,5 +92,3 @@ Now that we are inside the TUI, we need to load a wallet and an identity.
 -------------
 
 Now, we’re ready to build and run a strategy. for further indication on how to do so, you can look [Paul Delucia's guide](https://www.dash.org/blog/strategy-tests-usage-guide/)
-
--------------
