@@ -173,6 +173,10 @@ impl ScreenController for SelectedStrategyScreenController {
                 self.available_strategies = strategies.keys().cloned().collect();
                 ScreenFeedback::Redraw
             }
+            Event::Backend(BackendEvent::StrategyError { error }) => {
+                self.info = Info::new_error(&format!("Error: {}", &error));
+                ScreenFeedback::Redraw
+            }
             _ => ScreenFeedback::None,
         }
     }
@@ -281,6 +285,7 @@ fn display_strategy(
                     )
                 }
                 OperationType::IdentityTransfer => "IdentityTransfer".to_string(),
+                OperationType::ResourceVote(_) => todo!(),
             };
 
             let times_per_block_display = if op.frequency.times_per_block_range.end

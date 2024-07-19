@@ -328,7 +328,7 @@ fn format_operation_name(op_type: &StrategyOperationType) -> String {
         }
         .to_string(),
         StrategyOperationType::IdentityTransfer => "IdentityTransfer".to_string(),
-        // Add other operation types as necessary
+        StrategyOperationType::ResourceVote(_) => todo!(),
     }
 }
 
@@ -530,7 +530,7 @@ impl StrategyAutomaticDocumentsFormController {
                 ),
                 Field::new(
                     "Populate not-required fields?",
-                    SelectInput::new(vec!["Yes".to_string(), "No".to_string()]),
+                    SelectInput::new(vec!["No".to_string(), "Yes".to_string()]),
                 ),
             )),
         }

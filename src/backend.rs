@@ -107,7 +107,6 @@ pub enum BackendEvent<'s> {
         result: StrategyCompletionResult,
     },
     StrategyError {
-        strategy_name: String,
         error: String,
     },
     None,
@@ -136,6 +135,8 @@ pub(crate) enum AppStateUpdate<'s> {
     ClearedLoadedIdentity,
     ClearedLoadedWallet,
     IdentityCreditsTransferred,
+    DPNSNameRegistered(String),
+    DPNSNameRegistrationFailed,
 }
 
 /// Represents the result of completing a strategy.
@@ -254,7 +255,7 @@ impl Drop for Backend<'_> {
 
 fn stringify_result<T: Serialize, E: Display>(result: Result<T, E>) -> Result<String, String> {
     match result {
-        Ok(data) => Ok(as_toml(&data)),
+        Ok(data) => Ok(as_json_string(&data)),
         Err(e) => Err(e.to_string()),
     }
 }
@@ -264,7 +265,7 @@ fn stringify_result_keep_item<T: Serialize, E: Display>(
 ) -> Result<(T, String), String> {
     match result {
         Ok(data) => {
-            let toml = as_toml(&data);
+            let toml = as_json_string(&data);
             Ok((data, toml))
         }
         Err(e) => Err(e.to_string()),

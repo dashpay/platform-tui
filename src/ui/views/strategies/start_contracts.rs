@@ -314,7 +314,7 @@ impl StartContractsFormController {
                 Field::new(
                     "Add Another Contract? Note only compatible contract updates will actually \
                      work.",
-                    SelectInput::new(vec!["Yes".to_string(), "No".to_string()]),
+                    SelectInput::new(vec!["No".to_string(), "Yes".to_string()]),
                 ),
             )),
         }
@@ -350,7 +350,7 @@ impl FormController for StartContractsFormController {
                         Field::new(
                             "Add Another Contract? Note only compatible contract updates will \
                              actually work.",
-                            SelectInput::new(vec!["Yes".to_string(), "No".to_string()]),
+                            SelectInput::new(vec!["No".to_string(), "Yes".to_string()]),
                         ),
                     ));
                     FormStatus::Redraw

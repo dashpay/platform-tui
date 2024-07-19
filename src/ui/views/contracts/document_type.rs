@@ -149,34 +149,8 @@ impl DocumentTypeScreenController {
             .document_type_for_name(&document_type_name)
             .expect("expected a document type")
             .to_owned_document_type();
-        let document_type_properties_str =
-            match serde_json::to_string_pretty(document_type.properties()) {
-                Ok(string) => format!("========= Properties =========\n\n{}", string),
-                Err(e) => {
-                    tracing::error!(
-                        "Error serializing to json string: {e} properties: {:?}",
-                        document_type.properties()
-                    );
-                    as_json_string(document_type.properties())
-                }
-            };
-        let document_type_indices_str = match serde_json::to_string_pretty(document_type.indices())
-        {
-            Ok(string) => format!("\n========= Indexes =========\n\n{}", string),
-            Err(e) => {
-                tracing::error!(
-                    "Error serializing to json string: {e} indices: {:?}",
-                    document_type.indices()
-                );
-                as_json_string(document_type.indices())
-            }
-        };
-        let document_type_info = format!(
-            "{}\n{}",
-            document_type_properties_str, &document_type_indices_str
-        );
-
-        let info = Info::new_scrollable(&document_type_info);
+        let document_type_str = as_json_string(document_type.properties());
+        let info = Info::new_scrollable(&document_type_str);
 
         Self {
             identity_identifier,

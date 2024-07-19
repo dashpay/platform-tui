@@ -18,7 +18,7 @@ use tuirealm::{
 };
 
 use crate::{
-    backend::{as_toml, documents::DocumentTask, BackendEvent, Task},
+    backend::{as_json_string, documents::DocumentTask, BackendEvent, Task},
     ui::{
         form::{
             parsers::DefaultTextInputParser, FormController, FormStatus, Input, InputStatus,
@@ -94,7 +94,7 @@ impl DocumentsQuerysetScreenController {
         let document_view = Info::new_scrollable(
             &current_batch
                 .first_key_value()
-                .map(|(_, v)| as_toml(v))
+                .map(|(_, v)| as_json_string(v))
                 .unwrap_or_else(String::new),
         );
 
@@ -113,7 +113,7 @@ impl DocumentsQuerysetScreenController {
             &self
                 .current_batch
                 .get(self.document_select.state().unwrap_one().unwrap_usize())
-                .map(|v| as_toml(&v))
+                .map(|v| as_json_string(&v))
                 .unwrap_or_else(String::new),
         );
     }

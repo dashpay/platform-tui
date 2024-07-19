@@ -2,7 +2,7 @@
 
 use std::{marker::PhantomData, str::FromStr};
 
-use dash_sdk::platform::{DocumentQuery, DriveQuery};
+use dash_sdk::platform::{DocumentQuery, DriveDocumentQuery};
 use dpp::prelude::DataContract;
 
 pub(crate) trait TextInputParser {
@@ -44,7 +44,7 @@ impl TextInputParser for DocumentQueryTextInputParser {
     type Output = DocumentQuery;
 
     fn parse_input(&self, input: &str) -> Result<Self::Output, String> {
-        DriveQuery::from_sql_expr(input, &self.data_contract, None)
+        DriveDocumentQuery::from_sql_expr(input, &self.data_contract, None)
             .map(Into::into)
             .map_err(|e| e.to_string())
     }

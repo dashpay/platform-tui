@@ -10,7 +10,10 @@ use bincode::{
     error::{DecodeError, EncodeError},
     BorrowDecode, Decode, Encode,
 };
-use dapi_grpc::core::v0::{BroadcastTransactionRequest, GetTransactionRequest};
+use dapi_grpc::core::v0::{
+    BroadcastTransactionRequest, BroadcastTransactionResponse, GetTransactionRequest,
+    GetTransactionResponse,
+};
 use dash_sdk::{RequestSettings, Sdk};
 use dpp::dashcore::{
     hashes::Hash,
@@ -37,6 +40,34 @@ pub enum WalletTask {
     SplitUTXOs(u32),
 }
 
+pub async fn add_wallet_by_private_key<'s>(
+    wallet_state: &'s Mutex<Option<Wallet>>,
+    private_key: &String,
+) {
+    let private_key = if private_key.len() == 64 {
+        // hex
+        let bytes = hex::decode(private_key).expect("expected hex"); // TODO error hadling
+        PrivateKey::from_slice(bytes.as_slice(), Network::Testnet).expect("expected private key")
+    } else {
+        PrivateKey::from_wif(private_key.as_str()).expect("expected WIF key")
+        // TODO error handling
+    };
+
+    let secp = Secp256k1::new();
+    let public_key = private_key.public_key(&secp);
+    // todo: make the network be part of state
+    let address = Address::p2pkh(&public_key, Network::Testnet);
+    let wallet = Wallet::SingleKeyWallet(SingleKeyWallet {
+        private_key,
+        public_key,
+        address,
+        utxos: Default::default(),
+    });
+
+    let mut wallet_guard = wallet_state.lock().await;
+    *wallet_guard = Some(wallet);
+}
+
 pub(super) async fn run_wallet_task<'s>(
     sdk: &Sdk,
     wallet_state: &'s Mutex<Option<Wallet>>,
@@ -45,29 +76,9 @@ pub(super) async fn run_wallet_task<'s>(
 ) -> BackendEvent<'s> {
     match task {
         WalletTask::AddByPrivateKey(ref private_key) => {
-            let private_key = if private_key.len() == 64 {
-                // hex
-                let bytes = hex::decode(private_key).expect("expected hex"); // TODO error hadling
-                PrivateKey::from_slice(bytes.as_slice(), Network::Testnet)
-                    .expect("expected private key")
-            } else {
-                PrivateKey::from_wif(private_key.as_str()).expect("expected WIF key")
-                // TODO error handling
-            };
+            add_wallet_by_private_key(&wallet_state, private_key).await;
 
-            let secp = Secp256k1::new();
-            let public_key = private_key.public_key(&secp);
-            // todo: make the network be part of state
-            let address = Address::p2pkh(&public_key, Network::Testnet);
-            let wallet = Wallet::SingleKeyWallet(SingleKeyWallet {
-                private_key,
-                public_key,
-                address,
-                utxos: Default::default(),
-            });
-
-            let mut wallet_guard = wallet_state.lock().await;
-            *wallet_guard = Some(wallet);
+            let wallet_guard = wallet_state.lock().await;
             let loaded_wallet_update = MutexGuard::map(wallet_guard, |opt| {
                 opt.as_mut().expect("wallet was set above")
             });
@@ -98,7 +109,10 @@ pub(super) async fn run_wallet_task<'s>(
                     },
                 }
             } else {
-                BackendEvent::None
+                BackendEvent::TaskCompleted {
+                    task: Task::Wallet(task),
+                    execution_result: Err(format!("No wallet loaded")),
+                }
             }
         }
         WalletTask::CopyAddress => {
@@ -111,7 +125,10 @@ pub(super) async fn run_wallet_task<'s>(
                     execution_result: Ok("Copied Address".into()),
                 }
             } else {
-                BackendEvent::None
+                BackendEvent::TaskCompleted {
+                    task: Task::Wallet(task),
+                    execution_result: Err(format!("No wallet loaded")),
+                }
             }
         }
         WalletTask::ClearLoadedWallet => {
@@ -143,7 +160,10 @@ pub(super) async fn run_wallet_task<'s>(
                     }
                 }
             } else {
-                BackendEvent::None
+                BackendEvent::TaskCompleted {
+                    task: Task::Wallet(task),
+                    execution_result: Err(format!("No wallet loaded")),
+                }
             }
         }
     }
@@ -191,7 +211,7 @@ impl Wallet {
         let one_time_key_hash = asset_lock_public_key.pubkey_hash();
 
         let (mut utxos, change) = self
-            .take_unspent_utxos_for(amount)
+            .take_unspent_utxos_for(amount + fee)
             .ok_or(WalletError::Balance)?;
 
         let change_address = self.change_address();
@@ -205,6 +225,7 @@ impl Wallet {
             script_pubkey: ScriptBuf::new_op_return(&[]),
         };
         if change < fee {
+            tracing::error!("change < fee");
             return Err(WalletError::Balance);
         }
         let change_output = TxOut {
@@ -343,7 +364,10 @@ impl Wallet {
         }
     }
 
-    pub async fn reload_utxos(&mut self, insight: &InsightAPIClient) -> Result<(), InsightError> {
+    pub async fn reload_utxos(
+        &mut self,
+        insight: &InsightAPIClient,
+    ) -> Result<HashMap<OutPoint, TxOut>, InsightError> {
         match self {
             Wallet::SingleKeyWallet(wallet) => {
                 match insight
@@ -351,8 +375,8 @@ impl Wallet {
                     .await
                 {
                     Ok(utxos) => {
-                        wallet.utxos = utxos;
-                        Ok(())
+                        wallet.utxos = utxos.clone();
+                        Ok(utxos)
                     }
                     Err(err) => Err(err),
                 }
@@ -534,6 +558,8 @@ impl SingleKeyWallet {
     /// allows 24 outputs per transaction, we have to create (`desired_utxo_count` / 24) transactions.
     ///
     /// Each new UTXO is given a value of ((current_wallet_balance - fee) / desired_utxo_count) where fee is set to 1_000_000_000
+    ///
+    /// Newly created UTXOs are then used for the creation of more UTXOs
     pub async fn split_utxos(
         &mut self,
         sdk: &Sdk,
@@ -552,7 +578,7 @@ impl SingleKeyWallet {
             (desired_utxo_count as f64 / MAX_OUTPUTS_PER_TRANSACTION as f64).ceil() as usize;
 
         // Amount to fund each UTXO.
-        // Reserve a buffer of 1_000_000_000 credits (0.01 dash) to make sure we never go over the current balance
+        // Reserve a buffer of 1_000_000_000 to make sure we never go over the current balance
         let utxo_split_value = (current_wallet_balance - 1_000_000_000) / desired_utxo_count as u64;
 
         // Create and execute the transactions
@@ -659,37 +685,21 @@ impl SingleKeyWallet {
                 bypass_limits: false,
             };
             match sdk.execute(request, RequestSettings::default()).await {
-                Ok(_) => {
-                    tracing::info!(
-                        "Successfully broadcasted UTXO-splitting transaction {}",
-                        i + 1
-                    )
-                }
-                Err(error) if error.to_string().contains("AlreadyExists") => {
-                    // Transaction is already broadcasted. We need to restart the stream from a
-                    // block when it was mined
-                    tracing::warn!("Transaction is already broadcasted");
-
-                    // Try again
-                    match sdk
-                        .execute(
-                            GetTransactionRequest {
-                                id: tx.txid().to_string(),
-                            },
-                            RequestSettings::default(),
-                        )
+                Ok(BroadcastTransactionResponse { transaction_id: id }) => {
+                    let GetTransactionResponse { .. } = match sdk
+                        .execute(GetTransactionRequest { id }, RequestSettings::default())
                         .await
                     {
-                        Ok(_) => {
-                            tracing::info!(
-                                "Successfully broadcasted UTXO-splitting transaction {}",
-                                i + 1
-                            )
+                        Ok(response) => response,
+                        Err(e) => {
+                            tracing::error!("Error getting UTXO-splitting transaction: {e}");
+                            return Err(WalletError::Balance);
                         }
-                        Err(error) => {
-                            tracing::error!("Error executing tx {}", error);
-                        }
-                    }
+                    };
+                    tracing::info!(
+                        "Successfully broadcasted UTXO-splitting transaction {}.",
+                        i + 1,
+                    )
                 }
                 Err(error) => {
                     tracing::error!("Transaction broadcast failed: {error}");
@@ -697,9 +707,19 @@ impl SingleKeyWallet {
             };
 
             // Update the wallet's UTXO set
-            remaining_utxos_in_wallet.retain(|outpoint, _| !selected_utxos.contains(outpoint));
+            for outpoint in selected_utxos.iter() {
+                remaining_utxos_in_wallet.remove(outpoint);
+                self.utxos.remove(outpoint);
+            }
             let txid = tx.txid();
             for (index, output) in tx.output.iter().enumerate() {
+                remaining_utxos_in_wallet.insert(
+                    OutPoint {
+                        txid,
+                        vout: index as u32,
+                    },
+                    output.clone(),
+                );
                 self.utxos.insert(
                     OutPoint {
                         txid,
