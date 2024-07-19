@@ -74,7 +74,7 @@ fn format_extended_epoch_info(
         epoch_info.first_core_block_height(),
         epoch_info.first_block_time(),
         readable_epoch_start_time,
-        epoch_info.fee_multiplier()
+        epoch_info.fee_multiplier_permille()
     )
 }
 

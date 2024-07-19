@@ -136,6 +136,7 @@ pub(crate) enum AppStateUpdate<'s> {
     IdentityRegistrationProgressed, // TODO provide state update details
     LoadedIdentity(MappedMutexGuard<'s, Identity>),
     LoadedEvonodeIdentity(MappedMutexGuard<'s, Identity>),
+    LoadedKnownIdentity(MappedMutexGuard<'s, Identity>),
     FailedToRefreshIdentity,
     ClearedLoadedIdentity,
     ClearedLoadedWallet,
@@ -155,8 +156,8 @@ pub(crate) enum StrategyCompletionResult {
         transition_count: u64,
         run_time: Duration,
         init_time: Duration,
-        rate: u64,
-        success_rate: u64,
+        rate: f32,
+        success_rate: f32,
         success_percent: u64,
         dash_spent_identity: f64,
         dash_spent_wallet: f64,

@@ -551,7 +551,7 @@ impl SingleKeyWallet {
     }
 
     /// Takes a usize `desired_utxo_count` specifying the desired number of UTXOs one wants the wallet to have
-    /// and splits the existing utxos into that many equally-valued UTXOs.
+    /// and splits the existing utxos into that many (minus one) equally-valued UTXOs plus one UTXO holding leftover value.
     ///
     /// It does so by executing transactions with itself as the sender and receiver, and
     /// the existing UTXOs as the inputs and just having `desired_utxo_count` outputs. Since Dash Core only
@@ -608,7 +608,7 @@ impl SingleKeyWallet {
             for (outpoint, txout) in remaining_utxos_in_wallet_vec.clone() {
                 if total_value_of_tx_inputs >= utxo_split_value * num_utxos_to_create_this_tx as u64
                 {
-                    break; // Selected enough UTXOs
+                    break; // Selected enough UTXOs for this tx
                 }
                 total_value_of_tx_inputs += txout.value;
                 selected_utxos.push(outpoint.clone());

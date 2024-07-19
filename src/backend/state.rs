@@ -26,6 +26,7 @@ use dpp::{
     ProtocolError::{self, PlatformDeserializationError, PlatformSerializationError},
 };
 use drive::drive::Drive;
+use grovedb_version::version::GroveVersion;
 use strategy_tests::Strategy;
 use tokio::sync::Mutex;
 use walkdir::{DirEntry, WalkDir};
@@ -111,7 +112,11 @@ impl Default for AppState {
 
         if drive
             .grove
-            .is_empty_tree(drive::grovedb_path::SubtreePath::empty(), None)
+            .is_empty_tree(
+                drive::grovedb_path::SubtreePath::empty(),
+                None,
+                GroveVersion::latest(),
+            )
             .unwrap()
             .expect("expected to find id this is an empty db")
         {
