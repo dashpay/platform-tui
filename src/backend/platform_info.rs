@@ -74,7 +74,7 @@ fn format_extended_epoch_info(
         epoch_info.first_core_block_height(),
         epoch_info.first_block_time(),
         readable_epoch_start_time,
-        epoch_info.fee_multiplier()
+        epoch_info.fee_multiplier_permille()
     )
 }
 
@@ -115,6 +115,7 @@ pub(super) async fn run_platform_task<'s>(sdk: &Sdk, task: PlatformInfoTask) -> 
         PlatformInfoTask::FetchManyEpochInfo(epoch_num, limit) => {
             let query: LimitQuery<EpochIndex> = LimitQuery {
                 query: epoch_num,
+                start_info: None,
                 limit: Some(limit),
             };
 
