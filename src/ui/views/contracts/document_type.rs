@@ -22,7 +22,7 @@ use tuirealm::{
 };
 
 use self::{
-    broadcast_document::BroadcastSpecificDocumentForm,
+    // broadcast_document::BroadcastSpecificDocumentForm,
     broadcast_random_documents::BroadcastRandomDocumentsCountForm,
 };
 use crate::{
@@ -109,19 +109,19 @@ impl FormController for SelectDocumentTypeFormController {
     }
 }
 
-const LOADED_IDENTITY_COMMANDS: [ScreenCommandKey; 5] = [
+const LOADED_IDENTITY_COMMANDS: [ScreenCommandKey; 4] = [
     ScreenCommandKey::new("q", "Back to Contracts"),
     ScreenCommandKey::new("f", "Query"),
     ScreenCommandKey::new("o", "Query ours"),
     ScreenCommandKey::new("r", "Broadcast Random Documents"),
-    ScreenCommandKey::new("b", "Broadcast Document"),
+    // ScreenCommandKey::new("b", "Broadcast Document"),
 ];
 
-const NO_LOADED_IDENTITY_COMMANDS: [ScreenCommandKey; 4] = [
+const NO_LOADED_IDENTITY_COMMANDS: [ScreenCommandKey; 3] = [
     ScreenCommandKey::new("q", "Back to Contracts"),
     ScreenCommandKey::new("f", "Query"),
     ScreenCommandKey::new("r", "Broadcast Random Documents"),
-    ScreenCommandKey::new("b", "Broadcast Document"),
+    // ScreenCommandKey::new("b", "Broadcast Document"),
 ];
 
 pub(super) struct DocumentTypeScreenController {
@@ -209,19 +209,18 @@ impl ScreenController for DocumentTypeScreenController {
                 self.document_type_name.clone(),
             ))),
 
-            Event::Key(KeyEvent {
-                code: Key::Char('b'),
-                modifiers: KeyModifiers::NONE,
-            }) => ScreenFeedback::Form(Box::new(BroadcastSpecificDocumentForm::new(
-                self.data_contract_name.clone(),
-                self.document_type_name.clone(),
-                self.document_type
-                    .properties()
-                    .keys()
-                    .cloned()
-                    .collect_vec(),
-            ))),
-
+            // Event::Key(KeyEvent {
+            //     code: Key::Char('b'),
+            //     modifiers: KeyModifiers::NONE,
+            // }) => ScreenFeedback::Form(Box::new(BroadcastSpecificDocumentForm::new(
+            //     self.data_contract_name.clone(),
+            //     self.document_type_name.clone(),
+            //     self.document_type
+            //         .properties()
+            //         .keys()
+            //         .cloned()
+            //         .collect_vec(),
+            // ))),
             Event::Key(KeyEvent {
                 code: Key::Char('o'),
                 modifiers: KeyModifiers::NONE,
