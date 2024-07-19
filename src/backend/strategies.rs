@@ -58,7 +58,7 @@ use drive::{
         Drive,
     },
     error::proof::ProofError,
-    query::DriveQuery,
+    query::DriveDocumentQuery,
 };
 use futures::future::join_all;
 use rand::{rngs::StdRng, SeedableRng};
@@ -735,6 +735,7 @@ pub async fn run_strategy_task<'s>(
                     keys_per_identity: keys_count,
                     starting_balances: balance,
                     extra_keys,
+                    hard_coded: vec![],
                 };
                 BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
                     strategy_name.clone(),
@@ -760,6 +761,7 @@ pub async fn run_strategy_task<'s>(
                     keys_per_identity: strategy.start_identities.keys_per_identity,
                     starting_balances: balance,
                     extra_keys: strategy.start_identities.extra_keys.clone(),
+                    hard_coded: strategy.start_identities.hard_coded.clone(),
                 };
                 BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
                     strategy_name.clone(),
@@ -973,8 +975,10 @@ pub async fn run_strategy_task<'s>(
 
                             // Construct a DriveQuery based on the document_type and
                             // data_contract
-                            let drive_query =
-                                DriveQuery::any_item_query(data_contract, document_type.as_ref());
+                            let drive_query = DriveDocumentQuery::any_item_query(
+                                data_contract,
+                                document_type.as_ref(),
+                            );
 
                             // Query the Drive for documents
                             match drive_lock.query_documents(drive_query, None, false, None, None) {
@@ -1176,7 +1180,7 @@ pub async fn run_strategy_task<'s>(
                             &mut signer,
                             &mut identity_nonce_counter,
                             &mut contract_nonce_counter,
-                            // mempool_document_counter.clone(),
+                            mempool_document_counter.clone(),
                             &mut rng,
                             &StrategyConfig {
                                 start_block_height: initial_block_info.height,
