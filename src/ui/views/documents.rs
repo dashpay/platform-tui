@@ -118,6 +118,14 @@ impl DocumentsQuerysetScreenController {
         );
     }
 
+    fn get_selected_document(&self) -> Option<&Document> {
+        let state = self.document_select.state();
+        let selected_index = state.unwrap_one().unwrap_usize();
+        self.current_batch
+            .get(selected_index)
+            .and_then(|doc| doc.as_ref())
+    }
+
     pub(crate) fn document_is_purchasable(&self, idx: usize) -> bool {
         if let Some(Some(doc)) = self.current_batch.get(idx) {
             match doc.properties().get_optional_integer::<Credits>("$price") {

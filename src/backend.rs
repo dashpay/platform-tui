@@ -22,7 +22,9 @@ use dpp::{
     document::Document,
     identity::accessors::IdentityGettersV0,
     prelude::{Identifier, Identity},
+    voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll,
 };
+use drive_proof_verifier::types::{Contenders, ContestedResources};
 use serde::Serialize;
 pub(crate) use state::AppState;
 use strategy_tests::Strategy;
@@ -65,7 +67,10 @@ pub enum Task {
 pub enum CompletedTaskPayload {
     Documents(BTreeMap<Identifier, Option<Document>>),
     Document(Document),
+    Identities(BTreeMap<Identifier, Identity>),
     String(String),
+    ContestedResources(ContestedResources),
+    ContestedResourceContenders(ContestedDocumentResourceVotePoll, Contenders),
 }
 
 impl From<String> for CompletedTaskPayload {
@@ -130,6 +135,7 @@ pub(crate) enum AppStateUpdate<'s> {
     ),
     IdentityRegistrationProgressed, // TODO provide state update details
     LoadedIdentity(MappedMutexGuard<'s, Identity>),
+    LoadedEvonodeIdentity(MappedMutexGuard<'s, Identity>),
     LoadedKnownIdentity(MappedMutexGuard<'s, Identity>),
     FailedToRefreshIdentity,
     ClearedLoadedIdentity,

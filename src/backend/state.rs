@@ -8,6 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use std::{collections::BTreeMap, fs};
 
 use bincode::{Decode, Encode};
+use clap::Id;
 use dpp::{
     dashcore::{
         psbt::serialize::{Deserialize, Serialize},
@@ -52,6 +53,7 @@ pub type IdentityPrivateKeysMap = BTreeMap<(Identifier, KeyID), Vec<u8>>;
 // #[derive(Debug)]
 pub struct AppState {
     pub loaded_identity: Mutex<Option<Identity>>,
+    pub loaded_identity_pro_tx_hash: Mutex<Option<Identifier>>,
     pub identity_private_keys: Mutex<IdentityPrivateKeysMap>,
     pub loaded_wallet: Mutex<Option<Wallet>>,
     pub drive: Mutex<Drive>,
@@ -125,6 +127,7 @@ impl Default for AppState {
 
         AppState {
             loaded_identity: None.into(),
+            loaded_identity_pro_tx_hash: None.into(),
             identity_private_keys: Default::default(),
             loaded_wallet: Mutex::new(None),
             drive: Mutex::from(drive),
@@ -143,6 +146,7 @@ impl Default for AppState {
 #[derive(Clone, Debug, Encode, Decode)]
 struct AppStateInSerializationFormat {
     pub loaded_identity: Option<Identity>,
+    pub loaded_identity_pro_tx_hash: Option<Identifier>,
     pub identity_private_keys: IdentityPrivateKeysMap,
     pub loaded_wallet: Option<Wallet>,
     pub known_identities: BTreeMap<Identifier, Identity>,
@@ -178,6 +182,7 @@ impl PlatformSerializableWithPlatformVersion for AppState {
     ) -> Result<Vec<u8>, ProtocolError> {
         let AppState {
             loaded_identity,
+            loaded_identity_pro_tx_hash,
             identity_private_keys,
             loaded_wallet,
             drive,
@@ -249,6 +254,7 @@ impl PlatformSerializableWithPlatformVersion for AppState {
 
         let app_state_in_serialization_format = AppStateInSerializationFormat {
             loaded_identity: loaded_identity.blocking_lock().clone(),
+            loaded_identity_pro_tx_hash: loaded_identity_pro_tx_hash.blocking_lock().clone(),
             identity_private_keys: identity_private_keys.blocking_lock().clone(),
             loaded_wallet: loaded_wallet.blocking_lock().clone(),
             known_identities: known_identities.blocking_lock().clone(),
@@ -294,6 +300,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
 
         let AppStateInSerializationFormat {
             loaded_identity,
+            loaded_identity_pro_tx_hash,
             identity_private_keys,
             loaded_wallet,
             known_identities,
@@ -397,6 +404,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
 
         Ok(AppState {
             loaded_identity: loaded_identity.into(),
+            loaded_identity_pro_tx_hash: loaded_identity_pro_tx_hash.into(),
             identity_private_keys: identity_private_keys.into(),
             loaded_wallet: deserialized_wallet_state,
             drive: drive.into(),

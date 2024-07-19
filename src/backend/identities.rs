@@ -1,11 +1,12 @@
 //! Identities backend logic.
 
+use dashcore::hashes::Hash;
+use drive::drive::identity::key::fetch;
 use std::{
     collections::{BTreeMap, HashSet},
     time::Duration,
 };
 
-use clap::Id;
 use dapi_grpc::{
     core::v0::{
         BroadcastTransactionRequest, GetBlockchainStatusRequest, GetTransactionRequest,
@@ -19,21 +20,25 @@ use dapi_grpc::{
 use dash_sdk::{
     platform::{
         transition::{
-            broadcast::BroadcastStateTransition, put_identity::PutIdentity,
-            top_up_identity::TopUpIdentity, withdraw_from_identity::WithdrawFromIdentity,
+            broadcast::BroadcastStateTransition, put_document::PutDocument,
+            put_identity::PutIdentity, top_up_identity::TopUpIdentity,
+            withdraw_from_identity::WithdrawFromIdentity,
         },
         Fetch,
     },
     Sdk,
 };
+use dpp::data_contract::DataContract;
+use dpp::{
+    dashcore::{self, key::Secp256k1},
+    identity::SecurityLevel,
+};
 use dpp::{
     dashcore::{psbt::serialize::Serialize, Address, PrivateKey, Transaction},
     data_contract::{
         accessors::v0::DataContractV0Getters,
-        document_type::{
-            accessors::DocumentTypeV0Getters,
-            random_document::{CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType},
-            v0::DocumentTypeV0,
+        document_type::random_document::{
+            CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType,
         },
     },
     data_contracts::dpns_contract,
@@ -63,10 +68,10 @@ use dpp::{
     util::{hash::hash_double, strings::convert_to_homograph_safe_chars},
     version::PlatformVersion,
 };
-use dpp::{data_contract::DataContract, identity::SecurityLevel};
 use dpp::{identity::Purpose, ProtocolError};
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use rs_dapi_client::{DapiRequestExecutor, RequestSettings};
+use sha2::{Digest, Sha256};
 use simple_signer::signer::SimpleSigner;
 use tokio::sync::{MappedMutexGuard, MutexGuard};
 
@@ -102,6 +107,7 @@ pub enum IdentityTask {
     },
     ClearLoadedIdentity,
     TransferCredits(String, f64),
+    LoadEvonodeIdentity(String, String),
     RegisterDPNSName(String),
 }
 
@@ -339,7 +345,6 @@ impl AppState {
                         &signer,
                         None::<fn(Identifier, String) -> Result<SecurityLevel, ProtocolError>>,
                     ) {
-                        tracing::error!("Error executing credit transfer: {e}");
                         BackendEvent::TaskCompleted {
                             task: Task::Identity(task),
                             execution_result: Err(e.to_string()),
@@ -353,13 +358,10 @@ impl AppState {
                                 )),
                                 app_state_update: AppStateUpdate::IdentityCreditsTransferred,
                             },
-                            Err(e) => {
-                                tracing::error!("Error executing credit transfer: {e}");
-                                BackendEvent::TaskCompleted {
-                                    task: Task::Identity(task),
-                                    execution_result: Err(e.to_string()),
-                                }
-                            }
+                            Err(e) => BackendEvent::TaskCompleted {
+                                task: Task::Identity(task),
+                                execution_result: Err(e.to_string()),
+                            },
                         }
                     }
                 } else {
@@ -369,6 +371,113 @@ impl AppState {
                             "No loaded identity for credit transfer".to_string(),
                         )),
                     }
+                }
+            }
+            IdentityTask::LoadEvonodeIdentity(ref pro_tx_hash, ref private_key_in_wif) => {
+                // Convert proTxHash to bytes
+                let pro_tx_hash_bytes = match hex::decode(pro_tx_hash) {
+                    Ok(hash) => hash,
+                    Err(e) => {
+                        return BackendEvent::TaskCompleted {
+                            task: Task::Identity(task),
+                            execution_result: Err(format!(
+                                "Failed to decode proTxHash from hex: {}",
+                                e
+                            )),
+                        };
+                    }
+                };
+
+                // Get the address from the private key
+                let private_key = match PrivateKey::from_wif(private_key_in_wif) {
+                    Ok(key) => key,
+                    Err(e) => {
+                        return BackendEvent::TaskCompleted {
+                            task: Task::Identity(task),
+                            execution_result: Err(format!(
+                                "Failed to convert private key from WIF: {}",
+                                e
+                            )),
+                        };
+                    }
+                };
+                let public_key = private_key.public_key(&Secp256k1::new());
+                let pubkey_hash = public_key.pubkey_hash();
+                let address = pubkey_hash.as_byte_array();
+
+                // Hash address with proTxHash to get identity id of the identity
+                let mut hasher = Sha256::new();
+                hasher.update(pro_tx_hash_bytes.clone());
+                hasher.update(address);
+                let identity_id = hasher.finalize();
+
+                // Convert to bs58
+                let identity_id_bs58 = bs58::encode(identity_id).into_string();
+
+                // Fetch the identity from Platform
+                let result = fetch_identity_by_b58_id(sdk, &identity_id_bs58).await;
+                match result {
+                    Ok(evonode_identity_option) => {
+                        if let Some(evonode_identity) = evonode_identity_option.0 {
+                            // Get the IdentityPublicKey from Platform
+                            // This is necessary because we need the id, which PublicKey struct doesn't have
+                            let fetched_voting_public_key_result = evonode_identity
+                                .get_first_public_key_matching(
+                                    Purpose::VOTING,
+                                    SecurityLevel::full_range().into(),
+                                    KeyType::all_key_types().into(),
+                                );
+
+                            let fetched_voting_public_key = match fetched_voting_public_key_result {
+                                Some(key) => key,
+                                None => return BackendEvent::TaskCompleted {
+                                    task: Task::Identity(task),
+                                    execution_result: Err(format!("No voting key found (only voting Evonode identities are currently supported)")),
+                                }
+                            };
+
+                            // Insert private key into the state for later use
+                            let mut identity_private_keys = self.identity_private_keys.lock().await;
+                            identity_private_keys.insert(
+                                (evonode_identity.id(), fetched_voting_public_key.id()),
+                                private_key.to_bytes(),
+                            );
+
+                            // Set loaded identity
+                            let mut loaded_identity = self.loaded_identity.lock().await;
+                            loaded_identity.replace(evonode_identity);
+
+                            // Store proTxHash in AppState
+                            let mut pro_tx_hash_lock =
+                                self.loaded_identity_pro_tx_hash.lock().await;
+                            pro_tx_hash_lock.replace(
+                                Identifier::from_bytes(&pro_tx_hash_bytes)
+                                    .expect("Expected to get Identifier from proTxHash bytes"),
+                            );
+
+                            // Return BackendEvent
+                            BackendEvent::TaskCompletedStateChange {
+                                task: Task::Identity(task),
+                                execution_result: Ok(CompletedTaskPayload::String(
+                                    "Loaded Evonode Identity".to_string(),
+                                )),
+                                app_state_update: AppStateUpdate::LoadedEvonodeIdentity(
+                                    MutexGuard::map(loaded_identity, |x| {
+                                        x.as_mut().expect("assigned above")
+                                    }),
+                                ),
+                            }
+                        } else {
+                            BackendEvent::TaskCompleted {
+                                task: Task::Identity(task),
+                                execution_result: Err(format!("No identity found")),
+                            }
+                        }
+                    }
+                    Err(e) => BackendEvent::TaskCompleted {
+                        task: Task::Identity(task),
+                        execution_result: Err(format!("{e}")),
+                    },
                 }
             }
             IdentityTask::RegisterDPNSName(ref name) => {
@@ -409,7 +518,7 @@ impl AppState {
     pub(crate) async fn register_dpns_name(
         &self,
         sdk: &Sdk,
-        identifier: &Identifier, // once contract names are enabled, we can use this field
+        _identifier: &Identifier, // Once contract names are enabled, we can use this field
         name: &str,
     ) -> Result<(), Error> {
         let mut rng = StdRng::from_entropy();
@@ -506,18 +615,25 @@ impl AppState {
         };
         drop(identity_private_keys_lock);
 
+        let public_key =
+            match identity.get_first_public_key_matching(
+                Purpose::AUTHENTICATION,
+                HashSet::from([SecurityLevel::CRITICAL]),
+                HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
+            ) {
+                Some(key) => key,
+                None => return Err(Error::DPNSError(
+                    "Identity doesn't have an authentication key for signing document transitions"
+                        .to_string(),
+                )),
+            };
+
         let preorder_transition =
             DocumentsBatchTransition::new_document_creation_transition_from_document(
-                preorder_document,
+                preorder_document.clone(),
                 preorder_document_type,
                 entropy.0,
-                identity
-                    .get_first_public_key_matching(
-                        Purpose::AUTHENTICATION,
-                        HashSet::from([SecurityLevel::CRITICAL]),
-                        HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
-                    )
-                    .expect("expected to get a signing key"),
+                public_key,
                 identity_contract_nonce,
                 0,
                 &signer,
@@ -529,7 +645,7 @@ impl AppState {
 
         let domain_transition =
             DocumentsBatchTransition::new_document_creation_transition_from_document(
-                domain_document,
+                domain_document.clone(),
                 domain_document_type,
                 entropy.0,
                 identity
@@ -548,11 +664,51 @@ impl AppState {
                 None,
             )?;
 
-        tracing::info!("Broadcasting preorder document...");
         preorder_transition.broadcast(sdk).await?;
 
-        tracing::info!("Broadcasting domain document...");
+        let _preorder_document =
+            match <dash_sdk::platform::Document as PutDocument<SimpleSigner>>::wait_for_response::<
+                '_,
+                '_,
+                '_,
+            >(
+                &preorder_document,
+                sdk,
+                preorder_transition,
+                dpns_contract.clone().into(),
+            )
+            .await
+            {
+                Ok(document) => document,
+                Err(e) => {
+                    return Err(Error::DPNSError(format!(
+                        "Preorder document failed to process: {e}"
+                    )));
+                }
+            };
+
         domain_transition.broadcast(sdk).await?;
+
+        let _domain_document =
+            match <dash_sdk::platform::Document as PutDocument<SimpleSigner>>::wait_for_response::<
+                '_,
+                '_,
+                '_,
+            >(
+                &domain_document,
+                sdk,
+                domain_transition,
+                dpns_contract.into(),
+            )
+            .await
+            {
+                Ok(document) => document,
+                Err(e) => {
+                    return Err(Error::DPNSError(format!(
+                        "Domain document failed to process: {e}"
+                    )));
+                }
+            };
 
         Ok(())
     }

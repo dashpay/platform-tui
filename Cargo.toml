@@ -15,6 +15,7 @@ dpp = { git = "https://github.com/dashpay/platform", tag = "v1.0.0-beta.3", feat
 ] }
 dash-sdk = { git = "https://github.com/dashpay/platform", tag = "v1.0.0-beta.3" }
 drive = { git = "https://github.com/dashpay/platform", tag = "v1.0.0-beta.3" }
+drive-proof-verifier = { git = "https://github.com/dashpay/platform", tag = "v1.0.0-beta.3" }
 thiserror = "1"
 serde = "1.0.197"
 serde_json = "1.0.120"
@@ -47,3 +48,4 @@ chrono = "0.4"
 chrono-humanize = "0.2.3"
 dashmap = "5.5.3"
 grovedb-version = "1.0.0-rc.2"
+sha2 = "0.10.8"

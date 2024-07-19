@@ -732,7 +732,7 @@ pub async fn run_strategy_task<'s>(
                     );
                 }
                 strategy.start_identities = StartIdentities {
-                    number_of_identities: count,
+                    number_of_identities: count as u16,
                     keys_per_identity: keys_count,
                     starting_balances: balance,
                     extra_keys,
