@@ -113,6 +113,9 @@ impl ScreenController for StrategiesScreenController {
                 modifiers: KeyModifiers::NONE,
             }) => {
                 if !self.available_strategies.is_empty() {
+                    self.info =
+                        Info::new_fixed(">Exported strategy to supporting_files/strategy_exports");
+
                     ScreenFeedback::Form(Box::new(ExportStrategyFormController::new(
                         self.available_strategies.clone(),
                     )))
@@ -178,6 +181,17 @@ impl ScreenController for StrategiesScreenController {
                 };
 
                 self.info = Info::new_fixed(&info_text);
+                ScreenFeedback::Redraw
+            }
+            Event::Backend(BackendEvent::StrategyError { error }) => {
+                self.info = Info::new_error(&format!("Error: {}", &error));
+                ScreenFeedback::Redraw
+            }
+            Event::Backend(BackendEvent::TaskCompleted {
+                task: _,
+                execution_result,
+            }) => {
+                self.info = Info::new_from_result(execution_result);
                 ScreenFeedback::Redraw
             }
             _ => ScreenFeedback::None,
@@ -378,7 +392,7 @@ impl DeleteStrategyFormController {
     pub(super) fn new(strategies: Vec<String>) -> Self {
         DeleteStrategyFormController {
             strategy_input: SelectInput::new(strategies),
-            confirm_input: SelectInput::new(vec!["Yes".to_string(), "No".to_string()]),
+            confirm_input: SelectInput::new(vec!["No".to_string(), "Yes".to_string()]),
             selected_strategy: None,
             step: 0,
         }

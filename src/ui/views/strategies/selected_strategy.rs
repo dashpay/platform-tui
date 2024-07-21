@@ -21,7 +21,7 @@ use tuirealm::{
 use super::{
     identity_inserts::IdentityInsertsScreenController, operations::OperationsScreenController,
     run_strategy::RunStrategyFormController, run_strategy::RunStrategyScreenController,
-    start_contracts::ContractsWithUpdatesScreenController,
+    start_contracts::StartContractsScreenController,
     start_identities::StartIdentitiesScreenController,
 };
 use crate::{
@@ -117,7 +117,7 @@ impl ScreenController for SelectedStrategyScreenController {
             Event::Key(KeyEvent {
                 code: Key::Char('c'),
                 modifiers: KeyModifiers::NONE,
-            }) => ScreenFeedback::NextScreen(ContractsWithUpdatesScreenController::builder()),
+            }) => ScreenFeedback::NextScreen(StartContractsScreenController::builder()),
             Event::Key(KeyEvent {
                 code: Key::Char('i'),
                 modifiers: KeyModifiers::NONE,
@@ -171,6 +171,10 @@ impl ScreenController for SelectedStrategyScreenController {
                 },
             ) => {
                 self.available_strategies = strategies.keys().cloned().collect();
+                ScreenFeedback::Redraw
+            }
+            Event::Backend(BackendEvent::StrategyError { error }) => {
+                self.info = Info::new_error(&format!("Error: {}", &error));
                 ScreenFeedback::Redraw
             }
             _ => ScreenFeedback::None,
@@ -281,6 +285,7 @@ fn display_strategy(
                     )
                 }
                 OperationType::IdentityTransfer => "IdentityTransfer".to_string(),
+                OperationType::ResourceVote(_) => "ResourceVote".to_string(),
             };
 
             let times_per_block_display = if op.frequency.times_per_block_range.end

@@ -40,6 +40,34 @@ pub enum WalletTask {
     SplitUTXOs(u32),
 }
 
+pub async fn add_wallet_by_private_key<'s>(
+    wallet_state: &'s Mutex<Option<Wallet>>,
+    private_key: &String,
+) {
+    let private_key = if private_key.len() == 64 {
+        // hex
+        let bytes = hex::decode(private_key).expect("expected hex"); // TODO error hadling
+        PrivateKey::from_slice(bytes.as_slice(), Network::Testnet).expect("expected private key")
+    } else {
+        PrivateKey::from_wif(private_key.as_str()).expect("expected WIF key")
+        // TODO error handling
+    };
+
+    let secp = Secp256k1::new();
+    let public_key = private_key.public_key(&secp);
+    // todo: make the network be part of state
+    let address = Address::p2pkh(&public_key, Network::Testnet);
+    let wallet = Wallet::SingleKeyWallet(SingleKeyWallet {
+        private_key,
+        public_key,
+        address,
+        utxos: Default::default(),
+    });
+
+    let mut wallet_guard = wallet_state.lock().await;
+    *wallet_guard = Some(wallet);
+}
+
 pub(super) async fn run_wallet_task<'s>(
     sdk: &Sdk,
     wallet_state: &'s Mutex<Option<Wallet>>,
@@ -48,29 +76,9 @@ pub(super) async fn run_wallet_task<'s>(
 ) -> BackendEvent<'s> {
     match task {
         WalletTask::AddByPrivateKey(ref private_key) => {
-            let private_key = if private_key.len() == 64 {
-                // hex
-                let bytes = hex::decode(private_key).expect("expected hex"); // TODO error hadling
-                PrivateKey::from_slice(bytes.as_slice(), Network::Testnet)
-                    .expect("expected private key")
-            } else {
-                PrivateKey::from_wif(private_key.as_str()).expect("expected WIF key")
-                // TODO error handling
-            };
+            add_wallet_by_private_key(&wallet_state, private_key).await;
 
-            let secp = Secp256k1::new();
-            let public_key = private_key.public_key(&secp);
-            // todo: make the network be part of state
-            let address = Address::p2pkh(&public_key, Network::Testnet);
-            let wallet = Wallet::SingleKeyWallet(SingleKeyWallet {
-                private_key,
-                public_key,
-                address,
-                utxos: Default::default(),
-            });
-
-            let mut wallet_guard = wallet_state.lock().await;
-            *wallet_guard = Some(wallet);
+            let wallet_guard = wallet_state.lock().await;
             let loaded_wallet_update = MutexGuard::map(wallet_guard, |opt| {
                 opt.as_mut().expect("wallet was set above")
             });
@@ -101,7 +109,10 @@ pub(super) async fn run_wallet_task<'s>(
                     },
                 }
             } else {
-                BackendEvent::None
+                BackendEvent::TaskCompleted {
+                    task: Task::Wallet(task),
+                    execution_result: Err(format!("No wallet loaded")),
+                }
             }
         }
         WalletTask::CopyAddress => {
@@ -114,7 +125,10 @@ pub(super) async fn run_wallet_task<'s>(
                     execution_result: Ok("Copied Address".into()),
                 }
             } else {
-                BackendEvent::None
+                BackendEvent::TaskCompleted {
+                    task: Task::Wallet(task),
+                    execution_result: Err(format!("No wallet loaded")),
+                }
             }
         }
         WalletTask::ClearLoadedWallet => {
@@ -146,7 +160,10 @@ pub(super) async fn run_wallet_task<'s>(
                     }
                 }
             } else {
-                BackendEvent::None
+                BackendEvent::TaskCompleted {
+                    task: Task::Wallet(task),
+                    execution_result: Err(format!("No wallet loaded")),
+                }
             }
         }
     }
@@ -534,7 +551,7 @@ impl SingleKeyWallet {
     }
 
     /// Takes a usize `desired_utxo_count` specifying the desired number of UTXOs one wants the wallet to have
-    /// and splits the existing utxos into that many equally-valued UTXOs.
+    /// and splits the existing utxos into that many (minus one) equally-valued UTXOs plus one UTXO holding leftover value.
     ///
     /// It does so by executing transactions with itself as the sender and receiver, and
     /// the existing UTXOs as the inputs and just having `desired_utxo_count` outputs. Since Dash Core only
@@ -591,7 +608,7 @@ impl SingleKeyWallet {
             for (outpoint, txout) in remaining_utxos_in_wallet_vec.clone() {
                 if total_value_of_tx_inputs >= utxo_split_value * num_utxos_to_create_this_tx as u64
                 {
-                    break; // Selected enough UTXOs
+                    break; // Selected enough UTXOs for this tx
                 }
                 total_value_of_tx_inputs += txout.value;
                 selected_utxos.push(outpoint.clone());

@@ -3,10 +3,12 @@
 //! persistence required by backend.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{collections::BTreeMap, fs};
 
 use bincode::{Decode, Encode};
+use clap::Id;
 use dpp::{
     dashcore::{
         psbt::serialize::{Deserialize, Serialize},
@@ -24,11 +26,12 @@ use dpp::{
     ProtocolError::{self, PlatformDeserializationError, PlatformSerializationError},
 };
 use drive::drive::Drive;
+use grovedb_version::version::GroveVersion;
 use strategy_tests::Strategy;
 use tokio::sync::Mutex;
 use walkdir::{DirEntry, WalkDir};
 
-use super::wallet::Wallet;
+use super::wallet::{add_wallet_by_private_key, Wallet};
 use crate::{backend::insight::InsightAPIClient, config::Config};
 
 const CURRENT_PROTOCOL_VERSION: ProtocolVersion = 1;
@@ -50,6 +53,7 @@ pub type IdentityPrivateKeysMap = BTreeMap<(Identifier, KeyID), Vec<u8>>;
 // #[derive(Debug)]
 pub struct AppState {
     pub loaded_identity: Mutex<Option<Identity>>,
+    pub loaded_identity_pro_tx_hash: Mutex<Option<Identifier>>,
     pub identity_private_keys: Mutex<IdentityPrivateKeysMap>,
     pub loaded_wallet: Mutex<Option<Wallet>>,
     pub drive: Mutex<Drive>,
@@ -108,7 +112,11 @@ impl Default for AppState {
 
         if drive
             .grove
-            .is_empty_tree(drive::grovedb_path::SubtreePath::empty(), None)
+            .is_empty_tree(
+                drive::grovedb_path::SubtreePath::empty(),
+                None,
+                GroveVersion::latest(),
+            )
             .unwrap()
             .expect("expected to find id this is an empty db")
         {
@@ -119,6 +127,7 @@ impl Default for AppState {
 
         AppState {
             loaded_identity: None.into(),
+            loaded_identity_pro_tx_hash: None.into(),
             identity_private_keys: Default::default(),
             loaded_wallet: Mutex::new(None),
             drive: Mutex::from(drive),
@@ -137,6 +146,7 @@ impl Default for AppState {
 #[derive(Clone, Debug, Encode, Decode)]
 struct AppStateInSerializationFormat {
     pub loaded_identity: Option<Identity>,
+    pub loaded_identity_pro_tx_hash: Option<Identifier>,
     pub identity_private_keys: IdentityPrivateKeysMap,
     pub loaded_wallet: Option<Wallet>,
     pub known_identities: BTreeMap<Identifier, Identity>,
@@ -172,6 +182,7 @@ impl PlatformSerializableWithPlatformVersion for AppState {
     ) -> Result<Vec<u8>, ProtocolError> {
         let AppState {
             loaded_identity,
+            loaded_identity_pro_tx_hash,
             identity_private_keys,
             loaded_wallet,
             drive,
@@ -243,6 +254,7 @@ impl PlatformSerializableWithPlatformVersion for AppState {
 
         let app_state_in_serialization_format = AppStateInSerializationFormat {
             loaded_identity: loaded_identity.blocking_lock().clone(),
+            loaded_identity_pro_tx_hash: loaded_identity_pro_tx_hash.blocking_lock().clone(),
             identity_private_keys: identity_private_keys.blocking_lock().clone(),
             loaded_wallet: loaded_wallet.blocking_lock().clone(),
             known_identities: known_identities.blocking_lock().clone(),
@@ -288,6 +300,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
 
         let AppStateInSerializationFormat {
             loaded_identity,
+            loaded_identity_pro_tx_hash,
             identity_private_keys,
             loaded_wallet,
             known_identities,
@@ -391,6 +404,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
 
         Ok(AppState {
             loaded_identity: loaded_identity.into(),
+            loaded_identity_pro_tx_hash: loaded_identity_pro_tx_hash.into(),
             identity_private_keys: identity_private_keys.into(),
             loaded_wallet: deserialized_wallet_state,
             drive: drive.into(),
@@ -413,7 +427,12 @@ impl AppState {
         let path = config.state_file_path();
 
         let Ok(read_result) = fs::read(path.clone()) else {
-            return AppState::default();
+            let state = AppState::default();
+            if let Some(private_key) = &config.wallet_private_key {
+                let wallet_state = &state.loaded_wallet;
+                add_wallet_by_private_key(&wallet_state, private_key).await;
+            }
+            return state;
         };
 
         let Ok(app_state) = AppState::versioned_deserialize(
@@ -434,8 +453,18 @@ impl AppState {
                 eprintln!("Failed to backup old file: {}", e);
             }
 
-            return AppState::default();
+            let state = AppState::default();
+            if let Some(private_key) = &config.wallet_private_key {
+                let wallet_state = &state.loaded_wallet;
+                add_wallet_by_private_key(&wallet_state, private_key).await;
+            }
+            return state;
         };
+
+        if let Some(private_key) = &config.wallet_private_key {
+            let wallet_state = &app_state.loaded_wallet;
+            add_wallet_by_private_key(&wallet_state, private_key).await;
+        }
 
         // Load supporting contracts
         let platform_version = PlatformVersion::get(CURRENT_PROTOCOL_VERSION).unwrap();
@@ -457,13 +486,6 @@ impl AppState {
             let mut app_state_supporting_contracts = app_state.supporting_contracts.lock().await;
             *app_state_supporting_contracts = supporting_contracts;
         }
-
-        // if let Some(wallet) = app_state.loaded_wallet.lock().await.as_mut() {
-        //     wallet
-        //         .reload_utxos(insight)
-        //         .await
-        //         .expect("expected to reload utxos");
-        // }
 
         app_state
     }
