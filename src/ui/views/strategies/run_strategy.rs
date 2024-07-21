@@ -19,8 +19,6 @@ use crate::{
     Event,
 };
 
-use super::selected_strategy::SelectedStrategyScreenController;
-
 const COMMAND_KEYS: [ScreenCommandKey; 2] = [
     ScreenCommandKey::new("q", "Back to Strategy"),
     ScreenCommandKey::new("r", "Rerun strategy"),
@@ -135,8 +133,8 @@ impl ScreenController for RunStrategyScreenController {
                         reason,
                     } => {
                         format!(
-                            "Strategy '{}' failed to complete. Reached block height {}. Reason: {}",
-                            strategy_name, reached_block_height, reason
+                            "Strategy '{}' failed to complete. Reason: {}",
+                            strategy_name, reason
                         )
                     }
                 };
@@ -167,6 +165,7 @@ pub(super) struct RunStrategyFormController {
         Field<SelectInput<String>>,
         Field<TextInput<DefaultTextInputParser<u64>>>,
         Field<SelectInput<String>>,
+        // Field<TextInput<DefaultTextInputParser<f64>>>,
         Field<SelectInput<String>>,
     )>,
     selected_strategy: String,
@@ -188,6 +187,10 @@ impl RunStrategyFormController {
                     "Verify state transition proofs? (Only applies to block mode)",
                     SelectInput::new(vec!["No".to_string(), "Yes".to_string()]),
                 ),
+                // Field::new(
+                //     "Amount of Dash to top up identities who run out. Enter 0 for no top ups.",
+                //     TextInput::new("Enter Dash amount (decimals ok)"),
+                // ),
                 Field::new(
                     "Confirm you would like to run the strategy",
                     SelectInput::new(vec!["No".to_string(), "Yes".to_string()]),
@@ -202,6 +205,7 @@ impl FormController for RunStrategyFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
         match self.input.on_event(event) {
             InputStatus::Done((mode, num_blocks, verify_proofs, confirm)) => {
+                let credit_amount = (0.0 * 100_000_000_000.0) as u64;
                 if confirm == "Yes" {
                     if verify_proofs == "Yes" {
                         if mode == "Block" {
@@ -212,6 +216,7 @@ impl FormController for RunStrategyFormController {
                                     num_blocks,
                                     true,
                                     true,
+                                    credit_amount,
                                 )),
                                 block: true,
                             }
@@ -223,6 +228,7 @@ impl FormController for RunStrategyFormController {
                                     num_blocks,
                                     true,
                                     false,
+                                    credit_amount,
                                 )),
                                 block: true,
                             }
@@ -236,6 +242,7 @@ impl FormController for RunStrategyFormController {
                                     num_blocks,
                                     false,
                                     true,
+                                    credit_amount,
                                 )),
                                 block: true,
                             }
@@ -247,6 +254,7 @@ impl FormController for RunStrategyFormController {
                                     num_blocks,
                                     false,
                                     false,
+                                    credit_amount,
                                 )),
                                 block: true,
                             }
