@@ -461,10 +461,10 @@ impl AppState {
             return state;
         };
 
-        if let Some(private_key) = &config.wallet_private_key {
-            let wallet_state = &app_state.loaded_wallet;
-            add_wallet_by_private_key(&wallet_state, private_key).await;
-        }
+        // if let Some(private_key) = &config.wallet_private_key {
+        //     let wallet_state = &app_state.loaded_wallet;
+        //     add_wallet_by_private_key(&wallet_state, private_key).await;
+        // }
 
         // Load supporting contracts
         let platform_version = PlatformVersion::get(CURRENT_PROTOCOL_VERSION).unwrap();
