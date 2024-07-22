@@ -78,146 +78,6 @@ fn join_commands(
     commands.leak()
 }
 
-struct RegisterIdentityFormController {
-    input: TextInput<DefaultTextInputParser<f64>>,
-}
-
-impl RegisterIdentityFormController {
-    fn new() -> Self {
-        RegisterIdentityFormController {
-            input: TextInput::new("Quantity (in Dash)"),
-        }
-    }
-}
-
-impl FormController for RegisterIdentityFormController {
-    fn on_event(&mut self, event: KeyEvent) -> FormStatus {
-        match self.input.on_event(event) {
-            InputStatus::Done(amount) => FormStatus::Done {
-                task: Task::Identity(IdentityTask::RegisterIdentity(
-                    (amount * 100000000.0) as u64,
-                )),
-                block: true,
-            },
-            status => status.into(),
-        }
-    }
-
-    fn form_name(&self) -> &'static str {
-        "Identity registration"
-    }
-
-    fn step_view(&mut self, frame: &mut Frame, area: Rect) {
-        self.input.view(frame, area)
-    }
-
-    fn step_name(&self) -> &'static str {
-        "Funding amount"
-    }
-
-    fn step_index(&self) -> u8 {
-        0
-    }
-
-    fn steps_number(&self) -> u8 {
-        1
-    }
-}
-
-struct TopUpIdentityFormController {
-    input: TextInput<DefaultTextInputParser<f64>>,
-}
-
-impl TopUpIdentityFormController {
-    fn new() -> Self {
-        TopUpIdentityFormController {
-            input: TextInput::new("Quantity (in Dash)"),
-        }
-    }
-}
-
-impl FormController for TopUpIdentityFormController {
-    fn on_event(&mut self, event: KeyEvent) -> FormStatus {
-        match self.input.on_event(event) {
-            InputStatus::Done(amount) => FormStatus::Done {
-                task: Task::Identity(IdentityTask::TopUpIdentity((amount * 100000000.0) as u64)),
-                block: true,
-            },
-            InputStatus::Redraw => FormStatus::Redraw,
-            InputStatus::None => FormStatus::None,
-            InputStatus::Exit => FormStatus::Exit,
-        }
-    }
-
-    fn form_name(&self) -> &'static str {
-        "Identity top up"
-    }
-
-    fn step_view(&mut self, frame: &mut Frame, area: Rect) {
-        self.input.view(frame, area)
-    }
-
-    fn step_name(&self) -> &'static str {
-        "Top up amount"
-    }
-
-    fn step_index(&self) -> u8 {
-        0
-    }
-
-    fn steps_number(&self) -> u8 {
-        1
-    }
-}
-
-struct WithdrawFromIdentityFormController {
-    input: TextInput<DefaultTextInputParser<f64>>,
-}
-
-impl WithdrawFromIdentityFormController {
-    fn new() -> Self {
-        WithdrawFromIdentityFormController {
-            input: TextInput::new("Quantity (in Dash)"),
-        }
-    }
-}
-
-impl FormController for WithdrawFromIdentityFormController {
-    fn on_event(&mut self, event: KeyEvent) -> FormStatus {
-        match self.input.on_event(event) {
-            InputStatus::Done(amount) => FormStatus::Done {
-                task: Task::Identity(IdentityTask::WithdrawFromIdentity(
-                    (amount * 100000000.0) as u64,
-                )),
-                block: true,
-            },
-            InputStatus::Redraw => FormStatus::Redraw,
-            InputStatus::None => FormStatus::None,
-            InputStatus::Exit => FormStatus::Exit,
-        }
-    }
-
-    fn form_name(&self) -> &'static str {
-        "Identity withdrawal"
-    }
-
-    fn step_view(&mut self, frame: &mut Frame, area: Rect) {
-        self.input.view(frame, area)
-    }
-
-    fn step_name(&self) -> &'static str {
-        "Withdrawal amount"
-    }
-
-    fn step_index(&self) -> u8 {
-        0
-    }
-
-    fn steps_number(&self) -> u8 {
-        1
-    }
-}
-
 pub(crate) struct WalletScreenController {
     wallet_info: Info,
     identity_info: Info,
@@ -745,5 +605,145 @@ impl FormController for LoadEvonodeIdentityFormController {
 
     fn steps_number(&self) -> u8 {
         self.input.steps_number()
+    }
+}
+
+struct RegisterIdentityFormController {
+    input: TextInput<DefaultTextInputParser<f64>>,
+}
+
+impl RegisterIdentityFormController {
+    fn new() -> Self {
+        RegisterIdentityFormController {
+            input: TextInput::new("Quantity (in Dash)"),
+        }
+    }
+}
+
+impl FormController for RegisterIdentityFormController {
+    fn on_event(&mut self, event: KeyEvent) -> FormStatus {
+        match self.input.on_event(event) {
+            InputStatus::Done(amount) => FormStatus::Done {
+                task: Task::Identity(IdentityTask::RegisterIdentity(
+                    (amount * 100000000.0) as u64,
+                )),
+                block: true,
+            },
+            status => status.into(),
+        }
+    }
+
+    fn form_name(&self) -> &'static str {
+        "Identity registration"
+    }
+
+    fn step_view(&mut self, frame: &mut Frame, area: Rect) {
+        self.input.view(frame, area)
+    }
+
+    fn step_name(&self) -> &'static str {
+        "Funding amount"
+    }
+
+    fn step_index(&self) -> u8 {
+        0
+    }
+
+    fn steps_number(&self) -> u8 {
+        1
+    }
+}
+
+struct TopUpIdentityFormController {
+    input: TextInput<DefaultTextInputParser<f64>>,
+}
+
+impl TopUpIdentityFormController {
+    fn new() -> Self {
+        TopUpIdentityFormController {
+            input: TextInput::new("Quantity (in Dash)"),
+        }
+    }
+}
+
+impl FormController for TopUpIdentityFormController {
+    fn on_event(&mut self, event: KeyEvent) -> FormStatus {
+        match self.input.on_event(event) {
+            InputStatus::Done(amount) => FormStatus::Done {
+                task: Task::Identity(IdentityTask::TopUpIdentity((amount * 100000000.0) as u64)),
+                block: true,
+            },
+            InputStatus::Redraw => FormStatus::Redraw,
+            InputStatus::None => FormStatus::None,
+            InputStatus::Exit => FormStatus::Exit,
+        }
+    }
+
+    fn form_name(&self) -> &'static str {
+        "Identity top up"
+    }
+
+    fn step_view(&mut self, frame: &mut Frame, area: Rect) {
+        self.input.view(frame, area)
+    }
+
+    fn step_name(&self) -> &'static str {
+        "Top up amount"
+    }
+
+    fn step_index(&self) -> u8 {
+        0
+    }
+
+    fn steps_number(&self) -> u8 {
+        1
+    }
+}
+
+struct WithdrawFromIdentityFormController {
+    input: TextInput<DefaultTextInputParser<f64>>,
+}
+
+impl WithdrawFromIdentityFormController {
+    fn new() -> Self {
+        WithdrawFromIdentityFormController {
+            input: TextInput::new("Quantity (in Dash)"),
+        }
+    }
+}
+
+impl FormController for WithdrawFromIdentityFormController {
+    fn on_event(&mut self, event: KeyEvent) -> FormStatus {
+        match self.input.on_event(event) {
+            InputStatus::Done(amount) => FormStatus::Done {
+                task: Task::Identity(IdentityTask::WithdrawFromIdentity(
+                    (amount * 100000000.0) as u64,
+                )),
+                block: true,
+            },
+            InputStatus::Redraw => FormStatus::Redraw,
+            InputStatus::None => FormStatus::None,
+            InputStatus::Exit => FormStatus::Exit,
+        }
+    }
+
+    fn form_name(&self) -> &'static str {
+        "Identity withdrawal"
+    }
+
+    fn step_view(&mut self, frame: &mut Frame, area: Rect) {
+        self.input.view(frame, area)
+    }
+
+    fn step_name(&self) -> &'static str {
+        "Withdrawal amount"
+    }
+
+    fn step_index(&self) -> u8 {
+        0
+    }
+
+    fn steps_number(&self) -> u8 {
+        1
     }
 }
