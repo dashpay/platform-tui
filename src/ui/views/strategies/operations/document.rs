@@ -16,7 +16,10 @@ use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
 use crate::{
     backend::{StrategyContractNames, StrategyTask, Task},
-    ui::form::{ComposedInput, Field, FormController, FormStatus, Input, InputStatus, SelectInput},
+    ui::form::{
+        parsers::DefaultTextInputParser, ComposedInput, Field, FormController, FormStatus, Input,
+        InputStatus, SelectInput, TextInput,
+    },
 };
 
 // First they need to select a contract, then move to a new form with the document types
@@ -154,11 +157,11 @@ impl FormController for StrategyOpDocumentFormController {
 
 pub(super) struct DocumentTypeFormController {
     input: ComposedInput<(
-        Field<SelectInput<String>>, // Document types
-        Field<SelectInput<String>>, // Fill size
-        Field<SelectInput<String>>, // Fill type
-        Field<SelectInput<u16>>,    // Times per block
-        Field<SelectInput<f64>>,    // Chance per block
+        Field<SelectInput<String>>,                    // Document types
+        Field<SelectInput<String>>,                    // Fill size
+        Field<SelectInput<String>>,                    // Fill type
+        Field<TextInput<DefaultTextInputParser<u16>>>, // Times per block
+        Field<SelectInput<f64>>,                       // Chance per block
     )>,
     selected_strategy_name: String,
     selected_contract: DataContract,
@@ -185,10 +188,7 @@ impl DocumentTypeFormController {
                     "Populate not-required fields?",
                     SelectInput::new(vec!["No".to_string(), "Yes".to_string()]),
                 ),
-                Field::new(
-                    "Times per block",
-                    SelectInput::new(vec![1, 2, 5, 10, 20, 24]),
-                ),
+                Field::new("Times per block", TextInput::new("Enter a whole number")),
                 Field::new(
                     "Chance per block",
                     SelectInput::new(vec![1.0, 0.75, 0.5, 0.25, 0.1]),

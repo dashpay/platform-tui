@@ -8,12 +8,15 @@ use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
 use crate::{
     backend::{StrategyTask, Task},
-    ui::form::{ComposedInput, Field, FormController, FormStatus, Input, InputStatus, SelectInput},
+    ui::form::{
+        parsers::DefaultTextInputParser, ComposedInput, Field, FormController, FormStatus, Input,
+        InputStatus, SelectInput, TextInput,
+    },
 };
 
 pub(super) struct StrategyOpIdentityUpdateFormController {
     input: ComposedInput<(
-        Field<SelectInput<u16>>,
+        Field<TextInput<DefaultTextInputParser<u16>>>,
         // Field<SelectInput<u16>>,
         Field<SelectInput<f64>>,
     )>,
@@ -34,10 +37,7 @@ impl StrategyOpIdentityUpdateFormController {
         };
         StrategyOpIdentityUpdateFormController {
             input: ComposedInput::new((
-                Field::new(
-                    count_message,
-                    SelectInput::new(vec![1, 2, 5, 10, 20, 40, 100, 1000]),
-                ),
+                Field::new(count_message, TextInput::new("Enter a whole number")),
                 // Field::new(
                 //     "Times per block",
                 //     SelectInput::new(vec![1, 2, 5, 10, 20, 40, 100, 1000]),
