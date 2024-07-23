@@ -1044,20 +1044,8 @@ pub async fn run_strategy_task<'s>(
                     };
 
                 // Create asset lock proofs for all the identity creates and top ups
-                let num_identity_inserts = (strategy
-                    .identity_inserts
-                    .frequency
-                    .times_per_block_range
-                    .start) as u64;
                 let num_start_identities = strategy.start_identities.number_of_identities as u64;
-                let mut num_top_ups: u64 = 0;
-                for operation in &strategy.operations {
-                    if operation.op_type == OperationType::IdentityTopUp {
-                        num_top_ups += (operation.frequency.times_per_block_range.start) as u64;
-                    }
-                }
-                let num_asset_lock_proofs_needed = (num_identity_inserts + num_top_ups) * (num_blocks_or_seconds - 2)
-                    + num_start_identities;
+                let num_asset_lock_proofs_needed = num_start_identities;
                 let mut asset_lock_proofs: Vec<(AssetLockProof, PrivateKey)> = Vec::new();
                 if num_asset_lock_proofs_needed > 0 {
                     let wallet_lock = app_state.loaded_wallet.lock().await;
@@ -1198,6 +1186,120 @@ pub async fn run_strategy_task<'s>(
 
                     let mempool_document_counter_lock = mempool_document_counter.lock().await;
                     let mut current_identities_lock = current_identities.lock().await;
+
+                    // Here, dynamically get the correct number of asset lock proofs for the block if not an init block.
+                    if index > 2 {
+                        let num_identity_inserts = (strategy
+                            .identity_inserts
+                            .frequency
+                            .times_per_block_range
+                            .start) as u64;
+                        let mut num_top_ups: u64 = 0;
+                        for operation in &strategy.operations {
+                            if operation.op_type == OperationType::IdentityTopUp {
+                                num_top_ups += (operation.frequency.times_per_block_range.start) as u64;
+                            }
+                        }
+                        let num_asset_lock_proofs_needed = num_identity_inserts + num_top_ups;
+                        if num_asset_lock_proofs_needed > 0 {
+                            let wallet_lock = app_state.loaded_wallet.lock().await;
+                            let num_available_utxos = match wallet_lock
+                                .as_ref()
+                                .expect("No wallet loaded while getting asset lock proofs")
+                            {
+                                Wallet::SingleKeyWallet(SingleKeyWallet { utxos, .. }) => utxos.len(),
+                            };
+                            drop(wallet_lock);
+                            if num_available_utxos
+                                < num_asset_lock_proofs_needed
+                                    .try_into()
+                                    .expect("Couldn't convert num_asset_lock_proofs_needed into usize")
+                            {
+                                return BackendEvent::StrategyError {
+                                    error: format!("Not enough UTXOs available in wallet. Available: {}. Need: {}. Go to Wallet screen and create more.", num_available_utxos, num_asset_lock_proofs_needed),
+                                };
+                            }
+                            tracing::info!(
+                                "Obtaining {} asset lock proofs for the strategy...",
+                                num_asset_lock_proofs_needed
+                            );
+                            let asset_lock_proof_time = Instant::now();
+    
+                            // Broadcast asset locks and receive proofs.
+                            let permits = Arc::new(Semaphore::new(20));
+                            let starting_balance = strategy.start_identities.starting_balances;
+                            let processed = Arc::new(AtomicUsize::new(0));
+                            let tasks: FuturesUnordered<_> = (0..num_asset_lock_proofs_needed)
+                            .map(|_| {
+                                let permits = Arc::clone(&permits);
+                                let processed = Arc::clone(&processed);
+                        
+                                async move {
+                                    let _permit = permits.acquire_owned().await.ok()?;
+                        
+                                    let mut wallet_lock = app_state.loaded_wallet.lock().await;
+                                    let wallet = wallet_lock.as_mut().expect("Wallet not loaded");
+                        
+                                    let (asset_lock_transaction, asset_lock_proof_private_key) = wallet
+                                        .asset_lock_transaction(None, starting_balance)
+                                        .map_err(|e| {
+                                            tracing::error!("Error creating asset lock transaction: {:?}", e);
+                                            e
+                                        })
+                                        .ok()?;
+                        
+                                    let receive_address = wallet.receive_address();
+                                    drop(wallet_lock);
+                        
+                                    let result;
+                        
+                                        match AppState::broadcast_and_retrieve_asset_lock(sdk, &asset_lock_transaction, &receive_address).await {
+                                            Ok(asset_lock_proof) => {
+                                                result = Ok((asset_lock_proof, asset_lock_proof_private_key));
+                                            }
+                                            Err(e) => {
+                                                tracing::error!(
+                                                    "Error broadcasting asset lock transaction and retrieving proof: {:?}",
+                                                    e
+                                                );
+                                                result = Err(e);
+                                            }
+                                        }
+    
+    
+                                    match result {
+                                        Ok(asset_lock_proof) => {
+                                            let prev = processed.fetch_add(1, Ordering::Relaxed);
+                                            tracing::info!(
+                                                "Successfully obtained asset lock proof {} of {}",
+                                                prev + 1,
+                                                num_asset_lock_proofs_needed
+                                            );
+                                            Some(asset_lock_proof)
+                                        }
+                                        Err(e) => {
+                                            tracing::error!(
+                                                "Failed to obtain asset lock proof: {:?}",
+                                                e
+                                            );
+                                            None
+                                        }
+                                    }
+                                }
+                                .boxed_local()
+                            })
+                            .collect();
+    
+                            asset_lock_proofs = join_all(tasks).await.into_iter().flatten().collect();
+    
+                            tracing::info!(
+                                "Took {} seconds to obtain {} asset lock proofs from {} required",
+                                asset_lock_proof_time.elapsed().as_secs(),
+                                asset_lock_proofs.len(),
+                                num_asset_lock_proofs_needed
+                            );
+                        }    
+                    }
 
                     // Get the state transitions for the block (or second)
                     let (transitions, finalize_operations, mut new_identities) = strategy
@@ -1722,6 +1824,7 @@ pub async fn run_strategy_task<'s>(
                         // Also, sleep 10 seconds to let nodes update state
                         if index == 1 || index == 2 {
                             load_start_time = Instant::now();
+                            tracing:: info!("Sleep 10 seconds to allow initialization transactions to process");
                             tokio::time::sleep(Duration::from_secs(10)).await;
                         }
                     } else {
