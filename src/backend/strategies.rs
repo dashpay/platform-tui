@@ -5,7 +5,7 @@ use std::{
     fs::File,
     io::Write,
     sync::{
-        atomic::{AtomicU32, Ordering},
+        atomic::{AtomicU32, AtomicUsize, Ordering},
         Arc,
     },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -60,7 +60,7 @@ use drive::{
     error::proof::ProofError,
     query::DriveDocumentQuery,
 };
-use futures::future::join_all;
+use futures::{future::join_all, stream::FuturesUnordered, FutureExt};
 use itertools::Itertools;
 use rand::{rngs::StdRng, SeedableRng};
 use rs_dapi_client::{DapiRequest, DapiRequestExecutor, RequestSettings};
@@ -70,7 +70,7 @@ use strategy_tests::{
     operations::{DocumentAction, DocumentOp, FinalizeBlockOperation, Operation, OperationType},
     IdentityInsertInfo, LocalDocumentQuery, StartIdentities, Strategy, StrategyConfig,
 };
-use tokio::sync::{Mutex, MutexGuard};
+use tokio::sync::{Mutex, MutexGuard, Semaphore};
 
 use crate::backend::{wallet::SingleKeyWallet, Wallet};
 
@@ -1056,18 +1056,18 @@ pub async fn run_strategy_task<'s>(
                         num_top_ups += (operation.frequency.times_per_block_range.start) as u64;
                     }
                 }
-                let num_asset_lock_proofs_needed = num_identity_inserts * num_blocks_or_seconds
-                    + num_start_identities
-                    + num_top_ups;
+                let num_asset_lock_proofs_needed = (num_identity_inserts + num_top_ups) * (num_blocks_or_seconds - 2)
+                    + num_start_identities;
                 let mut asset_lock_proofs: Vec<(AssetLockProof, PrivateKey)> = Vec::new();
                 if num_asset_lock_proofs_needed > 0 {
-                    let mut wallet_lock = app_state.loaded_wallet.lock().await;
+                    let wallet_lock = app_state.loaded_wallet.lock().await;
                     let num_available_utxos = match wallet_lock
-                        .clone()
+                        .as_ref()
                         .expect("No wallet loaded while getting asset lock proofs")
                     {
                         Wallet::SingleKeyWallet(SingleKeyWallet { utxos, .. }) => utxos.len(),
                     };
+                    drop(wallet_lock);
                     if num_available_utxos
                         < num_asset_lock_proofs_needed
                             .try_into()
@@ -1082,44 +1082,80 @@ pub async fn run_strategy_task<'s>(
                         num_asset_lock_proofs_needed
                     );
                     let asset_lock_proof_time = Instant::now();
-                    for i in 0..(num_asset_lock_proofs_needed) {
-                        if let Some(wallet) = wallet_lock.as_mut() {
-                            // TO-DO: separate this into a function for start_identities, top ups, and inserts, because the balances should all be different
-                            match wallet.asset_lock_transaction(
-                                None,
-                                strategy.start_identities.starting_balances,
-                            ) {
-                                Ok((asset_lock_transaction, asset_lock_proof_private_key)) => {
-                                    match try_broadcast_and_retrieve_asset_lock(sdk, &asset_lock_transaction, &wallet.receive_address(), 2).await {
-                                        Ok(asset_lock_proof) => {
-                                            tracing::info!("Successfully obtained asset lock proof number {}", i + 1);
-                                            asset_lock_proofs.push((asset_lock_proof, asset_lock_proof_private_key));
-                                        }
-                                        Err(_) => {
-                                            tracing::error!("Failed to obtain asset lock proof number {} after retries", i + 1);
-                                            return BackendEvent::StrategyError {
-                                                error: format!("Failed to obtain all asset lock proofs. Suggest to try rerunning."),
-                                            };                        
-                                        }
+
+                    // Broadcast asset locks and receive proofs.
+                    let permits = Arc::new(Semaphore::new(20));
+                    let starting_balance = strategy.start_identities.starting_balances;
+                    let processed = Arc::new(AtomicUsize::new(0));
+                    let tasks: FuturesUnordered<_> = (0..num_asset_lock_proofs_needed)
+                    .map(|_| {
+                        let permits = Arc::clone(&permits);
+                        let processed = Arc::clone(&processed);
+                
+                        async move {
+                            let _permit = permits.acquire_owned().await.ok()?;
+                
+                            let mut wallet_lock = app_state.loaded_wallet.lock().await;
+                            let wallet = wallet_lock.as_mut().expect("Wallet not loaded");
+                
+                            let (asset_lock_transaction, asset_lock_proof_private_key) = wallet
+                                .asset_lock_transaction(None, starting_balance)
+                                .map_err(|e| {
+                                    tracing::error!("Error creating asset lock transaction: {:?}", e);
+                                    e
+                                })
+                                .ok()?;
+                
+                            let receive_address = wallet.receive_address();
+                            drop(wallet_lock);
+                
+                            let result;
+                
+                                match AppState::broadcast_and_retrieve_asset_lock(sdk, &asset_lock_transaction, &receive_address).await {
+                                    Ok(asset_lock_proof) => {
+                                        result = Ok((asset_lock_proof, asset_lock_proof_private_key));
                                     }
+                                    Err(e) => {
+                                        tracing::error!(
+                                            "Error broadcasting asset lock transaction and retrieving proof: {:?}",
+                                            e
+                                        );
+                                        result = Err(e);
+                                    }
+                                }
+
+
+                            match result {
+                                Ok(asset_lock_proof) => {
+                                    let prev = processed.fetch_add(1, Ordering::Relaxed);
+                                    tracing::info!(
+                                        "Successfully obtained asset lock proof {} of {}",
+                                        prev + 1,
+                                        num_asset_lock_proofs_needed
+                                    );
+                                    Some(asset_lock_proof)
                                 }
                                 Err(e) => {
                                     tracing::error!(
-                                        "Error creating asset lock transaction: {:?}",
+                                        "Failed to obtain asset lock proof: {:?}",
                                         e
-                                    )
+                                    );
+                                    None
                                 }
                             }
-                        } else {
-                            tracing::error!("Wallet not loaded");
                         }
-                    }
+                        .boxed_local()
+                    })
+                    .collect();
+
+                    asset_lock_proofs = join_all(tasks).await.into_iter().flatten().collect();
+
                     tracing::info!(
-                        "Took {} seconds to obtain {} asset lock proofs",
+                        "Took {} seconds to obtain {} asset lock proofs from {} required",
                         asset_lock_proof_time.elapsed().as_secs(),
-                        asset_lock_proofs.len()
+                        asset_lock_proofs.len(),
+                        num_asset_lock_proofs_needed
                     );
-                    drop(wallet_lock); // I don't think this is necessary anymore after moving into the if statement
                 }
 
                 // Get the execution mode as a string for logging
@@ -1251,127 +1287,17 @@ pub async fn run_strategy_task<'s>(
 
                         // A queue for the state transitions for the block (or second)
                         let st_queue: VecDeque<StateTransition> = transitions.clone().into();
-                        let mut st_queue_index = 0; // Current index of the queue. Only used for logging.
 
                         // We will concurrently broadcast the state transitions, so collect the futures
                         let mut broadcast_futures = Vec::new();
 
                         for transition in st_queue.iter() {
                             transition_count += 1; // Used for logging how many transitions we attempted
-                            st_queue_index += 1; // Start at 1 and iterate upwards since we're only using this for logs
                             let transition_clone = transition.clone();
-                            let transition_type = transition_clone.name().to_owned();
                             let transition_id = hex::encode(transition.transaction_id().expect("Expected transaction to serialize")).to_string().reverse();
                             let mempool_document_counter_clone = mempool_document_counter.clone();
                             let current_identities_clone = Arc::clone(&current_identities);
-
-                            // Determine if the transitions is a dependent transition.
-                            // Dependent state transitions are those that get their revision checked. Sending multiple
-                            // in the same block causes errors because they get sent to different nodes and become disordered.
-                            // So we sleep for 1 second between dependent transitions to enforce only 1 per block.
-                            let is_dependent_transition = matches!(
-                                transition_clone,
-                                StateTransition::IdentityUpdate(_)
-                                    | StateTransition::DataContractUpdate(_)
-                                    | StateTransition::IdentityCreditTransfer(_)
-                                    | StateTransition::IdentityCreditWithdrawal(_)
-                            );
-
-                            if is_dependent_transition {
-                                // Sequentially process dependent transitions with a delay between them
-                                if let Ok(broadcast_request) =
-                                    transition_clone.broadcast_request_for_state_transition()
-                                {
-                                    match broadcast_request
-                                        .execute(sdk, RequestSettings::default())
-                                        .await
-                                    {
-                                        Ok(_broadcast_result) => {
-                                            if let Ok(wait_request) = transition_clone
-                                                .wait_for_state_transition_result_request()
-                                            {
-                                                match wait_request
-                                                    .execute(sdk, RequestSettings::default())
-                                                    .await
-                                                {
-                                                    Ok(wait_response) => {
-                                                        if let Some(wait_for_state_transition_result_response::Version::V0(v0_response)) = &wait_response.version {
-                                                            if let Some(result) = &v0_response.result {
-                                                                match result {
-                                                                    wait_for_state_transition_result_response_v0::Result::Proof(proof) => {
-                                                                        if verify_proofs {
-                                                                            if let Some(metadata) = &v0_response.metadata {
-                                                                                let epoch = Epoch::new(metadata.epoch as u16).expect("Expected to get epoch from metadata in proof verification");
-                                                                                let verified = Drive::verify_state_transition_was_executed_with_proof(
-                                                                                    &transition_clone,
-                                                                                    &BlockInfo {
-                                                                                        time_ms: metadata.time_ms,
-                                                                                        height: metadata.height,
-                                                                                        core_height: metadata.core_chain_locked_height,
-                                                                                        epoch,
-                                                                                    },
-                                                                                    proof.grovedb_proof.as_slice(),
-                                                                                    &|_| Ok(None),
-                                                                                    sdk.version(),
-                                                                                );
-                                                                                match verified {
-                                                                                    Ok(_) => {
-                                                                                        tracing::info!("Successfully processed and verified proof for state transition {} ({}), {} {} (Actual block height: {})", st_queue_index, transition_type, mode_string, index, metadata.height);
-                                                                                        success_count += 1;
-                                                                                    }
-                                                                                    Err(e) => {
-                                                                                        tracing::error!("Error verifying state transition execution proof: {}", e);
-                                                                                    }
-                                                                                }    
-                                                                            } else {
-                                                                                tracing::error!("Unable to verify proof due to no metadata in response");
-                                                                            }
-                                                                        } else {
-                                                                            if let Some(metadata) = &v0_response.metadata {
-                                                                                tracing::info!("Successfully processed state transition {} ({}) for {} {} (Actual block height: {})", st_queue_index, transition_type, mode_string, index, metadata.height);
-                                                                                success_count += 1;    
-                                                                            } else {
-                                                                                tracing::info!("Successfully processed state transition {} ({}) for {} {}", st_queue_index, transition_type, mode_string, index);
-                                                                                success_count += 1;    
-                                                                            }
-                                                                        }
-                                                                    }
-                                                                    wait_for_state_transition_result_response_v0::Result::Error(error) => {
-                                                                        tracing::error!("WaitForStateTransitionResultResponse error: {:?}", error);
-                                                                    }
-                                                                }
-
-                                                                // Sleep because we need to give the chain state time to update revisions
-                                                                // It seems this is only necessary for certain STs. Like AddKeys and DisableKeys seem to need it, but Transfer does not. Not sure about Withdraw or ContractUpdate yet.
-                                                                tokio::time::sleep(Duration::from_secs(1)).await;
-                                                            }
-                                                        } else {
-                                                            tracing::info!("Response version other than V0 received or absent for state transition {} ({})", st_queue_index, transition_type);
-                                                        }
-                                                    }
-                                                    Err(e) => tracing::error!(
-                                                        "Error waiting for state transition result: {:?}",
-                                                        e
-                                                    ),
-                                                }
-                                            } else {
-                                                tracing::error!(
-                                                    "Failed to create wait request for state transition."
-                                                );
-                                            }
-                                        }
-                                        Err(e) => tracing::error!(
-                                            "Error broadcasting dependent state transition: {:?}",
-                                            e
-                                        ),
-                                    }
-                                } else {
-                                    tracing::error!(
-                                        "Failed to create broadcast request for state transition."
-                                    );
-                                }
-                            } else {
-                                // Independent state transitions
+                            
                                 let oks = oks_clone.clone();
                                 let errs = errs_clone.clone();
 
@@ -1493,7 +1419,7 @@ pub async fn run_strategy_task<'s>(
                                     }
                                 };
                                 broadcast_futures.push(future);
-                            }
+                            
                         }
 
                         // Concurrently execute all broadcast requests for independent transitions
