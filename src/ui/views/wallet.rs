@@ -37,7 +37,7 @@ const WALLET_LOADED_COMMANDS: [ScreenCommandKey; 7] = [
     ScreenCommandKey::new("i", "Register identity"),
     ScreenCommandKey::new("l", "Load known identity"),
     ScreenCommandKey::new("u", "Get more utxos"),
-    ScreenCommandKey::new("C-m", "Clear loaded wallet"),
+    ScreenCommandKey::new("C-w", "Clear loaded wallet"),
     ScreenCommandKey::new("p", "Load Evonode Identity"),
 ];
 
@@ -81,18 +81,6 @@ fn join_commands(
     }
     commands.leak()
 }
-
-pub(crate) struct WalletScreenController {
-    wallet_info: Info,
-    identity_info: Info,
-    wallet_loaded: bool,
-    identity_loaded: bool,
-    identity_registration_in_progress: bool,
-    identity_top_up_in_progress: bool,
-    private_keys_map: IdentityPrivateKeysMap,
-}
-
-impl_builder!(WalletScreenController);
 
 struct RegisterIdentityFormController {
     input: TextInput<DefaultTextInputParser<f64>>,
@@ -233,6 +221,18 @@ impl FormController for WithdrawFromIdentityFormController {
         1
     }
 }
+
+pub(crate) struct WalletScreenController {
+    wallet_info: Info,
+    identity_info: Info,
+    wallet_loaded: bool,
+    identity_loaded: bool,
+    identity_registration_in_progress: bool,
+    identity_top_up_in_progress: bool,
+    private_keys_map: IdentityPrivateKeysMap,
+}
+
+impl_builder!(WalletScreenController);
 
 impl WalletScreenController {
     pub(crate) async fn new(app_state: &AppState) -> Self {
@@ -451,7 +451,7 @@ impl ScreenController for WalletScreenController {
             }
 
             Event::Key(KeyEvent {
-                code: Key::Char('m'),
+                code: Key::Char('w'),
                 modifiers: KeyModifiers::CONTROL,
             }) if self.wallet_loaded => {
                 self.wallet_loaded = false;
@@ -497,7 +497,6 @@ impl ScreenController for WalletScreenController {
                 app_state_update: AppStateUpdate::ClearedLoadedIdentity,
             }) => {
                 self.identity_info = Info::new_fixed("");
-                self.identity_loaded = false;
                 ScreenFeedback::Redraw
             }
 
@@ -508,7 +507,6 @@ impl ScreenController for WalletScreenController {
             }) => {
                 self.wallet_info =
                     Info::new_fixed("Wallet management commands\n\nNo wallet loaded yet");
-                self.wallet_loaded = false;
                 self.identity_info = Info::new_fixed("");
                 self.identity_loaded = false;
                 ScreenFeedback::Redraw
