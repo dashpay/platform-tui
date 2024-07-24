@@ -578,8 +578,8 @@ impl SingleKeyWallet {
             (desired_utxo_count as f64 / MAX_OUTPUTS_PER_TRANSACTION as f64).ceil() as usize;
 
         // Amount to fund each UTXO.
-        // Reserve a buffer of 1_000_000_000 to make sure we never go over the current balance
-        let utxo_split_value = (current_wallet_balance - 1_000_000_000) / desired_utxo_count as u64;
+        // Reserve a buffer of 1_000_000 duffs to make sure we never go over the current balance
+        let utxo_split_value = (current_wallet_balance - 1_000_000) / desired_utxo_count as u64;
 
         // Create and execute the transactions
         tracing::info!("We want to make {} transactions", number_of_transactions);
