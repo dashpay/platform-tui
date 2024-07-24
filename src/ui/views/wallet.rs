@@ -70,10 +70,14 @@ fn join_commands(
         } else {
             if identity_registration_in_progress {
                 commands.push(ScreenCommandKey::new("i", "Continue identity registration"));
+                commands.push(ScreenCommandKey::new("g", "Restart identity registration"));
+            } else {
+                commands.push(ScreenCommandKey::new("i", "Register identity"));
             }
         }
     } else {
         commands.push(ScreenCommandKey::new("a", "Add wallet by private key"));
+        commands.push(ScreenCommandKey::new("r", "Setup brand new random wallet"));
     }
     commands.leak()
 }
@@ -346,6 +350,14 @@ impl ScreenController for WalletScreenController {
             },
 
             Event::Key(KeyEvent {
+                           code: Key::Char('r'),
+                           modifiers: KeyModifiers::NONE,
+                       }) if !self.wallet_loaded=> ScreenFeedback::Task {
+                task: Task::Wallet(WalletTask::AddRandomKey),
+                block: false,
+            },
+
+            Event::Key(KeyEvent {
                 code: Key::Char('r'),
                 modifiers: KeyModifiers::NONE,
             }) if self.identity_loaded => ScreenFeedback::Task {
@@ -365,12 +377,34 @@ impl ScreenController for WalletScreenController {
                 modifiers: KeyModifiers::NONE,
             }) if self.identity_loaded => {
                 ScreenFeedback::Form(Box::new(WithdrawFromIdentityFormController::new()))
-            }
+            },
 
             Event::Key(KeyEvent {
                 code: Key::Char('i'),
                 modifiers: KeyModifiers::NONE,
-            }) => ScreenFeedback::Form(Box::new(RegisterIdentityFormController::new())),
+            }) if !self.identity_registration_in_progress => {
+                ScreenFeedback::Form(Box::new(RegisterIdentityFormController::new()))
+            },
+
+            Event::Key(KeyEvent {
+                           code: Key::Char('i'),
+                           modifiers: KeyModifiers::NONE,
+                       }) if self.identity_registration_in_progress => {
+                ScreenFeedback::Task {
+                    task: Task::Identity(IdentityTask::ContinueRegisteringIdentity),
+                    block: true,
+                }
+            },
+
+            Event::Key(KeyEvent {
+                           code: Key::Char('g'),
+                           modifiers: KeyModifiers::NONE,
+                       }) if self.identity_registration_in_progress => {
+                ScreenFeedback::Task {
+                    task: Task::Identity(IdentityTask::ClearRegistrationOfIdentityInProgress),
+                    block: true,
+                }
+            },
 
             Event::Key(KeyEvent {
                 code: Key::Char('u'),
