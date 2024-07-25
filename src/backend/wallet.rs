@@ -692,7 +692,7 @@ impl SingleKeyWallet {
             };
             match sdk.execute(request, RequestSettings::default()).await {
                 Ok(BroadcastTransactionResponse { transaction_id: id }) => {
-                    tokio::time::sleep(Duration::from_secs(3));
+                    tokio::time::sleep(Duration::from_secs(3)).await;
                     let GetTransactionResponse { .. } = match sdk
                         .execute(GetTransactionRequest { id }, RequestSettings::default())
                         .await
