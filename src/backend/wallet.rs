@@ -175,6 +175,8 @@ pub enum WalletError {
     Insight(InsightError),
     #[error("not enough balance")]
     Balance,
+    #[error("Wallet error: {0}")]
+    Custom(String),
 }
 
 #[derive(Debug, Clone, Encode, Decode)]
@@ -210,9 +212,11 @@ impl Wallet {
 
         let one_time_key_hash = asset_lock_public_key.pubkey_hash();
 
-        let (mut utxos, change) = self
-            .take_unspent_utxos_for(amount + fee)
-            .ok_or(WalletError::Balance)?;
+        let (mut utxos, change) =
+            self.take_unspent_utxos_for(amount + fee)
+                .ok_or(WalletError::Custom(
+                    "take_unspent_utxos_for() returned None".to_string(),
+                ))?;
 
         let change_address = self.change_address();
 
@@ -225,8 +229,9 @@ impl Wallet {
             script_pubkey: ScriptBuf::new_op_return(&[]),
         };
         if change < fee {
-            tracing::error!("change < fee");
-            return Err(WalletError::Balance);
+            return Err(WalletError::Custom(
+                "Change < Fee in asset_lock_transaction()".to_string(),
+            ));
         }
         let change_output = TxOut {
             value: change - fee,
