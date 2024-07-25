@@ -1519,7 +1519,7 @@ pub async fn run_strategy_task<'s>(
                                                         let mut mempool_document_counter_clone_lock = mempool_document_counter_clone.lock().await;
                                                         let count = mempool_document_counter_clone_lock.entry((transition_clone.owner_id(), contract_id)).or_insert(0);
                                                         *count += 1;
-                                                        tracing::info!(" + Incremented identity {} tx counter for contract {}. Count: {}", transition_owner_id, contract_id.to_string(Encoding::Base58), count);
+                                                        // tracing::info!(" + Incremented identity {} tx counter for contract {}. Count: {}", transition_owner_id, contract_id.to_string(Encoding::Base58), count);
                                                     }
                                                 }
                                                 Ok((transition_clone, broadcast_result))
@@ -1871,7 +1871,7 @@ pub async fn run_strategy_task<'s>(
                                                                         let mut mempool_document_counter_lock = mempool_document_counter_clone.lock().await;
                                                                         let count = mempool_document_counter_lock.entry((transition.owner_id(), contract_id)).or_insert(0);
                                                                         *count -= 1;
-                                                                        tracing::info!(" - Decremented identity {} tx counter for contract {}. Count: {}", transition_owner_id, contract_id.to_string(Encoding::Base58), count);
+                                                                        // tracing::info!(" - Decremented identity {} tx counter for contract {}. Count: {}", transition_owner_id, contract_id.to_string(Encoding::Base58), count);
                                                                     }
                                                                 }
                                                             } else if let Some(wait_for_state_transition_result_response_v0::Result::Error(e)) = &v0_response.result {
