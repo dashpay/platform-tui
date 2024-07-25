@@ -19,7 +19,7 @@ use dapi_grpc::platform::v0::{
     },
     GetEpochsInfoRequest,
 };
-use dash_sdk::platform::transition::withdraw_from_identity::WithdrawFromIdentity;
+use dash_sdk::platform::transition::{top_up_identity::TopUpIdentity, withdraw_from_identity::WithdrawFromIdentity};
 use dash_sdk::{
     platform::{transition::broadcast_request::BroadcastRequestForStateTransition, Fetch},
     Sdk,
@@ -47,8 +47,7 @@ use dpp::{
             document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods,
             document_transition::DocumentTransition, DocumentCreateTransition,
             DocumentsBatchTransition,
-        },
-        StateTransition, StateTransitionLike,
+        }, identity_topup_transition::{methods::IdentityTopUpTransitionMethodsV0, IdentityTopUpTransition}, StateTransition, StateTransitionLike
     },
 };
 use drive::{
@@ -70,7 +69,7 @@ use strategy_tests::{
     operations::{DocumentAction, DocumentOp, FinalizeBlockOperation, Operation, OperationType},
     IdentityInsertInfo, LocalDocumentQuery, StartIdentities, Strategy, StrategyConfig,
 };
-use tokio::sync::{Mutex, MutexGuard, Semaphore};
+use tokio::sync::{oneshot, Mutex, MutexGuard, Semaphore};
 
 use crate::backend::{wallet::SingleKeyWallet, Wallet};
 
@@ -789,7 +788,7 @@ pub async fn run_strategy_task<'s>(
             num_blocks_or_seconds,
             verify_proofs,
             block_mode,
-            top_up_amount,
+            _top_up_amount,
         ) => {
             tracing::info!("-----Starting strategy '{}'-----", strategy_name);
             let init_start_time = Instant::now(); // Start time of strategy initialization plus execution of first two blocks
@@ -1045,7 +1044,18 @@ pub async fn run_strategy_task<'s>(
 
                 // Create asset lock proofs for all the identity creates and top ups
                 let num_start_identities = strategy.start_identities.number_of_identities as u64;
-                let num_asset_lock_proofs_needed = num_start_identities;
+                let num_identity_inserts = (strategy
+                    .identity_inserts
+                    .frequency
+                    .times_per_block_range
+                    .start as f64 * num_blocks_or_seconds as f64 * strategy.identity_inserts.frequency.chance_per_block.unwrap_or(1.0)) as u64;
+                let mut num_top_ups: u64 = 0;
+                for operation in &strategy.operations {
+                    if operation.op_type == OperationType::IdentityTopUp {
+                        num_top_ups += (operation.frequency.times_per_block_range.start as f64 * num_blocks_or_seconds as f64 * operation.frequency.chance_per_block.unwrap_or(1.0)) as u64;
+                    }
+                }
+                let num_asset_lock_proofs_needed = num_start_identities + num_identity_inserts + num_top_ups;
                 let mut asset_lock_proofs: Vec<(AssetLockProof, PrivateKey)> = Vec::new();
                 if num_asset_lock_proofs_needed > 0 {
                     let wallet_lock = app_state.loaded_wallet.lock().await;
@@ -1160,7 +1170,7 @@ pub async fn run_strategy_task<'s>(
                 let mut transition_count: u32 = 0; // Used for logging how many transitions we attempted
                 let mut success_count: u32 = 0; // Used for logging how many transitions were successful
                 let mut load_start_time = Instant::now(); // Time when the load test begins (all blocks after the second block)
-                let mut index = 1; // Index of the loop iteration. Represents blocks for block mode and seconds for time mode
+                let mut loop_index = 1; // Index of the loop iteration. Represents blocks for block mode and seconds for time mode
                 let mut new_identity_ids = Vec::new(); // Will capture the ids of identities added to current_identities
                 let mut new_contract_ids = Vec::new(); // Will capture the ids of newly created data contracts
                 let oks = Arc::new(AtomicU32::new(0)); // Atomic counter for successful broadcasts
@@ -1175,7 +1185,7 @@ pub async fn run_strategy_task<'s>(
 
                 // Now loop through the number of blocks or seconds the user asked for, preparing and processing state transitions
                 while (block_mode && current_block_info.height < (initial_block_info.height + num_blocks_or_seconds + 2)) // +2 because we don't count the first two initialization blocks
-                    || (!block_mode && load_start_time.elapsed().as_secs() < num_blocks_or_seconds) || index <= 2
+                    || (!block_mode && load_start_time.elapsed().as_secs() < num_blocks_or_seconds) || loop_index <= 2
                 {
                     let loop_start_time = Instant::now();
                     let oks_clone = oks.clone();
@@ -1187,119 +1197,120 @@ pub async fn run_strategy_task<'s>(
                     let mempool_document_counter_lock = mempool_document_counter.lock().await;
                     let mut current_identities_lock = current_identities.lock().await;
 
-                    // Here, dynamically get the correct number of asset lock proofs for the block if not an init block.
-                    if index > 2 {
-                        let num_identity_inserts = (strategy
-                            .identity_inserts
-                            .frequency
-                            .times_per_block_range
-                            .start) as u64;
-                        let mut num_top_ups: u64 = 0;
-                        for operation in &strategy.operations {
-                            if operation.op_type == OperationType::IdentityTopUp {
-                                num_top_ups += (operation.frequency.times_per_block_range.start) as u64;
-                            }
-                        }
-                        let num_asset_lock_proofs_needed = num_identity_inserts + num_top_ups;
-                        if num_asset_lock_proofs_needed > 0 {
-                            let wallet_lock = app_state.loaded_wallet.lock().await;
-                            let num_available_utxos = match wallet_lock
-                                .as_ref()
-                                .expect("No wallet loaded while getting asset lock proofs")
-                            {
-                                Wallet::SingleKeyWallet(SingleKeyWallet { utxos, .. }) => utxos.len(),
-                            };
-                            drop(wallet_lock);
-                            if num_available_utxos
-                                < num_asset_lock_proofs_needed
-                                    .try_into()
-                                    .expect("Couldn't convert num_asset_lock_proofs_needed into usize")
-                            {
-                                return BackendEvent::StrategyError {
-                                    error: format!("Not enough UTXOs available in wallet. Available: {}. Need: {}. Go to Wallet screen and create more.", num_available_utxos, num_asset_lock_proofs_needed),
-                                };
-                            }
-                            tracing::info!(
-                                "Obtaining {} asset lock proofs for the strategy...",
-                                num_asset_lock_proofs_needed
-                            );
-                            let asset_lock_proof_time = Instant::now();
+                    // // Here, dynamically get the correct number of asset lock proofs for the block if not an init block.
+                    // // This won't work until reload_utxos actually updates the state
+                    // if index > 2 {
+                    //     let num_identity_inserts = (strategy
+                    //         .identity_inserts
+                    //         .frequency
+                    //         .times_per_block_range
+                    //         .start) as u64;
+                    //     let mut num_top_ups: u64 = 0;
+                    //     for operation in &strategy.operations {
+                    //         if operation.op_type == OperationType::IdentityTopUp {
+                    //             num_top_ups += (operation.frequency.times_per_block_range.start) as u64;
+                    //         }
+                    //     }
+                    //     let num_asset_lock_proofs_needed = num_identity_inserts + num_top_ups;
+                    //     if num_asset_lock_proofs_needed > 0 {
+                    //         let wallet_lock = app_state.loaded_wallet.lock().await;
+                    //         let num_available_utxos = match wallet_lock
+                    //             .as_ref()
+                    //             .expect("No wallet loaded while getting asset lock proofs")
+                    //         {
+                    //             Wallet::SingleKeyWallet(SingleKeyWallet { utxos, .. }) => utxos.len(),
+                    //         };
+                    //         drop(wallet_lock);
+                    //         if num_available_utxos
+                    //             < num_asset_lock_proofs_needed
+                    //                 .try_into()
+                    //                 .expect("Couldn't convert num_asset_lock_proofs_needed into usize")
+                    //         {
+                    //             return BackendEvent::StrategyError {
+                    //                 error: format!("Not enough UTXOs available in wallet. Available: {}. Need: {}. Go to Wallet screen and create more.", num_available_utxos, num_asset_lock_proofs_needed),
+                    //             };
+                    //         }
+                    //         tracing::info!(
+                    //             "Obtaining {} asset lock proofs for the strategy...",
+                    //             num_asset_lock_proofs_needed
+                    //         );
+                    //         let asset_lock_proof_time = Instant::now();
     
-                            // Broadcast asset locks and receive proofs.
-                            let permits = Arc::new(Semaphore::new(20));
-                            let starting_balance = strategy.start_identities.starting_balances;
-                            let processed = Arc::new(AtomicUsize::new(0));
-                            let tasks: FuturesUnordered<_> = (0..num_asset_lock_proofs_needed)
-                            .map(|_| {
-                                let permits = Arc::clone(&permits);
-                                let processed = Arc::clone(&processed);
+                    //         // Broadcast asset locks and receive proofs.
+                    //         let permits = Arc::new(Semaphore::new(20));
+                    //         let starting_balance = strategy.start_identities.starting_balances;
+                    //         let processed = Arc::new(AtomicUsize::new(0));
+                    //         let tasks: FuturesUnordered<_> = (0..num_asset_lock_proofs_needed)
+                    //         .map(|_| {
+                    //             let permits = Arc::clone(&permits);
+                    //             let processed = Arc::clone(&processed);
                         
-                                async move {
-                                    let _permit = permits.acquire_owned().await.ok()?;
+                    //             async move {
+                    //                 let _permit = permits.acquire_owned().await.ok()?;
                         
-                                    let mut wallet_lock = app_state.loaded_wallet.lock().await;
-                                    let wallet = wallet_lock.as_mut().expect("Wallet not loaded");
+                    //                 let mut wallet_lock = app_state.loaded_wallet.lock().await;
+                    //                 let wallet = wallet_lock.as_mut().expect("Wallet not loaded");
                         
-                                    let (asset_lock_transaction, asset_lock_proof_private_key) = wallet
-                                        .asset_lock_transaction(None, starting_balance)
-                                        .map_err(|e| {
-                                            tracing::error!("Error creating asset lock transaction: {:?}", e);
-                                            e
-                                        })
-                                        .ok()?;
+                    //                 let (asset_lock_transaction, asset_lock_proof_private_key) = wallet
+                    //                     .asset_lock_transaction(None, starting_balance)
+                    //                     .map_err(|e| {
+                    //                         tracing::error!("Error creating asset lock transaction: {:?}", e);
+                    //                         e
+                    //                     })
+                    //                     .ok()?;
                         
-                                    let receive_address = wallet.receive_address();
-                                    drop(wallet_lock);
+                    //                 let receive_address = wallet.receive_address();
+                    //                 drop(wallet_lock);
                         
-                                    let result;
+                    //                 let result;
                         
-                                        match AppState::broadcast_and_retrieve_asset_lock(sdk, &asset_lock_transaction, &receive_address).await {
-                                            Ok(asset_lock_proof) => {
-                                                result = Ok((asset_lock_proof, asset_lock_proof_private_key));
-                                            }
-                                            Err(e) => {
-                                                tracing::error!(
-                                                    "Error broadcasting asset lock transaction and retrieving proof: {:?}",
-                                                    e
-                                                );
-                                                result = Err(e);
-                                            }
-                                        }
+                    //                     match AppState::broadcast_and_retrieve_asset_lock(sdk, &asset_lock_transaction, &receive_address).await {
+                    //                         Ok(asset_lock_proof) => {
+                    //                             result = Ok((asset_lock_proof, asset_lock_proof_private_key));
+                    //                         }
+                    //                         Err(e) => {
+                    //                             tracing::error!(
+                    //                                 "Error broadcasting asset lock transaction and retrieving proof: {:?}",
+                    //                                 e
+                    //                             );
+                    //                             result = Err(e);
+                    //                         }
+                    //                     }
     
     
-                                    match result {
-                                        Ok(asset_lock_proof) => {
-                                            let prev = processed.fetch_add(1, Ordering::Relaxed);
-                                            tracing::info!(
-                                                "Successfully obtained asset lock proof {} of {}",
-                                                prev + 1,
-                                                num_asset_lock_proofs_needed
-                                            );
-                                            Some(asset_lock_proof)
-                                        }
-                                        Err(e) => {
-                                            tracing::error!(
-                                                "Failed to obtain asset lock proof: {:?}",
-                                                e
-                                            );
-                                            None
-                                        }
-                                    }
-                                }
-                                .boxed_local()
-                            })
-                            .collect();
+                    //                 match result {
+                    //                     Ok(asset_lock_proof) => {
+                    //                         let prev = processed.fetch_add(1, Ordering::Relaxed);
+                    //                         tracing::info!(
+                    //                             "Successfully obtained asset lock proof {} of {}",
+                    //                             prev + 1,
+                    //                             num_asset_lock_proofs_needed
+                    //                         );
+                    //                         Some(asset_lock_proof)
+                    //                     }
+                    //                     Err(e) => {
+                    //                         tracing::error!(
+                    //                             "Failed to obtain asset lock proof: {:?}",
+                    //                             e
+                    //                         );
+                    //                         None
+                    //                     }
+                    //                 }
+                    //             }
+                    //             .boxed_local()
+                    //         })
+                    //         .collect();
     
-                            asset_lock_proofs = join_all(tasks).await.into_iter().flatten().collect();
+                    //         asset_lock_proofs = join_all(tasks).await.into_iter().flatten().collect();
     
-                            tracing::info!(
-                                "Took {} seconds to obtain {} asset lock proofs from {} required",
-                                asset_lock_proof_time.elapsed().as_secs(),
-                                asset_lock_proofs.len(),
-                                num_asset_lock_proofs_needed
-                            );
-                        }    
-                    }
+                    //         tracing::info!(
+                    //             "Took {} seconds to obtain {} asset lock proofs from {} required",
+                    //             asset_lock_proof_time.elapsed().as_secs(),
+                    //             asset_lock_proofs.len(),
+                    //             num_asset_lock_proofs_needed
+                    //         );
+                    //     }    
+                    // }
 
                     // Get the state transitions for the block (or second)
                     let (transitions, finalize_operations, mut new_identities) = strategy
@@ -1326,11 +1337,15 @@ pub async fn run_strategy_task<'s>(
                     drop(mempool_document_counter_lock);
 
                     // Add the identities that will be created to current_identities.
+                    // Only do this on init block because identity_inserts don't have transfer keys atm
+                    // and if we have transfer txs, it will panic if it tries to use one of these identities.
                     // TO-DO: This should be moved to execution after we confirm they were registered.
-                    for identity in &new_identities {
-                        new_identity_ids.push(identity.id().to_string(Encoding::Base58))
+                    if loop_index < 3 {
+                        for identity in &new_identities {
+                            new_identity_ids.push(identity.id().to_string(Encoding::Base58))
+                        }
+                        current_identities_lock.append(&mut new_identities);    
                     }
-                    current_identities_lock.append(&mut new_identities);
 
                     for transition in &transitions {
                         match transition {
@@ -1384,7 +1399,7 @@ pub async fn run_strategy_task<'s>(
                             "Prepared {} state transitions for {} {}",
                             transitions.len(),
                             mode_string,
-                            index
+                            loop_index
                         );
 
                         // A queue for the state transitions for the block (or second)
@@ -1399,137 +1414,155 @@ pub async fn run_strategy_task<'s>(
                             let transition_id = hex::encode(transition.transaction_id().expect("Expected transaction to serialize")).to_string().reverse();
                             let mempool_document_counter_clone = mempool_document_counter.clone();
                             let current_identities_clone = Arc::clone(&current_identities);
-                            
-                                let oks = oks_clone.clone();
-                                let errs = errs_clone.clone();
-
-                                let mut request_settings = RequestSettings::default();
-                                // Time-based strategy body
-                                if !block_mode && index != 1 && index != 2 {
-                                    // time mode loading
-                                    request_settings.connect_timeout = Some(Duration::from_secs(1));
-                                    request_settings.timeout = Some(Duration::from_secs(1));
-                                    request_settings.retries = Some(0);
-                                }
-                                // Block-based strategy body
-                                if block_mode && index != 1 && index != 2 {
-                                    request_settings.connect_timeout = Some(Duration::from_secs(3));
-                                    request_settings.timeout = Some(Duration::from_secs(3));
-                                    request_settings.retries = Some(1);
-                                }
-
-                                // Prepare futures for broadcasting independent transitions
-                                let future = async move {
-                                    match transition_clone.broadcast_request_for_state_transition() {
-                                        Ok(broadcast_request) => {
-                                            let broadcast_result = broadcast_request.execute(sdk, request_settings).await;
-                                            match broadcast_result {
-                                                Ok(_) => {
-                                                    oks.fetch_add(1, Ordering::SeqCst);
-                                                    success_count += 1;
-                                                    let transition_owner_id = transition_clone.owner_id().to_string(Encoding::Base58);
-                                                    if !block_mode && index != 1 && index != 2 {
-                                                        tracing::info!("Successfully broadcasted transition: {}. ID: {}. Owner ID: {:?}", transition_clone.name(), transition_id, transition_owner_id);
-                                                    }
-                                                    if transition_clone.name() == "DocumentsBatch" {
-                                                        let contract_ids = match transition_clone.clone() {
-                                                            StateTransition::DocumentsBatch(DocumentsBatchTransition::V0(transition)) => transition.transitions.iter().map(|document_transition| 
-                                                                match document_transition {
-                                                                    DocumentTransition::Create(DocumentCreateTransition::V0(create_tx)) => create_tx.base.data_contract_id(),
-                                                                    _ => panic!("This should never happen")
-                                                                }
-                                                            ).collect_vec(),
-                                                            _ => panic!("This shouldn't happen")
-                                                        };
-                                                        for contract_id in contract_ids {
-                                                            let mut mempool_document_counter_clone_lock = mempool_document_counter_clone.lock().await;
-                                                            let count = mempool_document_counter_clone_lock.entry((transition_clone.owner_id(), contract_id)).or_insert(0);
-                                                            *count += 1;
-                                                            // tracing::info!(" + Incremented identity {} tx counter for contract {}. Count: {}", transition_owner_id, contract_id.to_string(Encoding::Base58), count);
-                                                        }
-                                                    }
-                                                    Ok((transition_clone, broadcast_result))
-                                                },
-                                                Err(e) => {
-                                                    errs.fetch_add(1, Ordering::SeqCst);
-                                                    // Error logging seems unnecessary here because rs-dapi-client seems to log all the errors already
-                                                    // But it is necessary. `rs-dapi-client` does not log all the errors already. For example, IdentityNotFound errors
-                                                    // Update: rs-dapi-client logs have been turned off
-                                                    tracing::error!("Error: Failed to broadcast {} transition: {:?}. ID: {}", transition_clone.name(), e, transition_id);
-                                                    if e.to_string().contains("Insufficient identity") {
-                                                        insufficient_balance_error_count += 1;
-                                                        // let mut wallet_lock = app_state.loaded_wallet.lock().await;
-                                                        let mut current_identities = current_identities_clone.lock().await;
-                                                        // if top_up_amount > 0 {
-                                                        //     // Top up
-                                                        //     if let Some(wallet) = wallet_lock.as_mut() {
-                                                        //         match wallet.asset_lock_transaction(
-                                                        //             None,
-                                                        //             top_up_amount,
-                                                        //         ) {
-                                                        //             Ok((asset_lock_transaction, asset_lock_proof_private_key)) => {
-                                                        //                 match try_broadcast_and_retrieve_asset_lock(sdk, &asset_lock_transaction, &wallet.receive_address(), 2).await {
-                                                        //                     Ok(asset_lock_proof) => {
-                                                        //                         tracing::info!("Successfully obtained asset lock proof for top up");
-                                                        //                         let identity = current_identities.iter_mut().find(|identity| identity.id() == transition_clone.owner_id()).expect("Expected to find identity ID matching transition owner ID");
-                                                        //                         match identity.top_up_identity(
-                                                        //                             sdk,
-                                                        //                             asset_lock_proof,
-                                                        //                             &asset_lock_proof_private_key,
-                                                        //                             None,
-                                                        //                         ).await {
-                                                        //                             Ok(balance) => tracing::info!("Topped up identity {}. New balance: {}", identity.id().to_string(Encoding::Base58), balance),
-                                                        //                             Err(e) => tracing::error!("Failed to top up identity {}: {}", identity.id().to_string(Encoding::Base58), e)
-                                                        //                         }
-                                                        //                     }
-                                                        //                     Err(_) => {
-                                                        //                         tracing::error!("Failed to obtain asset lock proof for top up");
-                                                        //                     }
-                                                        //                 }
-                                                        //             }
-                                                        //             Err(e) => {
-                                                        //                 tracing::error!(
-                                                        //                     "Error creating asset lock transaction: {:?}",
-                                                        //                     e
-                                                        //                 )
-                                                        //             }
-                                                        //         }
-                                                        //     } else {
-                                                        //         tracing::error!("Wallet not loaded");
-                                                        //     }
-                                                        // } else {
-                                                            current_identities.retain(|identity| identity.id() != transition_clone.owner_id());    
-                                                        // }
-                                                    } else if e.to_string().contains("invalid identity nonce") {
-                                                        identity_nonce_error_count += 1;
-                                                    } else if e.to_string().contains("") {
-                                                        local_rate_limit_error_count += 1;
-                                                    } else if e.to_string().contains("") {
-                                                        broadcast_timeout_error_count += 1;
-                                                    }
-                                                    Err(e)
+                        
+                            let oks = oks_clone.clone();
+                            let errs = errs_clone.clone();
+                        
+                            let mut request_settings = RequestSettings::default();
+                            // Time-based strategy body
+                            if !block_mode && loop_index != 1 && loop_index != 2 {
+                                // time mode loading
+                                request_settings.connect_timeout = Some(Duration::from_secs(1));
+                                request_settings.timeout = Some(Duration::from_secs(1));
+                                request_settings.retries = Some(0);
+                            }
+                            // Block-based strategy body
+                            if block_mode && loop_index != 1 && loop_index != 2 {
+                                request_settings.connect_timeout = Some(Duration::from_secs(3));
+                                request_settings.timeout = Some(Duration::from_secs(3));
+                                request_settings.retries = Some(1);
+                            }
+                        
+                            // Prepare futures for broadcasting independent transitions
+                            let future = async move {
+                                match transition_clone.broadcast_request_for_state_transition() {
+                                    Ok(broadcast_request) => {
+                                        let broadcast_result = broadcast_request.execute(&sdk.clone(), request_settings).await;
+                                        match broadcast_result {
+                                            Ok(_) => {
+                                                oks.fetch_add(1, Ordering::SeqCst);
+                                                success_count += 1;
+                                                let transition_owner_id = transition_clone.owner_id().to_string(Encoding::Base58);
+                                                if !block_mode && loop_index != 1 && loop_index != 2 {
+                                                    tracing::info!("Successfully broadcasted transition: {}. ID: {}. Owner ID: {:?}", transition_clone.name(), transition_id, transition_owner_id);
                                                 }
+                                                if transition_clone.name() == "DocumentsBatch" {
+                                                    let contract_ids = match transition_clone.clone() {
+                                                        StateTransition::DocumentsBatch(DocumentsBatchTransition::V0(transition)) => transition.transitions.iter().map(|document_transition| 
+                                                            match document_transition {
+                                                                DocumentTransition::Create(DocumentCreateTransition::V0(create_tx)) => create_tx.base.data_contract_id(),
+                                                                _ => panic!("This should never happen")
+                                                            }
+                                                        ).collect_vec(),
+                                                        _ => panic!("This shouldn't happen")
+                                                    };
+                                                    for contract_id in contract_ids {
+                                                        let mut mempool_document_counter_clone_lock = mempool_document_counter_clone.lock().await;
+                                                        let count = mempool_document_counter_clone_lock.entry((transition_clone.owner_id(), contract_id)).or_insert(0);
+                                                        *count += 1;
+                                                        tracing::info!(" + Incremented identity {} tx counter for contract {}. Count: {}", transition_owner_id, contract_id.to_string(Encoding::Base58), count);
+                                                    }
+                                                }
+                                                Ok((transition_clone, broadcast_result))
+                                            },
+                                            Err(e) => {
+                                                errs.fetch_add(1, Ordering::SeqCst);
+                                                tracing::error!("Error: Failed to broadcast {} transition: {:?}. ID: {}", transition_clone.name(), e, transition_id);
+                                                if e.to_string().contains("Insufficient identity") {
+                                                    insufficient_balance_error_count += 1;
+                                                    // Top up. This logic works but it slows the broadcasting down slightly.
+                                                    // let current_identities = Arc::clone(&current_identities_clone);
+                                                    // let sdk_clone = sdk.clone();
+                                                    // let (tx, rx) = oneshot::channel();
+                        
+                                                    // // Lock the wallet and clone the necessary data before moving into the async block
+                                                    // let asset_lock_transaction;
+                                                    // let asset_lock_proof_private_key;
+                                                    // let wallet_receive_address;
+                                                    // {
+                                                    //     let mut wallet_lock = app_state.loaded_wallet.lock().await;
+                                                    //     let wallet = wallet_lock.as_mut().unwrap();
+                                                    //     let (asset_lock_tx, asset_lock_proof_key) = wallet.asset_lock_transaction(None, 5_000_000).unwrap();
+                                                    //     asset_lock_transaction = asset_lock_tx.clone();
+                                                    //     asset_lock_proof_private_key = asset_lock_proof_key.clone();
+                                                    //     wallet_receive_address = wallet.receive_address();
+                                                    // }
+                        
+                                                    // // Spawn a blocking task for the top-up process
+                                                    // tokio::task::spawn_blocking(move || {
+                                                    //     // Use block_in_place to run async code within blocking context
+                                                    //     let result = tokio::task::block_in_place(|| {
+                                                    //         tokio::runtime::Handle::current().block_on(async {
+                                                    //             let mut current_identities = current_identities.lock().await;
+                        
+                                                    //             // Top up
+                                                    //             match try_broadcast_and_retrieve_asset_lock(&sdk_clone, &asset_lock_transaction, &wallet_receive_address, 2).await {
+                                                    //                 Ok(asset_lock_proof) => {
+                                                    //                     tracing::info!("Successfully obtained asset lock proof for top up");
+                                                    //                     let identity = current_identities.iter_mut().find(|identity| identity.id() == transition_clone.owner_id()).expect("Expected to find identity ID matching transition owner ID");
+                        
+                                                    //                     let state_transition = IdentityTopUpTransition::try_from_identity(
+                                                    //                         identity,
+                                                    //                         asset_lock_proof,
+                                                    //                         asset_lock_proof_private_key.inner.as_ref(),
+                                                    //                         0,
+                                                    //                         sdk_clone.version(),
+                                                    //                         None,
+                                                    //                     ).expect("Expected to make a top up transition");
+                        
+                                                    //                     let request = state_transition.broadcast_request_for_state_transition().expect("Expected to create broadcast request for top up");
+                        
+                                                    //                     match request
+                                                    //                         .clone()
+                                                    //                         .execute(&sdk_clone, RequestSettings::default())
+                                                    //                         .await {
+                                                    //                             Ok(_) => tracing::info!("Successfully topped up identity"),
+                                                    //                             Err(e) => tracing::error!("Failed to top up identity: {:?}", e)
+                                                    //                         };
+                                                    //                 }
+                                                    //                 Err(_) => {
+                                                    //                     tracing::error!("Failed to obtain asset lock proof for top up");
+                                                    //                 }
+                                                    //             }
+                                                    //         })
+                                                    //     });
+                        
+                                                    //     // Send the result back to the main async context
+                                                    //     tx.send(result).unwrap();
+                                                    // });
+                        
+                                                    // // Await the result of the blocking task
+                                                    // let _ = rx.await;
+                                                } else if e.to_string().contains("invalid identity nonce") {
+                                                    identity_nonce_error_count += 1;
+                                                } else if e.to_string().contains("") {
+                                                    local_rate_limit_error_count += 1;
+                                                } else if e.to_string().contains("") {
+                                                    broadcast_timeout_error_count += 1;
+                                                }
+                                                Err(e)
                                             }
-                                        },
-                                        Err(e) => {
-                                            errs.fetch_add(1, Ordering::SeqCst);
-                                            if !block_mode {
-                                                tracing::error!("Error preparing broadcast request for transition: {}, Error: {:?}", transition_clone.name(), e);
-                                            }
-                                            Err(e)
-                                        }.expect("Expected to prepare broadcast for request for state transition") // I guess I have to do this to make it compile
-                                    }
-                                };
-                                broadcast_futures.push(future);
-                            
+                                        }
+                                    },
+                                    Err(e) => {
+                                        errs.fetch_add(1, Ordering::SeqCst);
+                                        if !block_mode {
+                                            tracing::error!("Error preparing broadcast request for transition: {}, Error: {:?}", transition_clone.name(), e);
+                                        }
+                                        Err(e)
+                                    }.expect("Expected to prepare broadcast for request for state transition") // I guess I have to do this to make it compile
+                                }
+                            };
+                                                                        
+                            broadcast_futures.push(future);
                         }
-
+                        
                         // Concurrently execute all broadcast requests for independent transitions
                         let broadcast_results = join_all(broadcast_futures).await;
 
                         // If we're in block mode, or index 1 or 2 of time mode, we're going to wait for state transition results and potentially verify proofs too.
                         // If we're in time mode and index 3+, we're just broadcasting.
-                        if block_mode || index == 1 || index == 2 {
+                        if block_mode || loop_index == 1 || loop_index == 2 {
                             let request_settings = RequestSettings {
                                 connect_timeout: Some(Duration::from_secs(3)),
                                 timeout: Some(Duration::from_secs(3)),
@@ -1538,7 +1571,7 @@ pub async fn run_strategy_task<'s>(
                             };
 
                             let mut wait_futures = Vec::new();
-                            for (index, result) in broadcast_results.into_iter().enumerate() {
+                            for (tx_index, result) in broadcast_results.into_iter().enumerate() {
                                 match result {
                                     Ok((transition, broadcast_result)) => {
                                         let transition_type = transition.name().to_owned();
@@ -1547,10 +1580,10 @@ pub async fn run_strategy_task<'s>(
                                         if broadcast_result.is_err() {
                                             tracing::error!(
                                                 "Error broadcasting state transition {} ({}) for {} {}: {:?}. ID: {}",
-                                                index + 1,
+                                                tx_index + 1,
                                                 transition_type,
                                                 mode_string,
-                                                index,
+                                                loop_index,
                                                 broadcast_result.err().unwrap(),
                                                 transition_id
                                             );
@@ -1614,7 +1647,7 @@ pub async fn run_strategy_task<'s>(
                                                 Err(e) => {
                                                     tracing::error!(
                                                         "Error creating wait request for state transition {} {} {}: {:?}. ID: {}",
-                                                        index + 1, mode_string, index, e, transition_id
+                                                        tx_index + 1, mode_string, loop_index, e, transition_id
                                                     );
                                                     return None;
                                                 }
@@ -1664,14 +1697,14 @@ pub async fn run_strategy_task<'s>(
 
                                                                     match verified {
                                                                         Ok(_) => {
-                                                                            tracing::info!("Successfully processed and verified proof for state transition {} ({}), {} {} (Actual block height: {}). ID: {}", index + 1, transition_type, mode_string, index, metadata.height, transition_id);
+                                                                            tracing::info!("Successfully processed and verified proof for state transition {} ({}), {} {} (Actual block height: {}). ID: {}", tx_index + 1, transition_type, mode_string, tx_index, metadata.height, transition_id);
                                                                         }
                                                                         Err(e) => tracing::error!("Error verifying state transition execution proof: {}", e),
                                                                     }
                                                                 } else {
                                                                     tracing::info!(
                                                                         "Successfully broadcasted and processed state transition {} ({}) for {} {} (Actual block height: {}). ID: {}",
-                                                                        index + 1, transition.name(), mode_string, index, metadata.height, transition_id
+                                                                        tx_index + 1, transition.name(), mode_string, loop_index, metadata.height, transition_id
                                                                     );    
                                                                 }
                                                             } else if let Some(wait_for_state_transition_result_response_v0::Result::Error(e)) = &v0_response.result {
@@ -1716,7 +1749,7 @@ pub async fn run_strategy_task<'s>(
                                     Err(e) => {
                                         tracing::error!(
                                             "Error preparing broadcast request for state transition {} {} {}: {:?}",
-                                            index + 1,
+                                            tx_index + 1,
                                             mode_string,
                                             current_block_info.height,
                                             e
@@ -1737,7 +1770,7 @@ pub async fn run_strategy_task<'s>(
                             };
 
                             let sdk_clone = sdk.clone();
-                            for (index, result) in broadcast_results.into_iter().enumerate() {
+                            for (tx_index, result) in broadcast_results.into_iter().enumerate() {
                                 let mempool_document_counter_clone = mempool_document_counter.clone();
                                 match result {
                                     Ok((transition, _broadcast_result)) => {
@@ -1777,7 +1810,7 @@ pub async fn run_strategy_task<'s>(
                                                                         let mut mempool_document_counter_lock = mempool_document_counter_clone.lock().await;
                                                                         let count = mempool_document_counter_lock.entry((transition.owner_id(), contract_id)).or_insert(0);
                                                                         *count -= 1;
-                                                                        // tracing::info!(" - Decremented identity {} tx counter for contract {}. Count: {}", transition_owner_id, contract_id.to_string(Encoding::Base58), count);
+                                                                        tracing::info!(" - Decremented identity {} tx counter for contract {}. Count: {}", transition_owner_id, contract_id.to_string(Encoding::Base58), count);
                                                                     }
                                                                 }
                                                             } else if let Some(wait_for_state_transition_result_response_v0::Result::Error(e)) = &v0_response.result {
@@ -1809,7 +1842,7 @@ pub async fn run_strategy_task<'s>(
                                                     }
                                                 }
                                             } else {
-                                                tracing::error!("Failed to create wait request for state transition {}: {}", index + 1, transition_type);
+                                                tracing::error!("Failed to create wait request for state transition {}: {}", tx_index + 1, transition_type);
                                             }
                                         });
                                     }
@@ -1822,7 +1855,7 @@ pub async fn run_strategy_task<'s>(
 
                         // Reset the load_start_time
                         // Also, sleep 10 seconds to let nodes update state
-                        if index == 1 || index == 2 {
+                        if loop_index == 1 || loop_index == 2 {
                             load_start_time = Instant::now();
                             tracing:: info!("Sleep 10 seconds to allow initialization transactions to process");
                             tokio::time::sleep(Duration::from_secs(10)).await;
@@ -1832,11 +1865,11 @@ pub async fn run_strategy_task<'s>(
                         tracing::info!(
                             "Prepared 0 state transitions for {} {}",
                             mode_string,
-                            index
+                            loop_index
                         );
                     }
 
-                    if index == 2 {
+                    if loop_index == 2 {
                         init_time = init_start_time.elapsed();
                     }
 
@@ -1847,7 +1880,7 @@ pub async fn run_strategy_task<'s>(
                         .expect("time went backwards")
                         .as_millis();
                     current_block_info.time_ms = current_time_ms as u64;
-                    index += 1;
+                    loop_index += 1;
 
                     // Make sure the loop doesn't iterate faster than once per second in time mode
                     if !block_mode {
@@ -2058,7 +2091,7 @@ pub async fn run_strategy_task<'s>(
                         mode_string,
                         transition_count,
                         success_count,
-                        index-3, // Minus 3 because we still incremented one at the end of the last loop, and don't count the first two blocks
+                        loop_index-3, // Minus 3 because we still incremented one at the end of the last loop, and don't count the first two blocks
                         load_run_time,
                         init_time.as_secs(),
                         tps,
