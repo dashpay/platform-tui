@@ -24,7 +24,7 @@ struct Args {
     prove: bool,
 
     #[arg(short, long, action = ArgAction::SetTrue, help = "Enables per-second execution of state transitions rather than per-block.")]
-    time_mode: bool,
+    second: bool,
 
     #[arg(
         short,
@@ -220,7 +220,7 @@ async fn main() {
     let credit_amount = (args.top_up_amount * 100_000_000_000.0) as u64;
 
     if let Some(test_name) = args.test {
-        let block_mode = if args.time_mode { false } else { true };
+        let block_mode = if args.second { false } else { true };
         backend::strategies::run_strategy_task(
             &sdk,
             &backend.state(),

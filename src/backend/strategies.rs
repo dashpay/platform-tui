@@ -25,30 +25,22 @@ use dash_sdk::{
     Sdk,
 };
 use dpp::{
-    block::{block_info::BlockInfo, epoch::Epoch},
-    dashcore::{Address, PrivateKey, Transaction},
-    data_contract::{
+    block::{block_info::BlockInfo, epoch::Epoch}, consensus::basic::data_contract, dashcore::{Address, PrivateKey, Transaction}, data_contract::{
         accessors::v0::{DataContractV0Getters, DataContractV0Setters},
         created_data_contract::CreatedDataContract,
         document_type::random_document::{DocumentFieldFillSize, DocumentFieldFillType},
         DataContract,
-    },
-    identity::{
+    }, document::Document, identity::{
         accessors::IdentityGettersV0, state_transition::asset_lock_proof::AssetLockProof, Identity,
         KeyType, PartialIdentity, Purpose, SecurityLevel,
-    },
-    platform_value::{string_encoding::Encoding, Identifier},
-    serialization::{
+    }, platform_value::{string_encoding::Encoding, Identifier}, serialization::{
         PlatformDeserializableWithPotentialValidationFromVersionedStructure,
         PlatformSerializableWithPlatformVersion,
-    },
-    state_transition::{
-        documents_batch_transition::{
-            document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods,
-            document_transition::DocumentTransition, DocumentCreateTransition,
-            DocumentsBatchTransition,
+    }, state_transition::{
+        data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0, documents_batch_transition::{
+            document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods, document_create_transition::v0::DocumentFromCreateTransitionV0, document_transition::DocumentTransition, DocumentCreateTransition, DocumentDeleteTransition, DocumentsBatchTransition
         }, identity_topup_transition::{methods::IdentityTopUpTransitionMethodsV0, IdentityTopUpTransition}, StateTransition, StateTransitionLike
-    },
+    }, version::TryIntoPlatformVersioned
 };
 use drive::{
     drive::{
@@ -57,7 +49,7 @@ use drive::{
         Drive,
     },
     error::proof::ProofError,
-    query::DriveDocumentQuery,
+    query::DriveDocumentQuery, util::object_size_info::{DocumentInfo, OwnedDocumentInfo},
 };
 use futures::{future::join_all, stream::FuturesUnordered, FutureExt};
 use itertools::Itertools;
@@ -981,10 +973,6 @@ pub async fn run_strategy_task<'s>(
                                 Ok(outcome) => match outcome {
                                     QueryDocumentsOutcome::V0(outcome_v0) => {
                                         let documents = outcome_v0.documents_owned();
-                                        tracing::info!(
-                                            "Fetched {} documents using DriveQuery",
-                                            documents.len()
-                                        );
                                         documents
                                     }
                                 },
@@ -1001,6 +989,7 @@ pub async fn run_strategy_task<'s>(
                 };
 
                 // Callback used to fetch identities from the local Drive instance
+                // Is this ever used?
                 let mut identity_fetch_callback =
                     |identifier: Identifier, _keys_request: Option<IdentityKeysRequest>| {
                         // Convert Identifier to a byte array format expected by the Drive
@@ -1347,6 +1336,7 @@ pub async fn run_strategy_task<'s>(
                         current_identities_lock.append(&mut new_identities);    
                     }
 
+                    // Extra transition type-specific processing
                     for transition in &transitions {
                         match transition {
                             StateTransition::DataContractCreate(contract_create_transition) => {
@@ -1356,15 +1346,83 @@ pub async fn run_strategy_task<'s>(
                                         .iter()
                                         .map(|id| id.to_string(Encoding::Base58)),
                                 );
+
+                                let mut known_contracts = app_state.known_contracts.lock().await;
+                                let data_contract_serialized = contract_create_transition.data_contract();
+                                let maybe_data_contract = DataContract::try_from_platform_versioned(data_contract_serialized.clone(), false, &mut vec![], sdk.version());
+                                match maybe_data_contract {
+                                    Ok(contract) => {
+                                        known_contracts.insert(contract_create_transition.data_contract().id().to_string(Encoding::Base58), contract.clone());
+                                        let result = drive_lock.apply_contract(&contract, current_block_info, true, None, None, sdk.version());
+                                        if let Err(e) = result {
+                                            tracing::error!("Failed to add contract to local drive: {e}");
+                                        }
+                                    },
+                                    Err(e) => tracing::error!("Failed to convert serialized contract to contract: {e}")
+                                }
+                            }
+                            StateTransition::DocumentsBatch(documents_batch_transition) => {
+                                match documents_batch_transition {
+                                    DocumentsBatchTransition::V0(documents_batch_transition_v0) => {
+                                        for document_transition in &documents_batch_transition_v0.transitions {
+                                            match document_transition {
+                                                DocumentTransition::Create(document_create_transition) => {
+                                                    match document_create_transition {
+                                                        DocumentCreateTransition::V0(document_create_transition_v0) => {
+                                                            let document_type_name = document_create_transition_v0.base.document_type_name();
+                                                            let data_contract_id = document_create_transition_v0.base.data_contract_id();
+                                                            let known_contracts = app_state.known_contracts.lock().await;
+                                                            let maybe_data_contract = known_contracts.get(&data_contract_id.to_string(Encoding::Base58));
+                                                            match maybe_data_contract {
+                                                                Some(data_contract) => {
+                                                                    let maybe_document_type = data_contract.document_type_for_name(document_type_name);
+                                                                    match maybe_document_type {
+                                                                        Ok(document_type) => {
+                                                                            let maybe_document = Document::try_from_create_transition_v0(document_create_transition_v0, transition.owner_id(), &current_block_info, &document_type, sdk.version());
+                                                                            match maybe_document {
+                                                                                Ok(document) => {
+                                                                                    let document_info = DocumentInfo::DocumentOwnedInfo((document, None));
+                                                                                    let owned_document_info = OwnedDocumentInfo {
+                                                                                        document_info,
+                                                                                        owner_id: Some(*transition.owner_id().as_bytes())
+                                                                                    };
+                                                                                    let result = drive_lock.add_document(owned_document_info, data_contract_id, document_type_name, false, &current_block_info, true, None, sdk.version());
+                                                                                    if let Err(e) = result {
+                                                                                        tracing::error!("Failed to add document to local drive: {e}");
+                                                                                    }
+                                                                                }
+                                                                                Err(e) => {
+                                                                                    tracing::error!("Couldn't get document from document create transition: {e}");
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                        Err(e) => {
+                                                                            tracing::error!("Couldn't retrieve document type {} from contract: {}", document_type_name, e)
+                                                                        }
+                                                                    }
+                                                                }
+                                                                None => {
+                                                                    tracing::error!("Data contract {} not found in known_contracts", data_contract_id.to_string(Encoding::Base58));
+                                                                    continue
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                _ => {
+                                                    // nothing
+                                                }
+                                            }
+                                        }
+                                    },
+                                    // other versions
+                                }
                             }
                             _ => {
                                 // nothing
                             }
                         };
                     }
-
-                    // TO-DO: for DocumentDelete and DocumentReplace strategy operations, we need to
-                    // add documents from state transitions to the local Drive instance here
 
                     // Process each FinalizeBlockOperation, which so far is just adding keys to identities
                     for operation in finalize_operations {
@@ -1451,6 +1509,7 @@ pub async fn run_strategy_task<'s>(
                                                         StateTransition::DocumentsBatch(DocumentsBatchTransition::V0(transition)) => transition.transitions.iter().map(|document_transition| 
                                                             match document_transition {
                                                                 DocumentTransition::Create(DocumentCreateTransition::V0(create_tx)) => create_tx.base.data_contract_id(),
+                                                                DocumentTransition::Delete(DocumentDeleteTransition::V0(delete_tx)) => delete_tx.base.data_contract_id(),
                                                                 _ => panic!("This should never happen")
                                                             }
                                                         ).collect_vec(),
@@ -1714,19 +1773,20 @@ pub async fn run_strategy_task<'s>(
                                                             }
 
                                                             // Log the Base58 encoded IDs of any created contracts or identities
+                                                            // Also add data contracts to known contracts. To be removed at the end of strategy run.
                                                             match transition.clone() {
                                                                 StateTransition::IdentityCreate(identity_create_transition) => {
                                                                     let ids = identity_create_transition.modified_data_ids();
                                                                     for id in ids {
-                                                                        let encoded_id: String = id.into();
+                                                                        let encoded_id: String = id.to_string(Encoding::Base58);
                                                                         tracing::info!("Created identity: {}", encoded_id);
                                                                     }
                                                                 },
                                                                 StateTransition::DataContractCreate(contract_create_transition) => {
                                                                     let ids = contract_create_transition.modified_data_ids();
                                                                     for id in ids {
-                                                                        let encoded_id: String = id.into();
-                                                                        tracing::info!("Created contract: {}", encoded_id);
+                                                                        let encoded_id: String = id.to_string(Encoding::Base58);
+                                                                        tracing::info!("Created contract: {}", encoded_id);                                                                        
                                                                     }
                                                                 },
                                                                 _ => {
@@ -1801,6 +1861,7 @@ pub async fn run_strategy_task<'s>(
                                                                         StateTransition::DocumentsBatch(DocumentsBatchTransition::V0(transition)) => transition.transitions.iter().map(|document_transition| 
                                                                             match document_transition {
                                                                                 DocumentTransition::Create(DocumentCreateTransition::V0(create_tx)) => create_tx.base.data_contract_id(),
+                                                                                DocumentTransition::Delete(DocumentDeleteTransition::V0(delete_tx)) => delete_tx.base.data_contract_id(),
                                                                                 _ => panic!("This should never happen")
                                                                             }
                                                                         ).collect_vec(),
@@ -1820,6 +1881,7 @@ pub async fn run_strategy_task<'s>(
                                                                         StateTransition::DocumentsBatch(DocumentsBatchTransition::V0(transition)) => transition.transitions.iter().map(|document_transition| 
                                                                             match document_transition {
                                                                                 DocumentTransition::Create(DocumentCreateTransition::V0(create_tx)) => create_tx.base.data_contract_id(),
+                                                                                DocumentTransition::Delete(DocumentDeleteTransition::V0(delete_tx)) => delete_tx.base.data_contract_id(),
                                                                                 _ => panic!("This should never happen")
                                                                             }
                                                                         ).collect_vec(),
@@ -1856,9 +1918,9 @@ pub async fn run_strategy_task<'s>(
                         // Reset the load_start_time
                         // Also, sleep 10 seconds to let nodes update state
                         if loop_index == 1 || loop_index == 2 {
-                            load_start_time = Instant::now();
                             tracing:: info!("Sleep 10 seconds to allow initialization transactions to process");
                             tokio::time::sleep(Duration::from_secs(10)).await;
+                            load_start_time = Instant::now();
                         }
                     } else {
                         // No transitions prepared for the block (or second)
@@ -1918,6 +1980,12 @@ pub async fn run_strategy_task<'s>(
                     "Newly created contracts (attempted): {:?}",
                     new_contract_ids
                 );
+
+                // Remove new contracts from known_contracts
+                for contract_id in new_contract_ids {
+                    let mut known_contracts = app_state.known_contracts.lock().await;
+                    known_contracts.remove(&contract_id);
+                }
 
                 // Withdraw all funds from newly created identities back to the wallet
                 let mut current_identities = current_identities.lock().await;
