@@ -148,7 +148,7 @@ pub(super) async fn run_wallet_task<'s>(
             if let Some(wallet) = &mut *wallet_guard {
                 match wallet {
                     Wallet::SingleKeyWallet(sk_wallet) => {
-                        match sk_wallet.split_utxos(sdk, count as usize).await {
+                        match sk_wallet.split_utxos(sdk, count as usize, insight).await {
                             Ok(_) => BackendEvent::TaskCompleted {
                                 task: Task::Wallet(task),
                                 execution_result: Ok("Split UTXOs".into()),
@@ -375,18 +375,7 @@ impl Wallet {
         insight: &InsightAPIClient,
     ) -> Result<HashMap<OutPoint, TxOut>, InsightError> {
         match self {
-            Wallet::SingleKeyWallet(wallet) => {
-                match insight
-                    .utxos_with_amount_for_addresses(&[&wallet.address])
-                    .await
-                {
-                    Ok(utxos) => {
-                        wallet.utxos = utxos.clone();
-                        Ok(utxos)
-                    }
-                    Err(err) => Err(err),
-                }
-            }
+            Wallet::SingleKeyWallet(wallet) => wallet.reload_utxos(insight).await,
         }
     }
 }
@@ -556,6 +545,22 @@ impl SingleKeyWallet {
         Some((taken_utxos, required.abs() as u64))
     }
 
+    pub async fn reload_utxos(
+        &mut self,
+        insight: &InsightAPIClient,
+    ) -> Result<HashMap<OutPoint, TxOut>, InsightError> {
+        match insight
+            .utxos_with_amount_for_addresses(&[&self.address])
+            .await
+        {
+            Ok(utxos) => {
+                self.utxos = utxos.clone();
+                Ok(utxos)
+            }
+            Err(err) => Err(err),
+        }
+    }
+
     /// Takes a usize `desired_utxo_count` specifying the desired number of UTXOs one wants the wallet to have
     /// and splits the existing utxos into that many (minus one) equally-valued UTXOs plus one UTXO holding leftover value.
     ///
@@ -570,13 +575,17 @@ impl SingleKeyWallet {
         &mut self,
         sdk: &Sdk,
         desired_utxo_count: usize,
+        insight: &InsightAPIClient,
     ) -> Result<(), WalletError> {
         tracing::info!("Splitting wallet UTXOs into {} UTXOs", desired_utxo_count);
 
         // Initialize
         const MAX_OUTPUTS_PER_TRANSACTION: usize = 24; // Dash Core only allows 24 outputs per tx
         let current_wallet_balance = self.balance();
-        let mut remaining_utxos_in_wallet = self.utxos.clone();
+        let mut remaining_utxos_in_wallet = self
+            .reload_utxos(insight)
+            .await
+            .expect("Expected to reload utxos");
         let mut num_utxos_remaining_to_create = desired_utxo_count;
 
         // Say we want 50 UTXOs, we need 3 transactions (24 + 24 + 2)
@@ -611,6 +620,7 @@ impl SingleKeyWallet {
                 remaining_utxos_in_wallet.iter().collect();
             remaining_utxos_in_wallet_vec.sort_by_key(|&(_, txout)| txout.value);
             remaining_utxos_in_wallet_vec.reverse(); // Sort greatest to least value utxo
+
             for (outpoint, txout) in remaining_utxos_in_wallet_vec.clone() {
                 if total_value_of_tx_inputs >= utxo_split_value * num_utxos_to_create_this_tx as u64
                 {
@@ -692,7 +702,7 @@ impl SingleKeyWallet {
             };
             match sdk.execute(request, RequestSettings::default()).await {
                 Ok(BroadcastTransactionResponse { transaction_id: id }) => {
-                    tokio::time::sleep(Duration::from_secs(3)).await;
+                    tokio::time::sleep(Duration::from_secs(2)).await;
                     let GetTransactionResponse { .. } = match sdk
                         .execute(GetTransactionRequest { id }, RequestSettings::default())
                         .await
@@ -716,7 +726,6 @@ impl SingleKeyWallet {
             // Update the wallet's UTXO set
             for outpoint in selected_utxos.iter() {
                 remaining_utxos_in_wallet.remove(outpoint);
-                self.utxos.remove(outpoint);
             }
             let txid = tx.txid();
             for (index, output) in tx.output.iter().enumerate() {
@@ -727,16 +736,10 @@ impl SingleKeyWallet {
                     },
                     output.clone(),
                 );
-                self.utxos.insert(
-                    OutPoint {
-                        txid,
-                        vout: index as u32,
-                    },
-                    output.clone(),
-                );
             }
 
             num_utxos_remaining_to_create -= tx.output.len();
+            tokio::time::sleep(Duration::from_secs(1)).await;
         }
 
         Ok(())
