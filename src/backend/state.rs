@@ -461,6 +461,7 @@ impl AppState {
             return state;
         };
 
+        // Load wallet by private key, overriding the state file
         if let Some(private_key) = &config.wallet_private_key {
             let wallet_state = &app_state.loaded_wallet;
             add_wallet_by_private_key(&wallet_state, private_key).await;
