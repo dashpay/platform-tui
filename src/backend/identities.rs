@@ -187,7 +187,10 @@ impl AppState {
                 }
             }
             IdentityTask::ClearRegistrationOfIdentityInProgress => {
-                let mut loaded_identity_asset_lock_private_key_in_creation = self.identity_asset_lock_private_key_in_creation.lock().await;
+                let mut loaded_identity_asset_lock_private_key_in_creation = self
+                    .identity_asset_lock_private_key_in_creation
+                    .lock()
+                    .await;
                 *loaded_identity_asset_lock_private_key_in_creation = None;
                 BackendEvent::TaskCompletedStateChange {
                     task: Task::Identity(task),
@@ -610,10 +613,7 @@ impl AppState {
             "normalizedLabel",
             convert_to_homograph_safe_chars(name).into(),
         );
-        domain_document.set(
-            "records.identity",
-            domain_document.owner_id().into(),
-        );
+        domain_document.set("records.identity", domain_document.owner_id().into());
         domain_document.set("subdomainRules.allowSubdomains", false.into());
         domain_document.set("preorderSalt", salt.into());
 

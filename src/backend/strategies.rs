@@ -952,7 +952,8 @@ pub async fn run_strategy_task<'s>(
                     .expect("Couldn't get current identity nonce");
                 identity_nonce_counter.insert(loaded_identity_clone.id(), identity_result);
                 let contract_results = join_all(contract_futures).await;
-                let mut contract_nonce_counter: BTreeMap<(Identifier, Identifier), u64> = contract_results.into_iter().collect();
+                let mut contract_nonce_counter: BTreeMap<(Identifier, Identifier), u64> =
+                    contract_results.into_iter().collect();
                 tracing::info!(
                     "Took {} seconds to obtain {} identity contract nonces",
                     nonce_fetching_time.elapsed().as_secs(),
@@ -1090,16 +1091,29 @@ pub async fn run_strategy_task<'s>(
                                 strategy.start_identities.starting_balances,
                             ) {
                                 Ok((asset_lock_transaction, asset_lock_proof_private_key)) => {
-                                    match try_broadcast_and_retrieve_asset_lock(sdk, &asset_lock_transaction, &wallet.receive_address(), 2).await {
+                                    match try_broadcast_and_retrieve_asset_lock(
+                                        sdk,
+                                        &asset_lock_transaction,
+                                        &wallet.receive_address(),
+                                        2,
+                                    )
+                                    .await
+                                    {
                                         Ok(asset_lock_proof) => {
-                                            tracing::info!("Successfully obtained asset lock proof number {}", i + 1);
-                                            asset_lock_proofs.push((asset_lock_proof, asset_lock_proof_private_key));
+                                            tracing::info!(
+                                                "Successfully obtained asset lock proof number {}",
+                                                i + 1
+                                            );
+                                            asset_lock_proofs.push((
+                                                asset_lock_proof,
+                                                asset_lock_proof_private_key,
+                                            ));
                                         }
                                         Err(_) => {
                                             tracing::error!("Failed to obtain asset lock proof number {} after retries", i + 1);
                                             return BackendEvent::StrategyError {
                                                 error: format!("Failed to obtain all asset lock proofs. Suggest to try rerunning."),
-                                            };                        
+                                            };
                                         }
                                     }
                                 }
@@ -1141,7 +1155,8 @@ pub async fn run_strategy_task<'s>(
                 let mut new_contract_ids = Vec::new(); // Will capture the ids of newly created data contracts
                 let oks = Arc::new(AtomicU32::new(0)); // Atomic counter for successful broadcasts
                 let errs = Arc::new(AtomicU32::new(0)); // Atomic counter for failed broadcasts
-                let mempool_document_counter = Arc::new(Mutex::new(BTreeMap::<(Identifier, Identifier), u64>::new())); // Map to track how many documents an identity has in the mempool per contract
+                let mempool_document_counter =
+                    Arc::new(Mutex::new(BTreeMap::<(Identifier, Identifier), u64>::new())); // Map to track how many documents an identity has in the mempool per contract
 
                 // Broadcast error counters
                 let mut identity_nonce_error_count: u64 = 0;
@@ -1261,7 +1276,13 @@ pub async fn run_strategy_task<'s>(
                             st_queue_index += 1; // Start at 1 and iterate upwards since we're only using this for logs
                             let transition_clone = transition.clone();
                             let transition_type = transition_clone.name().to_owned();
-                            let transition_id = hex::encode(transition.transaction_id().expect("Expected transaction to serialize")).to_string().reverse();
+                            let transition_id = hex::encode(
+                                transition
+                                    .transaction_id()
+                                    .expect("Expected transaction to serialize"),
+                            )
+                            .to_string()
+                            .reverse();
                             let mempool_document_counter_clone = mempool_document_counter.clone();
                             let current_identities_clone = Arc::clone(&current_identities);
 
@@ -1322,17 +1343,17 @@ pub async fn run_strategy_task<'s>(
                                                                                     Err(e) => {
                                                                                         tracing::error!("Error verifying state transition execution proof: {}", e);
                                                                                     }
-                                                                                }    
+                                                                                }
                                                                             } else {
                                                                                 tracing::error!("Unable to verify proof due to no metadata in response");
                                                                             }
                                                                         } else {
                                                                             if let Some(metadata) = &v0_response.metadata {
                                                                                 tracing::info!("Successfully processed state transition {} ({}) for {} {} (Actual block height: {})", st_queue_index, transition_type, mode_string, index, metadata.height);
-                                                                                success_count += 1;    
+                                                                                success_count += 1;
                                                                             } else {
                                                                                 tracing::info!("Successfully processed state transition {} ({}) for {} {}", st_queue_index, transition_type, mode_string, index);
-                                                                                success_count += 1;    
+                                                                                success_count += 1;
                                                                             }
                                                                         }
                                                                     }
@@ -1405,7 +1426,7 @@ pub async fn run_strategy_task<'s>(
                                                     }
                                                     if transition_clone.name() == "DocumentsBatch" {
                                                         let contract_ids = match transition_clone.clone() {
-                                                            StateTransition::DocumentsBatch(DocumentsBatchTransition::V0(transition)) => transition.transitions.iter().map(|document_transition| 
+                                                            StateTransition::DocumentsBatch(DocumentsBatchTransition::V0(transition)) => transition.transitions.iter().map(|document_transition|
                                                                 match document_transition {
                                                                     DocumentTransition::Create(DocumentCreateTransition::V0(create_tx)) => create_tx.base.data_contract_id(),
                                                                     _ => panic!("This should never happen")
@@ -1470,7 +1491,7 @@ pub async fn run_strategy_task<'s>(
                                                         //         tracing::error!("Wallet not loaded");
                                                         //     }
                                                         // } else {
-                                                            current_identities.retain(|identity| identity.id() != transition_clone.owner_id());    
+                                                            current_identities.retain(|identity| identity.id() != transition_clone.owner_id());
                                                         // }
                                                     } else if e.to_string().contains("invalid identity nonce") {
                                                         identity_nonce_error_count += 1;
@@ -1514,7 +1535,13 @@ pub async fn run_strategy_task<'s>(
                                 match result {
                                     Ok((transition, broadcast_result)) => {
                                         let transition_type = transition.name().to_owned();
-                                        let transition_id = hex::encode(transition.transaction_id().expect("Expected transaction to serialize")).to_string().reverse();
+                                        let transition_id = hex::encode(
+                                            transition
+                                                .transaction_id()
+                                                .expect("Expected transaction to serialize"),
+                                        )
+                                        .to_string()
+                                        .reverse();
 
                                         if broadcast_result.is_err() {
                                             tracing::error!(
@@ -1644,7 +1671,7 @@ pub async fn run_strategy_task<'s>(
                                                                     tracing::info!(
                                                                         "Successfully broadcasted and processed state transition {} ({}) for {} {} (Actual block height: {}). ID: {}",
                                                                         index + 1, transition.name(), mode_string, index, metadata.height, transition_id
-                                                                    );    
+                                                                    );
                                                                 }
                                                             } else if let Some(wait_for_state_transition_result_response_v0::Result::Error(e)) = &v0_response.result {
                                                                 tracing::error!("Transition failed in mempool with error: {:?}. ID: {}", e, transition_id);
@@ -1710,12 +1737,20 @@ pub async fn run_strategy_task<'s>(
 
                             let sdk_clone = sdk.clone();
                             for (index, result) in broadcast_results.into_iter().enumerate() {
-                                let mempool_document_counter_clone = mempool_document_counter.clone();
+                                let mempool_document_counter_clone =
+                                    mempool_document_counter.clone();
                                 match result {
                                     Ok((transition, _broadcast_result)) => {
                                         let transition_type = transition.name().to_owned();
-                                        let transition_id = hex::encode(transition.transaction_id().expect("Expected transaction to serialize")).to_string().reverse();
-                                        let transition_owner_id = transition.owner_id().to_string(Encoding::Base58);
+                                        let transition_id = hex::encode(
+                                            transition
+                                                .transaction_id()
+                                                .expect("Expected transaction to serialize"),
+                                        )
+                                        .to_string()
+                                        .reverse();
+                                        let transition_owner_id =
+                                            transition.owner_id().to_string(Encoding::Base58);
                                         let sdk_clone_inner = sdk_clone.clone();
 
                                         tokio::spawn(async move {
@@ -1723,10 +1758,7 @@ pub async fn run_strategy_task<'s>(
                                                 .wait_for_state_transition_result_request()
                                             {
                                                 match wait_request
-                                                    .execute(
-                                                        &sdk_clone_inner,
-                                                        request_settings,
-                                                    )
+                                                    .execute(&sdk_clone_inner, request_settings)
                                                     .await
                                                 {
                                                     Ok(wait_response) => {
@@ -1737,7 +1769,7 @@ pub async fn run_strategy_task<'s>(
                                                                 tracing::info!(" >>> Transition was included in a block. ID: {}", transition_id);
                                                                 if transition_type == "DocumentsBatch" {
                                                                     let contract_ids = match transition.clone() {
-                                                                        StateTransition::DocumentsBatch(DocumentsBatchTransition::V0(transition)) => transition.transitions.iter().map(|document_transition| 
+                                                                        StateTransition::DocumentsBatch(DocumentsBatchTransition::V0(transition)) => transition.transitions.iter().map(|document_transition|
                                                                             match document_transition {
                                                                                 DocumentTransition::Create(DocumentCreateTransition::V0(create_tx)) => create_tx.base.data_contract_id(),
                                                                                 _ => panic!("This should never happen")
@@ -1756,7 +1788,7 @@ pub async fn run_strategy_task<'s>(
                                                                 tracing::error!(" >>> Transition failed in mempool with error: {:?}. ID: {}", e, transition_id);
                                                                 if transition_type == "DocumentsBatch" {
                                                                     let contract_ids = match transition.clone() {
-                                                                        StateTransition::DocumentsBatch(DocumentsBatchTransition::V0(transition)) => transition.transitions.iter().map(|document_transition| 
+                                                                        StateTransition::DocumentsBatch(DocumentsBatchTransition::V0(transition)) => transition.transitions.iter().map(|document_transition|
                                                                             match document_transition {
                                                                                 DocumentTransition::Create(DocumentCreateTransition::V0(create_tx)) => create_tx.base.data_contract_id(),
                                                                                 _ => panic!("This should never happen")
@@ -2259,14 +2291,26 @@ async fn try_broadcast_and_retrieve_asset_lock(
     retries: usize,
 ) -> Result<AssetLockProof, ()> {
     for attempt in 0..=retries {
-        match AppState::broadcast_and_retrieve_asset_lock(sdk, asset_lock_transaction, receive_address).await {
+        match AppState::broadcast_and_retrieve_asset_lock(
+            sdk,
+            asset_lock_transaction,
+            receive_address,
+        )
+        .await
+        {
             Ok(asset_lock_proof) => {
                 return Ok(asset_lock_proof);
             }
             Err(_) => {
-                tracing::error!("Failed to obtain asset lock proof on attempt {}", attempt + 1);
+                tracing::error!(
+                    "Failed to obtain asset lock proof on attempt {}",
+                    attempt + 1
+                );
                 if attempt < retries {
-                    tracing::info!("Retrying to obtain asset lock proof (attempt {})", attempt + 2);
+                    tracing::info!(
+                        "Retrying to obtain asset lock proof (attempt {})",
+                        attempt + 2
+                    );
                 }
             }
         }

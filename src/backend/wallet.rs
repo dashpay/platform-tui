@@ -15,6 +15,7 @@ use dapi_grpc::core::v0::{
     GetTransactionResponse,
 };
 use dash_sdk::{RequestSettings, Sdk};
+use dpp::dashcore::secp256k1::SecretKey;
 use dpp::dashcore::{
     hashes::Hash,
     psbt::serialize::Serialize,
@@ -24,7 +25,6 @@ use dpp::dashcore::{
     Address, Network, OutPoint, PrivateKey, PublicKey, ScriptBuf, Transaction, TxIn, TxOut,
     Witness,
 };
-use dpp::dashcore::secp256k1::SecretKey;
 use rand::{prelude::StdRng, Rng, SeedableRng};
 use rs_dapi_client::DapiRequestExecutor;
 use tokio::sync::{Mutex, MutexGuard};
@@ -47,17 +47,16 @@ pub async fn add_wallet_by_private_key_as_string(
     private_key: &String,
 ) {
     let private_key = match private_key.len() {
-        64 =>{
+        64 => {
             // hex
             let bytes = hex::decode(private_key).expect("expected hex"); // TODO error hadling
-            PrivateKey::from_slice(bytes.as_slice(), Network::Testnet).expect("expected private key")
+            PrivateKey::from_slice(bytes.as_slice(), Network::Testnet)
+                .expect("expected private key")
         }
         0 => {
             return;
         }
-        _ => {
-            PrivateKey::from_wif(private_key.as_str()).expect("expected WIF key")
-        }
+        _ => PrivateKey::from_wif(private_key.as_str()).expect("expected WIF key"),
     };
     add_wallet_by_private_key(wallet_state, private_key).await
 }
