@@ -203,7 +203,7 @@ impl Wallet {
             None => StdRng::from_entropy(),
             Some(seed_value) => StdRng::seed_from_u64(seed_value),
         };
-        let fee = 10_000;
+        let fee = 30_000;
         let random_private_key: [u8; 32] = rng.gen();
         let private_key = PrivateKey::from_slice(&random_private_key, Network::Testnet)
             .expect("expected a private key");
@@ -700,28 +700,63 @@ impl SingleKeyWallet {
                 allow_high_fees: false,
                 bypass_limits: false,
             };
+            let max_retries = 3;
             match sdk.execute(request, RequestSettings::default()).await {
                 Ok(BroadcastTransactionResponse { transaction_id: id }) => {
-                    tokio::time::sleep(Duration::from_secs(2)).await;
-                    let GetTransactionResponse { .. } = match sdk
-                        .execute(GetTransactionRequest { id }, RequestSettings::default())
-                        .await
-                    {
-                        Ok(response) => response,
-                        Err(e) => {
-                            tracing::error!("Error getting UTXO-splitting transaction: {e}");
-                            return Err(WalletError::Balance);
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+
+                    let mut retries = 0;
+                    let mut transaction_found = false;
+
+                    while retries < max_retries {
+                        match sdk
+                            .execute(
+                                GetTransactionRequest { id: id.clone() },
+                                RequestSettings::default(),
+                            )
+                            .await
+                        {
+                            Ok(GetTransactionResponse { .. }) => {
+                                transaction_found = true;
+                                break;
+                            }
+                            Err(e) => {
+                                let error_message = format!("{:?}", e);
+                                if error_message.contains("Transaction not found") {
+                                    tracing::warn!(
+                                        "Transaction not found, retrying... attempt {} of {}",
+                                        retries + 1,
+                                        max_retries
+                                    );
+                                    retries += 1;
+                                    tokio::time::sleep(Duration::from_secs(3)).await;
+                                } else {
+                                    tracing::error!(
+                                        "Error getting UTXO-splitting transaction: {e}"
+                                    );
+                                    return Err(WalletError::Balance);
+                                }
+                            }
                         }
-                    };
-                    tracing::info!(
-                        "Successfully broadcasted UTXO-splitting transaction {}.",
-                        i + 1,
-                    )
+                    }
+
+                    if transaction_found {
+                        tracing::info!(
+                            "Successfully broadcasted UTXO-splitting transaction {}.",
+                            i + 1,
+                        );
+                    } else {
+                        tracing::error!(
+                            "Failed to retrieve UTXO-splitting transaction after {} attempts.",
+                            max_retries
+                        );
+                        return Err(WalletError::Balance);
+                    }
                 }
                 Err(error) => {
                     tracing::error!("Transaction broadcast failed: {error}");
                 }
-            };
+            }
 
             // Update the wallet's UTXO set
             for outpoint in selected_utxos.iter() {

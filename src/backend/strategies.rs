@@ -1981,6 +1981,8 @@ pub async fn run_strategy_task<'s>(
                     new_contract_ids
                 );
 
+                tracing::info!("Signer: {:?}", strategy.signer);
+
                 // Remove new contracts from known_contracts
                 for contract_id in new_contract_ids {
                     let mut known_contracts = app_state.known_contracts.lock().await;
