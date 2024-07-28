@@ -6,6 +6,7 @@ use tuirealm::{
     Frame,
 };
 
+use crate::ui::form::parsers::DocumentQueryTextInputParser;
 use crate::{
     backend::{
         platform_info::PlatformInfoTask::{
@@ -28,7 +29,7 @@ use crate::{
 
 const COMMAND_KEYS: [ScreenCommandKey; 4] = [
     ScreenCommandKey::new("q", "Back to Main"),
-    ScreenCommandKey::new("c", "Fetch current Platform epoch info"),
+    ScreenCommandKey::new("n", "Fetch current Platform epoch info"),
     ScreenCommandKey::new("i", "Fetch previous Platform epoch info"),
     ScreenCommandKey::new("v", "Current version voting"),
 ];
@@ -42,7 +43,7 @@ impl_builder!(PlatformInfoScreenController);
 impl PlatformInfoScreenController {
     pub(crate) async fn new(_app_state: &AppState) -> Self {
         PlatformInfoScreenController {
-            info: Info::new_fixed("Identity management commands"),
+            info: Info::new_scrollable("Platform info"),
         }
     }
 }
@@ -68,7 +69,7 @@ impl ScreenController for PlatformInfoScreenController {
             }) => ScreenFeedback::PreviousScreen,
 
             Event::Key(KeyEvent {
-                code: Key::Char('c'),
+                code: Key::Char('n'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::Task {
                 task: Task::PlatformInfo(FetchCurrentEpochInfo),
@@ -87,6 +88,15 @@ impl ScreenController for PlatformInfoScreenController {
                 code: Key::Char('i'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::Form(Box::new(EpochNumberChooserFormController::new())),
+
+            // Forward event to upper part of the screen for scrolls and stuff
+            Event::Key(k) => {
+                if self.info.on_event(k) {
+                    ScreenFeedback::Redraw
+                } else {
+                    ScreenFeedback::None
+                }
+            }
 
             Event::Backend(BackendEvent::TaskCompleted {
                 task: Task::PlatformInfo(_),
