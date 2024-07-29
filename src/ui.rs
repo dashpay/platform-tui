@@ -9,9 +9,8 @@ mod screen;
 mod status_bar;
 pub(crate) mod views;
 
-use std::{mem, ops::Deref, time::Instant};
-
 use dpp::identity::accessors::IdentityGettersV0;
+use std::{mem, ops::Deref, time::Instant};
 use tuirealm::{
     terminal::TerminalBridge,
     tui::prelude::{Constraint, Direction, Layout},

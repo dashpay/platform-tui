@@ -15,6 +15,7 @@ use dapi_grpc::core::v0::{
     GetTransactionResponse,
 };
 use dash_sdk::{RequestSettings, Sdk};
+use dpp::dashcore::secp256k1::SecretKey;
 use dpp::dashcore::{
     hashes::Hash,
     psbt::serialize::Serialize,
@@ -34,29 +35,40 @@ use crate::backend::insight::{InsightAPIClient, InsightError};
 #[derive(Debug, Clone, PartialEq)]
 pub enum WalletTask {
     AddByPrivateKey(String),
+    AddRandomKey,
     Refresh,
     CopyAddress,
     ClearLoadedWallet,
     SplitUTXOs(u32),
 }
 
-pub async fn add_wallet_by_private_key<'s>(
-    wallet_state: &'s Mutex<Option<Wallet>>,
+pub async fn add_wallet_by_private_key_as_string(
+    wallet_state: &Mutex<Option<Wallet>>,
     private_key: &String,
 ) -> Result<(), WalletError> {
-    let private_key = if private_key.len() == 64 {
-        // hex
-        let bytes = hex::decode(private_key).expect("expected hex"); // TODO error hadling
-        PrivateKey::from_slice(bytes.as_slice(), Network::Testnet).expect("expected private key")
-    } else if private_key.len() == 51 || private_key.len() == 52 {
-        // wif
-        PrivateKey::from_wif(private_key.as_str()).expect("expected WIF key")
-    } else {
-        return Err(WalletError::Custom(
-            "Private key in env file can't be decoded".to_string(),
-        ));
+    let private_key = match private_key.len() {
+        64 => {
+            // hex
+            let bytes = hex::decode(private_key).expect("expected hex"); // TODO error hadling
+            PrivateKey::from_slice(bytes.as_slice(), Network::Testnet).expect("expected private key")
+        }
+        51 || 52 => {
+            // wif
+            PrivateKey::from_wif(private_key.as_str()).expect("expected WIF key")
+        }
+        _ => {
+            return Err(WalletError::Custom(
+               "Private key in env file can't be decoded".to_string()
+            );
+        }
     };
+    add_wallet_by_private_key(wallet_state, private_key).await
+}
 
+pub async fn add_wallet_by_private_key(
+    wallet_state: &Mutex<Option<Wallet>>,
+    private_key: PrivateKey,
+) {
     let secp = Secp256k1::new();
     let public_key = private_key.public_key(&secp);
     // todo: make the network be part of state
@@ -82,6 +94,22 @@ pub(super) async fn run_wallet_task<'s>(
 ) -> BackendEvent<'s> {
     match task {
         WalletTask::AddByPrivateKey(ref private_key) => {
+            add_wallet_by_private_key_as_string(&wallet_state, private_key).await;
+
+            let wallet_guard = wallet_state.lock().await;
+            let loaded_wallet_update = MutexGuard::map(wallet_guard, |opt| {
+                opt.as_mut().expect("wallet was set above")
+            });
+
+            BackendEvent::TaskCompletedStateChange {
+                task: Task::Wallet(task),
+                execution_result: Ok("Added wallet".into()),
+                app_state_update: AppStateUpdate::LoadedWallet(loaded_wallet_update),
+            }
+        }
+        WalletTask::AddRandomKey => {
+            let mut rng = StdRng::from_entropy();
+            let private_key = PrivateKey::new(SecretKey::new(&mut rng), Network::Testnet);
             add_wallet_by_private_key(&wallet_state, private_key).await;
 
             let wallet_guard = wallet_state.lock().await;
