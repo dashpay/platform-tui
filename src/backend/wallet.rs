@@ -45,18 +45,22 @@ pub enum WalletTask {
 pub async fn add_wallet_by_private_key_as_string(
     wallet_state: &Mutex<Option<Wallet>>,
     private_key: &String,
-) {
+) -> Result<(), WalletError> {
     let private_key = match private_key.len() {
         64 => {
             // hex
             let bytes = hex::decode(private_key).expect("expected hex"); // TODO error hadling
-            PrivateKey::from_slice(bytes.as_slice(), Network::Testnet)
-                .expect("expected private key")
+            PrivateKey::from_slice(bytes.as_slice(), Network::Testnet).expect("expected private key")
         }
-        0 => {
-            return;
+        51 || 52 => {
+            // wif
+            PrivateKey::from_wif(private_key.as_str()).expect("expected WIF key")
         }
-        _ => PrivateKey::from_wif(private_key.as_str()).expect("expected WIF key"),
+        _ => {
+            return Err(WalletError::Custom(
+               "Private key in env file can't be decoded".to_string()
+            );
+        }
     };
     add_wallet_by_private_key(wallet_state, private_key).await
 }
@@ -78,6 +82,8 @@ pub async fn add_wallet_by_private_key(
 
     let mut wallet_guard = wallet_state.lock().await;
     *wallet_guard = Some(wallet);
+
+    Ok(())
 }
 
 pub(super) async fn run_wallet_task<'s>(
@@ -203,6 +209,8 @@ pub enum WalletError {
     Insight(InsightError),
     #[error("not enough balance")]
     Balance,
+    #[error("Wallet error: {0}")]
+    Custom(String),
 }
 
 #[derive(Debug, Clone, Encode, Decode)]
