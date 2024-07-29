@@ -96,6 +96,7 @@ pub(super) async fn fetch_identity_by_b58_id(
 pub enum IdentityTask {
     RegisterIdentity(u64),
     LoadKnownIdentity(String),
+    ContinueRegisteringIdentity,
     TopUpIdentity(u64),
     WithdrawFromIdentity(u64),
     Refresh,
@@ -106,6 +107,7 @@ pub enum IdentityTask {
         purpose: KeyPurpose,
     },
     ClearLoadedIdentity,
+    ClearRegistrationOfIdentityInProgress,
     TransferCredits(String, f64),
     LoadEvonodeIdentity(String, String),
     RegisterDPNSName(String),
@@ -165,6 +167,37 @@ impl AppState {
                         task: Task::Identity(task),
                         execution_result: Err(e.to_string()),
                     },
+                }
+            }
+            IdentityTask::ContinueRegisteringIdentity => {
+                let result = self.register_new_identity(sdk, 0).await;
+                let execution_result = result
+                    .as_ref()
+                    .map(|_| "Executed successfully".into())
+                    .map_err(|e| e.to_string());
+                let app_state_update = match result {
+                    Ok(identity) => AppStateUpdate::LoadedIdentity(identity),
+                    Err(_) => AppStateUpdate::IdentityRegistrationProgressed,
+                };
+
+                BackendEvent::TaskCompletedStateChange {
+                    task: Task::Identity(task),
+                    execution_result,
+                    app_state_update,
+                }
+            }
+            IdentityTask::ClearRegistrationOfIdentityInProgress => {
+                let mut loaded_identity_asset_lock_private_key_in_creation = self
+                    .identity_asset_lock_private_key_in_creation
+                    .lock()
+                    .await;
+                *loaded_identity_asset_lock_private_key_in_creation = None;
+                BackendEvent::TaskCompletedStateChange {
+                    task: Task::Identity(task),
+                    execution_result: Ok(CompletedTaskPayload::String(
+                        "Cleared registration of identity in progress".to_string(),
+                    )),
+                    app_state_update: AppStateUpdate::ClearedLoadedIdentity,
                 }
             }
             IdentityTask::ClearLoadedIdentity => {
@@ -580,10 +613,7 @@ impl AppState {
             "normalizedLabel",
             convert_to_homograph_safe_chars(name).into(),
         );
-        domain_document.set(
-            "records.dashUniqueIdentityId",
-            domain_document.owner_id().into(),
-        );
+        domain_document.set("records.identity", domain_document.owner_id().into());
         domain_document.set("subdomainRules.allowSubdomains", false.into());
         domain_document.set("preorderSalt", salt.into());
 

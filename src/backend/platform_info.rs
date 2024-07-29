@@ -1,6 +1,8 @@
 use chrono::{prelude::*, LocalResult};
 use chrono_humanize::{Accuracy, HumanTime, Tense};
-use dapi_grpc::platform::v0::ResponseMetadata;
+use cli_clipboard::{ClipboardContext, ClipboardProvider};
+use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
+use dash_sdk::sdk::prettify_proof;
 use dash_sdk::{
     platform::{types::epoch::ExtendedEpochInfoEx, Fetch, FetchMany, LimitQuery},
     Sdk,
@@ -26,6 +28,7 @@ pub(crate) enum PlatformInfoTask {
 fn format_extended_epoch_info(
     epoch_info: ExtendedEpochInfo,
     metadata: ResponseMetadata,
+    proof: Proof,
     is_current: bool,
 ) -> String {
     let readable_block_time = match Utc.timestamp_millis_opt(metadata.time_ms as i64) {
@@ -63,7 +66,7 @@ fn format_extended_epoch_info(
     format!(
         "current height: {}\ncurrent core height: {}\ncurrent block time: {} ({})\n{}epoch: {}\n \
          * start height: {}\n * start core height: {}\n * start time: {} ({})\n * fee multiplier: \
-         {}\n",
+         {}\n\nproof: {}",
         metadata.height,
         metadata.core_chain_locked_height,
         metadata.time_ms,
@@ -74,19 +77,21 @@ fn format_extended_epoch_info(
         epoch_info.first_core_block_height(),
         epoch_info.first_block_time(),
         readable_epoch_start_time,
-        epoch_info.fee_multiplier_permille()
+        epoch_info.fee_multiplier_permille(),
+        prettify_proof(&proof)
     )
 }
 
 pub(super) async fn run_platform_task<'s>(sdk: &Sdk, task: PlatformInfoTask) -> BackendEvent<'s> {
     match task {
         PlatformInfoTask::FetchCurrentEpochInfo => {
-            match ExtendedEpochInfo::fetch_current_with_metadata(sdk).await {
-                Ok((epoch_info, metadata)) => BackendEvent::TaskCompleted {
+            match ExtendedEpochInfo::fetch_current_with_metadata_and_proof(sdk).await {
+                Ok((epoch_info, metadata, proof)) => BackendEvent::TaskCompleted {
                     task: Task::PlatformInfo(task),
-                    execution_result: Ok(
-                        format_extended_epoch_info(epoch_info, metadata, true).into()
-                    ),
+                    execution_result: Ok(format_extended_epoch_info(
+                        epoch_info, metadata, proof, true,
+                    )
+                    .into()),
                 },
                 Err(e) => BackendEvent::TaskCompleted {
                     task: Task::PlatformInfo(task),
@@ -95,16 +100,19 @@ pub(super) async fn run_platform_task<'s>(sdk: &Sdk, task: PlatformInfoTask) -> 
             }
         }
         PlatformInfoTask::FetchSpecificEpochInfo(epoch_num) => {
-            match ExtendedEpochInfo::fetch_with_metadata(sdk, epoch_num, None).await {
-                Ok((Some(epoch_info), metadata)) => BackendEvent::TaskCompleted {
+            match ExtendedEpochInfo::fetch_with_metadata_and_proof(sdk, epoch_num, None).await {
+                Ok((Some(epoch_info), metadata, proof)) => BackendEvent::TaskCompleted {
                     task: Task::PlatformInfo(task),
-                    execution_result: Ok(
-                        format_extended_epoch_info(epoch_info, metadata, false).into()
-                    ),
+                    execution_result: Ok(format_extended_epoch_info(
+                        epoch_info, metadata, proof, false,
+                    )
+                    .into()),
                 },
-                Ok((None, _)) => BackendEvent::TaskCompleted {
+                Ok((None, _, proof)) => BackendEvent::TaskCompleted {
                     task: Task::PlatformInfo(task),
-                    execution_result: Ok("No epoch".into()),
+                    execution_result: {
+                        Ok(format!("No epoch, \n proof {}", prettify_proof(&proof)).into())
+                    },
                 },
                 Err(e) => BackendEvent::TaskCompleted {
                     task: Task::PlatformInfo(task),
