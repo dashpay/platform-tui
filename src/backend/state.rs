@@ -3,12 +3,10 @@
 //! persistence required by backend.
 
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{collections::BTreeMap, fs};
 
 use bincode::{Decode, Encode};
-use clap::Id;
 use dpp::{
     dashcore::{
         psbt::serialize::{Deserialize, Serialize},
@@ -400,7 +398,10 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
         // Deserialize the wallet state and wrap it in Arc<Mutex<_>>
         let deserialized_wallet_state = loaded_wallet
             .map(|wallet| Mutex::new(Some(wallet)))
-            .unwrap_or_else(|| Mutex::new(None));
+            .unwrap_or_else(|| {
+                tracing::warn!("Failed to deserialize loaded wallet state.");
+                Mutex::new(None)
+            });
 
         Ok(AppState {
             loaded_identity: loaded_identity.into(),
@@ -427,6 +428,7 @@ impl AppState {
         let path = config.state_file_path();
 
         let Ok(read_result) = fs::read(path.clone()) else {
+            tracing::warn!("No state file exists or we failed to read it. This is expected on the first time loading the app on a new network.");
             let state = AppState::default();
             if let Some(private_key) = &config.wallet_private_key {
                 let wallet_state = &state.loaded_wallet;
@@ -440,6 +442,7 @@ impl AppState {
             false,
             PlatformVersion::get(CURRENT_PROTOCOL_VERSION).unwrap(),
         ) else {
+            tracing::warn!("Failed to deserialize app state after reading state file.");
             let start = SystemTime::now();
             let since_the_epoch = start
                 .duration_since(UNIX_EPOCH)

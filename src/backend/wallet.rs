@@ -25,7 +25,10 @@ use dpp::dashcore::{
     Address, Network, OutPoint, PrivateKey, PublicKey, ScriptBuf, Transaction, TxIn, TxOut,
     Witness,
 };
-use rand::{prelude::StdRng, Rng, SeedableRng};
+use rand::{
+    prelude::{SliceRandom, StdRng},
+    thread_rng, Rng, SeedableRng,
+};
 use rs_dapi_client::DapiRequestExecutor;
 use tokio::sync::{Mutex, MutexGuard};
 
