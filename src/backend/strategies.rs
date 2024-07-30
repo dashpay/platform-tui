@@ -1148,9 +1148,9 @@ pub async fn run_strategy_task<'s>(
                 let mut rng = StdRng::from_entropy(); // Will be passed to state_transitions_for_block
                 let mut current_block_info = initial_block_info.clone(); // Used for transition creation and logging
                 let mut transition_count: u32 = 0; // Used for logging how many transitions we attempted
-                let mut success_count: u32 = 0; // Used for logging how many transitions were successful
+                let success_count = Arc::new(Mutex::new(0)); // Used for logging how many transitions were successful
                 let mut load_start_time = Instant::now(); // Time when the load test begins (all blocks after the second block)
-                let mut index = 1; // Index of the loop iteration. Represents blocks for block mode and seconds for time mode
+                let mut loop_index = 1; // Index of the loop iteration. Represents blocks for block mode and seconds for time mode
                 let mut new_identity_ids = Vec::new(); // Will capture the ids of identities added to current_identities
                 let mut new_contract_ids = Vec::new(); // Will capture the ids of newly created data contracts
                 let oks = Arc::new(AtomicU32::new(0)); // Atomic counter for successful broadcasts
@@ -1159,14 +1159,14 @@ pub async fn run_strategy_task<'s>(
                     Arc::new(Mutex::new(BTreeMap::<(Identifier, Identifier), u64>::new())); // Map to track how many documents an identity has in the mempool per contract
 
                 // Broadcast error counters
-                let mut identity_nonce_error_count: u64 = 0;
-                let mut insufficient_balance_error_count: u64 = 0;
-                let mut local_rate_limit_error_count: u64 = 0;
-                let mut broadcast_timeout_error_count: u64 = 0;
+                let identity_nonce_error_count = Arc::new(Mutex::new(0));
+                let insufficient_balance_error_count = Arc::new(Mutex::new(0));
+                let local_rate_limit_error_count = Arc::new(Mutex::new(0));
+                let broadcast_connection_error_count = Arc::new(Mutex::new(0));
 
                 // Now loop through the number of blocks or seconds the user asked for, preparing and processing state transitions
                 while (block_mode && current_block_info.height < (initial_block_info.height + num_blocks_or_seconds + 2)) // +2 because we don't count the first two initialization blocks
-                    || (!block_mode && load_start_time.elapsed().as_secs() < num_blocks_or_seconds) || index <= 2
+                    || (!block_mode && load_start_time.elapsed().as_secs() < num_blocks_or_seconds) || loop_index <= 2
                 {
                     let loop_start_time = Instant::now();
                     let oks_clone = oks.clone();
@@ -1261,7 +1261,7 @@ pub async fn run_strategy_task<'s>(
                             "Prepared {} state transitions for {} {}",
                             transitions.len(),
                             mode_string,
-                            index
+                            loop_index
                         );
 
                         // A queue for the state transitions for the block (or second)
@@ -1285,6 +1285,15 @@ pub async fn run_strategy_task<'s>(
                             .reverse();
                             let mempool_document_counter_clone = mempool_document_counter.clone();
                             let current_identities_clone = Arc::clone(&current_identities);
+                            let success_count_clone = Arc::clone(&success_count);
+                            let identity_nonce_error_count_clone =
+                                Arc::clone(&identity_nonce_error_count);
+                            let insufficient_balance_error_count_clone =
+                                Arc::clone(&insufficient_balance_error_count);
+                            let local_rate_limit_error_count_clone =
+                                Arc::clone(&local_rate_limit_error_count);
+                            let broadcast_connection_error_count_clone =
+                                Arc::clone(&broadcast_connection_error_count);
 
                             // Determine if the transitions is a dependent transition.
                             // Dependent state transitions are those that get their revision checked. Sending multiple
@@ -1299,6 +1308,8 @@ pub async fn run_strategy_task<'s>(
                             );
 
                             if is_dependent_transition {
+                                let mut success_count = success_count_clone.lock().await;
+
                                 // Sequentially process dependent transitions with a delay between them
                                 if let Ok(broadcast_request) =
                                     transition_clone.broadcast_request_for_state_transition()
@@ -1337,8 +1348,8 @@ pub async fn run_strategy_task<'s>(
                                                                                 );
                                                                                 match verified {
                                                                                     Ok(_) => {
-                                                                                        tracing::info!("Successfully processed and verified proof for state transition {} ({}), {} {} (Actual block height: {})", st_queue_index, transition_type, mode_string, index, metadata.height);
-                                                                                        success_count += 1;
+                                                                                        tracing::info!("Successfully processed and verified proof for state transition {} ({}), {} {} (Actual block height: {})", st_queue_index, transition_type, mode_string, loop_index, metadata.height);
+                                                                                        *success_count += 1;
                                                                                     }
                                                                                     Err(e) => {
                                                                                         tracing::error!("Error verifying state transition execution proof: {}", e);
@@ -1349,11 +1360,11 @@ pub async fn run_strategy_task<'s>(
                                                                             }
                                                                         } else {
                                                                             if let Some(metadata) = &v0_response.metadata {
-                                                                                tracing::info!("Successfully processed state transition {} ({}) for {} {} (Actual block height: {})", st_queue_index, transition_type, mode_string, index, metadata.height);
-                                                                                success_count += 1;
+                                                                                tracing::info!("Successfully processed state transition {} ({}) for {} {} (Actual block height: {})", st_queue_index, transition_type, mode_string, loop_index, metadata.height);
+                                                                                *success_count += 1;
                                                                             } else {
-                                                                                tracing::info!("Successfully processed state transition {} ({}) for {} {}", st_queue_index, transition_type, mode_string, index);
-                                                                                success_count += 1;
+                                                                                tracing::info!("Successfully processed state transition {} ({}) for {} {}", st_queue_index, transition_type, mode_string, loop_index);
+                                                                                *success_count += 1;
                                                                             }
                                                                         }
                                                                     }
@@ -1398,14 +1409,14 @@ pub async fn run_strategy_task<'s>(
 
                                 let mut request_settings = RequestSettings::default();
                                 // Time-based strategy body
-                                if !block_mode && index != 1 && index != 2 {
+                                if !block_mode && loop_index != 1 && loop_index != 2 {
                                     // time mode loading
                                     request_settings.connect_timeout = Some(Duration::from_secs(1));
                                     request_settings.timeout = Some(Duration::from_secs(1));
                                     request_settings.retries = Some(0);
                                 }
                                 // Block-based strategy body
-                                if block_mode && index != 1 && index != 2 {
+                                if block_mode && loop_index != 1 && loop_index != 2 {
                                     request_settings.connect_timeout = Some(Duration::from_secs(3));
                                     request_settings.timeout = Some(Duration::from_secs(3));
                                     request_settings.retries = Some(1);
@@ -1413,15 +1424,25 @@ pub async fn run_strategy_task<'s>(
 
                                 // Prepare futures for broadcasting independent transitions
                                 let future = async move {
+                                    let mut success_count = success_count_clone.lock().await;
+                                    let mut identity_nonce_error_count =
+                                        identity_nonce_error_count_clone.lock().await;
+                                    let mut insufficient_balance_error_count =
+                                        insufficient_balance_error_count_clone.lock().await;
+                                    let mut local_rate_limit_error_count =
+                                        local_rate_limit_error_count_clone.lock().await;
+                                    let mut broadcast_connection_error_count =
+                                        broadcast_connection_error_count_clone.lock().await;
+
                                     match transition_clone.broadcast_request_for_state_transition() {
                                         Ok(broadcast_request) => {
                                             let broadcast_result = broadcast_request.execute(sdk, request_settings).await;
                                             match broadcast_result {
                                                 Ok(_) => {
                                                     oks.fetch_add(1, Ordering::SeqCst);
-                                                    success_count += 1;
+                                                    *success_count += 1;
                                                     let transition_owner_id = transition_clone.owner_id().to_string(Encoding::Base58);
-                                                    if !block_mode && index != 1 && index != 2 {
+                                                    if !block_mode && loop_index != 1 && loop_index != 2 {
                                                         tracing::info!("Successfully broadcasted transition: {}. ID: {}. Owner ID: {:?}", transition_clone.name(), transition_id, transition_owner_id);
                                                     }
                                                     if transition_clone.name() == "DocumentsBatch" {
@@ -1450,7 +1471,7 @@ pub async fn run_strategy_task<'s>(
                                                     // Update: rs-dapi-client logs have been turned off
                                                     tracing::error!("Error: Failed to broadcast {} transition: {:?}. ID: {}", transition_clone.name(), e, transition_id);
                                                     if e.to_string().contains("Insufficient identity") {
-                                                        insufficient_balance_error_count += 1;
+                                                        *insufficient_balance_error_count += 1;
                                                         // let mut wallet_lock = app_state.loaded_wallet.lock().await;
                                                         let mut current_identities = current_identities_clone.lock().await;
                                                         // if top_up_amount > 0 {
@@ -1492,13 +1513,14 @@ pub async fn run_strategy_task<'s>(
                                                         //     }
                                                         // } else {
                                                             current_identities.retain(|identity| identity.id() != transition_clone.owner_id());
+                                                            // TODO: Return Strategy PartiallyCompleted BackendEvent here if current_identities is empty and no top ups
                                                         // }
                                                     } else if e.to_string().contains("invalid identity nonce") {
-                                                        identity_nonce_error_count += 1;
-                                                    } else if e.to_string().contains("") {
-                                                        local_rate_limit_error_count += 1;
-                                                    } else if e.to_string().contains("") {
-                                                        broadcast_timeout_error_count += 1;
+                                                        *identity_nonce_error_count += 1;
+                                                    } else if e.to_string().contains("rate-limit") {
+                                                        *local_rate_limit_error_count += 1;
+                                                    } else if e.to_string().contains("error trying to connect") {
+                                                        *broadcast_connection_error_count += 1;
                                                     }
                                                     Err(e)
                                                 }
@@ -1522,7 +1544,7 @@ pub async fn run_strategy_task<'s>(
 
                         // If we're in block mode, or index 1 or 2 of time mode, we're going to wait for state transition results and potentially verify proofs too.
                         // If we're in time mode and index 3+, we're just broadcasting.
-                        if block_mode || index == 1 || index == 2 {
+                        if block_mode || loop_index == 1 || loop_index == 2 {
                             let request_settings = RequestSettings {
                                 connect_timeout: Some(Duration::from_secs(3)),
                                 timeout: Some(Duration::from_secs(3)),
@@ -1749,8 +1771,6 @@ pub async fn run_strategy_task<'s>(
                                         )
                                         .to_string()
                                         .reverse();
-                                        let transition_owner_id =
-                                            transition.owner_id().to_string(Encoding::Base58);
                                         let sdk_clone_inner = sdk_clone.clone();
 
                                         tokio::spawn(async move {
@@ -1826,7 +1846,7 @@ pub async fn run_strategy_task<'s>(
 
                         // Reset the load_start_time
                         // Also, sleep 10 seconds to let nodes update state
-                        if index == 1 || index == 2 {
+                        if loop_index == 1 || loop_index == 2 {
                             load_start_time = Instant::now();
                             tokio::time::sleep(Duration::from_secs(10)).await;
                         }
@@ -1835,11 +1855,11 @@ pub async fn run_strategy_task<'s>(
                         tracing::info!(
                             "Prepared 0 state transitions for {} {}",
                             mode_string,
-                            index
+                            loop_index
                         );
                     }
 
-                    if index == 2 {
+                    if loop_index == 2 {
                         init_time = init_start_time.elapsed();
                     }
 
@@ -1850,7 +1870,7 @@ pub async fn run_strategy_task<'s>(
                         .expect("time went backwards")
                         .as_millis();
                     current_block_info.time_ms = current_time_ms as u64;
-                    index += 1;
+                    loop_index += 1;
 
                     // Make sure the loop doesn't iterate faster than once per second in time mode
                     if !block_mode {
@@ -1891,7 +1911,9 @@ pub async fn run_strategy_task<'s>(
 
                 // Withdraw all funds from newly created identities back to the wallet
                 let mut current_identities = current_identities.lock().await;
-                current_identities.remove(0); // Remove loaded identity from the vector
+                if current_identities.len() > 0 {
+                    current_identities.remove(0); // Remove loaded identity from the vector
+                }
                 let wallet_lock = app_state
                     .loaded_wallet
                     .lock()
@@ -1976,9 +1998,18 @@ pub async fn run_strategy_task<'s>(
                     - final_balance_wallet as f64)
                     / 100_000_000_000.0;
 
+                // Counters
+                let mut success_count_lock = success_count.lock().await;
+                let identity_nonce_error_count_lock = identity_nonce_error_count.lock().await;
+                let insufficient_balance_error_count_lock =
+                    insufficient_balance_error_count.lock().await;
+                let local_rate_limit_error_count_lock = local_rate_limit_error_count.lock().await;
+                let broadcast_connection_error_count_lock =
+                    broadcast_connection_error_count.lock().await;
+
                 // For time mode, success_count is just the number of broadcasts
                 if !block_mode {
-                    success_count = oks.load(Ordering::SeqCst);
+                    *success_count_lock = oks.load(Ordering::SeqCst);
                 }
 
                 // Make sure we don't divide by 0 when we determine the tx/s rate
@@ -2000,22 +2031,22 @@ pub async fn run_strategy_task<'s>(
                         / (load_run_time)) as f32
                 };
                 let mut successful_tps: f32 = 0.0;
-                if success_count
+                if *success_count_lock
                     > (strategy.start_contracts.len() as u32
                         + strategy.start_identities.number_of_identities as u32)
                 {
-                    successful_tps = ((success_count
+                    successful_tps = ((*success_count_lock
                         - strategy.start_contracts.len() as u32
                         - strategy.start_identities.number_of_identities as u32)
                         as u64
                         / (load_run_time)) as f32
                 };
                 let mut success_percent = 0;
-                if success_count as u32
+                if *success_count_lock as u32
                     > (strategy.start_contracts.len() as u32
                         + strategy.start_identities.number_of_identities as u32)
                 {
-                    success_percent = (((success_count
+                    success_percent = (((*success_count_lock
                         - strategy.start_contracts.len() as u32
                         - strategy.start_identities.number_of_identities as u32)
                         as f64
@@ -2035,20 +2066,20 @@ pub async fn run_strategy_task<'s>(
                         "-----Strategy '{}' completed-----\n\nMode: {}\nState transitions attempted: {}\nState \
                         transitions succeeded: {}\nNumber of blocks: {}\nRun time: \
                         {:?} seconds\nTPS rate (approx): {} tps\nDash spent (Loaded Identity): {}\nDash spent (Wallet): {}\nNonce \
-                        errors: {}\nBalance errors: {}\nRate limit errors: {}\nBroadcast timeout errors: {}",
+                        errors: {}\nBalance errors: {}\nRate limit errors: {}\nBroadcast connection errors: {}",
                         strategy_name,
                         mode_string,
                         transition_count,
-                        success_count,
+                        *success_count_lock,
                         (current_block_info.height - initial_block_info.height),
                         load_run_time, // Processing time after the second block
                         tps, // tps besides the first two blocks
                         dash_spent_identity,
                         dash_spent_wallet,
-                        identity_nonce_error_count,
-                        insufficient_balance_error_count,
-                        local_rate_limit_error_count,
-                        broadcast_timeout_error_count
+                        *identity_nonce_error_count_lock,
+                        *insufficient_balance_error_count_lock,
+                        *local_rate_limit_error_count_lock,
+                        *broadcast_connection_error_count_lock
                     );
                 } else {
                     // Time mode
@@ -2056,12 +2087,12 @@ pub async fn run_strategy_task<'s>(
                         "-----Strategy '{}' completed-----\n\nMode: {}\nState transitions attempted: {}\nState \
                         transitions succeeded: {}\nNumber of loops: {}\nLoad run time: \
                         {:?} seconds\nInit run time: {} seconds\nAttempted rate (approx): {} txs/s\nSuccessful rate: {} tx/s\nSuccess percentage: {}%\nDash spent (Loaded Identity): {}\nDash spent (Wallet): {}\nNonce \
-                        errors: {}\nBalance errors: {}\nRate limit errors: {}\nBroadcast timeout errors: {}",
+                        errors: {}\nBalance errors: {}\nRate limit errors: {}\nBroadcast connection errors: {}",
                         strategy_name,
                         mode_string,
                         transition_count,
-                        success_count,
-                        index-3, // Minus 3 because we still incremented one at the end of the last loop, and don't count the first two blocks
+                        *success_count_lock,
+                        loop_index-3, // Minus 3 because we still incremented one at the end of the last loop, and don't count the first two blocks
                         load_run_time,
                         init_time.as_secs(),
                         tps,
@@ -2069,10 +2100,10 @@ pub async fn run_strategy_task<'s>(
                         success_percent,
                         dash_spent_identity,
                         dash_spent_wallet,
-                        identity_nonce_error_count,
-                        insufficient_balance_error_count,
-                        local_rate_limit_error_count,
-                        broadcast_timeout_error_count
+                        *identity_nonce_error_count_lock,
+                        *insufficient_balance_error_count_lock,
+                        *local_rate_limit_error_count_lock,
+                        *broadcast_connection_error_count_lock
                     );
                 }
 
@@ -2082,7 +2113,7 @@ pub async fn run_strategy_task<'s>(
                         block_mode: block_mode,
                         final_block_height: current_block_info.height,
                         start_block_height: initial_block_info.height,
-                        success_count: success_count.try_into().unwrap(),
+                        success_count: *success_count_lock as u64,
                         transition_count: transition_count.try_into().unwrap(),
                         rate: tps,
                         success_rate: successful_tps,
