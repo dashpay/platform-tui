@@ -19,16 +19,13 @@ use dapi_grpc::platform::v0::{
     },
     GetEpochsInfoRequest,
 };
-use dash_sdk::platform::transition::{
-    top_up_identity::TopUpIdentity, withdraw_from_identity::WithdrawFromIdentity,
-};
+use dash_sdk::platform::transition::withdraw_from_identity::WithdrawFromIdentity;
 use dash_sdk::{
     platform::{transition::broadcast_request::BroadcastRequestForStateTransition, Fetch},
     Sdk,
 };
 use dpp::{
     block::{block_info::BlockInfo, epoch::Epoch},
-    consensus::basic::data_contract,
     dashcore::{Address, PrivateKey, Transaction},
     data_contract::{
         accessors::v0::{DataContractV0Getters, DataContractV0Setters},
@@ -59,7 +56,6 @@ use dpp::{
         },
         StateTransition, StateTransitionLike,
     },
-    version::TryIntoPlatformVersioned,
 };
 use drive::{
     drive::{
@@ -800,7 +796,7 @@ pub async fn run_strategy_task<'s>(
             num_blocks_or_seconds,
             verify_proofs,
             block_mode,
-            _top_up_amount,
+            top_up_amount,
         ) => {
             tracing::info!("-----Starting strategy '{}'-----", strategy_name);
             let init_start_time = Instant::now(); // Start time of strategy initialization plus execution of first two blocks
@@ -1218,120 +1214,6 @@ pub async fn run_strategy_task<'s>(
                     let mempool_document_counter_lock = mempool_document_counter.lock().await;
                     let mut current_identities_lock = current_identities.lock().await;
 
-                    // // Here, dynamically get the correct number of asset lock proofs for the block if not an init block.
-                    // // This won't work until reload_utxos actually updates the state
-                    // if index > 2 {
-                    //     let num_identity_inserts = (strategy
-                    //         .identity_inserts
-                    //         .frequency
-                    //         .times_per_block_range
-                    //         .start) as u64;
-                    //     let mut num_top_ups: u64 = 0;
-                    //     for operation in &strategy.operations {
-                    //         if operation.op_type == OperationType::IdentityTopUp {
-                    //             num_top_ups += (operation.frequency.times_per_block_range.start) as u64;
-                    //         }
-                    //     }
-                    //     let num_asset_lock_proofs_needed = num_identity_inserts + num_top_ups;
-                    //     if num_asset_lock_proofs_needed > 0 {
-                    //         let wallet_lock = app_state.loaded_wallet.lock().await;
-                    //         let num_available_utxos = match wallet_lock
-                    //             .as_ref()
-                    //             .expect("No wallet loaded while getting asset lock proofs")
-                    //         {
-                    //             Wallet::SingleKeyWallet(SingleKeyWallet { utxos, .. }) => utxos.len(),
-                    //         };
-                    //         drop(wallet_lock);
-                    //         if num_available_utxos
-                    //             < num_asset_lock_proofs_needed
-                    //                 .try_into()
-                    //                 .expect("Couldn't convert num_asset_lock_proofs_needed into usize")
-                    //         {
-                    //             return BackendEvent::StrategyError {
-                    //                 error: format!("Not enough UTXOs available in wallet. Available: {}. Need: {}. Go to Wallet screen and create more.", num_available_utxos, num_asset_lock_proofs_needed),
-                    //             };
-                    //         }
-                    //         tracing::info!(
-                    //             "Obtaining {} asset lock proofs for the strategy...",
-                    //             num_asset_lock_proofs_needed
-                    //         );
-                    //         let asset_lock_proof_time = Instant::now();
-
-                    //         // Broadcast asset locks and receive proofs.
-                    //         let permits = Arc::new(Semaphore::new(20));
-                    //         let starting_balance = strategy.start_identities.starting_balances;
-                    //         let processed = Arc::new(AtomicUsize::new(0));
-                    //         let tasks: FuturesUnordered<_> = (0..num_asset_lock_proofs_needed)
-                    //         .map(|_| {
-                    //             let permits = Arc::clone(&permits);
-                    //             let processed = Arc::clone(&processed);
-
-                    //             async move {
-                    //                 let _permit = permits.acquire_owned().await.ok()?;
-
-                    //                 let mut wallet_lock = app_state.loaded_wallet.lock().await;
-                    //                 let wallet = wallet_lock.as_mut().expect("Wallet not loaded");
-
-                    //                 let (asset_lock_transaction, asset_lock_proof_private_key) = wallet
-                    //                     .asset_lock_transaction(None, starting_balance)
-                    //                     .map_err(|e| {
-                    //                         tracing::error!("Error creating asset lock transaction: {:?}", e);
-                    //                         e
-                    //                     })
-                    //                     .ok()?;
-
-                    //                 let receive_address = wallet.receive_address();
-                    //                 drop(wallet_lock);
-
-                    //                 let result;
-
-                    //                     match AppState::broadcast_and_retrieve_asset_lock(sdk, &asset_lock_transaction, &receive_address).await {
-                    //                         Ok(asset_lock_proof) => {
-                    //                             result = Ok((asset_lock_proof, asset_lock_proof_private_key));
-                    //                         }
-                    //                         Err(e) => {
-                    //                             tracing::error!(
-                    //                                 "Error broadcasting asset lock transaction and retrieving proof: {:?}",
-                    //                                 e
-                    //                             );
-                    //                             result = Err(e);
-                    //                         }
-                    //                     }
-
-                    //                 match result {
-                    //                     Ok(asset_lock_proof) => {
-                    //                         let prev = processed.fetch_add(1, Ordering::Relaxed);
-                    //                         tracing::info!(
-                    //                             "Successfully obtained asset lock proof {} of {}",
-                    //                             prev + 1,
-                    //                             num_asset_lock_proofs_needed
-                    //                         );
-                    //                         Some(asset_lock_proof)
-                    //                     }
-                    //                     Err(e) => {
-                    //                         tracing::error!(
-                    //                             "Failed to obtain asset lock proof: {:?}",
-                    //                             e
-                    //                         );
-                    //                         None
-                    //                     }
-                    //                 }
-                    //             }
-                    //             .boxed_local()
-                    //         })
-                    //         .collect();
-
-                    //         asset_lock_proofs = join_all(tasks).await.into_iter().flatten().collect();
-
-                    //         tracing::info!(
-                    //             "Took {} seconds to obtain {} asset lock proofs from {} required",
-                    //             asset_lock_proof_time.elapsed().as_secs(),
-                    //             asset_lock_proofs.len(),
-                    //             num_asset_lock_proofs_needed
-                    //         );
-                    //     }
-                    // }
-
                     // Get the state transitions for the block (or second)
                     let (transitions, finalize_operations, mut new_identities) = strategy
                         .state_transitions_for_block(
@@ -1370,6 +1252,9 @@ pub async fn run_strategy_task<'s>(
                     // Extra transition type-specific processing
                     for transition in &transitions {
                         match transition {
+                            // Add new data contracts to the list of newly created contract ids for logging
+                            // Also insert into AppState known_contracts for proof verification
+                            // Also insert into local Drive for later getting documents to delete
                             StateTransition::DataContractCreate(contract_create_transition) => {
                                 new_contract_ids.extend(
                                     contract_create_transition
@@ -1415,6 +1300,7 @@ pub async fn run_strategy_task<'s>(
                                     ),
                                 }
                             }
+                            // Add new documents to the local Drive for later getting documents to delete
                             StateTransition::DocumentsBatch(documents_batch_transition) => {
                                 match documents_batch_transition {
                                     DocumentsBatchTransition::V0(documents_batch_transition_v0) => {
@@ -1423,67 +1309,61 @@ pub async fn run_strategy_task<'s>(
                                         {
                                             match document_transition {
                                                 DocumentTransition::Create(
-                                                    document_create_transition,
-                                                ) => match document_create_transition {
                                                     DocumentCreateTransition::V0(
                                                         document_create_transition_v0,
-                                                    ) => {
-                                                        let document_type_name =
-                                                            document_create_transition_v0
-                                                                .base
-                                                                .document_type_name();
-                                                        let data_contract_id =
-                                                            document_create_transition_v0
-                                                                .base
-                                                                .data_contract_id();
-                                                        let known_contracts =
-                                                            app_state.known_contracts.lock().await;
-                                                        let maybe_data_contract = known_contracts
-                                                            .get(
-                                                                &data_contract_id
-                                                                    .to_string(Encoding::Base58),
-                                                            );
-                                                        match maybe_data_contract {
-                                                            Some(data_contract) => {
-                                                                let maybe_document_type =
-                                                                    data_contract
-                                                                        .document_type_for_name(
-                                                                            document_type_name,
-                                                                        );
-                                                                match maybe_document_type {
-                                                                    Ok(document_type) => {
-                                                                        let maybe_document = Document::try_from_create_transition_v0(document_create_transition_v0, transition.owner_id(), &current_block_info, &document_type, sdk.version());
-                                                                        match maybe_document {
-                                                                            Ok(document) => {
-                                                                                let document_info = DocumentInfo::DocumentOwnedInfo((document, None));
-                                                                                let owned_document_info = OwnedDocumentInfo {
+                                                    ),
+                                                ) => {
+                                                    let document_type_name =
+                                                        document_create_transition_v0
+                                                            .base
+                                                            .document_type_name();
+                                                    let data_contract_id =
+                                                        document_create_transition_v0
+                                                            .base
+                                                            .data_contract_id();
+                                                    let known_contracts =
+                                                        app_state.known_contracts.lock().await;
+                                                    let maybe_data_contract = known_contracts.get(
+                                                        &data_contract_id
+                                                            .to_string(Encoding::Base58),
+                                                    );
+                                                    match maybe_data_contract {
+                                                        Some(data_contract) => {
+                                                            let maybe_document_type = data_contract
+                                                                .document_type_for_name(
+                                                                    document_type_name,
+                                                                );
+                                                            match maybe_document_type {
+                                                                Ok(document_type) => {
+                                                                    let maybe_document = Document::try_from_create_transition_v0(document_create_transition_v0, transition.owner_id(), &current_block_info, &document_type, sdk.version());
+                                                                    match maybe_document {
+                                                                        Ok(document) => {
+                                                                            let document_info = DocumentInfo::DocumentOwnedInfo((document, None));
+                                                                            let owned_document_info = OwnedDocumentInfo {
                                                                                         document_info,
                                                                                         owner_id: Some(*transition.owner_id().as_bytes())
                                                                                     };
-                                                                                let result = drive_lock.add_document(owned_document_info, data_contract_id, document_type_name, false, &current_block_info, true, None, sdk.version());
-                                                                                if let Err(e) =
-                                                                                    result
-                                                                                {
-                                                                                    tracing::error!("Failed to add document to local drive: {e}");
-                                                                                }
-                                                                            }
-                                                                            Err(e) => {
-                                                                                tracing::error!("Couldn't get document from document create transition: {e}");
+                                                                            let result = drive_lock.add_document(owned_document_info, data_contract_id, document_type_name, false, &current_block_info, true, None, sdk.version());
+                                                                            if let Err(e) = result {
+                                                                                tracing::error!("Failed to add document to local drive: {e}");
                                                                             }
                                                                         }
-                                                                    }
-                                                                    Err(e) => {
-                                                                        tracing::error!("Couldn't retrieve document type {} from contract: {}", document_type_name, e)
+                                                                        Err(e) => {
+                                                                            tracing::error!("Couldn't get document from document create transition: {e}");
+                                                                        }
                                                                     }
                                                                 }
-                                                            }
-                                                            None => {
-                                                                tracing::error!("Data contract {} not found in known_contracts", data_contract_id.to_string(Encoding::Base58));
-                                                                continue;
+                                                                Err(e) => {
+                                                                    tracing::error!("Couldn't retrieve document type {} from contract: {}", document_type_name, e)
+                                                                }
                                                             }
                                                         }
+                                                        None => {
+                                                            tracing::error!("Data contract {} not found in known_contracts", data_contract_id.to_string(Encoding::Base58));
+                                                            continue;
+                                                        }
                                                     }
-                                                },
+                                                }
                                                 _ => {
                                                     // nothing
                                                 }
@@ -1610,68 +1490,71 @@ pub async fn run_strategy_task<'s>(
                                                 if e.to_string().contains("Insufficient identity") {
                                                     insufficient_balance_error_count += 1;
                                                     // Top up. This logic works but it slows the broadcasting down slightly.
-                                                    // let current_identities = Arc::clone(&current_identities_clone);
-                                                    // let sdk_clone = sdk.clone();
-                                                    // let (tx, rx) = oneshot::channel();
-
-                                                    // // Lock the wallet and clone the necessary data before moving into the async block
-                                                    // let asset_lock_transaction;
-                                                    // let asset_lock_proof_private_key;
-                                                    // let wallet_receive_address;
-                                                    // {
-                                                    //     let mut wallet_lock = app_state.loaded_wallet.lock().await;
-                                                    //     let wallet = wallet_lock.as_mut().unwrap();
-                                                    //     let (asset_lock_tx, asset_lock_proof_key) = wallet.asset_lock_transaction(None, 5_000_000).unwrap();
-                                                    //     asset_lock_transaction = asset_lock_tx.clone();
-                                                    //     asset_lock_proof_private_key = asset_lock_proof_key.clone();
-                                                    //     wallet_receive_address = wallet.receive_address();
-                                                    // }
-
-                                                    // // Spawn a blocking task for the top-up process
-                                                    // tokio::task::spawn_blocking(move || {
-                                                    //     // Use block_in_place to run async code within blocking context
-                                                    //     let result = tokio::task::block_in_place(|| {
-                                                    //         tokio::runtime::Handle::current().block_on(async {
-                                                    //             let mut current_identities = current_identities.lock().await;
-
-                                                    //             // Top up
-                                                    //             match try_broadcast_and_retrieve_asset_lock(&sdk_clone, &asset_lock_transaction, &wallet_receive_address, 2).await {
-                                                    //                 Ok(asset_lock_proof) => {
-                                                    //                     tracing::info!("Successfully obtained asset lock proof for top up");
-                                                    //                     let identity = current_identities.iter_mut().find(|identity| identity.id() == transition_clone.owner_id()).expect("Expected to find identity ID matching transition owner ID");
-
-                                                    //                     let state_transition = IdentityTopUpTransition::try_from_identity(
-                                                    //                         identity,
-                                                    //                         asset_lock_proof,
-                                                    //                         asset_lock_proof_private_key.inner.as_ref(),
-                                                    //                         0,
-                                                    //                         sdk_clone.version(),
-                                                    //                         None,
-                                                    //                     ).expect("Expected to make a top up transition");
-
-                                                    //                     let request = state_transition.broadcast_request_for_state_transition().expect("Expected to create broadcast request for top up");
-
-                                                    //                     match request
-                                                    //                         .clone()
-                                                    //                         .execute(&sdk_clone, RequestSettings::default())
-                                                    //                         .await {
-                                                    //                             Ok(_) => tracing::info!("Successfully topped up identity"),
-                                                    //                             Err(e) => tracing::error!("Failed to top up identity: {:?}", e)
-                                                    //                         };
-                                                    //                 }
-                                                    //                 Err(_) => {
-                                                    //                     tracing::error!("Failed to obtain asset lock proof for top up");
-                                                    //                 }
-                                                    //             }
-                                                    //         })
-                                                    //     });
-
-                                                    //     // Send the result back to the main async context
-                                                    //     tx.send(result).unwrap();
-                                                    // });
-
-                                                    // // Await the result of the blocking task
-                                                    // let _ = rx.await;
+                                                    if top_up_amount > 0 {
+                                                        let current_identities = Arc::clone(&current_identities_clone);
+                                                        let sdk_clone = sdk.clone();
+                                                        let (tx, rx) = oneshot::channel();
+    
+                                                        // Lock the wallet and clone the necessary data before moving into the async block
+                                                        let asset_lock_transaction;
+                                                        let asset_lock_proof_private_key;
+                                                        let wallet_receive_address;
+                                                        {
+                                                            let mut wallet_lock = app_state.loaded_wallet.lock().await;
+                                                            let wallet = wallet_lock.as_mut().unwrap();
+                                                            let (asset_lock_tx, asset_lock_proof_key) = wallet.asset_lock_transaction(None, top_up_amount).unwrap();
+                                                            asset_lock_transaction = asset_lock_tx.clone();
+                                                            asset_lock_proof_private_key = asset_lock_proof_key.clone();
+                                                            wallet_receive_address = wallet.receive_address();
+                                                        }
+    
+                                                        // Spawn a blocking task for the top-up process
+                                                        tokio::task::spawn_blocking(move || {
+                                                            // Use block_in_place to run async code within blocking context
+                                                            let result = tokio::task::block_in_place(|| {
+                                                                tokio::runtime::Handle::current().block_on(async {
+                                                                    let mut current_identities = current_identities.lock().await;
+    
+                                                                    // Top up
+                                                                    match try_broadcast_and_retrieve_asset_lock(&sdk_clone, &asset_lock_transaction, &wallet_receive_address, 2).await {
+                                                                        Ok(asset_lock_proof) => {
+                                                                            tracing::info!("Successfully obtained asset lock proof for top up");
+                                                                            let identity = current_identities.iter_mut().find(|identity| identity.id() == transition_clone.owner_id()).expect("Expected to find identity ID matching transition owner ID");
+    
+                                                                            let state_transition = IdentityTopUpTransition::try_from_identity(
+                                                                                identity,
+                                                                                asset_lock_proof,
+                                                                                asset_lock_proof_private_key.inner.as_ref(),
+                                                                                0,
+                                                                                sdk_clone.version(),
+                                                                                None,
+                                                                            ).expect("Expected to make a top up transition");
+    
+                                                                            let request = state_transition.broadcast_request_for_state_transition().expect("Expected to create broadcast request for top up");
+    
+                                                                            match request
+                                                                                .clone()
+                                                                                .execute(&sdk_clone, RequestSettings::default())
+                                                                                .await {
+                                                                                    Ok(_) => tracing::info!("Successfully topped up identity"),
+                                                                                    Err(e) => tracing::error!("Failed to top up identity: {:?}", e)
+                                                                                };
+                                                                        }
+                                                                        Err(_) => {
+                                                                            tracing::error!("Failed to obtain asset lock proof for top up");
+                                                                        }
+                                                                    }
+                                                                })
+                                                            });
+    
+                                                            // Send the result back to the main async context
+                                                            tx.send(result).unwrap();
+                                                        });
+    
+                                                        // Await the result of the blocking task
+                                                        let _ = rx.await;
+    
+                                                    }
                                                 } else if e.to_string().contains("invalid identity nonce") {
                                                     identity_nonce_error_count += 1;
                                                 } else if e.to_string().contains("") {
@@ -1929,8 +1812,6 @@ pub async fn run_strategy_task<'s>(
                                         )
                                         .to_string()
                                         .reverse();
-                                        let transition_owner_id =
-                                            transition.owner_id().to_string(Encoding::Base58);
                                         let sdk_clone_inner = sdk_clone.clone();
 
                                         tokio::spawn(async move {
