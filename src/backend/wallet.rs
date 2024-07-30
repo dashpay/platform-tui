@@ -25,14 +25,11 @@ use dpp::dashcore::{
     Address, Network, OutPoint, PrivateKey, PublicKey, ScriptBuf, Transaction, TxIn, TxOut,
     Witness,
 };
-use rand::{
-    prelude::{SliceRandom, StdRng},
-    thread_rng, Rng, SeedableRng,
-};
+use rand::{prelude::StdRng, Rng, SeedableRng};
 use rs_dapi_client::DapiRequestExecutor;
 use tokio::sync::{Mutex, MutexGuard};
 
-use super::{AppStateUpdate, BackendEvent, CompletedTaskPayload, Task};
+use super::{set_clipboard, AppStateUpdate, BackendEvent, CompletedTaskPayload, Task};
 use crate::backend::insight::{InsightAPIClient, InsightError};
 use crate::backend::Wallet::SingleKeyWallet as BackendWallet;
 
@@ -177,10 +174,16 @@ pub(super) async fn run_wallet_task<'s>(
             let wallet_guard = wallet_state.lock().await;
             if let Some(wallet) = wallet_guard.deref() {
                 let address = wallet.receive_address();
-                cli_clipboard::set_contents(address.to_string()).unwrap();
-                BackendEvent::TaskCompleted {
-                    task: Task::Wallet(task),
-                    execution_result: Ok("Copied Address".into()),
+                if set_clipboard(address.to_string()).await.is_ok() {
+                    BackendEvent::TaskCompleted {
+                        task: Task::Wallet(task),
+                        execution_result: Ok("Copied Address".into()),
+                    }
+                } else {
+                    BackendEvent::TaskCompleted {
+                        task: Task::Wallet(task),
+                        execution_result: Err("Clipboard is not supported".into()),
+                    }
                 }
             } else {
                 BackendEvent::TaskCompleted {

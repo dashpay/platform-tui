@@ -12,11 +12,14 @@ pub mod strategies;
 pub mod wallet;
 
 use std::{
+    borrow::Cow,
     collections::BTreeMap,
     fmt::{self, Display},
+    sync::LazyLock,
     time::Duration,
 };
 
+use arboard::Clipboard;
 use dash_sdk::Sdk;
 use dpp::{
     document::Document,
@@ -28,7 +31,7 @@ use drive_proof_verifier::types::{Contenders, ContestedResources};
 use serde::Serialize;
 pub(crate) use state::AppState;
 use strategy_tests::Strategy;
-use tokio::sync::{MappedMutexGuard, MutexGuard};
+use tokio::sync::{MappedMutexGuard, Mutex, MutexGuard};
 
 use self::state::KnownContractsMap;
 pub(crate) use self::{
@@ -44,6 +47,14 @@ use crate::{
     },
     config::Config,
 };
+
+static CLIPBOARD: LazyLock<Result<Mutex<Clipboard>, arboard::Error>> =
+    LazyLock::new(|| Clipboard::new().map(Mutex::new));
+
+async fn set_clipboard<'a, T: Into<Cow<'a, str>>>(t: T) -> Result<(), &'static arboard::Error> {
+    CLIPBOARD.as_ref()?.lock().await.set_text(t);
+    Ok(())
+}
 
 /// Unit of work for the backend.
 /// UI shall not execute any actions unrelated to rendering directly, to keep
