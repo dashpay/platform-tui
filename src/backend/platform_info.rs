@@ -1,6 +1,5 @@
 use chrono::{prelude::*, LocalResult};
 use chrono_humanize::{Accuracy, HumanTime, Tense};
-use cli_clipboard::{ClipboardContext, ClipboardProvider};
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 use dash_sdk::sdk::prettify_proof;
 use dash_sdk::{

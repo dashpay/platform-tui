@@ -1,7 +1,6 @@
 //! Identities backend logic.
 
 use dashcore::hashes::Hash;
-use drive::drive::identity::key::fetch;
 use std::{
     collections::{BTreeMap, HashSet},
     time::Duration,
@@ -76,8 +75,8 @@ use simple_signer::signer::SimpleSigner;
 use tokio::sync::{MappedMutexGuard, MutexGuard};
 
 use super::{
-    insight::InsightError, state::IdentityPrivateKeysMap, wallet::WalletError, AppStateUpdate,
-    CompletedTaskPayload, Wallet,
+    insight::InsightError, set_clipboard, state::IdentityPrivateKeysMap, wallet::WalletError,
+    AppStateUpdate, CompletedTaskPayload, Wallet,
 };
 use crate::backend::{error::Error, stringify_result_keep_item, AppState, BackendEvent, Task};
 
@@ -267,10 +266,16 @@ impl AppState {
             IdentityTask::CopyIdentityId => {
                 if let Some(loaded_identity) = self.loaded_identity.lock().await.as_ref() {
                     let id = loaded_identity.id();
-                    cli_clipboard::set_contents(id.to_string(Encoding::Base58)).unwrap();
-                    BackendEvent::TaskCompleted {
-                        task: Task::Identity(task),
-                        execution_result: Ok("Copied Identity Id".into()),
+                    if set_clipboard(id.to_string(Encoding::Base58)).await.is_ok() {
+                        BackendEvent::TaskCompleted {
+                            task: Task::Identity(task),
+                            execution_result: Ok("Copied Identity Id".into()),
+                        }
+                    } else {
+                        BackendEvent::TaskCompleted {
+                            task: Task::Identity(task),
+                            execution_result: Err("Clipboard is not supported".into()),
+                        }
                     }
                 } else {
                     BackendEvent::TaskCompleted {
