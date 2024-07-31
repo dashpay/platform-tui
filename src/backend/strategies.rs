@@ -1148,7 +1148,7 @@ pub async fn run_strategy_task<'s>(
                 let mut rng = StdRng::from_entropy(); // Will be passed to state_transitions_for_block
                 let mut current_block_info = initial_block_info.clone(); // Used for transition creation and logging
                 let mut transition_count: u32 = 0; // Used for logging how many transitions we attempted
-                let success_count = Arc::new(Mutex::new(0)); // Used for logging how many transitions were successful
+                let mut success_count = Arc::new(AtomicU32::new(0)); // Used for logging how many transitions were successful
                 let mut load_start_time = Instant::now(); // Time when the load test begins (all blocks after the second block)
                 let mut loop_index = 1; // Index of the loop iteration. Represents blocks for block mode and seconds for time mode
                 let mut new_identity_ids = Vec::new(); // Will capture the ids of identities added to current_identities
@@ -1159,10 +1159,10 @@ pub async fn run_strategy_task<'s>(
                     Arc::new(Mutex::new(BTreeMap::<(Identifier, Identifier), u64>::new())); // Map to track how many documents an identity has in the mempool per contract
 
                 // Broadcast error counters
-                let identity_nonce_error_count = Arc::new(Mutex::new(0));
-                let insufficient_balance_error_count = Arc::new(Mutex::new(0));
-                let local_rate_limit_error_count = Arc::new(Mutex::new(0));
-                let broadcast_connection_error_count = Arc::new(Mutex::new(0));
+                let identity_nonce_error_count = Arc::new(AtomicU32::new(0));
+                let insufficient_balance_error_count = Arc::new(AtomicU32::new(0));
+                let local_rate_limit_error_count = Arc::new(AtomicU32::new(0));
+                let broadcast_connection_error_count = Arc::new(AtomicU32::new(0));
 
                 // Now loop through the number of blocks or seconds the user asked for, preparing and processing state transitions
                 while (block_mode && current_block_info.height < (initial_block_info.height + num_blocks_or_seconds + 2)) // +2 because we don't count the first two initialization blocks
@@ -1171,6 +1171,13 @@ pub async fn run_strategy_task<'s>(
                     let loop_start_time = Instant::now();
                     let oks_clone = oks.clone();
                     let errs_clone = errs.clone();
+                    let success_count_clone = success_count.clone();
+                    let identity_nonce_error_count_clone = identity_nonce_error_count.clone();
+                    let insufficient_balance_error_count_clone =
+                        insufficient_balance_error_count.clone();
+                    let local_rate_limit_error_count_clone = local_rate_limit_error_count.clone();
+                    let broadcast_connection_error_count_clone =
+                        broadcast_connection_error_count.clone();
 
                     // Need to pass app_state.known_contracts to state_transitions_for_block
                     let mut known_contracts_lock = app_state.known_contracts.lock().await;
@@ -1285,15 +1292,6 @@ pub async fn run_strategy_task<'s>(
                             .reverse();
                             let mempool_document_counter_clone = mempool_document_counter.clone();
                             let current_identities_clone = Arc::clone(&current_identities);
-                            let success_count_clone = Arc::clone(&success_count);
-                            let identity_nonce_error_count_clone =
-                                Arc::clone(&identity_nonce_error_count);
-                            let insufficient_balance_error_count_clone =
-                                Arc::clone(&insufficient_balance_error_count);
-                            let local_rate_limit_error_count_clone =
-                                Arc::clone(&local_rate_limit_error_count);
-                            let broadcast_connection_error_count_clone =
-                                Arc::clone(&broadcast_connection_error_count);
 
                             // Determine if the transitions is a dependent transition.
                             // Dependent state transitions are those that get their revision checked. Sending multiple
@@ -1308,7 +1306,7 @@ pub async fn run_strategy_task<'s>(
                             );
 
                             if is_dependent_transition {
-                                let mut success_count = success_count_clone.lock().await;
+                                let success_count = success_count_clone.clone();
 
                                 // Sequentially process dependent transitions with a delay between them
                                 if let Ok(broadcast_request) =
@@ -1349,7 +1347,7 @@ pub async fn run_strategy_task<'s>(
                                                                                 match verified {
                                                                                     Ok(_) => {
                                                                                         tracing::info!("Successfully processed and verified proof for state transition {} ({}), {} {} (Actual block height: {})", st_queue_index, transition_type, mode_string, loop_index, metadata.height);
-                                                                                        *success_count += 1;
+                                                                                        success_count.fetch_add(1, Ordering::SeqCst);
                                                                                     }
                                                                                     Err(e) => {
                                                                                         tracing::error!("Error verifying state transition execution proof: {}", e);
@@ -1361,10 +1359,10 @@ pub async fn run_strategy_task<'s>(
                                                                         } else {
                                                                             if let Some(metadata) = &v0_response.metadata {
                                                                                 tracing::info!("Successfully processed state transition {} ({}) for {} {} (Actual block height: {})", st_queue_index, transition_type, mode_string, loop_index, metadata.height);
-                                                                                *success_count += 1;
+                                                                                success_count.fetch_add(1, Ordering::SeqCst);
                                                                             } else {
                                                                                 tracing::info!("Successfully processed state transition {} ({}) for {} {}", st_queue_index, transition_type, mode_string, loop_index);
-                                                                                *success_count += 1;
+                                                                                success_count.fetch_add(1, Ordering::SeqCst);
                                                                             }
                                                                         }
                                                                     }
@@ -1406,6 +1404,15 @@ pub async fn run_strategy_task<'s>(
                                 // Independent state transitions
                                 let oks = oks_clone.clone();
                                 let errs = errs_clone.clone();
+                                let success_count = success_count_clone.clone();
+                                let identity_nonce_error_count =
+                                    identity_nonce_error_count_clone.clone();
+                                let insufficient_balance_error_count =
+                                    insufficient_balance_error_count_clone.clone();
+                                let local_rate_limit_error_count =
+                                    local_rate_limit_error_count_clone.clone();
+                                let broadcast_connection_error_count =
+                                    broadcast_connection_error_count_clone.clone();
 
                                 let mut request_settings = RequestSettings::default();
                                 // Time-based strategy body
@@ -1424,23 +1431,13 @@ pub async fn run_strategy_task<'s>(
 
                                 // Prepare futures for broadcasting independent transitions
                                 let future = async move {
-                                    let mut success_count = success_count_clone.lock().await;
-                                    let mut identity_nonce_error_count =
-                                        identity_nonce_error_count_clone.lock().await;
-                                    let mut insufficient_balance_error_count =
-                                        insufficient_balance_error_count_clone.lock().await;
-                                    let mut local_rate_limit_error_count =
-                                        local_rate_limit_error_count_clone.lock().await;
-                                    let mut broadcast_connection_error_count =
-                                        broadcast_connection_error_count_clone.lock().await;
-
                                     match transition_clone.broadcast_request_for_state_transition() {
                                         Ok(broadcast_request) => {
                                             let broadcast_result = broadcast_request.execute(sdk, request_settings).await;
                                             match broadcast_result {
                                                 Ok(_) => {
                                                     oks.fetch_add(1, Ordering::SeqCst);
-                                                    *success_count += 1;
+                                                    success_count.fetch_add(1, Ordering::SeqCst);
                                                     let transition_owner_id = transition_clone.owner_id().to_string(Encoding::Base58);
                                                     if !block_mode && loop_index != 1 && loop_index != 2 {
                                                         tracing::info!("Successfully broadcasted transition: {}. ID: {}. Owner ID: {:?}", transition_clone.name(), transition_id, transition_owner_id);
@@ -1471,7 +1468,7 @@ pub async fn run_strategy_task<'s>(
                                                     // Update: rs-dapi-client logs have been turned off
                                                     tracing::error!("Error: Failed to broadcast {} transition: {:?}. ID: {}", transition_clone.name(), e, transition_id);
                                                     if e.to_string().contains("Insufficient identity") {
-                                                        *insufficient_balance_error_count += 1;
+                                                        insufficient_balance_error_count.fetch_add(1, Ordering::SeqCst);
                                                         // let mut wallet_lock = app_state.loaded_wallet.lock().await;
                                                         let mut current_identities = current_identities_clone.lock().await;
                                                         // if top_up_amount > 0 {
@@ -1516,11 +1513,11 @@ pub async fn run_strategy_task<'s>(
                                                             // TODO: Return Strategy PartiallyCompleted BackendEvent here if current_identities is empty and no top ups
                                                         // }
                                                     } else if e.to_string().contains("invalid identity nonce") {
-                                                        *identity_nonce_error_count += 1;
+                                                        identity_nonce_error_count.fetch_add(1, Ordering::SeqCst);
                                                     } else if e.to_string().contains("rate-limit") {
-                                                        *local_rate_limit_error_count += 1;
+                                                        local_rate_limit_error_count.fetch_add(1, Ordering::SeqCst);
                                                     } else if e.to_string().contains("error trying to connect") {
-                                                        *broadcast_connection_error_count += 1;
+                                                        broadcast_connection_error_count.fetch_add(1, Ordering::SeqCst);
                                                     }
                                                     Err(e)
                                                 }
@@ -1998,18 +1995,9 @@ pub async fn run_strategy_task<'s>(
                     - final_balance_wallet as f64)
                     / 100_000_000_000.0;
 
-                // Counters
-                let mut success_count_lock = success_count.lock().await;
-                let identity_nonce_error_count_lock = identity_nonce_error_count.lock().await;
-                let insufficient_balance_error_count_lock =
-                    insufficient_balance_error_count.lock().await;
-                let local_rate_limit_error_count_lock = local_rate_limit_error_count.lock().await;
-                let broadcast_connection_error_count_lock =
-                    broadcast_connection_error_count.lock().await;
-
                 // For time mode, success_count is just the number of broadcasts
                 if !block_mode {
-                    *success_count_lock = oks.load(Ordering::SeqCst);
+                    success_count = oks;
                 }
 
                 // Make sure we don't divide by 0 when we determine the tx/s rate
@@ -2031,22 +2019,22 @@ pub async fn run_strategy_task<'s>(
                         / (load_run_time)) as f32
                 };
                 let mut successful_tps: f32 = 0.0;
-                if *success_count_lock
+                if success_count.load(Ordering::SeqCst)
                     > (strategy.start_contracts.len() as u32
                         + strategy.start_identities.number_of_identities as u32)
                 {
-                    successful_tps = ((*success_count_lock
+                    successful_tps = ((success_count.load(Ordering::SeqCst)
                         - strategy.start_contracts.len() as u32
                         - strategy.start_identities.number_of_identities as u32)
                         as u64
                         / (load_run_time)) as f32
                 };
                 let mut success_percent = 0;
-                if *success_count_lock as u32
+                if success_count.load(Ordering::SeqCst)
                     > (strategy.start_contracts.len() as u32
                         + strategy.start_identities.number_of_identities as u32)
                 {
-                    success_percent = (((*success_count_lock
+                    success_percent = (((success_count.load(Ordering::SeqCst)
                         - strategy.start_contracts.len() as u32
                         - strategy.start_identities.number_of_identities as u32)
                         as f64
@@ -2070,16 +2058,16 @@ pub async fn run_strategy_task<'s>(
                         strategy_name,
                         mode_string,
                         transition_count,
-                        *success_count_lock,
+                        success_count.load(Ordering::SeqCst),
                         (current_block_info.height - initial_block_info.height),
                         load_run_time, // Processing time after the second block
                         tps, // tps besides the first two blocks
                         dash_spent_identity,
                         dash_spent_wallet,
-                        *identity_nonce_error_count_lock,
-                        *insufficient_balance_error_count_lock,
-                        *local_rate_limit_error_count_lock,
-                        *broadcast_connection_error_count_lock
+                        identity_nonce_error_count.load(Ordering::SeqCst),
+                        insufficient_balance_error_count.load(Ordering::SeqCst),
+                        local_rate_limit_error_count.load(Ordering::SeqCst),
+                        broadcast_connection_error_count.load(Ordering::SeqCst)
                     );
                 } else {
                     // Time mode
@@ -2091,7 +2079,7 @@ pub async fn run_strategy_task<'s>(
                         strategy_name,
                         mode_string,
                         transition_count,
-                        *success_count_lock,
+                        success_count.load(Ordering::SeqCst),
                         loop_index-3, // Minus 3 because we still incremented one at the end of the last loop, and don't count the first two blocks
                         load_run_time,
                         init_time.as_secs(),
@@ -2100,10 +2088,10 @@ pub async fn run_strategy_task<'s>(
                         success_percent,
                         dash_spent_identity,
                         dash_spent_wallet,
-                        *identity_nonce_error_count_lock,
-                        *insufficient_balance_error_count_lock,
-                        *local_rate_limit_error_count_lock,
-                        *broadcast_connection_error_count_lock
+                        identity_nonce_error_count.load(Ordering::SeqCst),
+                        insufficient_balance_error_count.load(Ordering::SeqCst),
+                        local_rate_limit_error_count.load(Ordering::SeqCst),
+                        broadcast_connection_error_count.load(Ordering::SeqCst)
                     );
                 }
 
@@ -2113,7 +2101,7 @@ pub async fn run_strategy_task<'s>(
                         block_mode: block_mode,
                         final_block_height: current_block_info.height,
                         start_block_height: initial_block_info.height,
-                        success_count: *success_count_lock as u64,
+                        success_count: success_count.load(Ordering::SeqCst) as u64,
                         transition_count: transition_count.try_into().unwrap(),
                         rate: tps,
                         success_rate: successful_tps,
