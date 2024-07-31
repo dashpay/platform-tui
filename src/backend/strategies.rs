@@ -1884,7 +1884,7 @@ pub async fn run_strategy_task<'s>(
 
                 // Log oks and errs
                 tracing::info!(
-                    "Successfully processed: {}, Failed to process: {}",
+                    "Successfully broadcasted: {}, Failed to broadcast: {}",
                     oks.load(Ordering::SeqCst),
                     errs.load(Ordering::SeqCst)
                 );
@@ -2051,10 +2051,9 @@ pub async fn run_strategy_task<'s>(
 
                 if block_mode {
                     tracing::info!(
-                        "-----Strategy '{}' completed-----\n\nMode: {}\nState transitions attempted: {}\nState \
-                        transitions succeeded: {}\nNumber of blocks: {}\nRun time: \
-                        {:?} seconds\nTPS rate (approx): {} tps\nDash spent (Loaded Identity): {}\nDash spent (Wallet): {}\nNonce \
-                        errors: {}\nBalance errors: {}\nRate limit errors: {}\nBroadcast connection errors: {}",
+                        "-----Strategy '{}' completed-----\n\nMode: {}\nBroadcasts attempted: {}\nBroadcasts succeeded: {}\nNumber of seconds: {}\nRun time: \
+                        {:?} seconds\nTPS rate (approx): {} tps\nDash spent (Loaded Identity): {}\nDash spent (Wallet): {}\nBroadcast nonce \
+                        errors: {}\nBroadcast balance errors: {}\nBroadcast rate limit errors: {}\nBroadcast connection errors: {}",
                         strategy_name,
                         mode_string,
                         transition_count,
@@ -2072,10 +2071,9 @@ pub async fn run_strategy_task<'s>(
                 } else {
                     // Time mode
                     tracing::info!(
-                        "-----Strategy '{}' completed-----\n\nMode: {}\nState transitions attempted: {}\nState \
-                        transitions succeeded: {}\nNumber of loops: {}\nLoad run time: \
-                        {:?} seconds\nInit run time: {} seconds\nAttempted rate (approx): {} txs/s\nSuccessful rate: {} tx/s\nSuccess percentage: {}%\nDash spent (Loaded Identity): {}\nDash spent (Wallet): {}\nNonce \
-                        errors: {}\nBalance errors: {}\nRate limit errors: {}\nBroadcast connection errors: {}",
+                        "-----Strategy '{}' completed-----\n\nMode: {}\nBroadcasts attempted: {}\nBroadcasts succeeded: {}\nNumber of loops: {}\nLoad run time: \
+                        {:?} seconds\nInit run time: {} seconds\nAttempted rate (approx): {} txs/s\nSuccessful rate: {} tx/s\nSuccess percentage: {}%\nDash spent (Loaded Identity): {}\nDash spent (Wallet): {}\nBroadcast nonce \
+                        errors: {}\nBroadcast balance errors: {}\nBroadcast rate limit errors: {}\nBroadcast connection errors: {}",
                         strategy_name,
                         mode_string,
                         transition_count,
