@@ -1347,7 +1347,7 @@ pub async fn run_strategy_task<'s>(
                                                                                 match verified {
                                                                                     Ok(_) => {
                                                                                         tracing::info!("Successfully processed and verified proof for state transition {} ({}), {} {} (Actual block height: {})", st_queue_index, transition_type, mode_string, loop_index, metadata.height);
-                                                                                        success_count.fetch_add(1, Ordering::SeqCst);
+                                                                                        success_count.fetch_add(1, Ordering::Relaxed);
                                                                                     }
                                                                                     Err(e) => {
                                                                                         tracing::error!("Error verifying state transition execution proof: {}", e);
@@ -1359,10 +1359,10 @@ pub async fn run_strategy_task<'s>(
                                                                         } else {
                                                                             if let Some(metadata) = &v0_response.metadata {
                                                                                 tracing::info!("Successfully processed state transition {} ({}) for {} {} (Actual block height: {})", st_queue_index, transition_type, mode_string, loop_index, metadata.height);
-                                                                                success_count.fetch_add(1, Ordering::SeqCst);
+                                                                                success_count.fetch_add(1, Ordering::Relaxed);
                                                                             } else {
                                                                                 tracing::info!("Successfully processed state transition {} ({}) for {} {}", st_queue_index, transition_type, mode_string, loop_index);
-                                                                                success_count.fetch_add(1, Ordering::SeqCst);
+                                                                                success_count.fetch_add(1, Ordering::Relaxed);
                                                                             }
                                                                         }
                                                                     }
@@ -1436,8 +1436,8 @@ pub async fn run_strategy_task<'s>(
                                             let broadcast_result = broadcast_request.execute(sdk, request_settings).await;
                                             match broadcast_result {
                                                 Ok(_) => {
-                                                    oks.fetch_add(1, Ordering::SeqCst);
-                                                    success_count.fetch_add(1, Ordering::SeqCst);
+                                                    oks.fetch_add(1, Ordering::Relaxed);
+                                                    success_count.fetch_add(1, Ordering::Relaxed);
                                                     let transition_owner_id = transition_clone.owner_id().to_string(Encoding::Base58);
                                                     if !block_mode && loop_index != 1 && loop_index != 2 {
                                                         tracing::info!("Successfully broadcasted transition: {}. ID: {}. Owner ID: {:?}", transition_clone.name(), transition_id, transition_owner_id);
@@ -1462,13 +1462,13 @@ pub async fn run_strategy_task<'s>(
                                                     Ok((transition_clone, broadcast_result))
                                                 },
                                                 Err(e) => {
-                                                    errs.fetch_add(1, Ordering::SeqCst);
+                                                    errs.fetch_add(1, Ordering::Relaxed);
                                                     // Error logging seems unnecessary here because rs-dapi-client seems to log all the errors already
                                                     // But it is necessary. `rs-dapi-client` does not log all the errors already. For example, IdentityNotFound errors
                                                     // Update: rs-dapi-client logs have been turned off
                                                     tracing::error!("Error: Failed to broadcast {} transition: {:?}. ID: {}", transition_clone.name(), e, transition_id);
                                                     if e.to_string().contains("Insufficient identity") {
-                                                        insufficient_balance_error_count.fetch_add(1, Ordering::SeqCst);
+                                                        insufficient_balance_error_count.fetch_add(1, Ordering::Relaxed);
                                                         // let mut wallet_lock = app_state.loaded_wallet.lock().await;
                                                         let mut current_identities = current_identities_clone.lock().await;
                                                         // if top_up_amount > 0 {
@@ -1513,18 +1513,18 @@ pub async fn run_strategy_task<'s>(
                                                             // TODO: Return Strategy PartiallyCompleted BackendEvent here if current_identities is empty and no top ups
                                                         // }
                                                     } else if e.to_string().contains("invalid identity nonce") {
-                                                        identity_nonce_error_count.fetch_add(1, Ordering::SeqCst);
+                                                        identity_nonce_error_count.fetch_add(1, Ordering::Relaxed);
                                                     } else if e.to_string().contains("rate-limit") {
-                                                        local_rate_limit_error_count.fetch_add(1, Ordering::SeqCst);
+                                                        local_rate_limit_error_count.fetch_add(1, Ordering::Relaxed);
                                                     } else if e.to_string().contains("error trying to connect") {
-                                                        broadcast_connection_error_count.fetch_add(1, Ordering::SeqCst);
+                                                        broadcast_connection_error_count.fetch_add(1, Ordering::Relaxed);
                                                     }
                                                     Err(e)
                                                 }
                                             }
                                         },
                                         Err(e) => {
-                                            errs.fetch_add(1, Ordering::SeqCst);
+                                            errs.fetch_add(1, Ordering::Relaxed);
                                             if !block_mode {
                                                 tracing::error!("Error preparing broadcast request for transition: {}, Error: {:?}", transition_clone.name(), e);
                                             }
@@ -1885,8 +1885,8 @@ pub async fn run_strategy_task<'s>(
                 // Log oks and errs
                 tracing::info!(
                     "Successfully broadcasted: {}, Failed to broadcast: {}",
-                    oks.load(Ordering::SeqCst),
-                    errs.load(Ordering::SeqCst)
+                    oks.load(Ordering::Relaxed),
+                    errs.load(Ordering::Relaxed)
                 );
 
                 // Time the execution took
@@ -2019,22 +2019,22 @@ pub async fn run_strategy_task<'s>(
                         / (load_run_time)) as f32
                 };
                 let mut successful_tps: f32 = 0.0;
-                if success_count.load(Ordering::SeqCst)
+                if success_count.load(Ordering::Relaxed)
                     > (strategy.start_contracts.len() as u32
                         + strategy.start_identities.number_of_identities as u32)
                 {
-                    successful_tps = ((success_count.load(Ordering::SeqCst)
+                    successful_tps = ((success_count.load(Ordering::Relaxed)
                         - strategy.start_contracts.len() as u32
                         - strategy.start_identities.number_of_identities as u32)
                         as u64
                         / (load_run_time)) as f32
                 };
                 let mut success_percent = 0;
-                if success_count.load(Ordering::SeqCst)
+                if success_count.load(Ordering::Relaxed)
                     > (strategy.start_contracts.len() as u32
                         + strategy.start_identities.number_of_identities as u32)
                 {
-                    success_percent = (((success_count.load(Ordering::SeqCst)
+                    success_percent = (((success_count.load(Ordering::Relaxed)
                         - strategy.start_contracts.len() as u32
                         - strategy.start_identities.number_of_identities as u32)
                         as f64
@@ -2057,16 +2057,16 @@ pub async fn run_strategy_task<'s>(
                         strategy_name,
                         mode_string,
                         transition_count,
-                        success_count.load(Ordering::SeqCst),
+                        success_count.load(Ordering::Relaxed),
                         (current_block_info.height - initial_block_info.height),
                         load_run_time, // Processing time after the second block
                         tps, // tps besides the first two blocks
                         dash_spent_identity,
                         dash_spent_wallet,
-                        identity_nonce_error_count.load(Ordering::SeqCst),
-                        insufficient_balance_error_count.load(Ordering::SeqCst),
-                        local_rate_limit_error_count.load(Ordering::SeqCst),
-                        broadcast_connection_error_count.load(Ordering::SeqCst)
+                        identity_nonce_error_count.load(Ordering::Relaxed),
+                        insufficient_balance_error_count.load(Ordering::Relaxed),
+                        local_rate_limit_error_count.load(Ordering::Relaxed),
+                        broadcast_connection_error_count.load(Ordering::Relaxed)
                     );
                 } else {
                     // Time mode
@@ -2077,7 +2077,7 @@ pub async fn run_strategy_task<'s>(
                         strategy_name,
                         mode_string,
                         transition_count,
-                        success_count.load(Ordering::SeqCst),
+                        success_count.load(Ordering::Relaxed),
                         loop_index-3, // Minus 3 because we still incremented one at the end of the last loop, and don't count the first two blocks
                         load_run_time,
                         init_time.as_secs(),
@@ -2086,10 +2086,10 @@ pub async fn run_strategy_task<'s>(
                         success_percent,
                         dash_spent_identity,
                         dash_spent_wallet,
-                        identity_nonce_error_count.load(Ordering::SeqCst),
-                        insufficient_balance_error_count.load(Ordering::SeqCst),
-                        local_rate_limit_error_count.load(Ordering::SeqCst),
-                        broadcast_connection_error_count.load(Ordering::SeqCst)
+                        identity_nonce_error_count.load(Ordering::Relaxed),
+                        insufficient_balance_error_count.load(Ordering::Relaxed),
+                        local_rate_limit_error_count.load(Ordering::Relaxed),
+                        broadcast_connection_error_count.load(Ordering::Relaxed)
                     );
                 }
 
@@ -2099,7 +2099,7 @@ pub async fn run_strategy_task<'s>(
                         block_mode: block_mode,
                         final_block_height: current_block_info.height,
                         start_block_height: initial_block_info.height,
-                        success_count: success_count.load(Ordering::SeqCst) as u64,
+                        success_count: success_count.load(Ordering::Relaxed) as u64,
                         transition_count: transition_count.try_into().unwrap(),
                         rate: tps,
                         success_rate: successful_tps,
