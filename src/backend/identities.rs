@@ -1060,7 +1060,9 @@ impl AppState {
             Err(dash_sdk::Error::DapiClientError(error_string)) => {
                 //todo in the future, errors should be proved with a proof, even from tenderdash
 
-                if error_string.starts_with("Transport(Status { code: AlreadyExists, message: \"state transition already in chain\"") {
+                if error_string.contains("state transition already in chain")
+                    || error_string.contains("already completely used")
+                {
                     // This state transition already existed
                     tracing::info!("we are starting over as the previous top up already existed");
                     let (new_asset_lock_transaction, new_asset_lock_proof_private_key) =
@@ -1077,10 +1079,10 @@ impl AppState {
                         &new_asset_lock_transaction,
                         &wallet.receive_address(),
                     )
-                        .await
-                        .map_err(|e| {
-                            Error::SdkExplainedError("error broadcasting transaction".to_string(), e)
-                        })?;
+                    .await
+                    .map_err(|e| {
+                        Error::SdkExplainedError("error broadcasting transaction".to_string(), e)
+                    })?;
 
                     identity_asset_lock_private_key_in_top_up.replace((
                         new_asset_lock_transaction.clone(),
@@ -1089,10 +1091,15 @@ impl AppState {
                     ));
 
                     identity
-                        .top_up_identity(sdk, new_asset_lock_proof.clone(), &new_asset_lock_proof_private_key, None)
+                        .top_up_identity(
+                            sdk,
+                            new_asset_lock_proof.clone(),
+                            &new_asset_lock_proof_private_key,
+                            None,
+                        )
                         .await?;
                 } else {
-                    return Err(dash_sdk::Error::DapiClientError(error_string).into())
+                    return Err(dash_sdk::Error::DapiClientError(error_string).into());
                 }
             }
             Err(e) => return Err(e.into()),
