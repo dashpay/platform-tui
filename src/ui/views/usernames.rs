@@ -111,7 +111,7 @@ impl ScreenController for DpnsUsernamesScreenController {
     fn view(&mut self, frame: &mut Frame, area: Rect) {
         let layout = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Max(40), Constraint::Min(1)].as_ref())
+            .constraints([Constraint::Max(48), Constraint::Min(1)].as_ref())
             .split(area);
 
         self.identity_select.view(frame, layout[0]);
@@ -146,7 +146,7 @@ impl ScreenController for DpnsUsernamesScreenController {
 
             // Identity selection keys
             Event::Key(KeyEvent {
-                code: Key::Down,
+                code: Key::Char('n'),
                 modifiers: KeyModifiers::NONE,
             }) => {
                 self.identity_select
@@ -155,12 +155,23 @@ impl ScreenController for DpnsUsernamesScreenController {
                 ScreenFeedback::Redraw
             }
             Event::Key(KeyEvent {
-                code: Key::Up,
+                code: Key::Char('p'),
                 modifiers: KeyModifiers::NONE,
             }) => {
                 self.identity_select
                     .perform(Cmd::Move(command::Direction::Up));
                 self.update_identity_view();
+                ScreenFeedback::Redraw
+            }
+
+            // Scrolling
+            Event::Key(
+                key_event @ KeyEvent {
+                    code: Key::Down | Key::Up,
+                    modifiers: KeyModifiers::NONE,
+                },
+            ) => {
+                self.identity_view.on_event(key_event);
                 ScreenFeedback::Redraw
             }
 
