@@ -9,7 +9,10 @@ use dpp::{
 use itertools::Itertools;
 use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
-use crate::{backend::AppState, ui::screen::utils::impl_builder};
+use crate::{
+    backend::{identities::IdentityTask, AppState, BackendEvent, Task},
+    ui::screen::utils::impl_builder,
+};
 
 use tuirealm::{
     command::{self, Cmd},
@@ -27,12 +30,15 @@ use crate::{
     Event,
 };
 
-const COMMAND_KEYS: [ScreenCommandKey; 5] = [
+use super::identities::RegisterDPNSNameFormController;
+
+const COMMAND_KEYS: [ScreenCommandKey; 6] = [
     ScreenCommandKey::new("q", "Back"),
     ScreenCommandKey::new("n", "Next identity"),
     ScreenCommandKey::new("p", "Prev identity"),
     ScreenCommandKey::new("↓", "Scroll down"),
     ScreenCommandKey::new("↑", "Scroll up"),
+    ScreenCommandKey::new("r", "Register username for selected identity"),
 ];
 
 pub(crate) struct DpnsUsernamesScreenController {
@@ -92,7 +98,7 @@ impl DpnsUsernamesScreenController {
         );
     }
 
-    fn _get_selected_identity(&self) -> Option<&Identity> {
+    fn get_selected_identity(&self) -> Option<&Identity> {
         let selected_identity_string = &self.identity_ids_vec
             [self.identity_select.state().unwrap_one().unwrap_usize()]
         .to_string(Encoding::Base58);
@@ -113,7 +119,7 @@ impl ScreenController for DpnsUsernamesScreenController {
     }
 
     fn name(&self) -> &'static str {
-        "DPNS Usernames"
+        "DPNS"
     }
 
     fn command_keys(&self) -> &[ScreenCommandKey] {
@@ -131,9 +137,16 @@ impl ScreenController for DpnsUsernamesScreenController {
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::PreviousScreen,
 
+            Event::Key(KeyEvent {
+                code: Key::Char('r'),
+                modifiers: KeyModifiers::NONE,
+            }) => ScreenFeedback::Form(Box::new(RegisterDPNSNameFormController::new(
+                self.get_selected_identity().cloned(),
+            ))),
+
             // Identity selection keys
             Event::Key(KeyEvent {
-                code: Key::Char('n'),
+                code: Key::Down,
                 modifiers: KeyModifiers::NONE,
             }) => {
                 self.identity_select
@@ -142,7 +155,7 @@ impl ScreenController for DpnsUsernamesScreenController {
                 ScreenFeedback::Redraw
             }
             Event::Key(KeyEvent {
-                code: Key::Char('p'),
+                code: Key::Up,
                 modifiers: KeyModifiers::NONE,
             }) => {
                 self.identity_select
@@ -151,14 +164,20 @@ impl ScreenController for DpnsUsernamesScreenController {
                 ScreenFeedback::Redraw
             }
 
-            // Identity view keys
-            Event::Key(
-                key_event @ KeyEvent {
-                    code: Key::Down | Key::Up,
-                    modifiers: KeyModifiers::NONE,
-                },
-            ) => {
-                self.identity_view.on_event(key_event);
+            // Backend event handling
+            Event::Backend(BackendEvent::TaskCompletedStateChange {
+                task: Task::Identity(IdentityTask::RegisterDPNSName(..)),
+                execution_result,
+                app_state_update: _,
+            }) => {
+                self.identity_view = Info::new_from_result(execution_result);
+                ScreenFeedback::Redraw
+            }
+            Event::Backend(BackendEvent::TaskCompleted {
+                task: Task::Identity(_),
+                execution_result,
+            }) => {
+                self.identity_view = Info::new_from_result(execution_result);
                 ScreenFeedback::Redraw
             }
 

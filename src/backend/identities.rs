@@ -109,7 +109,7 @@ pub enum IdentityTask {
     ClearRegistrationOfIdentityInProgress,
     TransferCredits(String, f64),
     LoadEvonodeIdentity(String, String),
-    RegisterDPNSName(String),
+    RegisterDPNSName(Identity, String),
 }
 
 impl AppState {
@@ -518,23 +518,12 @@ impl AppState {
                     },
                 }
             }
-            IdentityTask::RegisterDPNSName(ref name) => {
-                let loaded_identity_lock = self.loaded_identity.lock().await;
-                let identity = match loaded_identity_lock.as_ref() {
-                    Some(identity) => identity,
-                    None => {
-                        return BackendEvent::TaskCompleted {
-                            task: Task::Identity(task),
-                            execution_result: Ok(CompletedTaskPayload::String(
-                                "No loaded identity".to_string(),
-                            )),
-                        }
-                    }
-                };
+            IdentityTask::RegisterDPNSName(ref identity, ref name) => {
                 let identity_id = identity.id();
-                drop(loaded_identity_lock);
 
-                let result = self.register_dpns_name(sdk, &identity_id, name).await;
+                let result = self
+                    .register_dpns_name(sdk, identity, &identity_id, name)
+                    .await;
                 let execution_result = result
                     .as_ref()
                     .map(|_| "DPNS name registration successful".into())
@@ -556,16 +545,12 @@ impl AppState {
     pub(crate) async fn register_dpns_name(
         &self,
         sdk: &Sdk,
+        identity: &Identity,      // Identity to register the name for and sign tx
         _identifier: &Identifier, // Once contract names are enabled, we can use this field
         name: &str,
     ) -> Result<(), Error> {
         let mut rng = StdRng::from_entropy();
         let platform_version = PlatformVersion::latest();
-
-        let loaded_identity = self.loaded_identity.lock().await;
-        let identity = loaded_identity
-            .as_ref()
-            .ok_or_else(|| Error::IdentityError("No loaded identity".to_string()))?;
 
         let dpns_contract = match DataContract::fetch(
             &sdk,

@@ -34,7 +34,7 @@ const COMMAND_KEYS: [ScreenCommandKey; 8] = [
     ScreenCommandKey::new("w", "Wallet"),
     ScreenCommandKey::new("v", "Version Upgrade"),
     ScreenCommandKey::new("p", "Platform information"),
-    ScreenCommandKey::new("u", "DPNS Usernames"),
+    ScreenCommandKey::new("d", "DPNS"),
 ];
 
 pub(crate) struct MainScreenController {
@@ -107,7 +107,7 @@ impl ScreenController for MainScreenController {
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::NextScreen(PlatformInfoScreenController::builder()),
             Event::Key(KeyEvent {
-                code: Key::Char('u'),
+                code: Key::Char('d'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::NextScreen(DpnsUsernamesScreenController::builder()),
             _ => ScreenFeedback::None,
