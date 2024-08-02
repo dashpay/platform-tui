@@ -20,7 +20,7 @@ use dash_sdk::{
     platform::{
         transition::{
             broadcast::BroadcastStateTransition, put_document::PutDocument,
-            put_identity::PutIdentity, top_up_identity::TopUpIdentity,
+            put_identity::PutIdentity, put_settings::PutSettings, top_up_identity::TopUpIdentity,
             withdraw_from_identity::WithdrawFromIdentity,
         },
         Fetch,
@@ -623,7 +623,16 @@ impl AppState {
         domain_document.set("preorderSalt", salt.into());
 
         let identity_contract_nonce = match sdk
-            .get_identity_contract_nonce(identity.id(), dpns_contract.id(), true, None)
+            .get_identity_contract_nonce(
+                identity.id(),
+                dpns_contract.id(),
+                true,
+                Some(PutSettings {
+                    request_settings: RequestSettings::default(),
+                    identity_nonce_stale_time_s: Some(0),
+                    user_fee_increase: None,
+                }),
+            )
             .await
         {
             Ok(nonce) => nonce,
