@@ -3,15 +3,28 @@
 use std::collections::BTreeMap;
 
 use dpp::{
+    data_contract::{
+        accessors::v0::DataContractV0Getters, document_type::accessors::DocumentTypeV0Getters,
+    },
+    data_contracts::dpns_contract,
+    document::DocumentV0Getters,
+    identity::accessors::IdentityGettersV0,
     platform_value::string_encoding::Encoding,
-    prelude::{Identifier, Identity},
+    prelude::{DataContract, Identifier, Identity},
 };
+use drive_proof_verifier::types::ContestedResource;
 use itertools::Itertools;
 use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
 use crate::{
-    backend::{identities::IdentityTask, AppState, BackendEvent, Task},
-    ui::screen::utils::impl_builder,
+    backend::{
+        documents::DocumentTask, identities::IdentityTask, AppState, BackendEvent,
+        CompletedTaskPayload, Task,
+    },
+    ui::{
+        form::parsers::{DocumentQueryTextInputParser, TextInputParser},
+        screen::utils::impl_builder,
+    },
 };
 
 use tuirealm::{
@@ -32,13 +45,19 @@ use crate::{
 
 use super::identities::RegisterDPNSNameFormController;
 
-const COMMAND_KEYS: [ScreenCommandKey; 6] = [
+const DPNS_UNKNOWN_COMMAND_KEYS: [ScreenCommandKey; 2] = [
+    ScreenCommandKey::new("q", "Back"),
+    ScreenCommandKey::new("f", "Fetch DPNS contract"),
+];
+
+const DPNS_KNOWN_COMMAND_KEYS: [ScreenCommandKey; 7] = [
     ScreenCommandKey::new("q", "Back"),
     ScreenCommandKey::new("n", "Next identity"),
     ScreenCommandKey::new("p", "Prev identity"),
     ScreenCommandKey::new("↓", "Scroll down"),
     ScreenCommandKey::new("↑", "Scroll up"),
     ScreenCommandKey::new("r", "Register username for selected identity"),
+    ScreenCommandKey::new("g", "Query names"),
 ];
 
 pub(crate) struct DpnsUsernamesScreenController {
@@ -46,6 +65,7 @@ pub(crate) struct DpnsUsernamesScreenController {
     identity_select: tui_realm_stdlib::List,
     identity_view: Info,
     identity_ids_vec: Vec<Identifier>,
+    dpns_contract: Option<DataContract>,
 }
 
 impl_builder!(DpnsUsernamesScreenController);
@@ -70,18 +90,30 @@ impl DpnsUsernamesScreenController {
         identity_select.attr(Attribute::Scroll, AttrValue::Flag(true));
         identity_select.attr(Attribute::Focus, AttrValue::Flag(true));
 
-        let identity_view = Info::new_scrollable(
-            &known_identities_lock
-                .get(&identity_ids_vec[0])
-                .and_then(|identity_info| Some(as_json_string(identity_info)))
-                .unwrap_or_else(String::new),
+        let known_contracts_lock = app_state.known_contracts.lock().await;
+        let maybe_dpns_contract = known_contracts_lock.get(
+            &Identifier::from_bytes(&dpns_contract::ID_BYTES)
+                .unwrap()
+                .to_string(Encoding::Base58),
         );
+
+        let identity_view = if maybe_dpns_contract.is_some() {
+            Info::new_scrollable(
+                &known_identities_lock
+                    .get(&identity_ids_vec[0])
+                    .and_then(|identity_info| Some(as_json_string(identity_info)))
+                    .unwrap_or_else(String::new),
+            )
+        } else {
+            Info::new_fixed("DPNS contract not known yet. Please press 'f' to fetch it.")
+        };
 
         Self {
             identities_map: known_identities_lock.clone(),
             identity_select,
             identity_view,
             identity_ids_vec,
+            dpns_contract: maybe_dpns_contract.cloned(),
         }
     }
 
@@ -123,7 +155,11 @@ impl ScreenController for DpnsUsernamesScreenController {
     }
 
     fn command_keys(&self) -> &[ScreenCommandKey] {
-        COMMAND_KEYS.as_ref()
+        if self.dpns_contract.is_some() {
+            DPNS_KNOWN_COMMAND_KEYS.as_ref()
+        } else {
+            DPNS_UNKNOWN_COMMAND_KEYS.as_ref()
+        }
     }
 
     fn toggle_keys(&self) -> &[ScreenToggleKey] {
@@ -136,13 +172,56 @@ impl ScreenController for DpnsUsernamesScreenController {
                 code: Key::Char('q'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::PreviousScreen,
-
             Event::Key(KeyEvent {
                 code: Key::Char('r'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::Form(Box::new(RegisterDPNSNameFormController::new(
                 self.get_selected_identity().cloned(),
             ))),
+            Event::Key(KeyEvent {
+                code: Key::Char('g'),
+                modifiers: KeyModifiers::NONE,
+            }) => {
+                let ours_query_part = format!(
+                    "where `records.identity` = '{}' ", // hardcoded for dpns. $ownerId only works if its indexed.
+                    self.get_selected_identity()
+                        .unwrap()
+                        .id()
+                        .to_string(Encoding::Base58)
+                );
+                let query = format!(
+                    "Select * from {} {}",
+                    self.dpns_contract
+                        .clone()
+                        .unwrap()
+                        .document_type_cloned_for_name("domain")
+                        .unwrap()
+                        .name(),
+                    ours_query_part
+                );
+                let parser = DocumentQueryTextInputParser::new(self.dpns_contract.clone().unwrap());
+                match parser.parse_input(&query) {
+                    Ok(document_query) => ScreenFeedback::Task {
+                        task: Task::Document(DocumentTask::QueryDocumentsAndContestedResources {
+                            document_query,
+                            data_contract: self.dpns_contract.clone().unwrap(),
+                            document_type: self
+                                .dpns_contract
+                                .clone()
+                                .unwrap()
+                                .document_type_cloned_for_name("domain")
+                                .unwrap(),
+                        }),
+                        block: true,
+                    },
+                    Err(e) => {
+                        // Handle the error appropriately, for example, by logging it or showing a message
+                        self.identity_view =
+                            Info::new_error(&format!("Failed to parse query properly: {}", e));
+                        ScreenFeedback::Redraw
+                    }
+                }
+            }
 
             // Identity selection keys
             Event::Key(KeyEvent {
@@ -189,6 +268,41 @@ impl ScreenController for DpnsUsernamesScreenController {
                 execution_result,
             }) => {
                 self.identity_view = Info::new_from_result(execution_result);
+                ScreenFeedback::Redraw
+            }
+            Event::Backend(BackendEvent::TaskCompleted {
+                task: Task::Document(DocumentTask::QueryDocumentsAndContestedResources { .. }),
+                execution_result:
+                    Ok(CompletedTaskPayload::DocumentsAndContestedResources(documents, resources)),
+            }) => {
+                let owned_names_vec: Vec<_> = documents
+                    .iter()
+                    .filter_map(|document| document.1.clone().unwrap().get("label").cloned())
+                    .collect_vec();
+                let contested_names_vec = resources
+                    .0
+                    .iter()
+                    .map(|v| match v {
+                        ContestedResource::Value(value) => value
+                            .to_string()
+                            .split_whitespace()
+                            .nth(1)
+                            .map(|s| s.to_string()),
+                    })
+                    .collect_vec();
+
+                self.identity_view = Info::new_scrollable(&format!(
+                    "Owned names: {}\n\nContested names: {}",
+                    as_json_string(&owned_names_vec),
+                    as_json_string(&contested_names_vec)
+                ));
+                ScreenFeedback::Redraw
+            }
+            Event::Backend(BackendEvent::TaskCompleted {
+                task: Task::Document(DocumentTask::QueryDocuments(_)),
+                execution_result: Err(e),
+            }) => {
+                self.identity_view = Info::new_error(&format!("Failed to get names: {}", e));
                 ScreenFeedback::Redraw
             }
 

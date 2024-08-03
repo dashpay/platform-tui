@@ -331,14 +331,14 @@ impl ScreenController for DocumentTypeScreenController {
     }
 }
 
-struct QueryDocumentTypeFormController {
+pub struct QueryDocumentTypeFormController {
     document_type: DocumentType,
     identity_id: Option<Identifier>,
     input: TextInput<DocumentQueryTextInputParser>,
 }
 
 impl QueryDocumentTypeFormController {
-    fn new(
+    pub fn new(
         data_contract: DataContract,
         document_type: DocumentType,
         identity_id: Option<Identifier>,

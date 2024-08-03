@@ -75,6 +75,11 @@ pub(crate) enum DocumentTask {
         count: u16,
     },
     QueryContestedResources(DataContract, DocumentType),
+    QueryDocumentsAndContestedResources {
+        document_query: DocumentQuery,
+        data_contract: DataContract,
+        document_type: DocumentType,
+    },
     QueryVoteContenders(String, Vec<Value>, String, Identifier),
     VoteOnContestedResource(VotePoll, ResourceVoteChoice),
     BroadcastDocument {
@@ -732,6 +737,63 @@ impl AppState {
                             "No loaded identity for document transfer".to_string(),
                         )),
                     }
+                }
+            }
+            DocumentTask::QueryDocumentsAndContestedResources {
+                document_query,
+                data_contract,
+                document_type,
+            } => {
+                // Fetch documents
+                let documents_result = Document::fetch_many(&sdk, document_query.clone()).await;
+
+                // Fetch contested resources
+                let contested_resources_result =
+                    if let Some(contested_index) = document_type.find_contested_index() {
+                        let query = VotePollsByDocumentTypeQuery {
+                            contract_id: data_contract.id(),
+                            document_type_name: document_type.name().to_string(),
+                            index_name: contested_index.name.clone(),
+                            start_at_value: None,
+                            start_index_values: vec!["dash".into()], // hardcoded for dpns
+                            end_index_values: vec![],
+                            limit: None,
+                            order_ascending: true,
+                        };
+
+                        ContestedResource::fetch_many(sdk, query).await
+                    } else {
+                        return BackendEvent::TaskCompleted {
+                            task: Task::Document(task),
+                            execution_result: Err(
+                                "No contested index for this document type".to_owned()
+                            ),
+                        };
+                    };
+
+                // Combine results
+                match (documents_result, contested_resources_result) {
+                    (Ok(documents), Ok(contested_resources)) => BackendEvent::TaskCompleted {
+                        task: Task::Document(task),
+                        execution_result: Ok(CompletedTaskPayload::DocumentsAndContestedResources(
+                            documents,
+                            contested_resources,
+                        )),
+                    },
+                    (Err(documents_err), _) => BackendEvent::TaskCompleted {
+                        task: Task::Document(task),
+                        execution_result: Err(format!(
+                            "Failed to fetch documents: {}",
+                            documents_err
+                        )),
+                    },
+                    (_, Err(contested_resources_err)) => BackendEvent::TaskCompleted {
+                        task: Task::Document(task),
+                        execution_result: Err(format!(
+                            "Failed to fetch contested resources: {}",
+                            contested_resources_err
+                        )),
+                    },
                 }
             }
             DocumentTask::QueryVoteContenders(
