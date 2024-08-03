@@ -346,7 +346,7 @@ impl QueryDocumentTypeFormController {
     ) -> Self {
         let ours_query_part = if ours_query && identity_id.is_some() {
             format!(
-                "where `$ownerId` = '{}' ",
+                "where `records.identity` = '{}' ", // hardcoded for dpns. $ownerId only works if its indexed.
                 identity_id.unwrap().to_string(Encoding::Base58)
             )
         } else {
