@@ -529,7 +529,21 @@ impl AppState {
                     .map(|_| "DPNS name registration successful".into())
                     .map_err(|e| e.to_string());
                 let app_state_update = match result {
-                    Ok(_) => AppStateUpdate::DPNSNameRegistered(name.clone()),
+                    Ok(_) => {
+                        // Add the username to the map of known identities to usernames
+                        let mut names_map = self.known_identities_names.lock().await;
+                        names_map
+                            .entry(identity_id.clone())
+                            .or_insert_with(Vec::new)
+                            .push(
+                                name.to_lowercase()
+                                    .replace('l', "1")
+                                    .replace('o', "0")
+                                    .to_string(),
+                            );
+
+                        AppStateUpdate::DPNSNameRegistered(name.clone())
+                    }
                     Err(_) => AppStateUpdate::DPNSNameRegistrationFailed,
                 };
 
@@ -942,7 +956,7 @@ impl AppState {
 
         let mut loaded_identity = self.loaded_identity.lock().await;
 
-        loaded_identity.replace(updated_identity.clone());
+        loaded_identity.replace(identity.clone());
         let identity_result =
             MutexGuard::map(loaded_identity, |x| x.as_mut().expect("assigned above"));
 
@@ -958,6 +972,9 @@ impl AppState {
         let mut identity_private_keys = self.identity_private_keys.lock().await;
 
         identity_private_keys.extend(keys);
+
+        let mut known_identities_lock = self.known_identities.lock().await;
+        known_identities_lock.insert(identity.id(), identity);
 
         Ok(identity_result)
     }

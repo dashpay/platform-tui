@@ -67,6 +67,7 @@ const DPNS_KNOWN_COMMAND_KEYS: [ScreenCommandKey; 8] = [
 
 pub(crate) struct DpnsUsernamesScreenController {
     identities_map: BTreeMap<Identifier, Identity>,
+    identities_names_map: BTreeMap<Identifier, Vec<String>>,
     identity_select: tui_realm_stdlib::List,
     identity_view: Info,
     identity_ids_vec: Vec<Identifier>,
@@ -113,8 +114,11 @@ impl DpnsUsernamesScreenController {
             Info::new_fixed("DPNS contract not known yet. Please press 'f' to fetch it.")
         };
 
+        let identities_names_map_lock = app_state.known_identities_names.lock().await;
+
         Self {
             identities_map: known_identities_lock.clone(),
+            identities_names_map: identities_names_map_lock.clone(),
             identity_select,
             identity_view,
             identity_ids_vec,
@@ -297,9 +301,18 @@ impl ScreenController for DpnsUsernamesScreenController {
             Event::Backend(BackendEvent::TaskCompletedStateChange {
                 task: Task::Identity(IdentityTask::RegisterDPNSName(..)),
                 execution_result,
-                app_state_update: _,
+                app_state_update,
             }) => {
                 self.identity_view = Info::new_from_result(execution_result);
+                let registered_name = match app_state_update {
+                    crate::backend::AppStateUpdate::DPNSNameRegistered(name) => name,
+                    _ => todo!(),
+                };
+                self.identities_names_map
+                    .entry(self.get_selected_identity().unwrap().id())
+                    .or_insert_with(Vec::new)
+                    .push(registered_name.to_string());
+
                 ScreenFeedback::Redraw
             }
             Event::Backend(BackendEvent::TaskCompleted {
@@ -318,7 +331,17 @@ impl ScreenController for DpnsUsernamesScreenController {
                     .iter()
                     .filter_map(|document| document.1.clone().unwrap().get("label").cloned())
                     .collect_vec();
-                let contested_names_vec = resources
+
+                let selected_identity = self
+                    .get_selected_identity()
+                    .expect("Expected to have a selected identity");
+
+                let selected_identity_names = self
+                    .identities_names_map
+                    .get(&selected_identity.id())
+                    .unwrap();
+
+                let mut contested_names_vec = resources
                     .0
                     .iter()
                     .map(|v| match v {
@@ -326,9 +349,12 @@ impl ScreenController for DpnsUsernamesScreenController {
                             .to_string()
                             .split_whitespace()
                             .nth(1)
-                            .map(|s| s.to_string()),
+                            .unwrap()
+                            .to_string(),
                     })
                     .collect_vec();
+
+                contested_names_vec.retain(|name| selected_identity_names.contains(name));
 
                 self.identity_view = Info::new_scrollable(&format!(
                     "Owned names: {}\n\nContested names: {}",
