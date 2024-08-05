@@ -20,7 +20,7 @@ use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 use crate::{
     backend::{
         documents::DocumentTask, identities::IdentityTask, AppState, BackendEvent,
-        CompletedTaskPayload, Task,
+        CompletedTaskPayload, ContractTask, Task,
     },
     ui::{
         form::parsers::{DocumentQueryTextInputParser, TextInputParser},
@@ -254,6 +254,13 @@ impl ScreenController for DpnsUsernamesScreenController {
                     ScreenFeedback::Redraw
                 }
             }
+            Event::Key(KeyEvent {
+                code: Key::Char('f'),
+                modifiers: KeyModifiers::NONE,
+            }) => ScreenFeedback::Task {
+                task: Task::Contract(ContractTask::FetchDPNSContract),
+                block: true,
+            },
 
             // Identity selection keys
             Event::Key(KeyEvent {
@@ -370,6 +377,27 @@ impl ScreenController for DpnsUsernamesScreenController {
                     );
                     ScreenFeedback::Redraw
                 }
+            }
+            Event::Backend(BackendEvent::TaskCompletedStateChange {
+                task: Task::Contract(ContractTask::FetchDPNSContract),
+                execution_result,
+                app_state_update,
+            }) => {
+                if execution_result.is_ok() {
+                    self.update_identity_view();
+                    match app_state_update {
+                        crate::backend::AppStateUpdate::KnownContracts(contracts_lock) => {
+                            let dpns_contract = contracts_lock.get(
+                                &Identifier::from_bytes(&dpns_contract::ID_BYTES)
+                                    .unwrap()
+                                    .to_string(Encoding::Base58),
+                            );
+                            self.dpns_contract = dpns_contract.cloned();
+                        }
+                        _ => todo!(),
+                    }
+                }
+                ScreenFeedback::Redraw
             }
 
             _ => ScreenFeedback::None,
