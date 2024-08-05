@@ -11,24 +11,24 @@ tui-realm-stdlib = "1.3.1"
 tuirealm = "1.9.1"
 bs58 = "0.5.0"
 copypasta = "0.10.1"
-dpp = { git = "https://github.com/dashpay/platform", rev = "4536cd1ebd009e7f377986bbf1482f26c2658ee3", features = [
+dpp = { path = "../platform/packages/rs-dpp", features = [
     "client",
 ] }
-dash-sdk = { git = "https://github.com/dashpay/platform", rev = "4536cd1ebd009e7f377986bbf1482f26c2658ee3" }
-drive = { git = "https://github.com/dashpay/platform", rev = "4536cd1ebd009e7f377986bbf1482f26c2658ee3" }
-drive-proof-verifier = { git = "https://github.com/dashpay/platform", rev = "4536cd1ebd009e7f377986bbf1482f26c2658ee3" }
+dash-sdk = { path = "../platform/packages/rs-sdk" }
+drive = { path = "../platform/packages/rs-drive" }
+drive-proof-verifier = { path = "../platform/packages/rs-drive-proof-verifier" }
 thiserror = "1"
 serde = "1.0.197"
 serde_json = "1.0.120"
 toml = { version = "0.8.10", features = ["display"] }
-dapi-grpc = { git = "https://github.com/dashpay/platform", rev = "4536cd1ebd009e7f377986bbf1482f26c2658ee3", features = [
+dapi-grpc = { path = "../platform/packages/dapi-grpc", features = [
     "client",
 ] }
-rs-dapi-client = { git = "https://github.com/dashpay/platform", rev = "4536cd1ebd009e7f377986bbf1482f26c2658ee3" }
+rs-dapi-client = { path = "../platform/packages/rs-dapi-client" }
 tokio = { version = "1.36.0", features = ["full"] }
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
-strategy-tests = { git = "https://github.com/dashpay/platform", rev = "4536cd1ebd009e7f377986bbf1482f26c2658ee3" }
-simple-signer = { git = "https://github.com/dashpay/platform", rev = "4536cd1ebd009e7f377986bbf1482f26c2658ee3" }
+strategy-tests = { path = "../platform/packages/strategy-tests" }
+simple-signer = { path = "../platform/packages/simple-signer" }
 reqwest = { version = "0.12.3", features = ["json"] }
 hex = { version = "0.4.3" }
 itertools = "0.12.1"

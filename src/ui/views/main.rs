@@ -6,7 +6,10 @@ use tuirealm::{
     Frame,
 };
 
-use super::{contracts::ContractsScreenController, wallet::WalletScreenController};
+use super::{
+    contracts::ContractsScreenController, usernames::DpnsUsernamesScreenController,
+    wallet::WalletScreenController,
+};
 use crate::ui::views::strategies::StrategiesScreenController;
 use crate::{
     ui::{
@@ -23,7 +26,7 @@ use crate::{
     Event,
 };
 
-const COMMAND_KEYS: [ScreenCommandKey; 7] = [
+const COMMAND_KEYS: [ScreenCommandKey; 8] = [
     ScreenCommandKey::new("q", "Quit"),
     ScreenCommandKey::new("i", "Identities"),
     ScreenCommandKey::new("c", "Contracts"),
@@ -31,6 +34,7 @@ const COMMAND_KEYS: [ScreenCommandKey; 7] = [
     ScreenCommandKey::new("w", "Wallet"),
     ScreenCommandKey::new("v", "Version Upgrade"),
     ScreenCommandKey::new("p", "Platform information"),
+    ScreenCommandKey::new("d", "DPNS"),
 ];
 
 pub(crate) struct MainScreenController {
@@ -102,6 +106,10 @@ impl ScreenController for MainScreenController {
                 code: Key::Char('p'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::NextScreen(PlatformInfoScreenController::builder()),
+            Event::Key(KeyEvent {
+                code: Key::Char('d'),
+                modifiers: KeyModifiers::NONE,
+            }) => ScreenFeedback::NextScreen(DpnsUsernamesScreenController::builder()),
             _ => ScreenFeedback::None,
         }
     }

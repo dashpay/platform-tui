@@ -82,6 +82,7 @@ pub enum CompletedTaskPayload {
     String(String),
     ContestedResources(ContestedResources),
     ContestedResourceContenders(ContestedDocumentResourceVotePoll, Contenders),
+    DocumentsAndContestedResources(BTreeMap<Identifier, Option<Document>>, ContestedResources),
 }
 
 impl From<String> for CompletedTaskPayload {
