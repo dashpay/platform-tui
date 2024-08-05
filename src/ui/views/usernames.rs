@@ -1,5 +1,6 @@
 //! Usernames screen
 
+use futures::FutureExt;
 use std::collections::BTreeMap;
 
 use dpp::{
@@ -43,21 +44,25 @@ use crate::{
     Event,
 };
 
-use super::identities::RegisterDPNSNameFormController;
+use super::{
+    contracts::document_type::contested_resources::ContestedResourcesScreenController,
+    identities::RegisterDPNSNameFormController,
+};
 
 const DPNS_UNKNOWN_COMMAND_KEYS: [ScreenCommandKey; 2] = [
     ScreenCommandKey::new("q", "Back"),
     ScreenCommandKey::new("f", "Fetch DPNS contract"),
 ];
 
-const DPNS_KNOWN_COMMAND_KEYS: [ScreenCommandKey; 7] = [
+const DPNS_KNOWN_COMMAND_KEYS: [ScreenCommandKey; 8] = [
     ScreenCommandKey::new("q", "Back"),
     ScreenCommandKey::new("n", "Next identity"),
     ScreenCommandKey::new("p", "Prev identity"),
     ScreenCommandKey::new("↓", "Scroll down"),
     ScreenCommandKey::new("↑", "Scroll up"),
     ScreenCommandKey::new("r", "Register username for selected identity"),
-    ScreenCommandKey::new("g", "Query names"),
+    ScreenCommandKey::new("g", "Query owned names for selected identity"),
+    ScreenCommandKey::new("v", "Voting"),
 ];
 
 pub(crate) struct DpnsUsernamesScreenController {
@@ -222,6 +227,24 @@ impl ScreenController for DpnsUsernamesScreenController {
                     }
                 }
             }
+            Event::Key(KeyEvent {
+                code: Key::Char('v'),
+                modifiers: KeyModifiers::NONE,
+            }) => ScreenFeedback::Task {
+                task: Task::Document(DocumentTask::QueryContestedResources(
+                    self.dpns_contract
+                        .clone()
+                        .expect("Expected dpns contract to be loaded")
+                        .clone(),
+                    self.dpns_contract
+                        .clone()
+                        .expect("Expected dpns contract to be loaded")
+                        .document_type_cloned_for_name("domain")
+                        .expect("Expected domain document type to be in dpns contract")
+                        .clone(),
+                )),
+                block: true,
+            },
 
             // Identity selection keys
             Event::Key(KeyEvent {
@@ -304,6 +327,33 @@ impl ScreenController for DpnsUsernamesScreenController {
             }) => {
                 self.identity_view = Info::new_error(&format!("Failed to get names: {}", e));
                 ScreenFeedback::Redraw
+            }
+            Event::Backend(BackendEvent::TaskCompleted {
+                task: Task::Document(DocumentTask::QueryContestedResources(_, _)),
+                execution_result: Ok(CompletedTaskPayload::ContestedResources(resources)),
+            }) => {
+                let resources = resources.clone();
+                let data_contract = self
+                    .dpns_contract
+                    .clone()
+                    .expect("Expected dpns contract to be loaded")
+                    .clone();
+                let document_type = self
+                    .dpns_contract
+                    .clone()
+                    .expect("Expected dpns contract to be loaded")
+                    .document_type_cloned_for_name("domain")
+                    .expect("Expected domain document type to be in dpns contract");
+                ScreenFeedback::NextScreen(Box::new(move |_| {
+                    async move {
+                        Box::new(ContestedResourcesScreenController::new(
+                            resources,
+                            data_contract,
+                            document_type,
+                        )) as Box<dyn ScreenController>
+                    }
+                    .boxed()
+                }))
             }
 
             _ => ScreenFeedback::None,
