@@ -230,21 +230,30 @@ impl ScreenController for DpnsUsernamesScreenController {
             Event::Key(KeyEvent {
                 code: Key::Char('v'),
                 modifiers: KeyModifiers::NONE,
-            }) => ScreenFeedback::Task {
-                task: Task::Document(DocumentTask::QueryContestedResources(
-                    self.dpns_contract
-                        .clone()
-                        .expect("Expected dpns contract to be loaded")
-                        .clone(),
-                    self.dpns_contract
-                        .clone()
-                        .expect("Expected dpns contract to be loaded")
-                        .document_type_cloned_for_name("domain")
-                        .expect("Expected domain document type to be in dpns contract")
-                        .clone(),
-                )),
-                block: true,
-            },
+            }) => {
+                if self.dpns_contract.is_some() {
+                    ScreenFeedback::Task {
+                        task: Task::Document(DocumentTask::QueryContestedResources(
+                            self.dpns_contract
+                                .clone()
+                                .expect("Expected dpns contract to be loaded")
+                                .clone(),
+                            self.dpns_contract
+                                .clone()
+                                .expect("Expected dpns contract to be loaded")
+                                .document_type_cloned_for_name("domain")
+                                .expect("Expected domain document type to be in dpns contract")
+                                .clone(),
+                        )),
+                        block: true,
+                    }
+                } else {
+                    self.identity_view = Info::new_fixed(
+                        "DPNS contract not known yet. Please press 'f' to fetch it.",
+                    );
+                    ScreenFeedback::Redraw
+                }
+            }
 
             // Identity selection keys
             Event::Key(KeyEvent {
@@ -332,28 +341,35 @@ impl ScreenController for DpnsUsernamesScreenController {
                 task: Task::Document(DocumentTask::QueryContestedResources(_, _)),
                 execution_result: Ok(CompletedTaskPayload::ContestedResources(resources)),
             }) => {
-                let resources = resources.clone();
-                let data_contract = self
-                    .dpns_contract
-                    .clone()
-                    .expect("Expected dpns contract to be loaded")
-                    .clone();
-                let document_type = self
-                    .dpns_contract
-                    .clone()
-                    .expect("Expected dpns contract to be loaded")
-                    .document_type_cloned_for_name("domain")
-                    .expect("Expected domain document type to be in dpns contract");
-                ScreenFeedback::NextScreen(Box::new(move |_| {
-                    async move {
-                        Box::new(ContestedResourcesScreenController::new(
-                            resources,
-                            data_contract,
-                            document_type,
-                        )) as Box<dyn ScreenController>
-                    }
-                    .boxed()
-                }))
+                if self.dpns_contract.is_some() {
+                    let resources = resources.clone();
+                    let data_contract = self
+                        .dpns_contract
+                        .clone()
+                        .expect("Expected dpns contract to be loaded")
+                        .clone();
+                    let document_type = self
+                        .dpns_contract
+                        .clone()
+                        .expect("Expected dpns contract to be loaded")
+                        .document_type_cloned_for_name("domain")
+                        .expect("Expected domain document type to be in dpns contract");
+                    ScreenFeedback::NextScreen(Box::new(move |_| {
+                        async move {
+                            Box::new(ContestedResourcesScreenController::new(
+                                resources,
+                                data_contract,
+                                document_type,
+                            )) as Box<dyn ScreenController>
+                        }
+                        .boxed()
+                    }))
+                } else {
+                    self.identity_view = Info::new_fixed(
+                        "DPNS contract not known yet. Please press 'f' to fetch it.",
+                    );
+                    ScreenFeedback::Redraw
+                }
             }
 
             _ => ScreenFeedback::None,
