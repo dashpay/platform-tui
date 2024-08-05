@@ -61,7 +61,7 @@ const DPNS_KNOWN_COMMAND_KEYS: [ScreenCommandKey; 8] = [
     ScreenCommandKey::new("↓", "Scroll down"),
     ScreenCommandKey::new("↑", "Scroll up"),
     ScreenCommandKey::new("r", "Register username for selected identity"),
-    ScreenCommandKey::new("g", "Query owned names for selected identity"),
+    ScreenCommandKey::new("g", "Query names for selected identity"),
     ScreenCommandKey::new("v", "Voting"),
 ];
 
