@@ -154,7 +154,7 @@ pub(crate) enum AppStateUpdate<'s> {
     ClearedLoadedWallet,
     IdentityCreditsTransferred,
     DPNSNameRegistered(String),
-    DPNSNameRegistrationFailed,
+    DPNSNameRegistrationFailed(String),
 }
 
 /// Represents the result of completing a strategy.

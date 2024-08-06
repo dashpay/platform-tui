@@ -544,7 +544,7 @@ impl AppState {
 
                         AppStateUpdate::DPNSNameRegistered(name.clone())
                     }
-                    Err(_) => AppStateUpdate::DPNSNameRegistrationFailed,
+                    Err(e) => AppStateUpdate::DPNSNameRegistrationFailed(e.to_string()),
                 };
 
                 BackendEvent::TaskCompletedStateChange {

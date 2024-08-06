@@ -104,7 +104,7 @@ impl DpnsUsernamesScreenController {
         );
 
         let identity_view = if maybe_dpns_contract.is_some() {
-            Info::new_scrollable(
+            Info::new_fixed(
                 &known_identities_lock
                     .get(&identity_ids_vec[0])
                     .and_then(|identity_info| Some(as_json_string(identity_info)))
@@ -127,7 +127,7 @@ impl DpnsUsernamesScreenController {
     }
 
     fn update_identity_view(&mut self) {
-        self.identity_view = Info::new_scrollable(
+        self.identity_view = Info::new_fixed(
             &self
                 .identities_map
                 .get(
@@ -306,6 +306,13 @@ impl ScreenController for DpnsUsernamesScreenController {
                 self.identity_view = Info::new_from_result(execution_result);
                 let registered_name = match app_state_update {
                     crate::backend::AppStateUpdate::DPNSNameRegistered(name) => name,
+                    crate::backend::AppStateUpdate::DPNSNameRegistrationFailed(e) => {
+                        self.identity_view = Info::new_error(&format!(
+                            "Failed to register DPNS name: {}",
+                            e.to_string()
+                        ));
+                        return ScreenFeedback::Redraw;
+                    }
                     _ => todo!(),
                 };
                 self.identities_names_map
@@ -356,7 +363,7 @@ impl ScreenController for DpnsUsernamesScreenController {
 
                 contested_names_vec.retain(|name| selected_identity_names.contains(name));
 
-                self.identity_view = Info::new_scrollable(&format!(
+                self.identity_view = Info::new_fixed(&format!(
                     "Owned names: {}\n\nContested names: {}",
                     as_json_string(&owned_names_vec),
                     as_json_string(&contested_names_vec)
