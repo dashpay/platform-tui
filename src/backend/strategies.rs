@@ -225,7 +225,7 @@ pub async fn run_strategy_task<'s>(
                                         )
                                     }
                                     Err(e) => {
-                                        tracing::error!("Failed to deserialize strategy: {}", e);
+                                        tracing::debug!("Failed to deserialize strategy: {}", e);
                                         BackendEvent::StrategyError {
                                             error: format!("Failed to deserialize strategy: {}", e),
                                         }
@@ -233,21 +233,21 @@ pub async fn run_strategy_task<'s>(
                                 }
                             }
                             Err(e) => {
-                                tracing::error!("Failed to fetch strategy data: {}", e);
+                                tracing::debug!("Failed to fetch strategy data: {}", e);
                                 BackendEvent::StrategyError {
                                     error: format!("Failed to fetch strategy data: {}", e),
                                 }
                             }
                         }
                     } else {
-                        tracing::error!("Failed to fetch strategy: HTTP {}", response.status());
+                        tracing::debug!("Failed to fetch strategy: HTTP {}", response.status());
                         BackendEvent::StrategyError {
                             error: format!("Failed to fetch strategy: HTTP {}", response.status()),
                         }
                     }
                 }
                 Err(e) => {
-                    tracing::error!("Failed to fetch strategy: {}", e);
+                    tracing::debug!("Failed to fetch strategy: {}", e);
                     BackendEvent::StrategyError {
                         error: format!("Failed to fetch strategy: {}", e),
                     }
@@ -269,7 +269,7 @@ pub async fn run_strategy_task<'s>(
                     match File::create(&path) {
                         Ok(mut file) => {
                             if let Err(e) = file.write_all(&binary_data) {
-                                tracing::error!("Failed to write strategy to file: {}", e);
+                                tracing::debug!("Failed to write strategy to file: {}", e);
                                 return BackendEvent::StrategyError {
                                     error: format!("Failed to write strategy to file: {}", e),
                                 };
@@ -283,7 +283,7 @@ pub async fn run_strategy_task<'s>(
                             }
                         }
                         Err(e) => {
-                            tracing::error!("Failed to create file: {}", e);
+                            tracing::debug!("Failed to create file: {}", e);
                             BackendEvent::StrategyError {
                                 error: format!("Failed to create file: {}", e),
                             }
@@ -291,7 +291,7 @@ pub async fn run_strategy_task<'s>(
                     }
                 }
                 Err(e) => {
-                    tracing::error!("Failed to serialize strategy: {}", e);
+                    tracing::debug!("Failed to serialize strategy: {}", e);
                     BackendEvent::StrategyError {
                         error: format!("Failed to serialize strategy: {}", e),
                     }
@@ -440,7 +440,7 @@ pub async fn run_strategy_task<'s>(
                                                     .insert(order as u64, created_update_contract);
                                             }
                                             Err(e) => {
-                                                tracing::error!(
+                                                tracing::debug!(
                                                     "Error converting DataContract to \
                                                      CreatedDataContract for update: {:?}",
                                                     e
@@ -463,7 +463,7 @@ pub async fn run_strategy_task<'s>(
                                 ));
                             }
                             Err(e) => {
-                                tracing::error!(
+                                tracing::debug!(
                                     "Error converting DataContract to CreatedDataContract: {:?}",
                                     e
                                 );
@@ -575,7 +575,7 @@ pub async fn run_strategy_task<'s>(
                                         fake_identity_nonce += 1;
                                     }
                                     Err(e) => {
-                                        tracing::error!(
+                                        tracing::debug!(
                                             "Error converting DataContract to CreatedDataContract variant: {:?}",
                                             e
                                         );
@@ -605,7 +605,7 @@ pub async fn run_strategy_task<'s>(
                             }
                         }
                         Err(e) => {
-                            tracing::error!(
+                            tracing::debug!(
                                 "Error converting original DataContract to CreatedDataContract: {:?}",
                                 e
                             );
@@ -615,7 +615,7 @@ pub async fn run_strategy_task<'s>(
                         }
                     }
                 } else {
-                    tracing::error!("Contract wasn't retrieved by name in StrategyTask::SetContractsWithUpdatesRandom");
+                    tracing::debug!("Contract wasn't retrieved by name in StrategyTask::SetContractsWithUpdatesRandom");
                     return BackendEvent::StrategyError {
                         error: format!("Contract wasn't retrieved by name in StrategyTask::SetContractsWithUpdatesRandom")
                     };
@@ -808,7 +808,7 @@ pub async fn run_strategy_task<'s>(
                     // nothing
                 }
                 Err(e) => {
-                    tracing::error!("Failed to update known contracts: {:?}", e);
+                    tracing::debug!("Failed to update known contracts: {:?}", e);
                     return BackendEvent::StrategyError {
                         error: format!("Failed to update known contracts: {:?}", e),
                     };
@@ -819,7 +819,7 @@ pub async fn run_strategy_task<'s>(
             let mut loaded_identity_lock = match app_state.refresh_identity(&sdk).await {
                 Ok(lock) => lock,
                 Err(e) => {
-                    tracing::error!("Failed to refresh loaded identity: {:?}", e);
+                    tracing::debug!("Failed to refresh loaded identity: {:?}", e);
                     return BackendEvent::StrategyError {
                         error: format!("Failed to refresh loaded identity: {:?}", e),
                     };
@@ -876,11 +876,11 @@ pub async fn run_strategy_task<'s>(
                             break;
                         }
                         Err(e) if retries < MAX_RETRIES => {
-                            tracing::error!("Error executing request, retrying: {:?}", e);
+                            tracing::debug!("Error executing request, retrying: {:?}", e);
                             retries += 1;
                         }
                         Err(e) => {
-                            tracing::error!("Failed to execute request after retries: {:?}", e);
+                            tracing::debug!("Failed to execute request after retries: {:?}", e);
                             return BackendEvent::StrategyError {
                                 error: format!("Failed to execute request after retries: {:?}", e),
                             };
@@ -994,7 +994,7 @@ pub async fn run_strategy_task<'s>(
                                     }
                                 },
                                 Err(e) => {
-                                    tracing::error!(
+                                    tracing::debug!(
                                         "Error fetching documents using DriveQuery: {:?}",
                                         e
                                     );
@@ -1036,7 +1036,7 @@ pub async fn run_strategy_task<'s>(
                                 partial_identity
                             }
                             Err(e) => {
-                                tracing::error!("Error fetching identity: {:?}", e);
+                                tracing::debug!("Error fetching identity: {:?}", e);
                                 PartialIdentity {
                                     id: identifier,
                                     loaded_public_keys: BTreeMap::new(),
@@ -1115,7 +1115,7 @@ pub async fn run_strategy_task<'s>(
                             let (asset_lock_transaction, asset_lock_proof_private_key) = wallet
                                 .asset_lock_transaction(None, starting_balance)
                                 .map_err(|e| {
-                                    tracing::error!("Error creating asset lock transaction: {:?}", e);
+                                    tracing::debug!("Error creating asset lock transaction: {:?}", e);
                                     e
                                 })
                                 .ok()?;
@@ -1130,7 +1130,7 @@ pub async fn run_strategy_task<'s>(
                                         result = Ok((asset_lock_proof, asset_lock_proof_private_key));
                                     }
                                     Err(e) => {
-                                        tracing::error!(
+                                        tracing::debug!(
                                             "Error broadcasting asset lock transaction and retrieving proof: {:?}",
                                             e
                                         );
@@ -1141,7 +1141,7 @@ pub async fn run_strategy_task<'s>(
 
                             match result {
                                 Ok(asset_lock_proof) => {
-                                    let prev = processed.fetch_add(1, Ordering::Relaxed);
+                                    let prev = processed.fetch_add(1, Ordering::SeqCst);
                                     tracing::info!(
                                         "Successfully obtained asset lock proof {} of {}",
                                         prev + 1,
@@ -1150,7 +1150,7 @@ pub async fn run_strategy_task<'s>(
                                     Some(asset_lock_proof)
                                 }
                                 Err(e) => {
-                                    tracing::error!(
+                                    tracing::debug!(
                                         "Failed to obtain asset lock proof: {:?}",
                                         e
                                     );
@@ -1184,29 +1184,58 @@ pub async fn run_strategy_task<'s>(
                 let mut rng = StdRng::from_entropy(); // Will be passed to state_transitions_for_block
                 let mut current_block_info = initial_block_info.clone(); // Used for transition creation and logging
                 let mut transition_count: u32 = 0; // Used for logging how many transitions we attempted
-                let mut success_count: u32 = 0; // Used for logging how many transitions were successful
+                let mut success_count = Arc::new(AtomicU32::new(0)); // Used for logging how many transitions were successful
                 let mut load_start_time = Instant::now(); // Time when the load test begins (all blocks after the second block)
                 let mut loop_index = 1; // Index of the loop iteration. Represents blocks for block mode and seconds for time mode
                 let mut new_identity_ids = Vec::new(); // Will capture the ids of identities added to current_identities
                 let mut new_contract_ids = Vec::new(); // Will capture the ids of newly created data contracts
-                let oks = Arc::new(AtomicU32::new(0)); // Atomic counter for successful broadcasts
-                let errs = Arc::new(AtomicU32::new(0)); // Atomic counter for failed broadcasts
+                let broadcast_oks = Arc::new(AtomicU32::new(0)); // Atomic counter for successful broadcasts
+                let broadcast_errs = Arc::new(AtomicU32::new(0)); // Atomic counter for failed broadcasts
+                let ongoing_broadcasts = Arc::new(AtomicU32::new(0)); // Atomic counter for ongoing broadcasts
+                let ongoing_waits = Arc::new(AtomicU32::new(0)); // Atomic counter for ongoing waits
+                let wait_oks = Arc::new(AtomicU32::new(0)); // Atomic counter for successful waits
+                let wait_errs = Arc::new(AtomicU32::new(0)); // Atomic counter for failed waits
                 let mempool_document_counter =
                     Arc::new(Mutex::new(BTreeMap::<(Identifier, Identifier), u64>::new())); // Map to track how many documents an identity has in the mempool per contract
 
                 // Broadcast error counters
-                let mut identity_nonce_error_count: u64 = 0;
-                let mut insufficient_balance_error_count: u64 = 0;
-                let mut local_rate_limit_error_count: u64 = 0;
-                let mut broadcast_timeout_error_count: u64 = 0;
+                let identity_nonce_error_count = Arc::new(AtomicU32::new(0));
+                let insufficient_balance_error_count = Arc::new(AtomicU32::new(0));
+                let local_rate_limit_error_count = Arc::new(AtomicU32::new(0));
+                let broadcast_connection_error_count = Arc::new(AtomicU32::new(0));
 
                 // Now loop through the number of blocks or seconds the user asked for, preparing and processing state transitions
                 while (block_mode && current_block_info.height < (initial_block_info.height + num_blocks_or_seconds + 2)) // +2 because we don't count the first two initialization blocks
                     || (!block_mode && load_start_time.elapsed().as_secs() < num_blocks_or_seconds) || loop_index <= 2
                 {
+                    // Every 10 seconds, log statistics
+                    if loop_index % 10 == 0 {
+                        let stats_elapsed = load_start_time.elapsed().as_secs();
+                        let stats_attempted = transition_count;
+                        let stats_rate = stats_attempted.checked_div(stats_elapsed.try_into().unwrap()).unwrap_or(0);
+                        let stats_broadcast_successful = broadcast_oks.load(Ordering::SeqCst);
+                        let stats_broadcast_failed = broadcast_errs.load(Ordering::SeqCst);
+                        let stats_wait_successful = wait_oks.load(Ordering::SeqCst);
+                        let stats_wait_failed = wait_errs.load(Ordering::SeqCst);
+                        let stats_ongoing_waits = ongoing_waits.load(Ordering::SeqCst);
+                        let stats_ongoing_broadcasts = ongoing_broadcasts.load(Ordering::SeqCst);
+                        tracing::info!("{} secs passed. {} broadcast ({} tx/s): {} successful broadcasts, {} failed broadcasts, {} waiting. Wait results: {} successful, {} failed, {} waiting", stats_elapsed, stats_attempted, stats_rate, stats_broadcast_successful, stats_broadcast_failed, stats_ongoing_broadcasts, stats_wait_successful, stats_wait_failed, stats_ongoing_waits);    
+                    }
+
                     let loop_start_time = Instant::now();
-                    let oks_clone = oks.clone();
-                    let errs_clone = errs.clone();
+                    let broadcast_oks_clone = broadcast_oks.clone();
+                    let broadcast_errs_clone = broadcast_errs.clone();
+                    let wait_oks_clone = wait_oks.clone();
+                    let wait_errs_clone = wait_errs.clone();
+                    let ongoing_waits_clone = ongoing_waits.clone();
+                    let ongoing_broadcasts_clone = ongoing_broadcasts.clone();
+                    let success_count_clone = success_count.clone();
+                    let identity_nonce_error_count_clone = identity_nonce_error_count.clone();
+                    let insufficient_balance_error_count_clone =
+                        insufficient_balance_error_count.clone();
+                    let local_rate_limit_error_count_clone = local_rate_limit_error_count.clone();
+                    let broadcast_connection_error_count_clone =
+                        broadcast_connection_error_count.clone();
 
                     // Need to pass app_state.known_contracts to state_transitions_for_block
                     let mut known_contracts_lock = app_state.known_contracts.lock().await;
@@ -1290,12 +1319,12 @@ pub async fn run_strategy_task<'s>(
                                             sdk.version(),
                                         );
                                         if let Err(e) = result {
-                                            tracing::error!(
+                                            tracing::debug!(
                                                 "Failed to add contract to local drive: {e}"
                                             );
                                         }
                                     }
-                                    Err(e) => tracing::error!(
+                                    Err(e) => tracing::debug!(
                                         "Failed to convert serialized contract to contract: {e}"
                                     ),
                                 }
@@ -1345,21 +1374,21 @@ pub async fn run_strategy_task<'s>(
                                                                                     };
                                                                             let result = drive_lock.add_document(owned_document_info, data_contract_id, document_type_name, false, &current_block_info, true, None, sdk.version());
                                                                             if let Err(e) = result {
-                                                                                tracing::error!("Failed to add document to local drive: {e}");
+                                                                                tracing::debug!("Failed to add document to local drive: {e}");
                                                                             }
                                                                         }
                                                                         Err(e) => {
-                                                                            tracing::error!("Couldn't get document from document create transition: {e}");
+                                                                            tracing::debug!("Couldn't get document from document create transition: {e}");
                                                                         }
                                                                     }
                                                                 }
                                                                 Err(e) => {
-                                                                    tracing::error!("Couldn't retrieve document type {} from contract: {}", document_type_name, e)
+                                                                    tracing::debug!("Couldn't retrieve document type {} from contract: {}", document_type_name, e)
                                                                 }
                                                             }
                                                         }
                                                         None => {
-                                                            tracing::error!("Data contract {} not found in known_contracts", data_contract_id.to_string(Encoding::Base58));
+                                                            tracing::debug!("Data contract {} not found in known_contracts", data_contract_id.to_string(Encoding::Base58));
                                                             continue;
                                                         }
                                                     }
@@ -1407,7 +1436,7 @@ pub async fn run_strategy_task<'s>(
 
                     // Now process the state transitions
                     if !transitions.is_empty() {
-                        tracing::info!(
+                        tracing::trace!(
                             "Prepared {} state transitions for {} {}",
                             transitions.len(),
                             mode_string,
@@ -1433,15 +1462,25 @@ pub async fn run_strategy_task<'s>(
                             let mempool_document_counter_clone = mempool_document_counter.clone();
                             let current_identities_clone = Arc::clone(&current_identities);
 
-                            let oks = oks_clone.clone();
-                            let errs = errs_clone.clone();
+                            let broadcast_oks = broadcast_oks_clone.clone();
+                            let broadcast_errs = broadcast_errs_clone.clone();
+                            let ongoing_broadcasts = ongoing_broadcasts_clone.clone();
+                            let success_count = success_count_clone.clone();
+                            let identity_nonce_error_count =
+                                identity_nonce_error_count_clone.clone();
+                            let insufficient_balance_error_count =
+                                insufficient_balance_error_count_clone.clone();
+                            let local_rate_limit_error_count =
+                                local_rate_limit_error_count_clone.clone();
+                            let broadcast_connection_error_count =
+                                broadcast_connection_error_count_clone.clone();
 
                             let mut request_settings = RequestSettings::default();
                             // Time-based strategy body
                             if !block_mode && loop_index != 1 && loop_index != 2 {
                                 // time mode loading
-                                request_settings.connect_timeout = Some(Duration::from_secs(1));
-                                request_settings.timeout = Some(Duration::from_secs(1));
+                                request_settings.connect_timeout = Some(Duration::from_secs(30));
+                                request_settings.timeout = Some(Duration::from_secs(30));
                                 request_settings.retries = Some(0);
                             }
                             // Block-based strategy body
@@ -1455,14 +1494,16 @@ pub async fn run_strategy_task<'s>(
                             let future = async move {
                                 match transition_clone.broadcast_request_for_state_transition() {
                                     Ok(broadcast_request) => {
+                                        ongoing_broadcasts.fetch_add(1, Ordering::SeqCst);
                                         let broadcast_result = broadcast_request.execute(&sdk.clone(), request_settings).await;
+                                        ongoing_broadcasts.fetch_sub(1, Ordering::SeqCst);
                                         match broadcast_result {
                                             Ok(_) => {
-                                                oks.fetch_add(1, Ordering::SeqCst);
-                                                success_count += 1;
+                                                broadcast_oks.fetch_add(1, Ordering::SeqCst);
+                                                success_count.fetch_add(1, Ordering::SeqCst);
                                                 let transition_owner_id = transition_clone.owner_id().to_string(Encoding::Base58);
                                                 if !block_mode && loop_index != 1 && loop_index != 2 {
-                                                    tracing::info!("Successfully broadcasted transition: {}. ID: {}. Owner ID: {:?}", transition_clone.name(), transition_id, transition_owner_id);
+                                                    tracing::trace!("Successfully broadcasted transition: {}. ID: {}. Owner ID: {:?}", transition_clone.name(), transition_id, transition_owner_id);
                                                 }
                                                 if transition_clone.name() == "DocumentsBatch" {
                                                     let contract_ids = match transition_clone.clone() {
@@ -1485,10 +1526,10 @@ pub async fn run_strategy_task<'s>(
                                                 Ok((transition_clone, broadcast_result))
                                             },
                                             Err(e) => {
-                                                errs.fetch_add(1, Ordering::SeqCst);
-                                                tracing::error!("Error: Failed to broadcast {} transition: {:?}. ID: {}", transition_clone.name(), e, transition_id);
+                                                broadcast_errs.fetch_add(1, Ordering::SeqCst);
+                                                tracing::debug!("Error: Failed to broadcast {} transition: {:?}. ID: {}", transition_clone.name(), e, transition_id);
                                                 if e.to_string().contains("Insufficient identity") {
-                                                    insufficient_balance_error_count += 1;
+                                                    insufficient_balance_error_count.fetch_add(1, Ordering::SeqCst);
                                                     // Top up. This logic works but it slows the broadcasting down slightly.
                                                     if top_up_amount > 0 {
                                                         let current_identities = Arc::clone(&current_identities_clone);
@@ -1518,7 +1559,7 @@ pub async fn run_strategy_task<'s>(
                                                                     // Top up
                                                                     match try_broadcast_and_retrieve_asset_lock(&sdk_clone, &asset_lock_transaction, &wallet_receive_address, 2).await {
                                                                         Ok(asset_lock_proof) => {
-                                                                            tracing::info!("Successfully obtained asset lock proof for top up");
+                                                                            tracing::trace!("Successfully obtained asset lock proof for top up");
                                                                             let identity = current_identities.iter_mut().find(|identity| identity.id() == transition_clone.owner_id()).expect("Expected to find identity ID matching transition owner ID");
     
                                                                             let state_transition = IdentityTopUpTransition::try_from_identity(
@@ -1536,12 +1577,12 @@ pub async fn run_strategy_task<'s>(
                                                                                 .clone()
                                                                                 .execute(&sdk_clone, RequestSettings::default())
                                                                                 .await {
-                                                                                    Ok(_) => tracing::info!("Successfully topped up identity"),
-                                                                                    Err(e) => tracing::error!("Failed to top up identity: {:?}", e)
+                                                                                    Ok(_) => tracing::trace!("Successfully topped up identity"),
+                                                                                    Err(e) => tracing::debug!("Failed to top up identity: {:?}", e)
                                                                                 };
                                                                         }
                                                                         Err(_) => {
-                                                                            tracing::error!("Failed to obtain asset lock proof for top up");
+                                                                            tracing::debug!("Failed to obtain asset lock proof for top up");
                                                                         }
                                                                     }
                                                                 })
@@ -1556,20 +1597,20 @@ pub async fn run_strategy_task<'s>(
     
                                                     }
                                                 } else if e.to_string().contains("invalid identity nonce") {
-                                                    identity_nonce_error_count += 1;
-                                                } else if e.to_string().contains("") {
-                                                    local_rate_limit_error_count += 1;
-                                                } else if e.to_string().contains("") {
-                                                    broadcast_timeout_error_count += 1;
+                                                    identity_nonce_error_count.fetch_add(1, Ordering::SeqCst);
+                                                } else if e.to_string().contains("rate-limit") {
+                                                    local_rate_limit_error_count.fetch_add(1, Ordering::SeqCst);
+                                                } else if e.to_string().contains("error trying to connect") {
+                                                    broadcast_connection_error_count.fetch_add(1, Ordering::SeqCst);
                                                 }
                                                 Err(e)
                                             }
                                         }
                                     },
                                     Err(e) => {
-                                        errs.fetch_add(1, Ordering::SeqCst);
+                                        broadcast_errs.fetch_add(1, Ordering::SeqCst);
                                         if !block_mode {
-                                            tracing::error!("Error preparing broadcast request for transition: {}, Error: {:?}", transition_clone.name(), e);
+                                            tracing::debug!("Error preparing broadcast request for transition: {}, Error: {:?}", transition_clone.name(), e);
                                         }
                                         Err(e)
                                     }.expect("Expected to prepare broadcast for request for state transition") // I guess I have to do this to make it compile
@@ -1589,6 +1630,7 @@ pub async fn run_strategy_task<'s>(
 
                             let mut wait_futures = Vec::new();
                             for (tx_index, result) in broadcast_results.into_iter().enumerate() {
+    
                                 match result {
                                     Ok((transition, broadcast_result)) => {
                                         let transition_type = transition.name().to_owned();
@@ -1601,7 +1643,7 @@ pub async fn run_strategy_task<'s>(
                                         .reverse();
 
                                         if broadcast_result.is_err() {
-                                            tracing::error!(
+                                            tracing::debug!(
                                                 "Error broadcasting state transition {} ({}) for {} {}: {:?}. ID: {}",
                                                 tx_index + 1,
                                                 transition_type,
@@ -1668,7 +1710,7 @@ pub async fn run_strategy_task<'s>(
                                                         .await
                                                 }
                                                 Err(e) => {
-                                                    tracing::error!(
+                                                    tracing::debug!(
                                                         "Error creating wait request for state transition {} {} {}: {:?}. ID: {}",
                                                         tx_index + 1, mode_string, loop_index, e, transition_id
                                                     );
@@ -1720,20 +1762,20 @@ pub async fn run_strategy_task<'s>(
 
                                                                     match verified {
                                                                         Ok(_) => {
-                                                                            tracing::info!("Successfully processed and verified proof for state transition {} ({}), {} {} (Actual block height: {}). ID: {}", tx_index + 1, transition_type, mode_string, tx_index, metadata.height, transition_id);
+                                                                            tracing::trace!("Successfully processed and verified proof for state transition {} ({}), {} {} (Actual block height: {}). ID: {}", tx_index + 1, transition_type, mode_string, tx_index, metadata.height, transition_id);
                                                                         }
-                                                                        Err(e) => tracing::error!("Error verifying state transition execution proof: {}", e),
+                                                                        Err(e) => tracing::debug!("Error verifying state transition execution proof: {}", e),
                                                                     }
                                                                 } else {
-                                                                    tracing::info!(
+                                                                    tracing::trace!(
                                                                         "Successfully broadcasted and processed state transition {} ({}) for {} {} (Actual block height: {}). ID: {}",
                                                                         tx_index + 1, transition.name(), mode_string, loop_index, metadata.height, transition_id
                                                                     );
                                                                 }
                                                             } else if let Some(wait_for_state_transition_result_response_v0::Result::Error(e)) = &v0_response.result {
-                                                                tracing::error!("Transition failed in mempool with error: {:?}. ID: {}", e, transition_id);
+                                                                tracing::debug!("Transition failed in mempool with error: {:?}. ID: {}", e, transition_id);
                                                             } else {
-                                                                tracing::info!("Received empty response for transition with ID: {}", transition_id);
+                                                                tracing::trace!("Received empty response for transition with ID: {}", transition_id);
                                                             }
 
                                                             // Log the Base58 encoded IDs of any created contracts or identities
@@ -1743,14 +1785,14 @@ pub async fn run_strategy_task<'s>(
                                                                     let ids = identity_create_transition.modified_data_ids();
                                                                     for id in ids {
                                                                         let encoded_id: String = id.to_string(Encoding::Base58);
-                                                                        tracing::info!("Created identity: {}", encoded_id);
+                                                                        tracing::trace!("Created identity: {}", encoded_id);
                                                                     }
                                                                 },
                                                                 StateTransition::DataContractCreate(contract_create_transition) => {
                                                                     let ids = contract_create_transition.modified_data_ids();
                                                                     for id in ids {
                                                                         let encoded_id: String = id.to_string(Encoding::Base58);
-                                                                        tracing::info!("Created contract: {}", encoded_id);                                                                        
+                                                                        tracing::trace!("Created contract: {}", encoded_id);                                                                        
                                                                     }
                                                                 },
                                                                 _ => {
@@ -1758,12 +1800,12 @@ pub async fn run_strategy_task<'s>(
                                                                 }
                                                             }
                                                         } else {
-                                                            tracing::info!("Broadcasted transition and received response but no metadata");
+                                                            tracing::trace!("Broadcasted transition and received response but no metadata");
                                                         }
                                                     })
                                                 }
                                                 Err(e) => {
-                                                    tracing::error!("Wait result error: {:?}", e);
+                                                    tracing::debug!("Wait result error: {:?}", e);
                                                     None
                                                 }
                                             }
@@ -1771,7 +1813,7 @@ pub async fn run_strategy_task<'s>(
                                         wait_futures.push(wait_future);
                                     }
                                     Err(e) => {
-                                        tracing::error!(
+                                        tracing::debug!(
                                             "Error preparing broadcast request for state transition {} {} {}: {:?}",
                                             tx_index + 1,
                                             mode_string,
@@ -1790,6 +1832,10 @@ pub async fn run_strategy_task<'s>(
 
                             let sdk_clone = sdk.clone();
                             for (tx_index, result) in broadcast_results.into_iter().enumerate() {
+                                let wait_oks = wait_oks_clone.clone();
+                                let wait_errs = wait_errs_clone.clone();
+                                let ongoing_waits = ongoing_waits_clone.clone();
+
                                 let mempool_document_counter_clone =
                                     mempool_document_counter.clone();
                                 match result {
@@ -1808,6 +1854,7 @@ pub async fn run_strategy_task<'s>(
                                             if let Ok(wait_request) = transition
                                                 .wait_for_state_transition_result_request()
                                             {
+                                                ongoing_waits.fetch_add(1, Ordering::SeqCst);
                                                 match wait_request
                                                     .execute(&sdk_clone_inner, request_settings)
                                                     .await
@@ -1817,7 +1864,9 @@ pub async fn run_strategy_task<'s>(
                                                             if let Some(wait_for_state_transition_result_response_v0::Result::Proof(_proof)) = &v0_response.result {
                                                                 // Assume the proof is correct in time mode for now
                                                                 // Decrement the transitions counter
-                                                                tracing::info!(" >>> Transition was included in a block. ID: {}", transition_id);
+                                                                wait_oks.fetch_add(1, Ordering::SeqCst);
+                                                                ongoing_waits.fetch_sub(1, Ordering::SeqCst);
+                                                                tracing::trace!(" >>> Transition was included in a block. ID: {}", transition_id);
                                                                 if transition_type == "DocumentsBatch" {
                                                                     let contract_ids = match transition.clone() {
                                                                         StateTransition::DocumentsBatch(DocumentsBatchTransition::V0(transition)) => transition.transitions.iter().map(|document_transition|
@@ -1837,7 +1886,9 @@ pub async fn run_strategy_task<'s>(
                                                                     }
                                                                 }
                                                             } else if let Some(wait_for_state_transition_result_response_v0::Result::Error(e)) = &v0_response.result {
-                                                                tracing::error!(" >>> Transition failed in mempool with error: {:?}. ID: {}", e, transition_id);
+                                                                wait_errs.fetch_add(1, Ordering::SeqCst);
+                                                                ongoing_waits.fetch_sub(1, Ordering::SeqCst);
+                                                                tracing::debug!(" >>> Transition failed in mempool with error: {:?}. ID: {}", e, transition_id);
                                                                 if transition_type == "DocumentsBatch" {
                                                                     let contract_ids = match transition.clone() {
                                                                         StateTransition::DocumentsBatch(DocumentsBatchTransition::V0(transition)) => transition.transitions.iter().map(|document_transition|
@@ -1857,16 +1908,20 @@ pub async fn run_strategy_task<'s>(
                                                                     }
                                                                 }
                                                             } else {
-                                                                tracing::info!(" >>> Received empty response for transition with ID: {}", transition_id);
+                                                                wait_oks.fetch_add(1, Ordering::SeqCst);
+                                                                ongoing_waits.fetch_sub(1, Ordering::SeqCst);
+                                                                tracing::trace!(" >>> Received empty response for transition with ID: {}", transition_id);
                                                             }
                                                         }
                                                     }
                                                     Err(e) => {
-                                                        tracing::error!("Error waiting for state transition result: {:?}, {}, Tx ID: {}", e, transition_type, transition_id);
+                                                        wait_errs.fetch_add(1, Ordering::SeqCst);
+                                                        ongoing_waits.fetch_sub(1, Ordering::SeqCst);
+                                                        tracing::debug!("Error waiting for state transition result: {:?}, {}, Tx ID: {}", e, transition_type, transition_id);
                                                     }
                                                 }
                                             } else {
-                                                tracing::error!("Failed to create wait request for state transition {}: {}", tx_index + 1, transition_type);
+                                                tracing::debug!("Failed to create wait request for state transition {}: {}", tx_index + 1, transition_type);
                                             }
                                         });
                                     }
@@ -1880,7 +1935,7 @@ pub async fn run_strategy_task<'s>(
                         // Reset the load_start_time
                         // Also, sleep 10 seconds to let nodes update state
                         if loop_index == 1 || loop_index == 2 {
-                            tracing::info!(
+                            tracing::trace!(
                                 "Sleep 10 seconds to allow initialization transactions to process"
                             );
                             tokio::time::sleep(Duration::from_secs(10)).await;
@@ -1888,7 +1943,7 @@ pub async fn run_strategy_task<'s>(
                         }
                     } else {
                         // No transitions prepared for the block (or second)
-                        tracing::info!(
+                        tracing::trace!(
                             "Prepared 0 state transitions for {} {}",
                             mode_string,
                             loop_index
@@ -1923,9 +1978,9 @@ pub async fn run_strategy_task<'s>(
 
                 // Log oks and errs
                 tracing::info!(
-                    "Successfully processed: {}, Failed to process: {}",
-                    oks.load(Ordering::SeqCst),
-                    errs.load(Ordering::SeqCst)
+                    "Successfully broadcasted: {}, Failed to broadcast: {}",
+                    broadcast_oks.load(Ordering::SeqCst),
+                    broadcast_errs.load(Ordering::SeqCst)
                 );
 
                 // Time the execution took
@@ -1945,17 +2000,11 @@ pub async fn run_strategy_task<'s>(
                     new_contract_ids
                 );
 
-                tracing::info!("Signer: {:?}", strategy.signer);
-
-                // Remove new contracts from known_contracts
-                for contract_id in new_contract_ids {
-                    let mut known_contracts = app_state.known_contracts.lock().await;
-                    known_contracts.remove(&contract_id);
-                }
-
                 // Withdraw all funds from newly created identities back to the wallet
                 let mut current_identities = current_identities.lock().await;
-                current_identities.remove(0); // Remove loaded identity from the vector
+                if current_identities.len() > 0 {
+                    current_identities.remove(0); // Remove loaded identity from the vector
+                }
                 let wallet_lock = app_state
                     .loaded_wallet
                     .lock()
@@ -2001,7 +2050,7 @@ pub async fn run_strategy_task<'s>(
                                     );
                                     withdrawals_count += 1;
                                 } else {
-                                    tracing::error!(
+                                    tracing::debug!(
                                         "Error withdrawing from identity {}: {}",
                                         identity.id().to_string(Encoding::Base58),
                                         e
@@ -2042,7 +2091,7 @@ pub async fn run_strategy_task<'s>(
 
                 // For time mode, success_count is just the number of broadcasts
                 if !block_mode {
-                    success_count = oks.load(Ordering::SeqCst);
+                    success_count = broadcast_oks;
                 }
 
                 // Make sure we don't divide by 0 when we determine the tx/s rate
@@ -2064,22 +2113,22 @@ pub async fn run_strategy_task<'s>(
                         / (load_run_time)) as f32
                 };
                 let mut successful_tps: f32 = 0.0;
-                if success_count
+                if success_count.load(Ordering::SeqCst)
                     > (strategy.start_contracts.len() as u32
                         + strategy.start_identities.number_of_identities as u32)
                 {
-                    successful_tps = ((success_count
+                    successful_tps = ((success_count.load(Ordering::SeqCst)
                         - strategy.start_contracts.len() as u32
                         - strategy.start_identities.number_of_identities as u32)
                         as u64
                         / (load_run_time)) as f32
                 };
                 let mut success_percent = 0;
-                if success_count as u32
+                if success_count.load(Ordering::SeqCst)
                     > (strategy.start_contracts.len() as u32
                         + strategy.start_identities.number_of_identities as u32)
                 {
-                    success_percent = (((success_count
+                    success_percent = (((success_count.load(Ordering::SeqCst)
                         - strategy.start_contracts.len() as u32
                         - strategy.start_identities.number_of_identities as u32)
                         as f64
@@ -2096,35 +2145,33 @@ pub async fn run_strategy_task<'s>(
 
                 if block_mode {
                     tracing::info!(
-                        "-----Strategy '{}' completed-----\n\nMode: {}\nState transitions attempted: {}\nState \
-                        transitions succeeded: {}\nNumber of blocks: {}\nRun time: \
-                        {:?} seconds\nTPS rate (approx): {} tps\nDash spent (Loaded Identity): {}\nDash spent (Wallet): {}\nNonce \
-                        errors: {}\nBalance errors: {}\nRate limit errors: {}\nBroadcast timeout errors: {}",
+                        "-----Strategy '{}' completed-----\n\nMode: {}\nBroadcasts attempted: {}\nBroadcasts succeeded: {}\nNumber of seconds: {}\nRun time: \
+                        {:?} seconds\nTPS rate (approx): {} tps\nDash spent (Loaded Identity): {}\nDash spent (Wallet): {}\nBroadcast nonce \
+                        errors: {}\nBroadcast balance errors: {}\nBroadcast rate limit errors: {}\nBroadcast connection errors: {}",
                         strategy_name,
                         mode_string,
                         transition_count,
-                        success_count,
+                        success_count.load(Ordering::SeqCst),
                         (current_block_info.height - initial_block_info.height),
                         load_run_time, // Processing time after the second block
                         tps, // tps besides the first two blocks
                         dash_spent_identity,
                         dash_spent_wallet,
-                        identity_nonce_error_count,
-                        insufficient_balance_error_count,
-                        local_rate_limit_error_count,
-                        broadcast_timeout_error_count
+                        identity_nonce_error_count.load(Ordering::SeqCst),
+                        insufficient_balance_error_count.load(Ordering::SeqCst),
+                        local_rate_limit_error_count.load(Ordering::SeqCst),
+                        broadcast_connection_error_count.load(Ordering::SeqCst)
                     );
                 } else {
                     // Time mode
                     tracing::info!(
-                        "-----Strategy '{}' completed-----\n\nMode: {}\nState transitions attempted: {}\nState \
-                        transitions succeeded: {}\nNumber of loops: {}\nLoad run time: \
-                        {:?} seconds\nInit run time: {} seconds\nAttempted rate (approx): {} txs/s\nSuccessful rate: {} tx/s\nSuccess percentage: {}%\nDash spent (Loaded Identity): {}\nDash spent (Wallet): {}\nNonce \
-                        errors: {}\nBalance errors: {}\nRate limit errors: {}\nBroadcast timeout errors: {}",
+                        "-----Strategy '{}' completed-----\n\nMode: {}\nBroadcasts attempted: {}\nBroadcasts succeeded: {}\nNumber of loops: {}\nLoad run time: \
+                        {:?} seconds\nInit run time: {} seconds\nAttempted rate (approx): {} txs/s\nSuccessful rate: {} tx/s\nSuccess percentage: {}%\nDash spent (Loaded Identity): {}\nDash spent (Wallet): {}\nBroadcast nonce \
+                        errors: {}\nBroadcast balance errors: {}\nBroadcast rate limit errors: {}\nBroadcast connection errors: {}",
                         strategy_name,
                         mode_string,
                         transition_count,
-                        success_count,
+                        success_count.load(Ordering::SeqCst),
                         loop_index-3, // Minus 3 because we still incremented one at the end of the last loop, and don't count the first two blocks
                         load_run_time,
                         init_time.as_secs(),
@@ -2133,10 +2180,10 @@ pub async fn run_strategy_task<'s>(
                         success_percent,
                         dash_spent_identity,
                         dash_spent_wallet,
-                        identity_nonce_error_count,
-                        insufficient_balance_error_count,
-                        local_rate_limit_error_count,
-                        broadcast_timeout_error_count
+                        identity_nonce_error_count.load(Ordering::SeqCst),
+                        insufficient_balance_error_count.load(Ordering::SeqCst),
+                        local_rate_limit_error_count.load(Ordering::SeqCst),
+                        broadcast_connection_error_count.load(Ordering::SeqCst)
                     );
                 }
 
@@ -2146,7 +2193,7 @@ pub async fn run_strategy_task<'s>(
                         block_mode: block_mode,
                         final_block_height: current_block_info.height,
                         start_block_height: initial_block_info.height,
-                        success_count: success_count.try_into().unwrap(),
+                        success_count: success_count.load(Ordering::SeqCst) as u64,
                         transition_count: transition_count.try_into().unwrap(),
                         rate: tps,
                         success_rate: successful_tps,
@@ -2158,7 +2205,7 @@ pub async fn run_strategy_task<'s>(
                     },
                 }
             } else {
-                tracing::error!("No strategy loaded with name \"{}\"", strategy_name);
+                tracing::debug!("No strategy loaded with name \"{}\"", strategy_name);
                 BackendEvent::StrategyError {
                     error: format!("No strategy loaded with name \"{}\"", strategy_name),
                 }
@@ -2334,7 +2381,7 @@ async fn update_known_contracts(
                 contracts_lock.insert(contract_id_str.clone(), data_contract);
             }
             Ok(None) => {
-                tracing::error!("Contract not found for ID: {}", contract_id_str);
+                tracing::debug!("Contract not found for ID: {}", contract_id_str);
             }
             Err(e) => {
                 return Err(format!(
@@ -2366,7 +2413,7 @@ async fn try_broadcast_and_retrieve_asset_lock(
                 return Ok(asset_lock_proof);
             }
             Err(_) => {
-                tracing::error!(
+                tracing::debug!(
                     "Failed to obtain asset lock proof on attempt {}",
                     attempt + 1
                 );
