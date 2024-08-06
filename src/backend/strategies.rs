@@ -1786,12 +1786,7 @@ pub async fn run_strategy_task<'s>(
                             let _wait_results = join_all(wait_futures).await;
                         } else {
                             // Time mode when index is greater than 2
-                            let request_settings = RequestSettings {
-                                connect_timeout: Some(Duration::from_secs(30)),
-                                timeout: Some(Duration::from_secs(60)),
-                                retries: Some(5),
-                                ban_failed_address: Some(false),
-                            };
+                            let request_settings = RequestSettings::default();
 
                             let sdk_clone = sdk.clone();
                             for (tx_index, result) in broadcast_results.into_iter().enumerate() {
