@@ -1585,12 +1585,7 @@ pub async fn run_strategy_task<'s>(
                         // If we're in block mode, or index 1 or 2 of time mode, we're going to wait for state transition results and potentially verify proofs too.
                         // If we're in time mode and index 3+, we're just broadcasting.
                         if block_mode || loop_index == 1 || loop_index == 2 {
-                            let request_settings = RequestSettings {
-                                connect_timeout: Some(Duration::from_secs(3)),
-                                timeout: Some(Duration::from_secs(3)),
-                                retries: Some(1),
-                                ban_failed_address: Some(true),
-                            };
+                            let request_settings = RequestSettings::default();
 
                             let mut wait_futures = Vec::new();
                             for (tx_index, result) in broadcast_results.into_iter().enumerate() {
