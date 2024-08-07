@@ -5,25 +5,26 @@ use std::{
     fs::File,
     io::Write,
     sync::{
-        atomic::{AtomicU32, AtomicUsize, Ordering},
+        atomic::{AtomicU64, AtomicUsize, Ordering},
         Arc,
     },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use crossterm::style::Stylize;
-use dapi_grpc::platform::v0::{
+use dapi_grpc::{platform::v0::{
     get_epochs_info_request, get_epochs_info_response,
     wait_for_state_transition_result_response::{
         self, wait_for_state_transition_result_response_v0,
     },
     GetEpochsInfoRequest,
-};
+}, tonic::Code};
 use dash_sdk::platform::transition::withdraw_from_identity::WithdrawFromIdentity;
 use dash_sdk::{
     platform::{transition::broadcast_request::BroadcastRequestForStateTransition, Fetch},
     Sdk,
 };
+use dashmap::DashMap;
 use dpp::{
     block::{block_info::BlockInfo, epoch::Epoch},
     dashcore::{Address, PrivateKey, Transaction},
@@ -1184,25 +1185,28 @@ pub async fn run_strategy_task<'s>(
                 let mut rng = StdRng::from_entropy(); // Will be passed to state_transitions_for_block
                 let mut current_block_info = initial_block_info.clone(); // Used for transition creation and logging
                 let mut transition_count: u32 = 0; // Used for logging how many transitions we attempted
-                let mut success_count = Arc::new(AtomicU32::new(0)); // Used for logging how many transitions were successful
+                let mut success_count = Arc::new(AtomicU64::new(0)); // Used for logging how many transitions were successful
                 let mut load_start_time = Instant::now(); // Time when the load test begins (all blocks after the second block)
                 let mut loop_index = 1; // Index of the loop iteration. Represents blocks for block mode and seconds for time mode
                 let mut new_identity_ids = Vec::new(); // Will capture the ids of identities added to current_identities
                 let mut new_contract_ids = Vec::new(); // Will capture the ids of newly created data contracts
-                let broadcast_oks = Arc::new(AtomicU32::new(0)); // Atomic counter for successful broadcasts
-                let broadcast_errs = Arc::new(AtomicU32::new(0)); // Atomic counter for failed broadcasts
-                let ongoing_broadcasts = Arc::new(AtomicU32::new(0)); // Atomic counter for ongoing broadcasts
-                let ongoing_waits = Arc::new(AtomicU32::new(0)); // Atomic counter for ongoing waits
-                let wait_oks = Arc::new(AtomicU32::new(0)); // Atomic counter for successful waits
-                let wait_errs = Arc::new(AtomicU32::new(0)); // Atomic counter for failed waits
+                let broadcast_oks = Arc::new(AtomicU64::new(0)); // Atomic counter for successful broadcasts
+                let broadcast_errs = Arc::new(AtomicU64::new(0)); // Atomic counter for failed broadcasts
+                let ongoing_broadcasts = Arc::new(AtomicU64::new(0)); // Atomic counter for ongoing broadcasts
+                let ongoing_waits = Arc::new(AtomicU64::new(0)); // Atomic counter for ongoing waits
+                let wait_oks = Arc::new(AtomicU64::new(0)); // Atomic counter for successful waits
+                let wait_errs = Arc::new(AtomicU64::new(0)); // Atomic counter for failed waits
                 let mempool_document_counter =
                     Arc::new(Mutex::new(BTreeMap::<(Identifier, Identifier), u64>::new())); // Map to track how many documents an identity has in the mempool per contract
 
                 // Broadcast error counters
-                let identity_nonce_error_count = Arc::new(AtomicU32::new(0));
-                let insufficient_balance_error_count = Arc::new(AtomicU32::new(0));
-                let local_rate_limit_error_count = Arc::new(AtomicU32::new(0));
-                let broadcast_connection_error_count = Arc::new(AtomicU32::new(0));
+                let identity_nonce_error_count = Arc::new(AtomicU64::new(0));
+                let insufficient_balance_error_count = Arc::new(AtomicU64::new(0));
+                let local_rate_limit_error_count = Arc::new(AtomicU64::new(0));
+                let broadcast_connection_error_count = Arc::new(AtomicU64::new(0));
+
+                let broadcast_errors_per_code: Arc<DashMap<String, AtomicU64>> = Default::default();
+                let wait_errors_per_code: Arc<DashMap<String, AtomicU64>> = Default::default();
 
                 // Now loop through the number of blocks or seconds the user asked for, preparing and processing state transitions
                 while (block_mode && current_block_info.height < (initial_block_info.height + num_blocks_or_seconds + 2)) // +2 because we don't count the first two initialization blocks
@@ -1219,7 +1223,31 @@ pub async fn run_strategy_task<'s>(
                         let stats_wait_failed = wait_errs.load(Ordering::SeqCst);
                         let stats_ongoing_waits = ongoing_waits.load(Ordering::SeqCst);
                         let stats_ongoing_broadcasts = ongoing_broadcasts.load(Ordering::SeqCst);
-                        tracing::info!("{} secs passed. {} broadcast ({} tx/s): {} successful broadcasts, {} failed broadcasts, {} waiting. Wait results: {} successful, {} failed, {} waiting", stats_elapsed, stats_attempted, stats_rate, stats_broadcast_successful, stats_broadcast_failed, stats_ongoing_broadcasts, stats_wait_successful, stats_wait_failed, stats_ongoing_waits);    
+
+                        let mut stats_broadcast_error_messages = Vec::new();
+                        for entry in broadcast_errors_per_code.iter() {
+                            let code = entry.key();
+                            let count = entry.value().load(Ordering::SeqCst);
+                            stats_broadcast_error_messages.push(format!("{:?} - {}", code, count));
+                        }
+                        let mut stats_wait_error_messages = Vec::new();
+                        for entry in wait_errors_per_code.iter() {
+                            let code = entry.key();
+                            let count = entry.value().load(Ordering::SeqCst);
+                            stats_wait_error_messages.push(format!("{:?} - {}", code, count));
+                        }
+                        let broadcast_error_message = if !stats_broadcast_error_messages.is_empty() {
+                            format!(": {}", stats_broadcast_error_messages.join(", "))
+                        } else {
+                            String::new()
+                        };
+                        let wait_error_message = if !stats_wait_error_messages.is_empty() {
+                            format!(": {}", stats_wait_error_messages.join(", "))
+                        } else {
+                            String::new()
+                        };
+                
+                        tracing::info!("\n\n{} secs passed. {} broadcast ({} tx/s)\nBroadcast results: {} successful, {} failed, {} ongoing.\nWait results: {} successful, {} failed, {} ongoing.\nBroadcast errors: {}\nWait errors: {}\n", stats_elapsed, stats_attempted, stats_rate, stats_broadcast_successful, stats_broadcast_failed, stats_ongoing_broadcasts, stats_wait_successful, stats_wait_failed, stats_ongoing_waits, broadcast_error_message, wait_error_message);
                     }
 
                     let loop_start_time = Instant::now();
@@ -1236,6 +1264,8 @@ pub async fn run_strategy_task<'s>(
                     let local_rate_limit_error_count_clone = local_rate_limit_error_count.clone();
                     let broadcast_connection_error_count_clone =
                         broadcast_connection_error_count.clone();
+                    let broadcast_errors_per_code_clone = broadcast_errors_per_code.clone();
+                    let wait_errors_per_code_clone = wait_errors_per_code.clone();
 
                     // Need to pass app_state.known_contracts to state_transitions_for_block
                     let mut known_contracts_lock = app_state.known_contracts.lock().await;
@@ -1474,6 +1504,7 @@ pub async fn run_strategy_task<'s>(
                                 local_rate_limit_error_count_clone.clone();
                             let broadcast_connection_error_count =
                                 broadcast_connection_error_count_clone.clone();
+                            let broadcast_errors_per_code = broadcast_errors_per_code_clone.clone();
 
                             let mut request_settings = RequestSettings::default();
                             // Time-based strategy body
@@ -1526,6 +1557,18 @@ pub async fn run_strategy_task<'s>(
                                                 Ok((transition_clone, broadcast_result))
                                             },
                                             Err(e) => {
+                                                match e {
+                                                    rs_dapi_client::DapiClientError::Transport(ref e, ..) => {broadcast_errors_per_code
+                                                        .entry(e.code().to_string())
+                                                        .or_insert_with(|| AtomicU64::new(0))
+                                                        .fetch_add(1, Ordering::SeqCst);},
+                                                    _ => {
+                                                        broadcast_errors_per_code
+                                                            .entry("Other".to_string())
+                                                            .or_insert_with(|| AtomicU64::new(0))
+                                                            .fetch_add(1, Ordering::SeqCst);
+                                                    }
+                                                };
                                                 broadcast_errs.fetch_add(1, Ordering::SeqCst);
                                                 tracing::debug!("Error: Failed to broadcast {} transition: {:?}. ID: {}", transition_clone.name(), e, transition_id);
                                                 if e.to_string().contains("Insufficient identity") {
@@ -1835,6 +1878,7 @@ pub async fn run_strategy_task<'s>(
                                 let wait_oks = wait_oks_clone.clone();
                                 let wait_errs = wait_errs_clone.clone();
                                 let ongoing_waits = ongoing_waits_clone.clone();
+                                let wait_errors_per_code = wait_errors_per_code_clone.clone();
 
                                 let mempool_document_counter_clone =
                                     mempool_document_counter.clone();
@@ -1917,6 +1961,18 @@ pub async fn run_strategy_task<'s>(
                                                     Err(e) => {
                                                         wait_errs.fetch_add(1, Ordering::SeqCst);
                                                         ongoing_waits.fetch_sub(1, Ordering::SeqCst);
+                                                        match e {
+                                                            rs_dapi_client::DapiClientError::Transport(ref e, ..) => {wait_errors_per_code
+                                                                .entry(e.code().to_string())
+                                                                .or_insert_with(|| AtomicU64::new(0))
+                                                                .fetch_add(1, Ordering::SeqCst);},
+                                                            _ => {
+                                                                wait_errors_per_code
+                                                                .entry("Other".to_string())
+                                                                .or_insert_with(|| AtomicU64::new(0))
+                                                                .fetch_add(1, Ordering::SeqCst);
+                                                                }
+                                                        };
                                                         tracing::debug!("Error waiting for state transition result: {:?}, {}, Tx ID: {}", e, transition_type, transition_id);
                                                     }
                                                 }
@@ -2114,23 +2170,23 @@ pub async fn run_strategy_task<'s>(
                 };
                 let mut successful_tps: f32 = 0.0;
                 if success_count.load(Ordering::SeqCst)
-                    > (strategy.start_contracts.len() as u32
-                        + strategy.start_identities.number_of_identities as u32)
+                    > (strategy.start_contracts.len() as u64
+                        + strategy.start_identities.number_of_identities as u64)
                 {
                     successful_tps = ((success_count.load(Ordering::SeqCst)
-                        - strategy.start_contracts.len() as u32
-                        - strategy.start_identities.number_of_identities as u32)
+                        - strategy.start_contracts.len() as u64
+                        - strategy.start_identities.number_of_identities as u64)
                         as u64
                         / (load_run_time)) as f32
                 };
                 let mut success_percent = 0;
                 if success_count.load(Ordering::SeqCst)
-                    > (strategy.start_contracts.len() as u32
-                        + strategy.start_identities.number_of_identities as u32)
+                    > (strategy.start_contracts.len() as u64
+                        + strategy.start_identities.number_of_identities as u64)
                 {
                     success_percent = (((success_count.load(Ordering::SeqCst)
-                        - strategy.start_contracts.len() as u32
-                        - strategy.start_identities.number_of_identities as u32)
+                        - strategy.start_contracts.len() as u64
+                        - strategy.start_identities.number_of_identities as u64)
                         as f64
                         / (transition_count
                             - strategy.start_contracts.len() as u32
