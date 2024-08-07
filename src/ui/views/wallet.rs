@@ -31,14 +31,15 @@ use crate::{
     Event,
 };
 
-const WALLET_LOADED_COMMANDS: [ScreenCommandKey; 7] = [
+const WALLET_LOADED_COMMANDS: [ScreenCommandKey; 8] = [
     ScreenCommandKey::new("b", "Refresh wallet utxos and balance"),
     ScreenCommandKey::new("c", "Copy Receive Address"),
     ScreenCommandKey::new("i", "Register identity"),
-    ScreenCommandKey::new("l", "Load known identity"),
+    ScreenCommandKey::new("s", "Switch identity"),
     ScreenCommandKey::new("u", "Get more utxos"),
     ScreenCommandKey::new("C-w", "Clear loaded wallet"),
     ScreenCommandKey::new("p", "Load Evonode Identity"),
+    ScreenCommandKey::new("l", "Load identity by private key"),
 ];
 
 const IDENTITY_LOADED_COMMANDS: [ScreenCommandKey; 5] = [
@@ -210,7 +211,7 @@ impl ScreenController for WalletScreenController {
             },
 
             Event::Key(KeyEvent {
-                code: Key::Char('r'),
+                code: Key::Char('k'),
                 modifiers: KeyModifiers::NONE,
             }) if !self.wallet_loaded => ScreenFeedback::Task {
                 task: Task::Wallet(WalletTask::AddRandomKey),
@@ -226,10 +227,10 @@ impl ScreenController for WalletScreenController {
             },
 
             Event::Key(KeyEvent {
-                code: Key::Char('l'),
+                code: Key::Char('s'),
                 modifiers: KeyModifiers::NONE,
             }) if self.wallet_loaded => ScreenFeedback::Form(Box::new(
-                LoadKnownIdentityFormController::new(self.private_keys_map.clone()),
+                SwitchIdentityFormController::new(self.private_keys_map.clone()),
             )),
 
             Event::Key(KeyEvent {
@@ -293,6 +294,13 @@ impl ScreenController for WalletScreenController {
                 modifiers: KeyModifiers::NONE,
             }) if self.identity_loaded => {
                 ScreenFeedback::Form(Box::new(AddIdentityKeyFormController::new()))
+            }
+
+            Event::Key(KeyEvent {
+                code: Key::Char('l'),
+                modifiers: KeyModifiers::NONE,
+            }) if self.wallet_loaded => {
+                ScreenFeedback::Form(Box::new(AddIdentityPrivateKeyFormController::new()))
             }
 
             Event::Key(KeyEvent {
@@ -516,11 +524,11 @@ impl FormController for SplitUTXOsFormController {
     }
 }
 
-struct LoadKnownIdentityFormController {
+struct SwitchIdentityFormController {
     input: SelectInput<String>,
 }
 
-impl LoadKnownIdentityFormController {
+impl SwitchIdentityFormController {
     fn new(private_keys_map: IdentityPrivateKeysMap) -> Self {
         let unique_keys: HashSet<_> = private_keys_map
             .into_iter()
@@ -535,7 +543,7 @@ impl LoadKnownIdentityFormController {
     }
 }
 
-impl FormController for LoadKnownIdentityFormController {
+impl FormController for SwitchIdentityFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
         match self.input.on_event(event) {
             InputStatus::Done(id_string) => FormStatus::Done {
@@ -547,7 +555,7 @@ impl FormController for LoadKnownIdentityFormController {
     }
 
     fn form_name(&self) -> &'static str {
-        "Load known identity"
+        "Switch identity"
     }
 
     fn step_view(&mut self, frame: &mut Frame, area: Rect) {
@@ -767,6 +775,51 @@ impl FormController for WithdrawFromIdentityFormController {
 
     fn step_name(&self) -> &'static str {
         "Withdrawal amount"
+    }
+
+    fn step_index(&self) -> u8 {
+        0
+    }
+
+    fn steps_number(&self) -> u8 {
+        1
+    }
+}
+
+struct AddIdentityPrivateKeyFormController {
+    input: TextInput<DefaultTextInputParser<String>>, /* TODO: provide parser to always have a
+                                                       * typesafe valid output */
+}
+
+impl AddIdentityPrivateKeyFormController {
+    fn new() -> Self {
+        Self {
+            input: TextInput::new("64 hex character or WIF private key"),
+        }
+    }
+}
+
+impl FormController for AddIdentityPrivateKeyFormController {
+    fn on_event(&mut self, event: KeyEvent) -> FormStatus {
+        match self.input.on_event(event) {
+            InputStatus::Done(private_key) => FormStatus::Done {
+                task: Task::Identity(IdentityTask::AddByPrivateKey(private_key)),
+                block: false,
+            },
+            status => status.into(),
+        }
+    }
+
+    fn form_name(&self) -> &'static str {
+        "Add identity with private key"
+    }
+
+    fn step_view(&mut self, frame: &mut Frame, area: Rect) {
+        self.input.view(frame, area)
+    }
+
+    fn step_name(&self) -> &'static str {
+        "Private key"
     }
 
     fn step_index(&self) -> u8 {
