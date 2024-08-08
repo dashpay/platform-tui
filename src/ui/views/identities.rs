@@ -21,6 +21,8 @@ use crate::{
     Event,
 };
 
+use super::wallet::AddPrivateKeysFormController;
+
 const COMMAND_KEYS: [ScreenCommandKey; 4] = [
     ScreenCommandKey::new("q", "Back to Main"),
     ScreenCommandKey::new("i", "Get Identity by ID"),
@@ -96,6 +98,7 @@ impl ScreenController for IdentitiesScreenController {
                 }
             }
 
+            // Backend event handling
             Event::Backend(BackendEvent::TaskCompleted {
                 task: Task::FetchIdentityById(..),
                 execution_result,
@@ -103,33 +106,19 @@ impl ScreenController for IdentitiesScreenController {
                 self.info = Info::new_from_result(execution_result);
                 ScreenFeedback::Redraw
             }
-
-            Event::Backend(BackendEvent::TaskCompleted {
-                task: Task::Identity(IdentityTask::TransferCredits(..)),
-                execution_result,
-            }) => {
-                self.info = Info::new_from_result(execution_result);
-                ScreenFeedback::Redraw
-            }
-
             Event::Backend(BackendEvent::TaskCompletedStateChange {
-                task: Task::Identity(IdentityTask::TransferCredits(..)),
+                task: Task::Identity(IdentityTask::LoadIdentityById(_)),
+                execution_result: _,
+                app_state_update: _,
+            }) => ScreenFeedback::Form(Box::new(AddPrivateKeysFormController::new())),
+            Event::Backend(BackendEvent::TaskCompletedStateChange {
+                task: Task::Identity(_),
                 execution_result,
                 app_state_update: _,
             }) => {
                 self.info = Info::new_from_result(execution_result);
                 ScreenFeedback::Redraw
             }
-
-            Event::Backend(BackendEvent::TaskCompletedStateChange {
-                task: Task::Identity(IdentityTask::RegisterDPNSName(..)),
-                execution_result,
-                app_state_update: _,
-            }) => {
-                self.info = Info::new_from_result(execution_result);
-                ScreenFeedback::Redraw
-            }
-
             Event::Backend(BackendEvent::TaskCompleted {
                 task: Task::Identity(_),
                 execution_result,

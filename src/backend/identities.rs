@@ -1,6 +1,7 @@
 //! Identities backend logic.
 
 use dashcore::hashes::Hash;
+use itertools::Itertools;
 use std::{
     collections::{BTreeMap, HashSet},
     time::Duration,
@@ -27,7 +28,9 @@ use dash_sdk::{
     },
     Sdk,
 };
-use dpp::{dashcore::Network, data_contract::DataContract};
+use dpp::{
+    dashcore::Network, data_contract::DataContract, identity::hash::IdentityPublicKeyHashMethodsV0,
+};
 use dpp::{
     dashcore::{self, key::Secp256k1},
     identity::SecurityLevel,
@@ -110,7 +113,8 @@ pub enum IdentityTask {
     TransferCredits(String, f64),
     LoadEvonodeIdentity(String, String),
     RegisterDPNSName(String),
-    AddByPrivateKey(String),
+    LoadIdentityById(String),
+    AddPrivateKeys(Vec<String>),
 }
 
 impl AppState {
@@ -551,18 +555,68 @@ impl AppState {
                     app_state_update,
                 }
             }
-            IdentityTask::AddByPrivateKey(ref private_key_string) => {
-                Self::add_identity_by_private_key_as_string(&private_key_string, sdk).await;
-        
+            IdentityTask::AddPrivateKeys(ref private_key_strings) => {
+                let loaded_identity_lock = self.loaded_identity.lock().await;
+                let _ = Self::add_identity_with_private_keys_as_strings(
+                    &self,
+                    &loaded_identity_lock
+                        .clone()
+                        .expect("An identity should be loaded")
+                        .id(),
+                    &private_key_strings,
+                    sdk,
+                )
+                .await;
+
                 let loaded_identity_lock = self.loaded_identity.lock().await;
                 let loaded_identity_update = MutexGuard::map(loaded_identity_lock, |opt| {
                     opt.as_mut().expect("identity was set above")
                 });
-    
+
                 BackendEvent::TaskCompletedStateChange {
                     task: Task::Identity(task),
                     execution_result: Ok("Added identity".into()),
                     app_state_update: AppStateUpdate::LoadedIdentity(loaded_identity_update),
+                }
+            }
+            IdentityTask::LoadIdentityById(ref identity_id_string) => {
+                let identity_id =
+                    match Identifier::from_string(identity_id_string, Encoding::Base58) {
+                        Ok(id) => id,
+                        Err(e) => {
+                            return BackendEvent::TaskCompleted {
+                                task: Task::Identity(task),
+                                execution_result: Err(format!(
+                                    "Error converting base58 string to Identifier: {}",
+                                    e
+                                )),
+                            };
+                        }
+                    };
+                let identity_fetch_result = Identity::fetch_by_identifier(sdk, identity_id).await;
+                match identity_fetch_result {
+                    Ok(Some(identity)) => {
+                        let mut loaded_identity_lock = self.loaded_identity.lock().await;
+                        loaded_identity_lock.replace(identity);
+                        let loaded_identity_update = MutexGuard::map(loaded_identity_lock, |opt| {
+                            opt.as_mut().expect("identity was set above")
+                        });
+                        BackendEvent::TaskCompletedStateChange {
+                            task: Task::Identity(task),
+                            execution_result: Ok("Loaded identity from base58 id".into()),
+                            app_state_update: AppStateUpdate::LoadedIdentity(
+                                loaded_identity_update,
+                            ),
+                        }
+                    }
+                    Ok(None) => BackendEvent::TaskCompleted {
+                        task: Task::Identity(task),
+                        execution_result: Err("No identity found with that id".into()),
+                    },
+                    Err(e) => BackendEvent::TaskCompleted {
+                        task: Task::Identity(task),
+                        execution_result: Err(format!("Error fetching identity by id: {}", e)),
+                    },
                 }
             }
         }
@@ -1289,58 +1343,102 @@ impl AppState {
         }
     }
 
-    pub async fn add_identity_by_private_key_as_string<'s>(
-        private_key: &String,
-        sdk: &Sdk
+    pub async fn add_identity_with_private_keys_as_strings<'s>(
+        &self,
+        identity_id: &Identifier,
+        private_keys_as_strings: &Vec<String>,
+        sdk: &Sdk,
     ) -> Result<(), WalletError> {
-        let private_key = match private_key.len() {
-            64 => {
-                // hex
-                let bytes = match hex::decode(private_key) {
-                    Ok(bytes) => bytes,
-                    Err(_) => return Err(WalletError::Custom("Failed to decode hex".to_string())),
-                };
-                match PrivateKey::from_slice(bytes.as_slice(), Network::Testnet) {
-                    Ok(key) => key,
-                    Err(_) => return Err(WalletError::Custom("Expected private key".to_string())),
+        let private_keys = private_keys_as_strings
+            .iter()
+            .map(|private_key| match private_key.len() {
+                64 => {
+                    // hex
+                    let bytes = match hex::decode(private_key) {
+                        Ok(bytes) => bytes,
+                        Err(_) => {
+                            return Err(WalletError::Custom("Failed to decode hex".to_string()))
+                        }
+                    };
+                    match PrivateKey::from_slice(bytes.as_slice(), Network::Testnet) {
+                        Ok(key) => Ok(key),
+                        Err(_) => {
+                            return Err(WalletError::Custom("Expected private key".to_string()))
+                        }
+                    }
                 }
-            }
-            51 | 52 => {
-                // wif
-                match PrivateKey::from_wif(private_key) {
-                    Ok(key) => key,
-                    Err(_) => return Err(WalletError::Custom("Expected WIF key".to_string())),
+                51 | 52 => {
+                    // wif
+                    match PrivateKey::from_wif(private_key) {
+                        Ok(key) => Ok(key),
+                        Err(_) => return Err(WalletError::Custom("Expected WIF key".to_string())),
+                    }
                 }
-            }
-            _ => {
-                return Err(WalletError::Custom(
-                    "Private key can't be decoded".to_string(),
-                ));
-            }
-        };
-        Ok(Self::add_identity_by_private_key(private_key, sdk).await)
+                _ => {
+                    return Err(WalletError::Custom(
+                        "Private key can't be decoded".to_string(),
+                    ));
+                }
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Self::add_identity_with_private_keys(&self, identity_id, private_keys, sdk).await
     }
 
-    pub async fn add_identity_by_private_key<'s>(
-        private_key: PrivateKey,
-        sdk: &Sdk
-    ) {
-        let secp = Secp256k1::new();
-        let public_key = private_key.public_key(&secp);
-        let query = Identifier::
-        let mut identity: Identity = Identity::fetch(sdk, query).await;
-
-        match identity.refresh_identity(sdk).await {
-            Ok(identity) => {
-                // todo
-            },
-            Err(_) => {
-                // todo
+    pub async fn add_identity_with_private_keys<'s>(
+        &self,
+        identity_id: &Identifier,
+        private_keys: Vec<PrivateKey>,
+        sdk: &Sdk,
+    ) -> Result<(), WalletError> {
+        let identity_fetch_result = Identity::fetch(sdk, *identity_id).await;
+        let identity = match identity_fetch_result {
+            Ok(Some(identity)) => identity,
+            Ok(None) => {
+                return Err(WalletError::Custom(
+                    "No identity found with that ID".to_string(),
+                ));
+            }
+            Err(e) => {
+                return Err(WalletError::Custom(format!(
+                    "Error fetching identity: {}",
+                    e
+                )));
             }
         };
 
         let mut loaded_identity_lock = self.loaded_identity.lock().await;
-        *loaded_identity_lock = Some(identity);
+        *loaded_identity_lock = Some(identity.clone());
+
+        let mut identity_private_keys_map_lock = self.identity_private_keys.lock().await;
+
+        for private_key in private_keys.iter() {
+            let secp = Secp256k1::new();
+            let public_key_hash = private_key.public_key(&secp).pubkey_hash();
+            let key_id = identity
+                .public_keys()
+                .iter()
+                .filter_map(|(key_id, identity_public_key)| {
+                    if identity_public_key.public_key_hash().unwrap()
+                        == public_key_hash.to_byte_array()
+                    {
+                        Some(key_id)
+                    } else {
+                        None
+                    }
+                })
+                .next();
+
+            if let Some(key_id) = key_id {
+                identity_private_keys_map_lock
+                    .insert((*identity_id, *key_id), private_key.to_bytes().to_vec());
+            } else {
+                return Err(WalletError::Custom(
+                    "Public key hash does not match any identity public key".to_string(),
+                ));
+            }
+        }
+
+        Ok(())
     }
 }
 
