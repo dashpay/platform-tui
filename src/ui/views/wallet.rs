@@ -1,6 +1,9 @@
 //! Screens and forms related to wallet management.
 
-use dpp::{dashcore::psbt::serialize::Serialize, platform_value::string_encoding::Encoding};
+use dpp::{
+    dashcore::psbt::serialize::Serialize, platform_value::string_encoding::Encoding,
+    prelude::Identifier,
+};
 
 mod add_identity_key;
 
@@ -31,14 +34,15 @@ use crate::{
     Event,
 };
 
-const WALLET_LOADED_COMMANDS: [ScreenCommandKey; 7] = [
+const WALLET_LOADED_COMMANDS: [ScreenCommandKey; 8] = [
     ScreenCommandKey::new("b", "Refresh wallet utxos and balance"),
     ScreenCommandKey::new("c", "Copy Receive Address"),
     ScreenCommandKey::new("i", "Register identity"),
-    ScreenCommandKey::new("l", "Load known identity"),
+    ScreenCommandKey::new("s", "Switch identity"),
     ScreenCommandKey::new("u", "Get more utxos"),
     ScreenCommandKey::new("C-w", "Clear loaded wallet"),
-    ScreenCommandKey::new("p", "Load Evonode Identity"),
+    ScreenCommandKey::new("m", "Load masternode identity"),
+    ScreenCommandKey::new("l", "Load identity by private key(s)"),
 ];
 
 const IDENTITY_LOADED_COMMANDS: [ScreenCommandKey; 5] = [
@@ -210,7 +214,7 @@ impl ScreenController for WalletScreenController {
             },
 
             Event::Key(KeyEvent {
-                code: Key::Char('r'),
+                code: Key::Char('k'),
                 modifiers: KeyModifiers::NONE,
             }) if !self.wallet_loaded => ScreenFeedback::Task {
                 task: Task::Wallet(WalletTask::AddRandomKey),
@@ -226,10 +230,10 @@ impl ScreenController for WalletScreenController {
             },
 
             Event::Key(KeyEvent {
-                code: Key::Char('l'),
+                code: Key::Char('s'),
                 modifiers: KeyModifiers::NONE,
             }) if self.wallet_loaded => ScreenFeedback::Form(Box::new(
-                LoadKnownIdentityFormController::new(self.private_keys_map.clone()),
+                SwitchIdentityFormController::new(self.private_keys_map.clone()),
             )),
 
             Event::Key(KeyEvent {
@@ -296,6 +300,11 @@ impl ScreenController for WalletScreenController {
             }
 
             Event::Key(KeyEvent {
+                code: Key::Char('l'),
+                modifiers: KeyModifiers::NONE,
+            }) => ScreenFeedback::Form(Box::new(LoadIdentityByIdFormController::new())),
+
+            Event::Key(KeyEvent {
                 code: Key::Char('e'),
                 modifiers: KeyModifiers::CONTROL,
             }) if self.identity_loaded => {
@@ -318,10 +327,10 @@ impl ScreenController for WalletScreenController {
             }
 
             Event::Key(KeyEvent {
-                code: Key::Char('p'),
+                code: Key::Char('m'),
                 modifiers: KeyModifiers::NONE,
             }) if self.wallet_loaded => {
-                ScreenFeedback::Form(Box::new(LoadEvonodeIdentityFormController::new()))
+                ScreenFeedback::Form(Box::new(LoadMasternodeIdentityFormController::new()))
             }
 
             Event::Backend(
@@ -516,11 +525,11 @@ impl FormController for SplitUTXOsFormController {
     }
 }
 
-struct LoadKnownIdentityFormController {
+struct SwitchIdentityFormController {
     input: SelectInput<String>,
 }
 
-impl LoadKnownIdentityFormController {
+impl SwitchIdentityFormController {
     fn new(private_keys_map: IdentityPrivateKeysMap) -> Self {
         let unique_keys: HashSet<_> = private_keys_map
             .into_iter()
@@ -535,7 +544,7 @@ impl LoadKnownIdentityFormController {
     }
 }
 
-impl FormController for LoadKnownIdentityFormController {
+impl FormController for SwitchIdentityFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
         match self.input.on_event(event) {
             InputStatus::Done(id_string) => FormStatus::Done {
@@ -547,7 +556,7 @@ impl FormController for LoadKnownIdentityFormController {
     }
 
     fn form_name(&self) -> &'static str {
-        "Load known identity"
+        "Switch identity"
     }
 
     fn step_view(&mut self, frame: &mut Frame, area: Rect) {
@@ -582,14 +591,14 @@ fn display_wallet(wallet: &Wallet) -> String {
     }
 }
 
-struct LoadEvonodeIdentityFormController {
+struct LoadMasternodeIdentityFormController {
     input: ComposedInput<(
         Field<TextInput<DefaultTextInputParser<String>>>,
         Field<TextInput<DefaultTextInputParser<String>>>,
     )>,
 }
 
-impl LoadEvonodeIdentityFormController {
+impl LoadMasternodeIdentityFormController {
     fn new() -> Self {
         Self {
             input: ComposedInput::new((
@@ -606,7 +615,7 @@ impl LoadEvonodeIdentityFormController {
     }
 }
 
-impl FormController for LoadEvonodeIdentityFormController {
+impl FormController for LoadMasternodeIdentityFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
         match self.input.on_event(event) {
             InputStatus::Done((pro_tx_hash, private_key)) => FormStatus::Done {
@@ -767,6 +776,122 @@ impl FormController for WithdrawFromIdentityFormController {
 
     fn step_name(&self) -> &'static str {
         "Withdrawal amount"
+    }
+
+    fn step_index(&self) -> u8 {
+        0
+    }
+
+    fn steps_number(&self) -> u8 {
+        1
+    }
+}
+
+pub struct AddPrivateKeysFormController {
+    private_keys: Vec<String>,
+    input: ComposedInput<(
+        Field<TextInput<DefaultTextInputParser<String>>>,
+        Field<SelectInput<String>>,
+    )>,
+}
+
+impl AddPrivateKeysFormController {
+    pub fn new() -> Self {
+        Self {
+            private_keys: vec![],
+            input: ComposedInput::new((
+                Field::new("Private key", TextInput::new("Private key")),
+                Field::new(
+                    "Add another private key?",
+                    SelectInput::new(vec!["No".to_string(), "Yes".to_string()]),
+                ),
+            )),
+        }
+    }
+}
+
+impl FormController for AddPrivateKeysFormController {
+    fn on_event(&mut self, event: KeyEvent) -> FormStatus {
+        match self.input.on_event(event) {
+            InputStatus::Done((private_key, another)) => {
+                self.private_keys.push(private_key);
+
+                if another == "Yes" {
+                    self.input = ComposedInput::new((
+                        Field::new("Private key", TextInput::new("Private key")),
+                        Field::new(
+                            "Add another private key?",
+                            SelectInput::new(vec!["No".to_string(), "Yes".to_string()]),
+                        ),
+                    ));
+                    FormStatus::Redraw
+                } else {
+                    FormStatus::Done {
+                        task: Task::Identity(IdentityTask::AddPrivateKeys(
+                            self.private_keys.clone(),
+                        )),
+                        block: false,
+                    }
+                }
+            }
+            status => status.into(),
+        }
+    }
+
+    fn form_name(&self) -> &'static str {
+        "Add identity with private key"
+    }
+
+    fn step_view(&mut self, frame: &mut Frame, area: Rect) {
+        self.input.view(frame, area)
+    }
+
+    fn step_name(&self) -> &'static str {
+        "Private key"
+    }
+
+    fn step_index(&self) -> u8 {
+        0
+    }
+
+    fn steps_number(&self) -> u8 {
+        1
+    }
+}
+
+struct LoadIdentityByIdFormController {
+    input: TextInput<DefaultTextInputParser<String>>,
+}
+
+impl LoadIdentityByIdFormController {
+    fn new() -> Self {
+        Self {
+            input: TextInput::new("Identity base58 ID"),
+        }
+    }
+}
+
+impl FormController for LoadIdentityByIdFormController {
+    fn on_event(&mut self, event: KeyEvent) -> FormStatus {
+        match self.input.on_event(event) {
+            InputStatus::Done(identity_id) => FormStatus::Done {
+                task: Task::Identity(IdentityTask::LoadIdentityById(identity_id)),
+                block: false,
+            },
+            status => status.into(),
+        }
+    }
+
+    fn form_name(&self) -> &'static str {
+        "Add identity with private keys"
+    }
+
+    fn step_view(&mut self, frame: &mut Frame, area: Rect) {
+        self.input.view(frame, area)
+    }
+
+    fn step_name(&self) -> &'static str {
+        "Add identity by id"
     }
 
     fn step_index(&self) -> u8 {
