@@ -5,7 +5,10 @@ use std::collections::BTreeMap;
 use dash_sdk::platform::DataContract;
 use dpp::data_contract::{
     accessors::v0::DataContractV0Getters,
-    document_type::random_document::{DocumentFieldFillSize, DocumentFieldFillType},
+    document_type::{
+        random_document::{DocumentFieldFillSize, DocumentFieldFillType},
+        DocumentType,
+    },
 };
 use itertools::Itertools;
 use strategy_tests::{
@@ -16,10 +19,13 @@ use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
 use crate::{
     backend::{StrategyContractNames, StrategyTask, Task},
-    ui::form::{ComposedInput, Field, FormController, FormStatus, Input, InputStatus, SelectInput},
+    ui::form::{
+        parsers::DefaultTextInputParser, ComposedInput, Field, FormController, FormStatus, Input,
+        InputStatus, SelectInput, TextInput,
+    },
 };
 
-// First they need to select a contract, then move to a new form with the document types
+// Select a contract, then move to a new form with the document types
 pub(super) struct StrategyOpDocumentFormController {
     input: SelectInput<String>,
     contract_specific_form: Option<Box<dyn FormController>>,
@@ -154,14 +160,14 @@ impl FormController for StrategyOpDocumentFormController {
 
 pub(super) struct DocumentTypeFormController {
     input: ComposedInput<(
-        Field<SelectInput<String>>, // Document types
-        Field<SelectInput<String>>, // Fill size
-        Field<SelectInput<String>>, // Fill type
-        Field<SelectInput<u16>>,    // Times per block
-        Field<SelectInput<f64>>,    // Chance per block
+        Field<SelectInput<String>>,                    // Document types
+        Field<SelectInput<String>>,                    // Operation type
+        Field<TextInput<DefaultTextInputParser<u16>>>, // Times per block
+        Field<SelectInput<f64>>,                       // Chance per block
     )>,
     selected_strategy_name: String,
     selected_contract: DataContract,
+    document_insert_form: Option<Box<dyn FormController>>,
 }
 
 impl DocumentTypeFormController {
@@ -174,6 +180,166 @@ impl DocumentTypeFormController {
             input: ComposedInput::new((
                 Field::new("Select Document Type", SelectInput::new(document_types)),
                 Field::new(
+                    "Select Operation Type",
+                    SelectInput::new(vec![
+                        "DocumentInsertRandom".to_string(),
+                        "DocumentDeleteRandom".to_string(),
+                    ]),
+                ),
+                Field::new("Times per block", TextInput::new("Enter a whole number")),
+                Field::new(
+                    "Chance per block",
+                    SelectInput::new(vec![1.0, 0.75, 0.5, 0.25, 0.1]),
+                ),
+            )),
+            selected_strategy_name,
+            selected_contract,
+            document_insert_form: None,
+        }
+    }
+
+    fn set_document_insert_form(
+        &mut self,
+        contract: DataContract,
+        document_type: DocumentType,
+        frequency: Frequency,
+    ) {
+        self.document_insert_form = Some(Box::new(DocumentInsertFormController::new(
+            self.selected_strategy_name.clone(),
+            contract,
+            document_type,
+            frequency,
+        )));
+    }
+}
+
+impl FormController for DocumentTypeFormController {
+    fn on_event(&mut self, event: KeyEvent) -> FormStatus {
+        if let Some(form) = &mut self.document_insert_form {
+            form.on_event(event)
+        } else {
+            match self.input.on_event(event) {
+                InputStatus::Done((
+                    document_type,
+                    operation_type,
+                    times_per_block,
+                    chance_per_block,
+                )) => {
+                    let action = match operation_type.as_str() {
+                        "DocumentInsertRandom" => DocumentAction::DocumentActionInsertRandom(
+                            DocumentFieldFillType::DoNotFillIfNotRequired, // dummy value
+                            DocumentFieldFillSize::MinDocumentFillSize,    // dummy value
+                        ),
+                        "DocumentDeleteRandom" => DocumentAction::DocumentActionDelete,
+                        _ => panic!("Unrecognized string for Operation Type in Document Operation"),
+                    };
+
+                    match action {
+                        DocumentAction::DocumentActionInsertRandom(_, _) => {
+                            self.set_document_insert_form(
+                                self.selected_contract.clone(),
+                                self.selected_contract
+                                    .document_type_cloned_for_name(&document_type)
+                                    .expect("Expected the document type to be there"),
+                                Frequency {
+                                    times_per_block_range: times_per_block..times_per_block + 1,
+                                    chance_per_block: Some(chance_per_block),
+                                },
+                            );
+                            FormStatus::Redraw
+                        }
+                        DocumentAction::DocumentActionDelete => FormStatus::Done {
+                            task: Task::Strategy(StrategyTask::AddOperation {
+                                strategy_name: self.selected_strategy_name.clone(),
+                                operation: Operation {
+                                    op_type: OperationType::Document(DocumentOp {
+                                        contract: self.selected_contract.clone(),
+                                        document_type: self
+                                            .selected_contract
+                                            .document_type_cloned_for_name(&document_type)
+                                            .expect("Expected the document type to be there"),
+                                        action,
+                                    }),
+                                    frequency: Frequency {
+                                        times_per_block_range: times_per_block..times_per_block + 1,
+                                        chance_per_block: Some(chance_per_block),
+                                    },
+                                },
+                            }),
+                            block: false,
+                        },
+                        DocumentAction::DocumentActionInsertSpecific(_, _, _, _) => todo!(),
+                        DocumentAction::DocumentActionReplaceRandom => todo!(),
+                        DocumentAction::DocumentActionTransferRandom => todo!(),
+                    }
+                }
+                status => status.into(),
+            }
+        }
+    }
+
+    fn form_name(&self) -> &'static str {
+        if let Some(form) = &self.document_insert_form {
+            form.form_name()
+        } else {
+            "Document type, operation, and frequency"
+        }
+    }
+
+    fn step_view(&mut self, frame: &mut Frame, area: Rect) {
+        if let Some(form) = &mut self.document_insert_form {
+            form.step_view(frame, area)
+        } else {
+            self.input.view(frame, area)
+        }
+    }
+
+    fn step_name(&self) -> &'static str {
+        if let Some(form) = &self.document_insert_form {
+            form.step_name()
+        } else {
+            self.input.step_name()
+        }
+    }
+
+    fn step_index(&self) -> u8 {
+        if let Some(form) = &self.document_insert_form {
+            form.step_index()
+        } else {
+            self.input.step_index()
+        }
+    }
+
+    fn steps_number(&self) -> u8 {
+        if let Some(form) = &self.document_insert_form {
+            form.steps_number()
+        } else {
+            self.input.steps_number()
+        }
+    }
+}
+
+pub(super) struct DocumentInsertFormController {
+    input: ComposedInput<(
+        Field<SelectInput<String>>, // Fill size
+        Field<SelectInput<String>>, // Fill type
+    )>,
+    selected_strategy_name: String,
+    selected_contract: DataContract,
+    selected_document_type: DocumentType,
+    frequency: Frequency,
+}
+
+impl DocumentInsertFormController {
+    pub(super) fn new(
+        selected_strategy_name: String,
+        selected_contract: DataContract,
+        selected_document_type: DocumentType,
+        frequency: Frequency,
+    ) -> Self {
+        Self {
+            input: ComposedInput::new((
+                Field::new(
                     "How much data to populate the document with?",
                     SelectInput::new(vec![
                         "Minimum".to_string(),
@@ -185,31 +351,19 @@ impl DocumentTypeFormController {
                     "Populate not-required fields?",
                     SelectInput::new(vec!["No".to_string(), "Yes".to_string()]),
                 ),
-                Field::new(
-                    "Times per block",
-                    SelectInput::new(vec![1, 2, 5, 10, 20, 24]),
-                ),
-                Field::new(
-                    "Chance per block",
-                    SelectInput::new(vec![1.0, 0.75, 0.5, 0.25, 0.1]),
-                ),
             )),
             selected_strategy_name,
             selected_contract,
+            selected_document_type,
+            frequency,
         }
     }
 }
 
-impl FormController for DocumentTypeFormController {
+impl FormController for DocumentInsertFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
         match self.input.on_event(event) {
-            InputStatus::Done((
-                document_type,
-                fill_size_string,
-                fill_type_string,
-                times_per_block,
-                chance_per_block,
-            )) => {
+            InputStatus::Done((fill_size_string, fill_type_string)) => {
                 let fill_size = match &fill_size_string as &str {
                     "Minimum" => DocumentFieldFillSize::MinDocumentFillSize,
                     "Maximum" => DocumentFieldFillSize::MaxDocumentFillSize,
@@ -227,24 +381,19 @@ impl FormController for DocumentTypeFormController {
                         DocumentFieldFillType::DoNotFillIfNotRequired
                     }
                 };
+
+                let action = DocumentAction::DocumentActionInsertRandom(fill_type, fill_size);
+
                 FormStatus::Done {
                     task: Task::Strategy(StrategyTask::AddOperation {
                         strategy_name: self.selected_strategy_name.clone(),
                         operation: Operation {
                             op_type: OperationType::Document(DocumentOp {
                                 contract: self.selected_contract.clone(),
-                                document_type: self
-                                    .selected_contract
-                                    .document_type_cloned_for_name(&document_type)
-                                    .expect("Expected the document type to be there"),
-                                action: DocumentAction::DocumentActionInsertRandom(
-                                    fill_type, fill_size,
-                                ),
+                                document_type: self.selected_document_type.clone(),
+                                action,
                             }),
-                            frequency: Frequency {
-                                times_per_block_range: times_per_block..times_per_block + 1,
-                                chance_per_block: Some(chance_per_block),
-                            },
+                            frequency: self.frequency.clone(),
                         },
                     }),
                     block: false,
@@ -255,7 +404,7 @@ impl FormController for DocumentTypeFormController {
     }
 
     fn form_name(&self) -> &'static str {
-        "Document insert random"
+        "Document insert random options"
     }
 
     fn step_view(&mut self, frame: &mut Frame, area: Rect) {

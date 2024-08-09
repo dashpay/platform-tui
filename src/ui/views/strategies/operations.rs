@@ -106,7 +106,7 @@ impl OperationsScreenController {
                 ("No strategy selected".to_string(), None, vec![])
             };
 
-        let info = Info::new_fixed(&info_text);
+        let info = Info::new_scrollable(&info_text);
 
         Self {
             info,
@@ -226,6 +226,18 @@ impl ScreenController for OperationsScreenController {
                     ScreenFeedback::None
                 }
             }
+
+            // Scrolling
+            Event::Key(
+                key_event @ KeyEvent {
+                    code: Key::Down | Key::Up,
+                    modifiers: KeyModifiers::NONE,
+                },
+            ) => {
+                self.info.on_event(key_event);
+                ScreenFeedback::Redraw
+            }
+
             Event::Backend(
                 BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
                     strategy_name,
@@ -291,7 +303,7 @@ impl ScreenController for OperationsScreenController {
             "Select a strategy to view its operations.".to_string()
         };
 
-        self.info = Info::new_fixed(&display_text);
+        self.info = Info::new_scrollable(&display_text);
         self.info.view(frame, area);
     }
 }

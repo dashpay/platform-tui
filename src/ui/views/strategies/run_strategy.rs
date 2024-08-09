@@ -133,8 +133,8 @@ impl ScreenController for RunStrategyScreenController {
                         reason,
                     } => {
                         format!(
-                            "Strategy '{}' failed to complete. Reason: {}",
-                            strategy_name, reason
+                            "Strategy '{}' failed to complete. Reached block/second {}. Reason: {}",
+                            strategy_name, reached_block_height, reason
                         )
                     }
                 };
@@ -165,7 +165,7 @@ pub(super) struct RunStrategyFormController {
         Field<SelectInput<String>>,
         Field<TextInput<DefaultTextInputParser<u64>>>,
         Field<SelectInput<String>>,
-        // Field<TextInput<DefaultTextInputParser<f64>>>,
+        Field<TextInput<DefaultTextInputParser<f64>>>,
         Field<SelectInput<String>>,
     )>,
     selected_strategy: String,
@@ -187,10 +187,10 @@ impl RunStrategyFormController {
                     "Verify state transition proofs? (Only applies to block mode)",
                     SelectInput::new(vec!["No".to_string(), "Yes".to_string()]),
                 ),
-                // Field::new(
-                //     "Amount of Dash to top up identities who run out. Enter 0 for no top ups.",
-                //     TextInput::new("Enter Dash amount (decimals ok)"),
-                // ),
+                Field::new(
+                    "Amount of Dash to top up identities who run out. Enter 0 for no top ups.",
+                    TextInput::new("Enter Dash amount (decimals ok). Note topping up will halt transaction broadcasting temporarily."),
+                ),
                 Field::new(
                     "Confirm you would like to run the strategy",
                     SelectInput::new(vec!["No".to_string(), "Yes".to_string()]),
@@ -204,8 +204,8 @@ impl RunStrategyFormController {
 impl FormController for RunStrategyFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
         match self.input.on_event(event) {
-            InputStatus::Done((mode, num_blocks, verify_proofs, confirm)) => {
-                let credit_amount = (0.0 * 100_000_000_000.0) as u64;
+            InputStatus::Done((mode, num_blocks, verify_proofs, top_up_amount_dash, confirm)) => {
+                let top_up_amount_credits = (top_up_amount_dash * 100_000_000_000.0) as u64;
                 if confirm == "Yes" {
                     if verify_proofs == "Yes" {
                         if mode == "Block" {
@@ -216,7 +216,7 @@ impl FormController for RunStrategyFormController {
                                     num_blocks,
                                     true,
                                     true,
-                                    credit_amount,
+                                    top_up_amount_credits,
                                 )),
                                 block: true,
                             }
@@ -228,7 +228,7 @@ impl FormController for RunStrategyFormController {
                                     num_blocks,
                                     true,
                                     false,
-                                    credit_amount,
+                                    top_up_amount_credits,
                                 )),
                                 block: true,
                             }
@@ -242,7 +242,7 @@ impl FormController for RunStrategyFormController {
                                     num_blocks,
                                     false,
                                     true,
-                                    credit_amount,
+                                    top_up_amount_credits,
                                 )),
                                 block: true,
                             }
@@ -254,7 +254,7 @@ impl FormController for RunStrategyFormController {
                                     num_blocks,
                                     false,
                                     false,
-                                    credit_amount,
+                                    top_up_amount_credits,
                                 )),
                                 block: true,
                             }

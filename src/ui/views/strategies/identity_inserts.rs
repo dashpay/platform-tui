@@ -8,10 +8,15 @@ use tuirealm::{
 
 use crate::{
     backend::{AppState, AppStateUpdate, BackendEvent, StrategyTask, Task},
-    ui::form::{ComposedInput, Field, FormController, FormStatus, Input, InputStatus, SelectInput},
-    ui::screen::{
-        utils::impl_builder, widgets::info::Info, ScreenCommandKey, ScreenController,
-        ScreenFeedback, ScreenToggleKey,
+    ui::{
+        form::{
+            parsers::DefaultTextInputParser, ComposedInput, Field, FormController, FormStatus,
+            Input, InputStatus, SelectInput, TextInput,
+        },
+        screen::{
+            utils::impl_builder, widgets::info::Info, ScreenCommandKey, ScreenController,
+            ScreenFeedback, ScreenToggleKey,
+        },
     },
     Event,
 };
@@ -189,7 +194,10 @@ impl ScreenController for IdentityInsertsScreenController {
 }
 
 pub(super) struct StrategyIdentityInsertsFormController {
-    input: ComposedInput<(Field<SelectInput<u16>>, Field<SelectInput<f64>>)>,
+    input: ComposedInput<(
+        Field<TextInput<DefaultTextInputParser<u16>>>,
+        Field<SelectInput<f64>>,
+    )>,
     selected_strategy: String,
 }
 
@@ -197,10 +205,7 @@ impl StrategyIdentityInsertsFormController {
     pub(super) fn new(selected_strategy: String) -> Self {
         StrategyIdentityInsertsFormController {
             input: ComposedInput::new((
-                Field::new(
-                    "Times per block",
-                    SelectInput::new(vec![1, 2, 5, 10, 20, 40, 100, 1000]),
-                ),
+                Field::new("Times per block", TextInput::new("Enter a whole number")),
                 Field::new(
                     "Chance per block",
                     SelectInput::new(vec![1.0, 0.9, 0.75, 0.5, 0.25, 0.1, 0.05, 0.01]),
