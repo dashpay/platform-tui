@@ -1205,8 +1205,8 @@ pub async fn run_strategy_task<'s>(
                 let local_rate_limit_error_count = Arc::new(AtomicU64::new(0));
                 let broadcast_connection_error_count = Arc::new(AtomicU64::new(0));
 
-                let broadcast_errors_per_code: Arc<DashMap<String, AtomicU64>> = Default::default();
-                let wait_errors_per_code: Arc<DashMap<String, AtomicU64>> = Default::default();
+                let broadcast_errors_per_code: Arc<DashMap<Code, AtomicU64>> = Default::default();
+                let wait_errors_per_code: Arc<DashMap<Code, AtomicU64>> = Default::default();
 
                 // Now loop through the number of blocks or seconds the user asked for, preparing and processing state transitions
                 while (block_mode && current_block_info.height < (initial_block_info.height + num_blocks_or_seconds + 2)) // +2 because we don't count the first two initialization blocks
@@ -1559,12 +1559,12 @@ pub async fn run_strategy_task<'s>(
                                             Err(e) => {
                                                 match e {
                                                     rs_dapi_client::DapiClientError::Transport(ref e, ..) => {broadcast_errors_per_code
-                                                        .entry(e.code().to_string())
+                                                        .entry(e.code())
                                                         .or_insert_with(|| AtomicU64::new(0))
                                                         .fetch_add(1, Ordering::SeqCst);},
                                                     _ => {
                                                         broadcast_errors_per_code
-                                                            .entry("Other".to_string())
+                                                            .entry(Code::Unknown)
                                                             .or_insert_with(|| AtomicU64::new(0))
                                                             .fetch_add(1, Ordering::SeqCst);
                                                     }
@@ -1963,12 +1963,12 @@ pub async fn run_strategy_task<'s>(
                                                         ongoing_waits.fetch_sub(1, Ordering::SeqCst);
                                                         match e {
                                                             rs_dapi_client::DapiClientError::Transport(ref e, ..) => {wait_errors_per_code
-                                                                .entry(e.code().to_string())
+                                                                .entry(e.code())
                                                                 .or_insert_with(|| AtomicU64::new(0))
                                                                 .fetch_add(1, Ordering::SeqCst);},
                                                             _ => {
                                                                 wait_errors_per_code
-                                                                .entry("Other".to_string())
+                                                                .entry(Code::Unknown)
                                                                 .or_insert_with(|| AtomicU64::new(0))
                                                                 .fetch_add(1, Ordering::SeqCst);
                                                                 }
