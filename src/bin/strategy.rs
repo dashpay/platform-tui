@@ -1,5 +1,3 @@
-use std::{fs::File, panic, time::Duration};
-
 use clap::{ArgAction, Parser};
 use dash_sdk::{RequestSettings, SdkBuilder};
 use dpp::{identity::accessors::IdentityGettersV0, version::PlatformVersion};
@@ -13,6 +11,10 @@ use rs_platform_explorer::{
     },
     config::Config,
 };
+use std::os::fd::IntoRawFd;
+use std::{fs::File, panic, time::Duration};
+use tracing::level_filters::LevelFilter;
+use tracing_subscriber::EnvFilter;
 
 #[derive(Parser, Debug)]
 #[clap(about, long_about = None)]
@@ -57,7 +59,11 @@ async fn main() {
     let cli_action_taken = args.test.is_some();
     if cli_action_taken {
         let subscriber = tracing_subscriber::fmt()
-            .with_env_filter("info")
+            .with_env_filter(
+                EnvFilter::builder()
+                    .with_default_directive(LevelFilter::INFO.into())
+                    .from_env_lossy(),
+            )
             .with_writer(std::io::stdout)
             .with_ansi(false)
             .finish();
@@ -68,7 +74,11 @@ async fn main() {
         let log_file = File::create("explorer.log").expect("create log file");
 
         let subscriber = tracing_subscriber::fmt()
-            .with_env_filter("info")
+            .with_env_filter(
+                EnvFilter::builder()
+                    .with_default_directive(LevelFilter::INFO.into())
+                    .from_env_lossy(),
+            )
             .with_writer(log_file)
             .with_ansi(false)
             .finish();
