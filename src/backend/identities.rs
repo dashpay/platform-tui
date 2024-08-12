@@ -139,11 +139,13 @@ impl AppState {
             }
             IdentityTask::LoadKnownIdentity(ref id_string) => {
                 let private_key_map = self.identity_private_keys.lock().await;
-                if !private_key_map.contains_key(&(
-                    Identifier::from_string(&id_string, Encoding::Base58)
-                        .expect("Expected to convert id_string to Identifier"),
-                    0,
-                )) {
+                let identifier = Identifier::from_string(&id_string, Encoding::Base58)
+                    .expect("Expected to convert id_string to Identifier");
+
+                // Check if any key in the map matches the identifier, regardless of the key ID
+                let has_identifier = private_key_map.keys().any(|(id, _)| *id == identifier);
+
+                if !has_identifier {
                     return BackendEvent::TaskCompleted {
                         task: Task::Identity(task),
                         execution_result: Err(format!(
@@ -151,13 +153,8 @@ impl AppState {
                         )),
                     };
                 }
-                match Identity::fetch(
-                    &sdk,
-                    Identifier::from_string(&id_string, Encoding::Base58)
-                        .expect("Expected to convert id_string to Identifier"),
-                )
-                .await
-                {
+
+                match Identity::fetch(&sdk, identifier).await {
                     Ok(new_identity) => {
                         let mut loaded_identity_lock = self.loaded_identity.lock().await;
                         *loaded_identity_lock = new_identity;
@@ -359,13 +356,16 @@ impl AppState {
                     let mut transition =
                         StateTransition::IdentityCreditTransfer(transfer_transition);
 
-                    let identity_public_key = identity
-                        .get_first_public_key_matching(
-                            Purpose::TRANSFER,
-                            HashSet::from([SecurityLevel::CRITICAL]),
-                            HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
-                        )
-                        .expect("Expected to get a signing key");
+                    let Some(identity_public_key) = identity.get_first_public_key_matching(
+                        Purpose::TRANSFER,
+                        HashSet::from([SecurityLevel::CRITICAL]),
+                        HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
+                    ) else {
+                        return BackendEvent::TaskCompleted {
+                            task: Task::Identity(task),
+                            execution_result: Err("No public key for transfer".to_string()),
+                        };
+                    };
 
                     let loaded_identity_private_keys = self.identity_private_keys.lock().await;
                     let Some(private_key) = loaded_identity_private_keys
@@ -373,9 +373,7 @@ impl AppState {
                     else {
                         return BackendEvent::TaskCompleted {
                             task: Task::Identity(task),
-                            execution_result: Ok(CompletedTaskPayload::String(
-                                "No private key for transfer".to_string(),
-                            )),
+                            execution_result: Err("No private key for transfer".to_string()),
                         };
                     };
 
@@ -557,16 +555,29 @@ impl AppState {
             }
             IdentityTask::AddPrivateKeys(ref private_key_strings) => {
                 let loaded_identity_lock = self.loaded_identity.lock().await;
-                let _ = Self::add_identity_with_private_keys_as_strings(
+                let identity_id = &loaded_identity_lock
+                    .clone()
+                    .expect("An identity should be loaded")
+                    .id();
+                drop(loaded_identity_lock);
+
+                let result = Self::add_identity_with_private_keys_as_strings(
                     &self,
-                    &loaded_identity_lock
-                        .clone()
-                        .expect("An identity should be loaded")
-                        .id(),
+                    identity_id,
                     &private_key_strings,
                     sdk,
                 )
                 .await;
+
+                if result.is_err() {
+                    return BackendEvent::TaskCompleted {
+                        task: Task::Identity(task),
+                        execution_result: Err(format!(
+                            "Failed to add identity with private keys: {}",
+                            result.unwrap_err()
+                        )),
+                    };
+                }
 
                 let loaded_identity_lock = self.loaded_identity.lock().await;
                 let loaded_identity_update = MutexGuard::map(loaded_identity_lock, |opt| {
@@ -597,10 +608,12 @@ impl AppState {
                 match identity_fetch_result {
                     Ok(Some(identity)) => {
                         let mut loaded_identity_lock = self.loaded_identity.lock().await;
-                        loaded_identity_lock.replace(identity);
+                        loaded_identity_lock.replace(identity.clone());
                         let loaded_identity_update = MutexGuard::map(loaded_identity_lock, |opt| {
                             opt.as_mut().expect("identity was set above")
                         });
+                        let mut known_identities_lock = self.known_identities.lock().await;
+                        known_identities_lock.insert(identity_id, identity);
                         BackendEvent::TaskCompletedStateChange {
                             task: Task::Identity(task),
                             execution_result: Ok("Loaded identity from base58 id".into()),
@@ -1418,6 +1431,9 @@ impl AppState {
                 .public_keys()
                 .iter()
                 .filter_map(|(key_id, identity_public_key)| {
+                    tracing::info!("1: {:?}", private_key.public_key(&secp));
+                    tracing::info!("2: {:?}", identity_public_key.public_key_hash().unwrap());
+
                     if identity_public_key.public_key_hash().unwrap()
                         == public_key_hash.to_byte_array()
                     {
@@ -1433,7 +1449,7 @@ impl AppState {
                     .insert((*identity_id, *key_id), private_key.to_bytes().to_vec());
             } else {
                 return Err(WalletError::Custom(
-                    "Public key hash does not match any identity public key".to_string(),
+                    "Public key hash derived from input private key does not match any identity public key".to_string(),
                 ));
             }
         }

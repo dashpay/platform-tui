@@ -42,7 +42,7 @@ const WALLET_LOADED_COMMANDS: [ScreenCommandKey; 8] = [
     ScreenCommandKey::new("u", "Get more utxos"),
     ScreenCommandKey::new("C-w", "Clear loaded wallet"),
     ScreenCommandKey::new("m", "Load masternode identity"),
-    ScreenCommandKey::new("l", "Load identity by private key(s)"),
+    ScreenCommandKey::new("l", "Load identity with private key(s)"),
 ];
 
 const IDENTITY_LOADED_COMMANDS: [ScreenCommandKey; 5] = [
@@ -383,6 +383,12 @@ impl ScreenController for WalletScreenController {
                 task: Task::Identity(IdentityTask::Refresh),
                 block: true,
             },
+
+            Event::Backend(BackendEvent::TaskCompletedStateChange {
+                task: Task::Identity(IdentityTask::LoadIdentityById(_)),
+                execution_result: Ok(_),
+                app_state_update: _,
+            }) => ScreenFeedback::Form(Box::new(AddPrivateKeysFormController::new())),
 
             Event::Backend(BackendEvent::TaskCompletedStateChange {
                 execution_result,
@@ -818,7 +824,7 @@ impl FormController for AddPrivateKeysFormController {
 
                 if another == "Yes" {
                     self.input = ComposedInput::new((
-                        Field::new("Private key", TextInput::new("Private key")),
+                        Field::new("Private key", TextInput::new("Private key in WIF format")),
                         Field::new(
                             "Add another private key?",
                             SelectInput::new(vec!["No".to_string(), "Yes".to_string()]),
@@ -847,15 +853,15 @@ impl FormController for AddPrivateKeysFormController {
     }
 
     fn step_name(&self) -> &'static str {
-        "Private key"
+        self.input.step_name()
     }
 
     fn step_index(&self) -> u8 {
-        0
+        self.input.step_index()
     }
 
     fn steps_number(&self) -> u8 {
-        1
+        self.input.steps_number()
     }
 }
 
@@ -876,7 +882,7 @@ impl FormController for LoadIdentityByIdFormController {
         match self.input.on_event(event) {
             InputStatus::Done(identity_id) => FormStatus::Done {
                 task: Task::Identity(IdentityTask::LoadIdentityById(identity_id)),
-                block: false,
+                block: true,
             },
             status => status.into(),
         }
