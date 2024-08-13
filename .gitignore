@@ -5,6 +5,7 @@ target/
 
 # Dot env file
 .env
+.env.backups
 
 # Visual Studo Code configuration
 .vscode/
