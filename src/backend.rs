@@ -140,6 +140,7 @@ pub(crate) enum AppStateUpdate<'s> {
     FailedToRefreshIdentity,
     ClearedLoadedIdentity,
     ClearedLoadedWallet,
+    ClearedKnownContracts,
     IdentityCreditsTransferred,
     DPNSNameRegistered(String),
     DPNSNameRegistrationFailed,
@@ -229,12 +230,9 @@ impl<'a> Backend<'a> {
                 .await
             }
             Task::Contract(contract_task) => {
-                contracts::run_contract_task(
-                    self.sdk,
-                    &self.app_state.known_contracts,
-                    contract_task,
-                )
-                .await
+                self.app_state
+                    .run_contract_task(self.sdk, &self.app_state.known_contracts, contract_task)
+                    .await
             }
             Task::Identity(identity_task) => {
                 self.app_state

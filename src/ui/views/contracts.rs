@@ -35,7 +35,7 @@ use crate::{
     Event,
 };
 
-const COMMAND_KEYS: [ScreenCommandKey; 7] = [
+const COMMAND_KEYS: [ScreenCommandKey; 8] = [
     ScreenCommandKey::new("q", "Back to Main"),
     ScreenCommandKey::new("s", "Fetch system contract"),
     ScreenCommandKey::new("f", "Fetch contract"),
@@ -43,6 +43,7 @@ const COMMAND_KEYS: [ScreenCommandKey; 7] = [
     ScreenCommandKey::new("↑ / C-p", "Prev contract"),
     ScreenCommandKey::new("Enter", "Select contract"),
     ScreenCommandKey::new("r", "Remove a contract"),
+    ScreenCommandKey::new("c", "Clear known contracts"),
 ];
 
 /// Data contract name (identifier in app state) wrapper for better display
@@ -160,6 +161,11 @@ impl ScreenController for ContractsScreenController {
                 ScreenFeedback::Form(Box::new(RemoveContractFormController::new(contract_names)))
             }
 
+            Event::Key(KeyEvent {
+                code: Key::Char('c'),
+                modifiers: KeyModifiers::NONE,
+            }) => ScreenFeedback::Form(Box::new(ConfirmClearKnownContractsFormController::new())),
+
             Event::Key(event) => {
                 if let Some(select) = &mut self.select {
                     match select.on_event(*event) {
@@ -235,6 +241,51 @@ impl FormController for RemoveContractFormController {
 
     fn step_name(&self) -> &'static str {
         ""
+    }
+
+    fn step_index(&self) -> u8 {
+        0
+    }
+
+    fn steps_number(&self) -> u8 {
+        1
+    }
+}
+
+pub(super) struct ConfirmClearKnownContractsFormController {
+    input: SelectInput<String>,
+}
+
+impl ConfirmClearKnownContractsFormController {
+    pub(super) fn new() -> Self {
+        Self {
+            input: SelectInput::new(vec!["No".to_string(), "Yes".to_string()]),
+        }
+    }
+}
+
+impl FormController for ConfirmClearKnownContractsFormController {
+    fn on_event(&mut self, event: KeyEvent) -> FormStatus {
+        match self.input.on_event(event) {
+            InputStatus::Done(contract_name) => FormStatus::Done {
+                task: Task::Contract(ContractTask::ClearKnownContracts),
+                block: false,
+            },
+            InputStatus::Exit => FormStatus::Exit,
+            status => status.into(),
+        }
+    }
+
+    fn form_name(&self) -> &'static str {
+        "Clear known contracts"
+    }
+
+    fn step_view(&mut self, frame: &mut Frame, area: Rect) {
+        self.input.view(frame, area)
+    }
+
+    fn step_name(&self) -> &'static str {
+        "Confirm"
     }
 
     fn step_index(&self) -> u8 {
