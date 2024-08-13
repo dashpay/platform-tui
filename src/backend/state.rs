@@ -42,6 +42,7 @@ pub(super) type StrategiesMap = BTreeMap<String, Strategy>;
 pub(crate) type StrategyContractNames =
     Vec<(ContractFileName, Option<BTreeMap<u64, ContractFileName>>)>;
 pub(super) type KnownContractsMap = BTreeMap<String, DataContract>;
+/// <(Known identity ID, Public key ID), Private key bytes>
 pub type IdentityPrivateKeysMap = BTreeMap<(Identifier, KeyID), Vec<u8>>;
 
 // TODO: each state part should be in it's own mutex in case multiple backend
@@ -52,10 +53,10 @@ pub type IdentityPrivateKeysMap = BTreeMap<(Identifier, KeyID), Vec<u8>>;
 pub struct AppState {
     pub loaded_identity: Mutex<Option<Identity>>,
     pub loaded_identity_pro_tx_hash: Mutex<Option<Identifier>>,
-    pub identity_private_keys: Mutex<IdentityPrivateKeysMap>,
     pub loaded_wallet: Mutex<Option<Wallet>>,
     pub drive: Mutex<Drive>,
     pub known_identities: Mutex<BTreeMap<Identifier, Identity>>,
+    pub known_identities_private_keys: Mutex<IdentityPrivateKeysMap>,
     pub known_contracts: Mutex<KnownContractsMap>,
     pub supporting_contracts: Mutex<BTreeMap<String, DataContract>>, /* Contracts from
                                                                       * supporting_files */
@@ -126,7 +127,7 @@ impl Default for AppState {
         AppState {
             loaded_identity: None.into(),
             loaded_identity_pro_tx_hash: None.into(),
-            identity_private_keys: Default::default(),
+            known_identities_private_keys: Default::default(),
             loaded_wallet: Mutex::new(None),
             drive: Mutex::from(drive),
             known_contracts: BTreeMap::new().into(),
@@ -181,7 +182,7 @@ impl PlatformSerializableWithPlatformVersion for AppState {
         let AppState {
             loaded_identity,
             loaded_identity_pro_tx_hash,
-            identity_private_keys,
+            known_identities_private_keys: identity_private_keys,
             loaded_wallet,
             drive,
             known_identities,
@@ -406,7 +407,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
         Ok(AppState {
             loaded_identity: loaded_identity.into(),
             loaded_identity_pro_tx_hash: loaded_identity_pro_tx_hash.into(),
-            identity_private_keys: identity_private_keys.into(),
+            known_identities_private_keys: identity_private_keys.into(),
             loaded_wallet: deserialized_wallet_state,
             drive: drive.into(),
             known_identities: known_identities.into(),

@@ -1,5 +1,12 @@
 //! UI definitions related to identities.
 
+use std::collections::{BTreeMap, HashSet};
+
+use dpp::{
+    platform_value::string_encoding::Encoding,
+    prelude::{Identifier, Identity},
+};
+use itertools::Itertools;
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
     tui::prelude::Rect,
@@ -7,15 +14,18 @@ use tuirealm::{
 };
 
 use crate::{
-    backend::{identities::IdentityTask, BackendEvent, Task},
+    backend::{
+        identities::IdentityTask, state::IdentityPrivateKeysMap, AppState, BackendEvent, Task,
+    },
     ui::{
         form::{
             parsers::DefaultTextInputParser, ComposedInput, Field, FormController, FormStatus,
-            Input, InputStatus, TextInput,
+            Input, InputStatus, SelectInput, TextInput,
         },
         screen::{
-            utils::impl_builder_no_args, widgets::info::Info, ScreenCommandKey, ScreenController,
-            ScreenFeedback, ScreenToggleKey,
+            utils::{impl_builder, impl_builder_no_args},
+            widgets::info::Info,
+            ScreenCommandKey, ScreenController, ScreenFeedback, ScreenToggleKey,
         },
     },
     Event,
@@ -23,25 +33,30 @@ use crate::{
 
 use super::wallet::AddPrivateKeysFormController;
 
-const COMMAND_KEYS: [ScreenCommandKey; 4] = [
+const COMMAND_KEYS: [ScreenCommandKey; 5] = [
     ScreenCommandKey::new("q", "Back to Main"),
     ScreenCommandKey::new("i", "Get Identity by ID"),
     ScreenCommandKey::new("t", "Transfer credits"),
-    ScreenCommandKey::new("r", "Register DPNS name"),
+    ScreenCommandKey::new("d", "Register DPNS name"),
+    ScreenCommandKey::new("f", "Forget current identity"),
 ];
 
 pub(crate) struct IdentitiesScreenController {
     toggle_keys: [ScreenToggleKey; 1],
     info: Info,
+    known_identities: BTreeMap<Identifier, Identity>,
 }
 
-impl_builder_no_args!(IdentitiesScreenController);
+impl_builder!(IdentitiesScreenController);
 
 impl IdentitiesScreenController {
-    pub(crate) fn new() -> Self {
+    pub(crate) async fn new(app_state: &AppState) -> Self {
+        let known_identities = app_state.known_identities.lock().await;
+
         IdentitiesScreenController {
             toggle_keys: [ScreenToggleKey::new("p", "with proof")],
             info: Info::new_fixed("Identity management commands"),
+            known_identities: known_identities.clone(),
         }
     }
 }
@@ -85,9 +100,23 @@ impl ScreenController for IdentitiesScreenController {
             }
 
             Event::Key(KeyEvent {
-                code: Key::Char('r'),
+                code: Key::Char('d'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::Form(Box::new(RegisterDPNSNameFormController::new())),
+
+            Event::Key(KeyEvent {
+                code: Key::Char('f'),
+                modifiers: KeyModifiers::NONE,
+            }) => {
+                let known_identities_vec = self
+                    .known_identities
+                    .iter()
+                    .map(|(k, _)| k.clone())
+                    .collect_vec();
+                ScreenFeedback::Form(Box::new(ForgetIdentityFormController::new(
+                    known_identities_vec,
+                )))
+            }
 
             Event::Key(k) => {
                 let redraw_info = self.info.on_event(k);
@@ -268,6 +297,50 @@ impl FormController for RegisterDPNSNameFormController {
 
     fn step_name(&self) -> &'static str {
         "DPNS Name"
+    }
+
+    fn step_index(&self) -> u8 {
+        0
+    }
+
+    fn steps_number(&self) -> u8 {
+        1
+    }
+}
+
+pub(crate) struct ForgetIdentityFormController {
+    input: SelectInput<Identifier>,
+}
+
+impl ForgetIdentityFormController {
+    fn new(known_identities: Vec<Identifier>) -> Self {
+        Self {
+            input: SelectInput::new(known_identities),
+        }
+    }
+}
+
+impl FormController for ForgetIdentityFormController {
+    fn on_event(&mut self, event: KeyEvent) -> FormStatus {
+        match self.input.on_event(event) {
+            InputStatus::Done(identifier) => FormStatus::Done {
+                task: Task::Identity(IdentityTask::ForgetIdentity(identifier)),
+                block: false,
+            },
+            status => status.into(),
+        }
+    }
+
+    fn step_view(&mut self, frame: &mut Frame, area: tuirealm::tui::prelude::Rect) {
+        self.input.view(frame, area);
+    }
+
+    fn form_name(&self) -> &'static str {
+        "Forget identity"
+    }
+
+    fn step_name(&self) -> &'static str {
+        "Select"
     }
 
     fn step_index(&self) -> u8 {

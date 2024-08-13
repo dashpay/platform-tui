@@ -154,6 +154,7 @@ pub(crate) enum AppStateUpdate<'s> {
     IdentityCreditsTransferred,
     DPNSNameRegistered(String),
     DPNSNameRegistrationFailed,
+    ForgotIdentity,
 }
 
 /// Represents the result of completing a strategy.

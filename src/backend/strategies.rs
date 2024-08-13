@@ -884,7 +884,7 @@ pub async fn run_strategy_task<'s>(
 
                 // Get signer from loaded_identity
                 // Convert loaded_identity to SimpleSigner
-                let identity_private_keys_lock = app_state.identity_private_keys.lock().await;
+                let identity_private_keys_lock = app_state.known_identities_private_keys.lock().await;
                 let mut signer = {
                     let strategy_signer = strategy.signer.insert({
                         let mut new_signer = SimpleSigner::default();

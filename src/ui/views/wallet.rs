@@ -4,6 +4,7 @@ use dpp::{
     dashcore::psbt::serialize::Serialize, platform_value::string_encoding::Encoding,
     prelude::Identifier,
 };
+use itertools::Itertools;
 
 mod add_identity_key;
 
@@ -93,7 +94,7 @@ pub(crate) struct WalletScreenController {
     identity_loaded: bool,
     identity_registration_in_progress: bool,
     identity_top_up_in_progress: bool,
-    private_keys_map: IdentityPrivateKeysMap,
+    known_identities: Vec<Identifier>,
 }
 
 impl_builder!(WalletScreenController);
@@ -148,9 +149,11 @@ impl WalletScreenController {
             )
         };
 
-        let private_keys = app_state.identity_private_keys.lock().await;
-        let private_keys_clone = private_keys.clone();
-        drop(private_keys);
+        let known_identities_map = app_state.known_identities.lock().await;
+        let known_identities = known_identities_map
+            .iter()
+            .map(|(k, _)| k.clone())
+            .collect_vec();
 
         Self {
             wallet_info,
@@ -159,7 +162,7 @@ impl WalletScreenController {
             identity_loaded,
             identity_registration_in_progress,
             identity_top_up_in_progress,
-            private_keys_map: private_keys_clone,
+            known_identities: known_identities,
         }
     }
 }
@@ -233,7 +236,7 @@ impl ScreenController for WalletScreenController {
                 code: Key::Char('s'),
                 modifiers: KeyModifiers::NONE,
             }) if self.wallet_loaded => ScreenFeedback::Form(Box::new(
-                SwitchIdentityFormController::new(self.private_keys_map.clone()),
+                SwitchIdentityFormController::new(self.known_identities.clone()),
             )),
 
             Event::Key(KeyEvent {
@@ -532,20 +535,13 @@ impl FormController for SplitUTXOsFormController {
 }
 
 struct SwitchIdentityFormController {
-    input: SelectInput<String>,
+    input: SelectInput<Identifier>,
 }
 
 impl SwitchIdentityFormController {
-    fn new(private_keys_map: IdentityPrivateKeysMap) -> Self {
-        let unique_keys: HashSet<_> = private_keys_map
-            .into_iter()
-            .map(|identity_key_pair| identity_key_pair.0 .0.to_string(Encoding::Base58))
-            .collect();
-
-        let unique_keys_vec: Vec<_> = unique_keys.into_iter().collect();
-
+    fn new(known_identities: Vec<Identifier>) -> Self {
         Self {
-            input: SelectInput::new(unique_keys_vec),
+            input: SelectInput::new(known_identities),
         }
     }
 }
@@ -553,8 +549,8 @@ impl SwitchIdentityFormController {
 impl FormController for SwitchIdentityFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
         match self.input.on_event(event) {
-            InputStatus::Done(id_string) => FormStatus::Done {
-                task: Task::Identity(IdentityTask::LoadKnownIdentity(id_string)),
+            InputStatus::Done(id) => FormStatus::Done {
+                task: Task::Identity(IdentityTask::LoadKnownIdentity(id)),
                 block: false,
             },
             status => status.into(),

@@ -29,7 +29,9 @@ use dash_sdk::{
     Sdk,
 };
 use dpp::{
-    dashcore::Network, data_contract::DataContract, identity::hash::IdentityPublicKeyHashMethodsV0,
+    dashcore::Network,
+    data_contract::DataContract,
+    identity::{hash::IdentityPublicKeyHashMethodsV0, KeyID},
 };
 use dpp::{
     dashcore::{self, key::Secp256k1},
@@ -97,7 +99,7 @@ pub(super) async fn fetch_identity_by_b58_id(
 #[derive(Debug, Clone, PartialEq)]
 pub enum IdentityTask {
     RegisterIdentity(u64),
-    LoadKnownIdentity(String),
+    LoadKnownIdentity(Identifier),
     ContinueRegisteringIdentity,
     TopUpIdentity(u64),
     WithdrawFromIdentity(u64),
@@ -115,6 +117,7 @@ pub enum IdentityTask {
     RegisterDPNSName(String),
     LoadIdentityById(String),
     AddPrivateKeys(Vec<String>),
+    ForgetIdentity(Identifier),
 }
 
 impl AppState {
@@ -137,10 +140,8 @@ impl AppState {
                     app_state_update,
                 }
             }
-            IdentityTask::LoadKnownIdentity(ref id_string) => {
-                let private_key_map = self.identity_private_keys.lock().await;
-                let identifier = Identifier::from_string(&id_string, Encoding::Base58)
-                    .expect("Expected to convert id_string to Identifier");
+            IdentityTask::LoadKnownIdentity(ref identifier) => {
+                let private_key_map = self.known_identities_private_keys.lock().await;
 
                 // Check if any key in the map matches the identifier, regardless of the key ID
                 let has_identifier = private_key_map.keys().any(|(id, _)| *id == identifier);
@@ -154,7 +155,7 @@ impl AppState {
                     };
                 }
 
-                match Identity::fetch(&sdk, identifier).await {
+                match Identity::fetch(&sdk, *identifier).await {
                     Ok(new_identity) => {
                         let mut loaded_identity_lock = self.loaded_identity.lock().await;
                         *loaded_identity_lock = new_identity;
@@ -303,7 +304,7 @@ impl AppState {
                     };
                 };
 
-                let identity_private_keys_lock = self.identity_private_keys.lock().await;
+                let identity_private_keys_lock = self.known_identities_private_keys.lock().await;
                 match add_identity_key(
                     sdk,
                     loaded_identity,
@@ -367,7 +368,8 @@ impl AppState {
                         };
                     };
 
-                    let loaded_identity_private_keys = self.identity_private_keys.lock().await;
+                    let loaded_identity_private_keys =
+                        self.known_identities_private_keys.lock().await;
                     let Some(private_key) = loaded_identity_private_keys
                         .get(&(identity.id(), identity_public_key.id()))
                     else {
@@ -478,7 +480,8 @@ impl AppState {
                             };
 
                             // Insert private key into the state for later use
-                            let mut identity_private_keys = self.identity_private_keys.lock().await;
+                            let mut identity_private_keys =
+                                self.known_identities_private_keys.lock().await;
                             identity_private_keys.insert(
                                 (evonode_identity.id(), fetched_voting_public_key.id()),
                                 private_key.to_bytes(),
@@ -632,6 +635,41 @@ impl AppState {
                     },
                 }
             }
+            IdentityTask::ForgetIdentity(identifier) => {
+                // Remove from known_identities
+                let mut known_identities = self.known_identities.lock().await;
+                known_identities.remove(&identifier);
+
+                // Remove from known_identities_private_keys
+                let mut known_identities_private_keys =
+                    self.known_identities_private_keys.lock().await;
+                let keys_to_remove: Vec<(Identifier, KeyID)> = known_identities_private_keys
+                    .keys()
+                    .filter(|(id, _)| *id == identifier)
+                    .cloned()
+                    .collect();
+                for key in keys_to_remove {
+                    known_identities_private_keys.remove(&key);
+                }
+
+                // If this is the loaded identity, remove it from there
+                let mut loaded_identity = self.loaded_identity.lock().await;
+                if loaded_identity.is_some() {
+                    let some_loaded_identity =
+                        loaded_identity.clone().expect("Expected a loaded identity");
+                    if some_loaded_identity.id() == identifier {
+                        *loaded_identity = None;
+                    }
+                }
+
+                BackendEvent::TaskCompletedStateChange {
+                    task: Task::Identity(IdentityTask::ForgetIdentity(identifier)),
+                    execution_result: Ok(CompletedTaskPayload::String(
+                        "Successfully removed identity from TUI state".to_string(),
+                    )),
+                    app_state_update: AppStateUpdate::ForgotIdentity,
+                }
+            }
         }
     }
 
@@ -715,7 +753,7 @@ impl AppState {
         // TODO this is used in strategy tests too. It should be a function.
         // Get signer from loaded_identity
         // Convert loaded_identity to SimpleSigner
-        let identity_private_keys_lock = self.identity_private_keys.lock().await;
+        let identity_private_keys_lock = self.known_identities_private_keys.lock().await;
         let signer = {
             let mut new_signer = SimpleSigner::default();
             let Identity::V0(identity_v0) = &*identity;
@@ -1043,7 +1081,7 @@ impl AppState {
             .into_iter()
             .map(|(key, private_key)| ((identity.id(), key.id()), private_key));
 
-        let mut identity_private_keys = self.identity_private_keys.lock().await;
+        let mut identity_private_keys = self.known_identities_private_keys.lock().await;
 
         identity_private_keys.extend(keys);
 
@@ -1219,7 +1257,7 @@ impl AppState {
                 "no withdrawal public key".to_string(),
             ))?;
 
-        let loaded_identity_private_keys = self.identity_private_keys.lock().await;
+        let loaded_identity_private_keys = self.known_identities_private_keys.lock().await;
         let Some(private_key) =
             loaded_identity_private_keys.get(&(identity.id(), identity_public_key.id()))
         else {
@@ -1422,7 +1460,7 @@ impl AppState {
         let mut loaded_identity_lock = self.loaded_identity.lock().await;
         *loaded_identity_lock = Some(identity.clone());
 
-        let mut identity_private_keys_map_lock = self.identity_private_keys.lock().await;
+        let mut identity_private_keys_map_lock = self.known_identities_private_keys.lock().await;
 
         for private_key in private_keys.iter() {
             let secp = Secp256k1::new();
