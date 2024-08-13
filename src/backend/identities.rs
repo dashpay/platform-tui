@@ -150,7 +150,7 @@ impl AppState {
                     return BackendEvent::TaskCompleted {
                         task: Task::Identity(task),
                         execution_result: Err(format!(
-                            "The identity ID provided is not in the private keys map"
+                            "No private keys known for this identity. Try loading it with the private keys."
                         )),
                     };
                 }
