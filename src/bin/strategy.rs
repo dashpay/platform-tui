@@ -231,18 +231,19 @@ async fn main() {
 
     if let Some(test_name) = args.test {
         let block_mode = if args.second { false } else { true };
-        backend::strategies::run_strategy_task(
-            &sdk,
-            &backend.state(),
-            backend::strategies::StrategyTask::RunStrategy(
-                test_name.to_string(),
-                args.blocks,
-                args.prove,
-                block_mode,
-                credit_amount,
-            ),
-            &insight,
-        )
-        .await;
+        backend
+            .state()
+            .run_strategy_task(
+                &sdk,
+                backend::strategies::StrategyTask::RunStrategy(
+                    test_name.to_string(),
+                    args.blocks,
+                    args.prove,
+                    block_mode,
+                    credit_amount,
+                ),
+                &insight,
+            )
+            .await;
     }
 }

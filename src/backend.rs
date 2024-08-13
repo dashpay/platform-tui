@@ -212,13 +212,9 @@ impl<'a> Backend<'a> {
                 }
             }
             Task::Strategy(strategy_task) => {
-                strategies::run_strategy_task(
-                    &self.sdk,
-                    &self.app_state,
-                    strategy_task,
-                    &self.insight,
-                )
-                .await
+                self.app_state
+                    .run_strategy_task(&self.sdk, strategy_task, &self.insight)
+                    .await
             }
             Task::Wallet(wallet_task) => {
                 wallet::run_wallet_task(
