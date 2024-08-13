@@ -1570,7 +1570,7 @@ pub async fn run_strategy_task<'s>(
                                                     }
                                                 };
                                                 broadcast_errs.fetch_add(1, Ordering::SeqCst);
-                                                tracing::debug!("Error: Failed to broadcast {} transition: {:?}. ID: {}", transition_clone.name(), e, transition_id);
+                                                tracing::error!("Error: Failed to broadcast {} transition: {:?}. ID: {}", transition_clone.name(), e, transition_id);
                                                 if e.to_string().contains("Insufficient identity") {
                                                     insufficient_balance_error_count.fetch_add(1, Ordering::SeqCst);
                                                     // Top up. This logic works but it slows the broadcasting down slightly.
