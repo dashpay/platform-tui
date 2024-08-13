@@ -202,6 +202,15 @@ impl ScreenController for ContractsScreenController {
                 ScreenFeedback::Redraw
             }
 
+            Event::Backend(BackendEvent::TaskCompletedStateChange {
+                task: Task::Contract(ContractTask::ClearKnownContracts),
+                ..
+            }) => {
+                self.known_contracts = BTreeMap::new();
+                self.select = None;
+                ScreenFeedback::Redraw
+            }
+
             _ => ScreenFeedback::None,
         }
     }
