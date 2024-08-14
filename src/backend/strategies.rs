@@ -69,6 +69,7 @@ use drive::{
     util::object_size_info::{DocumentInfo, OwnedDocumentInfo},
 };
 use futures::{future::join_all, stream::FuturesUnordered, FutureExt};
+use hdrhistogram::Histogram;
 use itertools::Itertools;
 use rand::{rngs::StdRng, SeedableRng};
 use rs_dapi_client::{DapiRequest, DapiRequestExecutor, RequestSettings};
@@ -1199,6 +1200,7 @@ impl AppState {
                     let wait_errs = Arc::new(AtomicU64::new(0)); // Atomic counter for failed waits
                     let mempool_document_counter =
                         Arc::new(Mutex::new(BTreeMap::<(Identifier, Identifier), u64>::new())); // Map to track how many documents an identity has in the mempool per contract
+                    let hist = Arc::new(Mutex::new(Histogram::<u64>::new(3).unwrap()));
     
                     // Broadcast error counters
                     let identity_nonce_error_count = Arc::new(AtomicU64::new(0));
@@ -1224,6 +1226,10 @@ impl AppState {
                             let stats_wait_failed = wait_errs.load(Ordering::SeqCst);
                             let stats_ongoing_waits = ongoing_waits.load(Ordering::SeqCst);
                             let stats_ongoing_broadcasts = ongoing_broadcasts.load(Ordering::SeqCst);
+                            let hist_lock = hist.lock().await;
+                            let stats_p50 = hist_lock.value_at_quantile(0.50) as f64 / 1000.0;
+                            let stats_p90 = hist_lock.value_at_quantile(0.90) as f64 / 1000.0;
+                            let stats_p95 = hist_lock.value_at_quantile(0.95) as f64 / 1000.0;
     
                             let mut stats_broadcast_error_messages = Vec::new();
                             for entry in broadcast_errors_per_code.iter() {
@@ -1248,7 +1254,7 @@ impl AppState {
                                 String::new()
                             };
                     
-                            tracing::info!("\n\n{} secs passed. {} broadcast ({} tx/s)\nBroadcast results: {} successful, {} failed, {} ongoing.\nWait results: {} successful, {} failed, {} ongoing.\nBroadcast errors: {}\nWait errors: {}\n", stats_elapsed, stats_attempted, stats_rate, stats_broadcast_successful, stats_broadcast_failed, stats_ongoing_broadcasts, stats_wait_successful, stats_wait_failed, stats_ongoing_waits, broadcast_error_message, wait_error_message);
+                            tracing::info!("\n\n{} secs passed. {} broadcast ({} tx/s)\nBroadcast results: {} successful, {} failed, {} ongoing.\nWait results: {} successful, {} failed, {} ongoing.\nBroadcast errors: {}\nWait errors: {}\nWait times (s): 50%: {} 90%: {} 95%: {}", stats_elapsed, stats_attempted, stats_rate, stats_broadcast_successful, stats_broadcast_failed, stats_ongoing_broadcasts, stats_wait_successful, stats_wait_failed, stats_ongoing_waits, broadcast_error_message, wait_error_message, stats_p50, stats_p90, stats_p95);
                         }
     
                         let loop_start_time = Instant::now();
@@ -1906,16 +1912,24 @@ impl AppState {
                                             .reverse();
                                             let sdk_clone_inner = sdk_clone.clone();
     
-                                            tokio::spawn(async move {
+                                            tokio::spawn({
+                                                let hist = Arc::clone(&hist);
+
+                                                async move {
                                                 if let Ok(wait_request) = transition
                                                     .wait_for_state_transition_result_request()
                                                 {
                                                     ongoing_waits.fetch_add(1, Ordering::SeqCst);
+                                                    let wait_start_time = Instant::now();
                                                     match wait_request
                                                         .execute(&sdk_clone_inner, request_settings)
                                                         .await
                                                     {
                                                         Ok(wait_response) => {
+                                                            let wait_time = wait_start_time.elapsed().as_secs();
+                                                            let mut hist_lock = hist.lock().await;
+                                                            hist_lock.record(wait_time).unwrap();
+                                                                                                            
                                                             if let Some(wait_for_state_transition_result_response::Version::V0(v0_response)) = &wait_response.version {
                                                                 if let Some(wait_for_state_transition_result_response_v0::Result::Proof(_proof)) = &v0_response.result {
                                                                     // Assume the proof is correct in time mode for now
@@ -1991,7 +2005,7 @@ impl AppState {
                                                 } else {
                                                     tracing::debug!("Failed to create wait request for state transition {}: {}", tx_index + 1, transition_type);
                                                 }
-                                            });
+                                            }});
                                         }
                                         Err(_) => {
                                             // This is already logged
