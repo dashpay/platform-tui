@@ -1671,7 +1671,12 @@ impl AppState {
     
                             // If we're in block mode, or index 1 or 2 of time mode
                             if block_mode || loop_index == 1 || loop_index == 2 {
-                                let request_settings = RequestSettings::default();
+                                let request_settings = RequestSettings {
+                                    connect_timeout: None,
+                                    timeout: Some(Duration::from_secs(75)),
+                                    retries: Some(5),
+                                    ban_failed_address: Some(false),
+                                };
     
                                 let mut wait_futures = Vec::new();
                                 for (tx_index, result) in broadcast_results.into_iter().enumerate() {
@@ -1876,7 +1881,7 @@ impl AppState {
                                 let request_settings = RequestSettings {
                                     connect_timeout: None,
                                     timeout: Some(Duration::from_secs(75)),
-                                    retries: Some(3),
+                                    retries: Some(5),
                                     ban_failed_address: Some(false),
                                 };
     
