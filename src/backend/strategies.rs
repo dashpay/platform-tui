@@ -1522,7 +1522,7 @@ impl AppState {
                                     request_settings.retries = Some(1);
                                 }
     
-                                // Prepare futures for broadcasting independent transitions
+                                // Prepare futures for broadcasting transitions
                                 let future = async move {
                                     match transition_clone.broadcast_request_for_state_transition() {
                                         Ok(broadcast_request) => {
@@ -1666,9 +1666,10 @@ impl AppState {
     
                             // Concurrently execute all broadcast requests for independent transitions
                             let broadcast_results = join_all(broadcast_futures).await;
+
+                            // Now wait for results
     
-                            // If we're in block mode, or index 1 or 2 of time mode, we're going to wait for state transition results and potentially verify proofs too.
-                            // If we're in time mode and index 3+, we're just broadcasting.
+                            // If we're in block mode, or index 1 or 2 of time mode
                             if block_mode || loop_index == 1 || loop_index == 2 {
                                 let request_settings = RequestSettings::default();
     
@@ -1872,7 +1873,12 @@ impl AppState {
                                 let _wait_results = join_all(wait_futures).await;
                             } else {
                                 // Time mode when index is greater than 2
-                                let request_settings = RequestSettings::default();
+                                let request_settings = RequestSettings {
+                                    connect_timeout: None,
+                                    timeout: Some(Duration::from_secs(75)),
+                                    retries: Some(3),
+                                    ban_failed_address: Some(false),
+                                };
     
                                 let sdk_clone = sdk.clone();
                                 for (tx_index, result) in broadcast_results.into_iter().enumerate() {
