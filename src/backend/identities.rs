@@ -159,11 +159,16 @@ impl AppState {
                     Ok(new_identity) => {
                         let mut loaded_identity_lock = self.loaded_identity.lock().await;
                         *loaded_identity_lock = new_identity;
-                        BackendEvent::AppStateUpdated(AppStateUpdate::LoadedKnownIdentity(
-                            MutexGuard::map(loaded_identity_lock, |identity| {
-                                identity.as_mut().expect("checked above")
-                            }),
-                        ))
+                        BackendEvent::TaskCompletedStateChange {
+                            task: Task::Identity(task),
+                            execution_result: Ok(CompletedTaskPayload::String(
+                                "Successfully loaded identity".to_owned(),
+                            )),
+                            app_state_update: AppStateUpdate::LoadedIdentity(MutexGuard::map(
+                                loaded_identity_lock,
+                                |identity| identity.as_mut().expect("checked above"),
+                            )),
+                        }
                     }
                     Err(e) => BackendEvent::TaskCompleted {
                         task: Task::Identity(task),
