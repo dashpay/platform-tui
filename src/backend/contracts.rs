@@ -157,7 +157,7 @@ pub(super) async fn run_contract_task<'s>(
                     equal_clauses: BTreeMap::new(),
                 },
                 offset: None,
-                limit: Some(6),
+                limit: Some(2),
                 order_by: vec![(
                     "records.identity".to_string(),
                     OrderClause {
@@ -193,12 +193,12 @@ pub(super) async fn run_contract_task<'s>(
                     equal_clauses: BTreeMap::new(),
                 },
                 offset: None,
-                limit: Some(6),
+                limit: Some(2),
                 order_by: vec![(
                     "records.identity".to_string(),
                     OrderClause {
                         field: "records.identity".to_string(),
-                        ascending: true,
+                        ascending: false,
                     },
                 )]
                 .into_iter()
@@ -208,45 +208,34 @@ pub(super) async fn run_contract_task<'s>(
                 block_time_ms: None,
             };
 
-            // let docquery_asc = DocumentQuery::new_with_drive_query(&query_asc);
-            // let mut request_asc =
-            //     GetDocumentsRequest::try_from(docquery_asc).expect("convert to proto");
-            // if let Some(get_documents_request::Version::V0(ref mut v0_asc)) = request_asc.version {
-            //     v0_asc.prove = false;
-            // } else {
-            //     panic!("version V0 not found");
-            // };
-
-            // let response_asc = request_asc
-            //     .execute(&sdk, Default::default())
-            //     .await
-            //     .expect("fetch many documents");
-
-            tracing::info!("Start query");
+            let docquery_asc = DocumentQuery::new_with_drive_query(&query_asc);
+            let mut request_asc =
+                GetDocumentsRequest::try_from(docquery_asc).expect("convert to proto");
+            if let Some(get_documents_request::Version::V0(ref mut v0_asc)) = request_asc.version {
+                v0_asc.prove = false;
+            } else {
+                panic!("version V0 not found");
+            };
+            let response_asc = request_asc
+                .execute(sdk, Default::default())
+                .await
+                .expect("fetch many documents");
 
             let docquery_desc = DocumentQuery::new_with_drive_query(&query_desc);
-            tracing::info!("1");
-
             let mut request_desc =
                 GetDocumentsRequest::try_from(docquery_desc).expect("convert to proto");
-            tracing::info!("2");
-
             if let Some(get_documents_request::Version::V0(ref mut v0_desc)) = request_desc.version
             {
                 v0_desc.prove = false;
             } else {
                 panic!("version V0 not found");
             };
-            tracing::info!("3");
-
             let response_desc = request_desc
-                .execute(&sdk, Default::default())
+                .execute(sdk, Default::default())
                 .await
                 .expect("fetch many documents");
 
-            tracing::info!("4");
-
-            // tracing::info!("ASC: {:?}", response_asc);
+            tracing::info!("ASC: {:?}", response_asc);
             tracing::info!("DESC: {:?}", response_desc);
 
             BackendEvent::None
