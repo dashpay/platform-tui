@@ -1,8 +1,9 @@
 //! Contracts backend.
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
+use dapi_grpc::platform::v0::{get_documents_request, GetDocumentsRequest};
 use dash_sdk::{
-    platform::{DocumentQuery, Fetch},
+    platform::{DocumentQuery, Fetch, FetchMany, Query},
     Sdk,
 };
 use dpp::{
@@ -12,10 +13,13 @@ use dpp::{
     prelude::{DataContract, Identifier},
     system_data_contracts::{dashpay_contract, dpns_contract},
 };
-use drive::query::{WhereClause, WhereOperator};
+use drive::query::{DriveDocumentQuery, InternalClauses, OrderClause, WhereClause, WhereOperator};
+use rs_dapi_client::DapiRequest;
 use tokio::sync::Mutex;
 
-use super::{as_json_string, state::KnownContractsMap, AppStateUpdate, BackendEvent, Task};
+use super::{
+    as_json_string, state::KnownContractsMap, AppStateUpdate, Backend, BackendEvent, Task,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum ContractTask {
@@ -23,6 +27,7 @@ pub(crate) enum ContractTask {
     FetchDPNSContract,
     RemoveContract(String),
     FetchContract(String),
+    OdyQuery,
 }
 
 pub(super) async fn run_contract_task<'s>(
@@ -123,6 +128,128 @@ pub(super) async fn run_contract_task<'s>(
                     execution_result: Err(e.to_string()),
                 },
             }
+        }
+        ContractTask::OdyQuery => {
+            let known_contracts = known_contracts.lock().await;
+            let dpns_contract = known_contracts
+                .get(&dpns_contract::ID.to_string(Encoding::Base58))
+                .unwrap();
+            let domain_doc = dpns_contract.document_type_for_name("domain").unwrap();
+            let query_asc = DriveDocumentQuery {
+                contract: dpns_contract,
+                document_type: domain_doc,
+                internal_clauses: InternalClauses {
+                    primary_key_in_clause: None,
+                    primary_key_equal_clause: None,
+                    in_clause: None,
+                    range_clause: Some(WhereClause {
+                        field: "records.identity".to_string(),
+                        operator: WhereOperator::LessThan,
+                        value: Value::Identifier(
+                            Identifier::from_string(
+                                "AYN4srupPWDrp833iG5qtmaAsbapNvaV7svAdncLN5Rh",
+                                Encoding::Base58,
+                            )
+                            .unwrap()
+                            .to_buffer(),
+                        ),
+                    }),
+                    equal_clauses: BTreeMap::new(),
+                },
+                offset: None,
+                limit: Some(6),
+                order_by: vec![(
+                    "records.identity".to_string(),
+                    OrderClause {
+                        field: "records.identity".to_string(),
+                        ascending: true,
+                    },
+                )]
+                .into_iter()
+                .collect(),
+                start_at: None,
+                start_at_included: false,
+                block_time_ms: None,
+            };
+            let query_desc = DriveDocumentQuery {
+                contract: dpns_contract,
+                document_type: domain_doc,
+                internal_clauses: InternalClauses {
+                    primary_key_in_clause: None,
+                    primary_key_equal_clause: None,
+                    in_clause: None,
+                    range_clause: Some(WhereClause {
+                        field: "records.identity".to_string(),
+                        operator: WhereOperator::LessThan,
+                        value: Value::Identifier(
+                            Identifier::from_string(
+                                "AYN4srupPWDrp833iG5qtmaAsbapNvaV7svAdncLN5Rh",
+                                Encoding::Base58,
+                            )
+                            .unwrap()
+                            .to_buffer(),
+                        ),
+                    }),
+                    equal_clauses: BTreeMap::new(),
+                },
+                offset: None,
+                limit: Some(6),
+                order_by: vec![(
+                    "records.identity".to_string(),
+                    OrderClause {
+                        field: "records.identity".to_string(),
+                        ascending: true,
+                    },
+                )]
+                .into_iter()
+                .collect(),
+                start_at: None,
+                start_at_included: false,
+                block_time_ms: None,
+            };
+
+            // let docquery_asc = DocumentQuery::new_with_drive_query(&query_asc);
+            // let mut request_asc =
+            //     GetDocumentsRequest::try_from(docquery_asc).expect("convert to proto");
+            // if let Some(get_documents_request::Version::V0(ref mut v0_asc)) = request_asc.version {
+            //     v0_asc.prove = false;
+            // } else {
+            //     panic!("version V0 not found");
+            // };
+
+            // let response_asc = request_asc
+            //     .execute(&sdk, Default::default())
+            //     .await
+            //     .expect("fetch many documents");
+
+            tracing::info!("Start query");
+
+            let docquery_desc = DocumentQuery::new_with_drive_query(&query_desc);
+            tracing::info!("1");
+
+            let mut request_desc =
+                GetDocumentsRequest::try_from(docquery_desc).expect("convert to proto");
+            tracing::info!("2");
+
+            if let Some(get_documents_request::Version::V0(ref mut v0_desc)) = request_desc.version
+            {
+                v0_desc.prove = false;
+            } else {
+                panic!("version V0 not found");
+            };
+            tracing::info!("3");
+
+            let response_desc = request_desc
+                .execute(&sdk, Default::default())
+                .await
+                .expect("fetch many documents");
+
+            tracing::info!("4");
+
+            // tracing::info!("ASC: {:?}", response_asc);
+            tracing::info!("DESC: {:?}", response_desc);
+
+            BackendEvent::None
         }
     }
 }
