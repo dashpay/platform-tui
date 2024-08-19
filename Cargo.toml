@@ -4,6 +4,7 @@ version = "0.1.0"
 license = "MIT"
 edition = "2021"
 default-run = "rs-platform-explorer"
+rust-version = "1.80"
 
 [dependencies]
 strum = { version = "0.26.1", features = ["derive"] }
