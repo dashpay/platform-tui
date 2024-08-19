@@ -29,7 +29,7 @@ use strategy_tests::Strategy;
 use tokio::sync::Mutex;
 use walkdir::{DirEntry, WalkDir};
 
-use super::wallet::{add_wallet_by_private_key, add_wallet_by_private_key_as_string, Wallet};
+use super::wallet::{add_wallet_by_private_key_as_string, Wallet};
 use crate::{backend::insight::InsightAPIClient, config::Config};
 
 const CURRENT_PROTOCOL_VERSION: ProtocolVersion = 1;
