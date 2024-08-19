@@ -1,7 +1,10 @@
 //! Contracts backend.
 use std::{collections::BTreeMap, sync::Arc};
 
-use dapi_grpc::platform::v0::{get_documents_request, GetDocumentsRequest};
+use dapi_grpc::platform::{
+    v0::{get_documents_request, GetDocumentsRequest},
+    VersionedGrpcResponse,
+};
 use dash_sdk::{
     platform::{DocumentQuery, Fetch, FetchMany, Query},
     Sdk,
@@ -212,7 +215,7 @@ pub(super) async fn run_contract_task<'s>(
             let mut request_asc =
                 GetDocumentsRequest::try_from(docquery_asc).expect("convert to proto");
             if let Some(get_documents_request::Version::V0(ref mut v0_asc)) = request_asc.version {
-                v0_asc.prove = false;
+                v0_asc.prove = true;
             } else {
                 panic!("version V0 not found");
             };
@@ -220,13 +223,14 @@ pub(super) async fn run_contract_task<'s>(
                 .execute(sdk, Default::default())
                 .await
                 .expect("fetch many documents");
+            let asc_proof = response_asc.proof().expect("proof").grovedb_proof.clone();
 
             let docquery_desc = DocumentQuery::new_with_drive_query(&query_desc);
             let mut request_desc =
                 GetDocumentsRequest::try_from(docquery_desc).expect("convert to proto");
             if let Some(get_documents_request::Version::V0(ref mut v0_desc)) = request_desc.version
             {
-                v0_desc.prove = false;
+                v0_desc.prove = true;
             } else {
                 panic!("version V0 not found");
             };
@@ -234,9 +238,10 @@ pub(super) async fn run_contract_task<'s>(
                 .execute(sdk, Default::default())
                 .await
                 .expect("fetch many documents");
+            let desc_proof = response_desc.proof().expect("proof").grovedb_proof.clone();
 
-            tracing::info!("ASC: {:?}", response_asc);
-            tracing::info!("DESC: {:?}", response_desc);
+            tracing::info!("ASC: {}", hex::encode(asc_proof).to_string());
+            tracing::info!("DESC: {}", hex::encode(desc_proof).to_string());
 
             BackendEvent::None
         }
