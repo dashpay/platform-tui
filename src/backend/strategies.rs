@@ -1233,9 +1233,9 @@ impl AppState {
                         let stats_ongoing_waits = ongoing_waits.load(Ordering::SeqCst);
                         let stats_ongoing_broadcasts = ongoing_broadcasts.load(Ordering::SeqCst);
                         let hist_lock = hist.lock().await;
-                        let stats_p50 = hist_lock.value_at_quantile(0.50) as f64 / 1000.0;
-                        let stats_p90 = hist_lock.value_at_quantile(0.90) as f64 / 1000.0;
-                        let stats_p95 = hist_lock.value_at_quantile(0.95) as f64 / 1000.0;
+                        let stats_p50 = hist_lock.value_at_quantile(0.50) as f64;
+                        let stats_p90 = hist_lock.value_at_quantile(0.90) as f64;
+                        let stats_p95 = hist_lock.value_at_quantile(0.95) as f64;
 
                         let mut stats_broadcast_error_messages = Vec::new();
                         for entry in broadcast_errors_per_code.iter() {
@@ -1250,17 +1250,17 @@ impl AppState {
                             stats_wait_error_messages.push(format!("{:?} - {}", code, count));
                         }
                         let broadcast_error_message = if !stats_broadcast_error_messages.is_empty() {
-                            format!(": {}", stats_broadcast_error_messages.join(", "))
+                            format!("{}", stats_broadcast_error_messages.join(", "))
                         } else {
                             String::new()
                         };
                         let wait_error_message = if !stats_wait_error_messages.is_empty() {
-                            format!(": {}", stats_wait_error_messages.join(", "))
+                            format!("{}", stats_wait_error_messages.join(", "))
                         } else {
                             String::new()
                         };
                 
-                        tracing::info!("\n\n{} secs passed. {} broadcast ({} tx/s)\nBroadcast results: {} successful, {} failed, {} ongoing.\nWait results: {} successful, {} failed, {} ongoing.\nBroadcast errors: {}\nWait errors: {}\nWait times (s): 50%: {} 90%: {} 95%: {}", stats_elapsed, stats_attempted, stats_rate, stats_broadcast_successful, stats_broadcast_failed, stats_ongoing_broadcasts, stats_wait_successful, stats_wait_failed, stats_ongoing_waits, broadcast_error_message, wait_error_message, stats_p50, stats_p90, stats_p95);
+                        tracing::info!("\n\n{} secs passed. {} broadcast ({} tx/s)\nBroadcast results: {} successful, {} failed, {} ongoing.\nWait results: {} successful, {} failed, {} ongoing.\nBroadcast errors: {}\nWait errors: {}\nWait times (s): 50% - {} 90% - {} 95% - {}", stats_elapsed, stats_attempted, stats_rate, stats_broadcast_successful, stats_broadcast_failed, stats_ongoing_broadcasts, stats_wait_successful, stats_wait_failed, stats_ongoing_waits, broadcast_error_message, wait_error_message, stats_p50, stats_p90, stats_p95);
                     }
 
                     let loop_start_time = Instant::now();
@@ -1543,7 +1543,7 @@ impl AppState {
                                                 success_count.fetch_add(1, Ordering::SeqCst);
                                                 let transition_owner_id = transition_clone.owner_id().to_string(Encoding::Base58);
                                                 if !block_mode && loop_index != 1 && loop_index != 2 {
-                                                    tracing::trace!("Successfully broadcasted transition: {}. ID: {}. Owner ID: {:?}", transition_clone.name(), transition_id, transition_owner_id);
+                                                    tracing::info!("Successfully broadcasted transition: {}. ID: {}. Owner ID: {:?}", transition_clone.name(), transition_id, transition_owner_id);
                                                 }
                                                 if transition_clone.name() == "DocumentsBatch" {
                                                     let contract_ids = match transition_clone.clone() {
@@ -1938,7 +1938,7 @@ impl AppState {
                                                                 // Decrement the transitions counter
                                                                 wait_oks.fetch_add(1, Ordering::SeqCst);
                                                                 ongoing_waits.fetch_sub(1, Ordering::SeqCst);
-                                                                tracing::trace!(" >>> Transition was included in a block. ID: {}", transition_id);
+                                                                tracing::info!(" >>> Transition was included in a block. ID: {}", transition_id);
                                                                 if transition_type == "DocumentsBatch" {
                                                                     let contract_ids = match transition.clone() {
                                                                         StateTransition::DocumentsBatch(DocumentsBatchTransition::V0(transition)) => transition.transitions.iter().map(|document_transition|
