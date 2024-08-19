@@ -80,32 +80,19 @@ impl DpnsUsernamesScreenController {
     pub(crate) async fn new(app_state: &AppState) -> Self {
         let known_identities_lock = app_state.known_identities.lock().await;
         let identity_ids_vec = known_identities_lock.iter().map(|(k, _)| *k).collect_vec();
-        let mut identity_select = if identity_ids_vec.len() > 0 {
-            tui_realm_stdlib::List::default()
-                .rows(
-                    identity_ids_vec
-                        .iter()
-                        .map(|identifier| {
-                            vec![TextSpan::new(identifier.to_string(Encoding::Base58))]
-                        })
-                        .collect(),
-                )
-                .borders(
-                    Borders::default()
-                        .sides(BorderSides::LEFT | BorderSides::TOP | BorderSides::BOTTOM),
-                )
-                .selected_line(0)
-                .highlighted_color(Color::Magenta)
-        } else {
-            tui_realm_stdlib::List::default()
-                .rows(vec![vec![TextSpan::new("No known identities".to_string())]])
-                .borders(
-                    Borders::default()
-                        .sides(BorderSides::LEFT | BorderSides::TOP | BorderSides::BOTTOM),
-                )
-                .selected_line(0)
-                .highlighted_color(Color::Magenta)
-        };
+        let mut identity_select = tui_realm_stdlib::List::default()
+            .rows(
+                identity_ids_vec
+                    .iter()
+                    .map(|identifier| vec![TextSpan::new(identifier.to_string(Encoding::Base58))])
+                    .collect(),
+            )
+            .borders(
+                Borders::default()
+                    .sides(BorderSides::LEFT | BorderSides::TOP | BorderSides::BOTTOM),
+            )
+            .selected_line(0)
+            .highlighted_color(Color::Magenta);
         identity_select.attr(Attribute::Scroll, AttrValue::Flag(true));
         identity_select.attr(Attribute::Focus, AttrValue::Flag(true));
 
@@ -150,8 +137,9 @@ impl DpnsUsernamesScreenController {
                 if let Some(identity_id) = self.identity_ids_vec.get(selected_index) {
                     if let Some(identity) = self.identities_map.get(identity_id) {
                         self.identity_view = Info::new_scrollable(&as_json_string(identity));
-                        return;
                     }
+                } else {
+                    self.identity_view = Info::new_scrollable(&String::from("No known identities"));
                 }
             }
             _ => {
@@ -438,7 +426,6 @@ impl ScreenController for DpnsUsernamesScreenController {
                 app_state_update,
             }) => {
                 if execution_result.is_ok() {
-                    self.update_identity_view();
                     match app_state_update {
                         crate::backend::AppStateUpdate::KnownContracts(contracts_lock) => {
                             let dpns_contract = contracts_lock.get(
@@ -450,6 +437,7 @@ impl ScreenController for DpnsUsernamesScreenController {
                         }
                         _ => todo!(),
                     }
+                    self.update_identity_view();
                 }
                 ScreenFeedback::Redraw
             }
