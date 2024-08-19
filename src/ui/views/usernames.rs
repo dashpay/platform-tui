@@ -15,7 +15,7 @@ use dpp::{
 };
 use drive_proof_verifier::types::ContestedResource;
 use itertools::Itertools;
-use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
+use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame, StateValue};
 
 use crate::{
     backend::{
@@ -80,19 +80,32 @@ impl DpnsUsernamesScreenController {
     pub(crate) async fn new(app_state: &AppState) -> Self {
         let known_identities_lock = app_state.known_identities.lock().await;
         let identity_ids_vec = known_identities_lock.iter().map(|(k, _)| *k).collect_vec();
-        let mut identity_select = tui_realm_stdlib::List::default()
-            .rows(
-                identity_ids_vec
-                    .iter()
-                    .map(|identifier| vec![TextSpan::new(identifier.to_string(Encoding::Base58))])
-                    .collect(),
-            )
-            .borders(
-                Borders::default()
-                    .sides(BorderSides::LEFT | BorderSides::TOP | BorderSides::BOTTOM),
-            )
-            .selected_line(0)
-            .highlighted_color(Color::Magenta);
+        let mut identity_select = if identity_ids_vec.len() > 0 {
+            tui_realm_stdlib::List::default()
+                .rows(
+                    identity_ids_vec
+                        .iter()
+                        .map(|identifier| {
+                            vec![TextSpan::new(identifier.to_string(Encoding::Base58))]
+                        })
+                        .collect(),
+                )
+                .borders(
+                    Borders::default()
+                        .sides(BorderSides::LEFT | BorderSides::TOP | BorderSides::BOTTOM),
+                )
+                .selected_line(0)
+                .highlighted_color(Color::Magenta)
+        } else {
+            tui_realm_stdlib::List::default()
+                .rows(vec![vec![TextSpan::new("No known identities".to_string())]])
+                .borders(
+                    Borders::default()
+                        .sides(BorderSides::LEFT | BorderSides::TOP | BorderSides::BOTTOM),
+                )
+                .selected_line(0)
+                .highlighted_color(Color::Magenta)
+        };
         identity_select.attr(Attribute::Scroll, AttrValue::Flag(true));
         identity_select.attr(Attribute::Focus, AttrValue::Flag(true));
 
@@ -104,12 +117,17 @@ impl DpnsUsernamesScreenController {
         );
 
         let identity_view = if maybe_dpns_contract.is_some() {
-            Info::new_scrollable(
-                &known_identities_lock
-                    .get(&identity_ids_vec[0])
-                    .and_then(|identity_info| Some(as_json_string(identity_info)))
-                    .unwrap_or_else(String::new),
-            )
+            if let Some(first_identity_id) = identity_ids_vec.get(0) {
+                Info::new_scrollable(
+                    &known_identities_lock
+                        .get(first_identity_id)
+                        .and_then(|identity_info| Some(as_json_string(identity_info)))
+                        .unwrap_or_else(String::new),
+                )
+            } else {
+                // Handle the case where identity_ids_vec is empty
+                Info::new_scrollable(&String::new())
+            }
         } else {
             Info::new_fixed("DPNS contract not known yet. Please press 'f' to fetch it.")
         };
@@ -127,16 +145,19 @@ impl DpnsUsernamesScreenController {
     }
 
     fn update_identity_view(&mut self) {
-        self.identity_view = Info::new_scrollable(
-            &self
-                .identities_map
-                .get(
-                    &self.identity_ids_vec
-                        [self.identity_select.state().unwrap_one().unwrap_usize()],
-                )
-                .and_then(|v| Some(as_json_string(v)))
-                .unwrap_or_else(String::new),
-        );
+        match self.identity_select.state().unwrap_one() {
+            StateValue::Usize(selected_index) => {
+                if let Some(identity_id) = self.identity_ids_vec.get(selected_index) {
+                    if let Some(identity) = self.identities_map.get(identity_id) {
+                        self.identity_view = Info::new_scrollable(&as_json_string(identity));
+                        return;
+                    }
+                }
+            }
+            _ => {
+                self.identity_view = Info::new_scrollable(&String::new());
+            }
+        }
     }
 
     fn get_selected_identity(&self) -> Option<&Identity> {
@@ -345,8 +366,8 @@ impl ScreenController for DpnsUsernamesScreenController {
 
                 let selected_identity_names = self
                     .identities_names_map
-                    .get(&selected_identity.id())
-                    .unwrap();
+                    .entry(selected_identity.id())
+                    .or_insert_with(Vec::new);
 
                 let mut contested_names_vec = resources
                     .0
