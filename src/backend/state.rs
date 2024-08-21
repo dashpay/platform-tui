@@ -29,7 +29,7 @@ use strategy_tests::Strategy;
 use tokio::sync::Mutex;
 use walkdir::{DirEntry, WalkDir};
 
-use super::wallet::{add_wallet_by_private_key, add_wallet_by_private_key_as_string, Wallet};
+use super::wallet::{add_wallet_by_private_key_as_string, Wallet};
 use crate::{backend::insight::InsightAPIClient, config::Config};
 
 const CURRENT_PROTOCOL_VERSION: ProtocolVersion = 1;
@@ -57,6 +57,7 @@ pub struct AppState {
     pub drive: Mutex<Drive>,
     pub known_identities: Mutex<BTreeMap<Identifier, Identity>>,
     pub known_identities_private_keys: Mutex<IdentityPrivateKeysMap>,
+    pub known_identities_names: Mutex<BTreeMap<Identifier, Vec<String>>>,
     pub known_contracts: Mutex<KnownContractsMap>,
     pub supporting_contracts: Mutex<BTreeMap<String, DataContract>>, /* Contracts from
                                                                       * supporting_files */
@@ -133,6 +134,7 @@ impl Default for AppState {
             known_contracts: BTreeMap::new().into(),
             supporting_contracts: supporting_contracts_raw.into(),
             known_identities: BTreeMap::new().into(),
+            known_identities_names: BTreeMap::new().into(),
             available_strategies: BTreeMap::new().into(),
             selected_strategy: None.into(),
             identity_asset_lock_private_key_in_creation: None.into(),
@@ -149,6 +151,7 @@ struct AppStateInSerializationFormat {
     pub identity_private_keys: IdentityPrivateKeysMap,
     pub loaded_wallet: Option<Wallet>,
     pub known_identities: BTreeMap<Identifier, Identity>,
+    pub known_identities_names: BTreeMap<Identifier, Vec<String>>,
     pub known_contracts: BTreeMap<String, Vec<u8>>,
     pub supporting_contracts: BTreeMap<String, Vec<u8>>,
     pub available_strategies: BTreeMap<String, Vec<u8>>,
@@ -186,6 +189,7 @@ impl PlatformSerializableWithPlatformVersion for AppState {
             loaded_wallet,
             drive,
             known_identities,
+            known_identities_names,
             known_contracts,
             supporting_contracts,
             available_strategies,
@@ -257,6 +261,7 @@ impl PlatformSerializableWithPlatformVersion for AppState {
             identity_private_keys: identity_private_keys.blocking_lock().clone(),
             loaded_wallet: loaded_wallet.blocking_lock().clone(),
             known_identities: known_identities.blocking_lock().clone(),
+            known_identities_names: known_identities_names.blocking_lock().clone(),
             known_contracts: known_contracts_in_serialization_format,
             supporting_contracts: supporting_contracts_in_serialization_format,
             available_strategies: available_strategies_in_serialization_format,
@@ -303,6 +308,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
             identity_private_keys,
             loaded_wallet,
             known_identities,
+            known_identities_names,
             known_contracts,
             supporting_contracts,
             available_strategies,
@@ -411,6 +417,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
             loaded_wallet: deserialized_wallet_state,
             drive: drive.into(),
             known_identities: known_identities.into(),
+            known_identities_names: known_identities_names.into(),
             known_contracts: known_contracts.into(),
             supporting_contracts: supporting_contracts.into(),
             available_strategies: available_strategies.into(),

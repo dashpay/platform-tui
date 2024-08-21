@@ -263,8 +263,6 @@ impl ScreenController for WalletScreenController {
             }) => {
                 self.wallet_info =
                     Info::new_fixed("Wallet management commands\n\nNo wallet loaded yet");
-                self.identity_info = Info::new_fixed("");
-                self.identity_loaded = false;
                 ScreenFeedback::Redraw
             }
 

@@ -4,6 +4,7 @@ version = "0.1.0"
 license = "MIT"
 edition = "2021"
 default-run = "rs-platform-explorer"
+rust-version = "1.80"
 
 [dependencies]
 strum = { version = "0.26.1", features = ["derive"] }
@@ -11,24 +12,24 @@ tui-realm-stdlib = "1.3.1"
 tuirealm = "1.9.1"
 bs58 = "0.5.0"
 copypasta = "0.10.1"
-dpp = { path = "../platform/packages/rs-dpp", features = [
+dpp = { git = "https://github.com/dashpay/platform", commit = "55da39f601e3a8ae2232ea7ed0ab10a003898c52", features = [
     "client",
 ] }
-dash-sdk = { path = "../platform/packages/rs-sdk" }
-drive = { path = "../platform/packages/rs-drive" }
-drive-proof-verifier = { path = "../platform/packages/rs-drive-proof-verifier" }
+dash-sdk = { git = "https://github.com/dashpay/platform", commit = "55da39f601e3a8ae2232ea7ed0ab10a003898c52" }
+drive = { git = "https://github.com/dashpay/platform", commit = "55da39f601e3a8ae2232ea7ed0ab10a003898c52" }
+drive-proof-verifier = { git = "https://github.com/dashpay/platform", commit = "55da39f601e3a8ae2232ea7ed0ab10a003898c52" }
 thiserror = "1"
 serde = "1.0.197"
 serde_json = "1.0.120"
 toml = { version = "0.8.10", features = ["display"] }
-dapi-grpc = { path = "../platform/packages/dapi-grpc", features = [
+dapi-grpc = { git = "https://github.com/dashpay/platform", commit = "55da39f601e3a8ae2232ea7ed0ab10a003898c52", features = [
     "client",
 ] }
-rs-dapi-client = { path = "../platform/packages/rs-dapi-client" }
+rs-dapi-client = { git = "https://github.com/dashpay/platform", commit = "55da39f601e3a8ae2232ea7ed0ab10a003898c52" }
 tokio = { version = "1.36.0", features = ["full"] }
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
-strategy-tests = { path = "../platform/packages/strategy-tests" }
-simple-signer = { path = "../platform/packages/simple-signer" }
+strategy-tests = { git = "https://github.com/dashpay/platform", commit = "55da39f601e3a8ae2232ea7ed0ab10a003898c52" }
+simple-signer = { git = "https://github.com/dashpay/platform", commit = "55da39f601e3a8ae2232ea7ed0ab10a003898c52" }
 reqwest = { version = "0.12.3", features = ["json"] }
 hex = { version = "0.4.3" }
 itertools = "0.12.1"
@@ -47,6 +48,7 @@ tokio-util = "0.7.10"
 chrono = "0.4"
 chrono-humanize = "0.2.3"
 dashmap = "5.5.3"
-grovedb-version = "1.0.0-rc.2"
+grovedb-version = { git = "https://github.com/dashpay/grovedb", rev = "713ad96a0ca443f72fa15738e82df529be1becbb"}
 sha2 = "0.10.8"
 arboard = { version = "3.4.0", default-features = false, features = ["windows-sys"] }
+hdrhistogram = "7.5.4"

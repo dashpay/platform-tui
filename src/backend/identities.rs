@@ -21,7 +21,7 @@ use dash_sdk::{
     platform::{
         transition::{
             broadcast::BroadcastStateTransition, put_document::PutDocument,
-            put_identity::PutIdentity, top_up_identity::TopUpIdentity,
+            put_identity::PutIdentity, put_settings::PutSettings, top_up_identity::TopUpIdentity,
             withdraw_from_identity::WithdrawFromIdentity,
         },
         Fetch,
@@ -114,10 +114,10 @@ pub enum IdentityTask {
     ClearRegistrationOfIdentityInProgress,
     TransferCredits(String, f64),
     LoadEvonodeIdentity(String, String),
-    RegisterDPNSName(String),
     LoadIdentityById(String),
     AddPrivateKeys(Vec<String>),
     ForgetIdentity(Identifier),
+    RegisterDPNSName(Identity, String),
 }
 
 impl AppState {
@@ -531,30 +531,33 @@ impl AppState {
                     },
                 }
             }
-            IdentityTask::RegisterDPNSName(ref name) => {
-                let loaded_identity_lock = self.loaded_identity.lock().await;
-                let identity = match loaded_identity_lock.as_ref() {
-                    Some(identity) => identity,
-                    None => {
-                        return BackendEvent::TaskCompleted {
-                            task: Task::Identity(task),
-                            execution_result: Ok(CompletedTaskPayload::String(
-                                "No loaded identity".to_string(),
-                            )),
-                        }
-                    }
-                };
+            IdentityTask::RegisterDPNSName(ref identity, ref name) => {
                 let identity_id = identity.id();
-                drop(loaded_identity_lock);
 
-                let result = self.register_dpns_name(sdk, &identity_id, name).await;
+                let result = self
+                    .register_dpns_name(sdk, identity, &identity_id, name)
+                    .await;
                 let execution_result = result
                     .as_ref()
                     .map(|_| "DPNS name registration successful".into())
                     .map_err(|e| e.to_string());
                 let app_state_update = match result {
-                    Ok(_) => AppStateUpdate::DPNSNameRegistered(name.clone()),
-                    Err(_) => AppStateUpdate::DPNSNameRegistrationFailed,
+                    Ok(_) => {
+                        // Add the username to the map of known identities to usernames
+                        let mut names_map = self.known_identities_names.lock().await;
+                        names_map
+                            .entry(identity_id.clone())
+                            .or_insert_with(Vec::new)
+                            .push(
+                                name.to_lowercase()
+                                    .replace('l', "1")
+                                    .replace('o', "0")
+                                    .to_string(),
+                            );
+
+                        AppStateUpdate::DPNSNameRegistered(name.clone())
+                    }
+                    Err(e) => AppStateUpdate::DPNSNameRegistrationFailed(e.to_string()),
                 };
 
                 BackendEvent::TaskCompletedStateChange {
@@ -683,16 +686,12 @@ impl AppState {
     pub(crate) async fn register_dpns_name(
         &self,
         sdk: &Sdk,
+        identity: &Identity,      // Identity to register the name for and sign tx
         _identifier: &Identifier, // Once contract names are enabled, we can use this field
         name: &str,
     ) -> Result<(), Error> {
         let mut rng = StdRng::from_entropy();
         let platform_version = PlatformVersion::latest();
-
-        let loaded_identity = self.loaded_identity.lock().await;
-        let identity = loaded_identity
-            .as_ref()
-            .ok_or_else(|| Error::IdentityError("No loaded identity".to_string()))?;
 
         let dpns_contract = match DataContract::fetch(
             &sdk,
@@ -750,7 +749,16 @@ impl AppState {
         domain_document.set("preorderSalt", salt.into());
 
         let identity_contract_nonce = match sdk
-            .get_identity_contract_nonce(identity.id(), dpns_contract.id(), true, None)
+            .get_identity_contract_nonce(
+                identity.id(),
+                dpns_contract.id(),
+                true,
+                Some(PutSettings {
+                    request_settings: RequestSettings::default(),
+                    identity_nonce_stale_time_s: Some(0),
+                    user_fee_increase: None,
+                }),
+            )
             .await
         {
             Ok(nonce) => nonce,
@@ -1077,7 +1085,7 @@ impl AppState {
 
         let mut loaded_identity = self.loaded_identity.lock().await;
 
-        loaded_identity.replace(updated_identity.clone());
+        loaded_identity.replace(identity.clone());
         let identity_result =
             MutexGuard::map(loaded_identity, |x| x.as_mut().expect("assigned above"));
 
@@ -1093,6 +1101,9 @@ impl AppState {
         let mut identity_private_keys = self.known_identities_private_keys.lock().await;
 
         identity_private_keys.extend(keys);
+
+        let mut known_identities_lock = self.known_identities.lock().await;
+        known_identities_lock.insert(identity.id(), identity);
 
         Ok(identity_result)
     }
@@ -1189,7 +1200,9 @@ impl AppState {
             Err(dash_sdk::Error::DapiClientError(error_string)) => {
                 //todo in the future, errors should be proved with a proof, even from tenderdash
 
-                if error_string.starts_with("Transport(Status { code: AlreadyExists, message: \"state transition already in chain\"") {
+                if error_string.contains("state transition already in chain")
+                    || error_string.contains("already completely used")
+                {
                     // This state transition already existed
                     tracing::info!("we are starting over as the previous top up already existed");
                     let (new_asset_lock_transaction, new_asset_lock_proof_private_key) =
@@ -1206,10 +1219,10 @@ impl AppState {
                         &new_asset_lock_transaction,
                         &wallet.receive_address(),
                     )
-                        .await
-                        .map_err(|e| {
-                            Error::SdkExplainedError("error broadcasting transaction".to_string(), e)
-                        })?;
+                    .await
+                    .map_err(|e| {
+                        Error::SdkExplainedError("error broadcasting transaction".to_string(), e)
+                    })?;
 
                     identity_asset_lock_private_key_in_top_up.replace((
                         new_asset_lock_transaction.clone(),
@@ -1218,10 +1231,15 @@ impl AppState {
                     ));
 
                     identity
-                        .top_up_identity(sdk, new_asset_lock_proof.clone(), &new_asset_lock_proof_private_key, None)
+                        .top_up_identity(
+                            sdk,
+                            new_asset_lock_proof.clone(),
+                            &new_asset_lock_proof_private_key,
+                            None,
+                        )
                         .await?;
                 } else {
-                    return Err(dash_sdk::Error::DapiClientError(error_string).into())
+                    return Err(dash_sdk::Error::DapiClientError(error_string).into());
                 }
             }
             Err(e) => return Err(e.into()),

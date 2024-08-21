@@ -331,14 +331,14 @@ impl ScreenController for DocumentTypeScreenController {
     }
 }
 
-struct QueryDocumentTypeFormController {
+pub struct QueryDocumentTypeFormController {
     document_type: DocumentType,
     identity_id: Option<Identifier>,
     input: TextInput<DocumentQueryTextInputParser>,
 }
 
 impl QueryDocumentTypeFormController {
-    fn new(
+    pub fn new(
         data_contract: DataContract,
         document_type: DocumentType,
         identity_id: Option<Identifier>,
@@ -346,7 +346,7 @@ impl QueryDocumentTypeFormController {
     ) -> Self {
         let ours_query_part = if ours_query && identity_id.is_some() {
             format!(
-                "where `$ownerId` = '{}' ",
+                "where `records.identity` = '{}' ", // hardcoded for dpns. $ownerId only works if its indexed.
                 identity_id.unwrap().to_string(Encoding::Base58)
             )
         } else {

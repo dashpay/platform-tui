@@ -12,11 +12,17 @@ use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
 use crate::{
     backend::{StrategyTask, Task},
-    ui::form::{ComposedInput, Field, FormController, FormStatus, Input, InputStatus, SelectInput},
+    ui::form::{
+        parsers::DefaultTextInputParser, ComposedInput, Field, FormController, FormStatus, Input,
+        InputStatus, SelectInput, TextInput,
+    },
 };
 
 pub(super) struct StrategyOpContractUpdateNewFieldsFormController {
-    input: ComposedInput<(Field<SelectInput<u16>>, Field<SelectInput<f64>>)>,
+    input: ComposedInput<(
+        Field<TextInput<DefaultTextInputParser<u16>>>,
+        Field<SelectInput<f64>>,
+    )>,
     selected_strategy: String,
 }
 
@@ -24,10 +30,7 @@ impl StrategyOpContractUpdateNewFieldsFormController {
     pub(super) fn new(selected_strategy: String) -> Self {
         StrategyOpContractUpdateNewFieldsFormController {
             input: ComposedInput::new((
-                Field::new(
-                    "Times per block",
-                    SelectInput::new(vec![1, 2, 5, 10, 20, 40, 100, 1000]),
-                ),
+                Field::new("Times per block", TextInput::new("Enter a whole number")),
                 Field::new(
                     "Chance per block",
                     SelectInput::new(vec![1.0, 0.9, 0.75, 0.5, 0.25, 0.1, 0.05, 0.01]),

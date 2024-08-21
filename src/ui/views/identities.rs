@@ -1,5 +1,6 @@
 //! UI definitions related to identities.
 
+<<<<<<< HEAD
 use std::collections::BTreeMap;
 
 use dpp::{
@@ -13,6 +14,9 @@ use tuirealm::{
     command::{self, Cmd},
     MockComponent,
 };
+=======
+use dpp::prelude::Identity;
+>>>>>>> master
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
     props::{BorderSides, Borders, Color, TextSpan},
@@ -24,7 +28,11 @@ use tuirealm::{
 };
 
 use crate::{
+<<<<<<< HEAD
     backend::{as_json_string, identities::IdentityTask, AppState, BackendEvent, Task},
+=======
+    backend::{identities::IdentityTask, AppState, BackendEvent, Task},
+>>>>>>> master
     ui::{
         form::{
             parsers::DefaultTextInputParser, ComposedInput, Field, FormController, FormStatus,
@@ -38,6 +46,7 @@ use crate::{
     Event,
 };
 
+<<<<<<< HEAD
 const COMMAND_KEYS: [ScreenCommandKey; 15] = [
     ScreenCommandKey::new("q", "Back to Main"),
     ScreenCommandKey::new("r", "Register new"),
@@ -54,6 +63,19 @@ const COMMAND_KEYS: [ScreenCommandKey; 15] = [
     ScreenCommandKey::new("C-p", "Previous"),
     ScreenCommandKey::new("↓", "Scroll down"),
     ScreenCommandKey::new("↑", "Scroll up"),
+=======
+const COMMAND_KEYS: [ScreenCommandKey; 3] = [
+    ScreenCommandKey::new("q", "Back to Main"),
+    ScreenCommandKey::new("i", "Get Identity by ID"),
+    ScreenCommandKey::new("t", "Transfer credits"),
+];
+
+const LOADED_IDENITY_COMMAND_KEYS: [ScreenCommandKey; 4] = [
+    ScreenCommandKey::new("q", "Back to Main"),
+    ScreenCommandKey::new("i", "Get Identity by ID"),
+    ScreenCommandKey::new("t", "Transfer credits"),
+    ScreenCommandKey::new("r", "Register DPNS name for loaded identity"),
+>>>>>>> master
 ];
 
 #[memoize::memoize]
@@ -84,6 +106,7 @@ fn join_commands(
 
 pub(crate) struct IdentitiesScreenController {
     toggle_keys: [ScreenToggleKey; 1],
+<<<<<<< HEAD
     identity_view: Info,
     identity_select: List,
     known_identities: BTreeMap<Identifier, Identity>,
@@ -92,12 +115,17 @@ pub(crate) struct IdentitiesScreenController {
     identity_registration_in_progress: bool,
     identity_top_up_in_progress: bool,
     wallet_loaded: bool,
+=======
+    info: Info,
+    loaded_identity: Option<Identity>,
+>>>>>>> master
 }
 
 impl_builder!(IdentitiesScreenController);
 
 impl IdentitiesScreenController {
     pub(crate) async fn new(app_state: &AppState) -> Self {
+<<<<<<< HEAD
         let known_identities = app_state.known_identities.lock().await;
         let known_identities_vec = known_identities
             .iter()
@@ -165,6 +193,13 @@ impl IdentitiesScreenController {
             identity_registration_in_progress,
             identity_top_up_in_progress,
             wallet_loaded,
+=======
+        let loaded_identity = app_state.loaded_identity.lock().await;
+        IdentitiesScreenController {
+            toggle_keys: [ScreenToggleKey::new("p", "with proof")],
+            info: Info::new_fixed("Identity management commands"),
+            loaded_identity: loaded_identity.clone(),
+>>>>>>> master
         }
     }
 
@@ -241,11 +276,19 @@ impl ScreenController for IdentitiesScreenController {
     }
 
     fn command_keys(&self) -> &[ScreenCommandKey] {
+<<<<<<< HEAD
         join_commands(
             self.loaded_identity.is_some(),
             self.identity_registration_in_progress,
             self.identity_top_up_in_progress,
         )
+=======
+        if self.loaded_identity.is_some() {
+            LOADED_IDENITY_COMMAND_KEYS.as_ref()
+        } else {
+            COMMAND_KEYS.as_ref()
+        }
+>>>>>>> master
     }
 
     fn toggle_keys(&self) -> &[ScreenToggleKey] {
@@ -329,9 +372,15 @@ impl ScreenController for IdentitiesScreenController {
             Event::Key(KeyEvent {
                 code: Key::Char('r'),
                 modifiers: KeyModifiers::NONE,
+<<<<<<< HEAD
             }) if self.wallet_loaded && !self.identity_registration_in_progress => {
                 ScreenFeedback::Form(Box::new(RegisterIdentityFormController::new()))
             }
+=======
+            }) => ScreenFeedback::Form(Box::new(RegisterDPNSNameFormController::new(
+                self.loaded_identity.clone(),
+            ))),
+>>>>>>> master
 
             Event::Key(KeyEvent {
                 code: Key::Char('r'),
@@ -558,14 +607,16 @@ impl FormController for TransferCreditsFormController {
 
 pub(crate) struct RegisterDPNSNameFormController {
     input: TextInput<DefaultTextInputParser<String>>,
+    loaded_identity_option: Option<Identity>,
 }
 
 impl RegisterDPNSNameFormController {
-    fn new() -> Self {
-        RegisterDPNSNameFormController {
+    pub fn new(loaded_identity_option: Option<Identity>) -> Self {
+        Self {
             input: TextInput::new(
                 "DPNS name (example: enter \"something\" if you want \"something.dash\")",
             ),
+            loaded_identity_option,
         }
     }
 }
@@ -573,10 +624,19 @@ impl RegisterDPNSNameFormController {
 impl FormController for RegisterDPNSNameFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
         match self.input.on_event(event) {
-            InputStatus::Done(value) => FormStatus::Done {
-                task: Task::Identity(IdentityTask::RegisterDPNSName(value)),
-                block: true,
-            },
+            InputStatus::Done(value) => {
+                if let Some(identity) = &self.loaded_identity_option {
+                    FormStatus::Done {
+                        task: Task::Identity(IdentityTask::RegisterDPNSName(
+                            identity.clone(),
+                            value,
+                        )),
+                        block: true,
+                    }
+                } else {
+                    FormStatus::Exit
+                }
+            }
             status => status.into(),
         }
     }

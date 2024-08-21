@@ -2,6 +2,7 @@ use std::{
     collections::{BTreeMap, HashMap},
     ops::{Deref, DerefMut},
     str::FromStr,
+    time::Duration,
 };
 
 use bincode::{
@@ -208,7 +209,7 @@ pub(super) async fn run_wallet_task<'s>(
             if let Some(wallet) = &mut *wallet_guard {
                 match wallet {
                     Wallet::SingleKeyWallet(sk_wallet) => {
-                        match sk_wallet.split_utxos(sdk, count as usize).await {
+                        match sk_wallet.split_utxos(sdk, count as usize, insight).await {
                             Ok(_) => BackendEvent::TaskCompleted {
                                 task: Task::Wallet(task),
                                 execution_result: Ok("Split UTXOs".into()),
@@ -263,7 +264,7 @@ impl Wallet {
             None => StdRng::from_entropy(),
             Some(seed_value) => StdRng::seed_from_u64(seed_value),
         };
-        let fee = 10_000;
+        let fee = 30_000;
         let random_private_key: [u8; 32] = rng.gen();
         let private_key = PrivateKey::from_slice(&random_private_key, Network::Testnet)
             .expect("expected a private key");
@@ -273,9 +274,11 @@ impl Wallet {
 
         let one_time_key_hash = asset_lock_public_key.pubkey_hash();
 
-        let (mut utxos, change) = self
-            .take_unspent_utxos_for(amount + fee)
-            .ok_or(WalletError::Balance)?;
+        let (mut utxos, change) =
+            self.take_unspent_utxos_for(amount + fee)
+                .ok_or(WalletError::Custom(
+                    "take_unspent_utxos_for() returned None".to_string(),
+                ))?;
 
         let change_address = self.change_address();
 
@@ -288,8 +291,9 @@ impl Wallet {
             script_pubkey: ScriptBuf::new_op_return(&[]),
         };
         if change < fee {
-            tracing::error!("change < fee");
-            return Err(WalletError::Balance);
+            return Err(WalletError::Custom(
+                "Change < Fee in asset_lock_transaction()".to_string(),
+            ));
         }
         let change_output = TxOut {
             value: change - fee,
@@ -432,18 +436,7 @@ impl Wallet {
         insight: &InsightAPIClient,
     ) -> Result<HashMap<OutPoint, TxOut>, InsightError> {
         match self {
-            Wallet::SingleKeyWallet(wallet) => {
-                match insight
-                    .utxos_with_amount_for_addresses(&[&wallet.address])
-                    .await
-                {
-                    Ok(utxos) => {
-                        wallet.utxos = utxos.clone();
-                        Ok(utxos)
-                    }
-                    Err(err) => Err(err),
-                }
-            }
+            Wallet::SingleKeyWallet(wallet) => wallet.reload_utxos(insight).await,
         }
     }
 }
@@ -613,6 +606,22 @@ impl SingleKeyWallet {
         Some((taken_utxos, required.abs() as u64))
     }
 
+    pub async fn reload_utxos(
+        &mut self,
+        insight: &InsightAPIClient,
+    ) -> Result<HashMap<OutPoint, TxOut>, InsightError> {
+        match insight
+            .utxos_with_amount_for_addresses(&[&self.address])
+            .await
+        {
+            Ok(utxos) => {
+                self.utxos = utxos.clone();
+                Ok(utxos)
+            }
+            Err(err) => Err(err),
+        }
+    }
+
     /// Takes a usize `desired_utxo_count` specifying the desired number of UTXOs one wants the wallet to have
     /// and splits the existing utxos into that many (minus one) equally-valued UTXOs plus one UTXO holding leftover value.
     ///
@@ -627,13 +636,17 @@ impl SingleKeyWallet {
         &mut self,
         sdk: &Sdk,
         desired_utxo_count: usize,
+        insight: &InsightAPIClient,
     ) -> Result<(), WalletError> {
         tracing::info!("Splitting wallet UTXOs into {} UTXOs", desired_utxo_count);
 
         // Initialize
         const MAX_OUTPUTS_PER_TRANSACTION: usize = 24; // Dash Core only allows 24 outputs per tx
         let current_wallet_balance = self.balance();
-        let mut remaining_utxos_in_wallet = self.utxos.clone();
+        let mut remaining_utxos_in_wallet = self
+            .reload_utxos(insight)
+            .await
+            .expect("Expected to reload utxos");
         let mut num_utxos_remaining_to_create = desired_utxo_count;
 
         // Say we want 50 UTXOs, we need 3 transactions (24 + 24 + 2)
@@ -641,8 +654,8 @@ impl SingleKeyWallet {
             (desired_utxo_count as f64 / MAX_OUTPUTS_PER_TRANSACTION as f64).ceil() as usize;
 
         // Amount to fund each UTXO.
-        // Reserve a buffer of 1_000_000_000 to make sure we never go over the current balance
-        let utxo_split_value = (current_wallet_balance - 1_000_000_000) / desired_utxo_count as u64;
+        // Reserve a buffer of 1_000_000 duffs to make sure we never go over the current balance
+        let utxo_split_value = (current_wallet_balance - 1_000_000) / desired_utxo_count as u64;
 
         // Create and execute the transactions
         tracing::info!("We want to make {} transactions", number_of_transactions);
@@ -668,6 +681,7 @@ impl SingleKeyWallet {
                 remaining_utxos_in_wallet.iter().collect();
             remaining_utxos_in_wallet_vec.sort_by_key(|&(_, txout)| txout.value);
             remaining_utxos_in_wallet_vec.reverse(); // Sort greatest to least value utxo
+
             for (outpoint, txout) in remaining_utxos_in_wallet_vec.clone() {
                 if total_value_of_tx_inputs >= utxo_split_value * num_utxos_to_create_this_tx as u64
                 {
@@ -747,32 +761,67 @@ impl SingleKeyWallet {
                 allow_high_fees: false,
                 bypass_limits: false,
             };
+            let max_retries = 3;
             match sdk.execute(request, RequestSettings::default()).await {
                 Ok(BroadcastTransactionResponse { transaction_id: id }) => {
-                    let GetTransactionResponse { .. } = match sdk
-                        .execute(GetTransactionRequest { id }, RequestSettings::default())
-                        .await
-                    {
-                        Ok(response) => response,
-                        Err(e) => {
-                            tracing::error!("Error getting UTXO-splitting transaction: {e}");
-                            return Err(WalletError::Balance);
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+
+                    let mut retries = 0;
+                    let mut transaction_found = false;
+
+                    while retries < max_retries {
+                        match sdk
+                            .execute(
+                                GetTransactionRequest { id: id.clone() },
+                                RequestSettings::default(),
+                            )
+                            .await
+                        {
+                            Ok(GetTransactionResponse { .. }) => {
+                                transaction_found = true;
+                                break;
+                            }
+                            Err(e) => {
+                                let error_message = format!("{:?}", e);
+                                if error_message.contains("Transaction not found") {
+                                    tracing::warn!(
+                                        "Transaction not found, retrying... attempt {} of {}",
+                                        retries + 1,
+                                        max_retries
+                                    );
+                                    retries += 1;
+                                    tokio::time::sleep(Duration::from_secs(3)).await;
+                                } else {
+                                    tracing::error!(
+                                        "Error getting UTXO-splitting transaction: {e}"
+                                    );
+                                    return Err(WalletError::Balance);
+                                }
+                            }
                         }
-                    };
-                    tracing::info!(
-                        "Successfully broadcasted UTXO-splitting transaction {}.",
-                        i + 1,
-                    )
+                    }
+
+                    if transaction_found {
+                        tracing::info!(
+                            "Successfully broadcasted UTXO-splitting transaction {}.",
+                            i + 1,
+                        );
+                    } else {
+                        tracing::error!(
+                            "Failed to retrieve UTXO-splitting transaction after {} attempts.",
+                            max_retries
+                        );
+                        return Err(WalletError::Balance);
+                    }
                 }
                 Err(error) => {
                     tracing::error!("Transaction broadcast failed: {error}");
                 }
-            };
+            }
 
             // Update the wallet's UTXO set
             for outpoint in selected_utxos.iter() {
                 remaining_utxos_in_wallet.remove(outpoint);
-                self.utxos.remove(outpoint);
             }
             let txid = tx.txid();
             for (index, output) in tx.output.iter().enumerate() {
@@ -783,16 +832,10 @@ impl SingleKeyWallet {
                     },
                     output.clone(),
                 );
-                self.utxos.insert(
-                    OutPoint {
-                        txid,
-                        vout: index as u32,
-                    },
-                    output.clone(),
-                );
             }
 
             num_utxos_remaining_to_create -= tx.output.len();
+            tokio::time::sleep(Duration::from_secs(1)).await;
         }
 
         Ok(())
