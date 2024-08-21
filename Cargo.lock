@@ -1077,7 +1077,7 @@ dependencies = [
 [[package]]
 name = "dapi-grpc"
 version = "1.1.0-dev.1"
-source = "git+https://github.com/dashpay/platform?branch=fix/sql-queries-on-nested-properties#53cac71f6cedf99f6384181b2d611c792cf16bc7"
+source = "git+https://github.com/dashpay/platform#55da39f601e3a8ae2232ea7ed0ab10a003898c52"
 dependencies = [
  "dapi-grpc-macros",
  "futures-core",
@@ -1094,7 +1094,7 @@ dependencies = [
 [[package]]
 name = "dapi-grpc-macros"
 version = "1.1.0-dev.1"
-source = "git+https://github.com/dashpay/platform?branch=fix/sql-queries-on-nested-properties#53cac71f6cedf99f6384181b2d611c792cf16bc7"
+source = "git+https://github.com/dashpay/platform#55da39f601e3a8ae2232ea7ed0ab10a003898c52"
 dependencies = [
  "heck 0.5.0",
  "quote",
@@ -1139,7 +1139,7 @@ dependencies = [
 [[package]]
 name = "dash-sdk"
 version = "1.1.0-dev.1"
-source = "git+https://github.com/dashpay/platform?branch=fix/sql-queries-on-nested-properties#53cac71f6cedf99f6384181b2d611c792cf16bc7"
+source = "git+https://github.com/dashpay/platform#55da39f601e3a8ae2232ea7ed0ab10a003898c52"
 dependencies = [
  "arc-swap",
  "async-trait",
@@ -1245,7 +1245,7 @@ dependencies = [
 [[package]]
 name = "dashpay-contract"
 version = "1.1.0-dev.1"
-source = "git+https://github.com/dashpay/platform?branch=fix/sql-queries-on-nested-properties#53cac71f6cedf99f6384181b2d611c792cf16bc7"
+source = "git+https://github.com/dashpay/platform#55da39f601e3a8ae2232ea7ed0ab10a003898c52"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -1256,7 +1256,7 @@ dependencies = [
 [[package]]
 name = "data-contracts"
 version = "1.1.0-dev.1"
-source = "git+https://github.com/dashpay/platform?branch=fix/sql-queries-on-nested-properties#53cac71f6cedf99f6384181b2d611c792cf16bc7"
+source = "git+https://github.com/dashpay/platform#55da39f601e3a8ae2232ea7ed0ab10a003898c52"
 dependencies = [
  "dashpay-contract",
  "dpns-contract",
@@ -1358,7 +1358,7 @@ checksum = "75b325c5dbd37f80359721ad39aca5a29fb04c89279657cffdda8736d0c0b9d2"
 [[package]]
 name = "dpns-contract"
 version = "1.1.0-dev.1"
-source = "git+https://github.com/dashpay/platform?branch=fix/sql-queries-on-nested-properties#53cac71f6cedf99f6384181b2d611c792cf16bc7"
+source = "git+https://github.com/dashpay/platform#55da39f601e3a8ae2232ea7ed0ab10a003898c52"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -1369,7 +1369,7 @@ dependencies = [
 [[package]]
 name = "dpp"
 version = "1.1.0-dev.1"
-source = "git+https://github.com/dashpay/platform?branch=fix/sql-queries-on-nested-properties#53cac71f6cedf99f6384181b2d611c792cf16bc7"
+source = "git+https://github.com/dashpay/platform#55da39f601e3a8ae2232ea7ed0ab10a003898c52"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1417,7 +1417,7 @@ dependencies = [
 [[package]]
 name = "drive"
 version = "1.1.0-dev.1"
-source = "git+https://github.com/dashpay/platform?branch=fix/sql-queries-on-nested-properties#53cac71f6cedf99f6384181b2d611c792cf16bc7"
+source = "git+https://github.com/dashpay/platform#55da39f601e3a8ae2232ea7ed0ab10a003898c52"
 dependencies = [
  "arc-swap",
  "base64 0.22.1",
@@ -1454,7 +1454,7 @@ dependencies = [
 [[package]]
 name = "drive-proof-verifier"
 version = "1.1.0-dev.1"
-source = "git+https://github.com/dashpay/platform?branch=fix/sql-queries-on-nested-properties#53cac71f6cedf99f6384181b2d611c792cf16bc7"
+source = "git+https://github.com/dashpay/platform#55da39f601e3a8ae2232ea7ed0ab10a003898c52"
 dependencies = [
  "bincode",
  "dapi-grpc",
@@ -1675,7 +1675,7 @@ checksum = "9fc0510504f03c51ada170672ac806f1f105a88aa97a5281117e1ddc3368e51a"
 [[package]]
 name = "feature-flags-contract"
 version = "1.1.0-dev.1"
-source = "git+https://github.com/dashpay/platform?branch=fix/sql-queries-on-nested-properties#53cac71f6cedf99f6384181b2d611c792cf16bc7"
+source = "git+https://github.com/dashpay/platform#55da39f601e3a8ae2232ea7ed0ab10a003898c52"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -1944,7 +1944,7 @@ dependencies = [
 [[package]]
 name = "grovedb"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=7c743d5ac8113f848955d46a5a6722a422403b8c#7c743d5ac8113f848955d46a5a6722a422403b8c"
+source = "git+https://github.com/dashpay/grovedb?rev=713ad96a0ca443f72fa15738e82df529be1becbb#713ad96a0ca443f72fa15738e82df529be1becbb"
 dependencies = [
  "bincode",
  "bitvec",
@@ -1972,7 +1972,7 @@ dependencies = [
 [[package]]
 name = "grovedb-costs"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=7c743d5ac8113f848955d46a5a6722a422403b8c#7c743d5ac8113f848955d46a5a6722a422403b8c"
+source = "git+https://github.com/dashpay/grovedb?rev=713ad96a0ca443f72fa15738e82df529be1becbb#713ad96a0ca443f72fa15738e82df529be1becbb"
 dependencies = [
  "integer-encoding",
  "intmap",
@@ -1982,7 +1982,7 @@ dependencies = [
 [[package]]
 name = "grovedb-merk"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=7c743d5ac8113f848955d46a5a6722a422403b8c#7c743d5ac8113f848955d46a5a6722a422403b8c"
+source = "git+https://github.com/dashpay/grovedb?rev=713ad96a0ca443f72fa15738e82df529be1becbb#713ad96a0ca443f72fa15738e82df529be1becbb"
 dependencies = [
  "blake3",
  "byteorder",
@@ -2006,12 +2006,12 @@ dependencies = [
 [[package]]
 name = "grovedb-path"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=7c743d5ac8113f848955d46a5a6722a422403b8c#7c743d5ac8113f848955d46a5a6722a422403b8c"
+source = "git+https://github.com/dashpay/grovedb?rev=713ad96a0ca443f72fa15738e82df529be1becbb#713ad96a0ca443f72fa15738e82df529be1becbb"
 
 [[package]]
 name = "grovedb-storage"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=7c743d5ac8113f848955d46a5a6722a422403b8c#7c743d5ac8113f848955d46a5a6722a422403b8c"
+source = "git+https://github.com/dashpay/grovedb?rev=713ad96a0ca443f72fa15738e82df529be1becbb#713ad96a0ca443f72fa15738e82df529be1becbb"
 dependencies = [
  "blake3",
  "grovedb-costs",
@@ -2030,7 +2030,7 @@ dependencies = [
 [[package]]
 name = "grovedb-version"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=7c743d5ac8113f848955d46a5a6722a422403b8c#7c743d5ac8113f848955d46a5a6722a422403b8c"
+source = "git+https://github.com/dashpay/grovedb?rev=713ad96a0ca443f72fa15738e82df529be1becbb#713ad96a0ca443f72fa15738e82df529be1becbb"
 dependencies = [
  "thiserror",
  "versioned-feature-core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -2039,7 +2039,7 @@ dependencies = [
 [[package]]
 name = "grovedb-visualize"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=7c743d5ac8113f848955d46a5a6722a422403b8c#7c743d5ac8113f848955d46a5a6722a422403b8c"
+source = "git+https://github.com/dashpay/grovedb?rev=713ad96a0ca443f72fa15738e82df529be1becbb#713ad96a0ca443f72fa15738e82df529be1becbb"
 dependencies = [
  "hex",
  "itertools 0.12.1",
@@ -2566,7 +2566,7 @@ dependencies = [
 [[package]]
 name = "json-schema-compatibility-validator"
 version = "1.1.0-dev.1"
-source = "git+https://github.com/dashpay/platform?branch=fix/sql-queries-on-nested-properties#53cac71f6cedf99f6384181b2d611c792cf16bc7"
+source = "git+https://github.com/dashpay/platform#55da39f601e3a8ae2232ea7ed0ab10a003898c52"
 dependencies = [
  "json-patch",
  "once_cell",
@@ -2785,7 +2785,7 @@ dependencies = [
 [[package]]
 name = "masternode-reward-shares-contract"
 version = "1.1.0-dev.1"
-source = "git+https://github.com/dashpay/platform?branch=fix/sql-queries-on-nested-properties#53cac71f6cedf99f6384181b2d611c792cf16bc7"
+source = "git+https://github.com/dashpay/platform#55da39f601e3a8ae2232ea7ed0ab10a003898c52"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -3417,7 +3417,7 @@ checksum = "d231b230927b5e4ad203db57bbcbee2802f6bce620b1e4a9024a07d94e2907ec"
 [[package]]
 name = "platform-serialization"
 version = "1.1.0-dev.1"
-source = "git+https://github.com/dashpay/platform?branch=fix/sql-queries-on-nested-properties#53cac71f6cedf99f6384181b2d611c792cf16bc7"
+source = "git+https://github.com/dashpay/platform#55da39f601e3a8ae2232ea7ed0ab10a003898c52"
 dependencies = [
  "bincode",
  "platform-version",
@@ -3426,7 +3426,7 @@ dependencies = [
 [[package]]
 name = "platform-serialization-derive"
 version = "1.1.0-dev.1"
-source = "git+https://github.com/dashpay/platform?branch=fix/sql-queries-on-nested-properties#53cac71f6cedf99f6384181b2d611c792cf16bc7"
+source = "git+https://github.com/dashpay/platform#55da39f601e3a8ae2232ea7ed0ab10a003898c52"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3437,7 +3437,7 @@ dependencies = [
 [[package]]
 name = "platform-value"
 version = "1.1.0-dev.1"
-source = "git+https://github.com/dashpay/platform?branch=fix/sql-queries-on-nested-properties#53cac71f6cedf99f6384181b2d611c792cf16bc7"
+source = "git+https://github.com/dashpay/platform#55da39f601e3a8ae2232ea7ed0ab10a003898c52"
 dependencies = [
  "base64 0.22.1",
  "bincode",
@@ -3459,7 +3459,7 @@ dependencies = [
 [[package]]
 name = "platform-version"
 version = "1.1.0-dev.1"
-source = "git+https://github.com/dashpay/platform?branch=fix/sql-queries-on-nested-properties#53cac71f6cedf99f6384181b2d611c792cf16bc7"
+source = "git+https://github.com/dashpay/platform#55da39f601e3a8ae2232ea7ed0ab10a003898c52"
 dependencies = [
  "bincode",
  "grovedb-version",
@@ -3471,7 +3471,7 @@ dependencies = [
 [[package]]
 name = "platform-versioning"
 version = "1.1.0-dev.1"
-source = "git+https://github.com/dashpay/platform?branch=fix/sql-queries-on-nested-properties#53cac71f6cedf99f6384181b2d611c792cf16bc7"
+source = "git+https://github.com/dashpay/platform#55da39f601e3a8ae2232ea7ed0ab10a003898c52"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4028,7 +4028,7 @@ dependencies = [
 [[package]]
 name = "rs-dapi-client"
 version = "1.1.0-dev.1"
-source = "git+https://github.com/dashpay/platform?branch=fix/sql-queries-on-nested-properties#53cac71f6cedf99f6384181b2d611c792cf16bc7"
+source = "git+https://github.com/dashpay/platform#55da39f601e3a8ae2232ea7ed0ab10a003898c52"
 dependencies = [
  "backon",
  "chrono",
@@ -4537,7 +4537,7 @@ checksum = "f27f6278552951f1f2b8cf9da965d10969b2efdea95a6ec47987ab46edfe263a"
 [[package]]
 name = "simple-signer"
 version = "1.1.0-dev.1"
-source = "git+https://github.com/dashpay/platform?branch=fix/sql-queries-on-nested-properties#53cac71f6cedf99f6384181b2d611c792cf16bc7"
+source = "git+https://github.com/dashpay/platform#55da39f601e3a8ae2232ea7ed0ab10a003898c52"
 dependencies = [
  "base64 0.22.1",
  "bincode",
@@ -4690,7 +4690,7 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 [[package]]
 name = "strategy-tests"
 version = "1.1.0-dev.1"
-source = "git+https://github.com/dashpay/platform?branch=fix/sql-queries-on-nested-properties#53cac71f6cedf99f6384181b2d611c792cf16bc7"
+source = "git+https://github.com/dashpay/platform#55da39f601e3a8ae2232ea7ed0ab10a003898c52"
 dependencies = [
  "bincode",
  "dpp",
@@ -5985,7 +5985,7 @@ dependencies = [
 [[package]]
 name = "withdrawals-contract"
 version = "1.1.0-dev.1"
-source = "git+https://github.com/dashpay/platform?branch=fix/sql-queries-on-nested-properties#53cac71f6cedf99f6384181b2d611c792cf16bc7"
+source = "git+https://github.com/dashpay/platform#55da39f601e3a8ae2232ea7ed0ab10a003898c52"
 dependencies = [
  "num_enum",
  "platform-value",

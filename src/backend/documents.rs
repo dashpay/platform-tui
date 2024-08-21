@@ -240,6 +240,7 @@ impl AppState {
                     Purpose::AUTHENTICATION,
                     HashSet::from([document_type.security_level_requirement()]),
                     HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
+                    false
                 ) {
                     Some(key) => key,
                     None => {
@@ -408,6 +409,7 @@ impl AppState {
                         Purpose::AUTHENTICATION,
                         HashSet::from([SecurityLevel::CRITICAL]),
                         HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
+                        false,
                     ) {
                         let price = match document
                             .properties()
@@ -539,6 +541,7 @@ impl AppState {
                         Purpose::AUTHENTICATION,
                         HashSet::from([SecurityLevel::CRITICAL]),
                         HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
+                        false,
                     ) {
                         // Get signer from loaded_identity
                         let identity_private_keys_lock = self.identity_private_keys.lock().await;
@@ -655,6 +658,7 @@ impl AppState {
                         Purpose::AUTHENTICATION,
                         HashSet::from([SecurityLevel::CRITICAL]),
                         HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
+                        false,
                     ) {
                         Some(key) => key,
                         None => {
@@ -907,6 +911,7 @@ impl AppState {
                     Purpose::VOTING,
                     HashSet::from(SecurityLevel::full_range()),
                     HashSet::from(KeyType::all_key_types()),
+                    false,
                 ) {
                     Some(voting_key) => voting_key,
                     None => {
@@ -995,6 +1000,7 @@ async fn broadcast_random_documents<'s>(
             Purpose::AUTHENTICATION,
             HashSet::from([document_type.security_level_requirement()]),
             HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
+            false,
         )
         .ok_or(Error::DocumentSigningError(
             "No public key matching security level requirements".to_string(),
