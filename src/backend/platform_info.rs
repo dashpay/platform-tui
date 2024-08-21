@@ -1,10 +1,10 @@
 use chrono::{prelude::*, LocalResult};
 use chrono_humanize::{Accuracy, HumanTime, Tense};
-use cli_clipboard::{ClipboardContext, ClipboardProvider};
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
+use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
 use dash_sdk::sdk::prettify_proof;
 use dash_sdk::{
-    platform::{types::epoch::ExtendedEpochInfoEx, Fetch, FetchMany, LimitQuery},
+    platform::{Fetch, FetchMany, LimitQuery},
     Sdk,
 };
 use dpp::{

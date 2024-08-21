@@ -75,6 +75,11 @@ pub(crate) enum DocumentTask {
         count: u16,
     },
     QueryContestedResources(DataContract, DocumentType),
+    QueryDocumentsAndContestedResources {
+        document_query: DocumentQuery,
+        data_contract: DataContract,
+        document_type: DocumentType,
+    },
     QueryVoteContenders(String, Vec<Value>, String, Identifier),
     VoteOnContestedResource(VotePoll, ResourceVoteChoice),
     BroadcastDocument {
@@ -235,6 +240,7 @@ impl AppState {
                     Purpose::AUTHENTICATION,
                     HashSet::from([document_type.security_level_requirement()]),
                     HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
+                    false
                 ) {
                     Some(key) => key,
                     None => {
@@ -403,6 +409,7 @@ impl AppState {
                         Purpose::AUTHENTICATION,
                         HashSet::from([SecurityLevel::CRITICAL]),
                         HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
+                        false,
                     ) {
                         let price = match document
                             .properties()
@@ -534,6 +541,7 @@ impl AppState {
                         Purpose::AUTHENTICATION,
                         HashSet::from([SecurityLevel::CRITICAL]),
                         HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
+                        false,
                     ) {
                         // Get signer from loaded_identity
                         let identity_private_keys_lock = self.identity_private_keys.lock().await;
@@ -650,6 +658,7 @@ impl AppState {
                         Purpose::AUTHENTICATION,
                         HashSet::from([SecurityLevel::CRITICAL]),
                         HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
+                        false,
                     ) {
                         Some(key) => key,
                         None => {
@@ -734,6 +743,63 @@ impl AppState {
                     }
                 }
             }
+            DocumentTask::QueryDocumentsAndContestedResources {
+                document_query,
+                data_contract,
+                document_type,
+            } => {
+                // Fetch documents
+                let documents_result = Document::fetch_many(&sdk, document_query.clone()).await;
+
+                // Fetch contested resources
+                let contested_resources_result =
+                    if let Some(contested_index) = document_type.find_contested_index() {
+                        let query = VotePollsByDocumentTypeQuery {
+                            contract_id: data_contract.id(),
+                            document_type_name: document_type.name().to_string(),
+                            index_name: contested_index.name.clone(),
+                            start_at_value: None,
+                            start_index_values: vec!["dash".into()], // hardcoded for dpns
+                            end_index_values: vec![],
+                            limit: None,
+                            order_ascending: true,
+                        };
+
+                        ContestedResource::fetch_many(sdk, query).await
+                    } else {
+                        return BackendEvent::TaskCompleted {
+                            task: Task::Document(task),
+                            execution_result: Err(
+                                "No contested index for this document type".to_owned()
+                            ),
+                        };
+                    };
+
+                // Combine results
+                match (documents_result, contested_resources_result) {
+                    (Ok(documents), Ok(contested_resources)) => BackendEvent::TaskCompleted {
+                        task: Task::Document(task),
+                        execution_result: Ok(CompletedTaskPayload::DocumentsAndContestedResources(
+                            documents,
+                            contested_resources,
+                        )),
+                    },
+                    (Err(documents_err), _) => BackendEvent::TaskCompleted {
+                        task: Task::Document(task),
+                        execution_result: Err(format!(
+                            "Failed to fetch documents: {}",
+                            documents_err
+                        )),
+                    },
+                    (_, Err(contested_resources_err)) => BackendEvent::TaskCompleted {
+                        task: Task::Document(task),
+                        execution_result: Err(format!(
+                            "Failed to fetch contested resources: {}",
+                            contested_resources_err
+                        )),
+                    },
+                }
+            }
             DocumentTask::QueryVoteContenders(
                 index_name,
                 index_values,
@@ -816,12 +882,17 @@ impl AppState {
                 // Get signer from loaded_identity
                 // Convert loaded_identity to SimpleSigner
                 let identity_private_keys_lock = self.identity_private_keys.lock().await;
-                let loaded_identity_lock = self
-                    .loaded_identity
-                    .lock()
-                    .await
-                    .clone()
-                    .expect("Expected to get a loaded identity");
+                let loaded_identity_lock = match self.loaded_identity.lock().await.clone() {
+                    Some(identity) => identity,
+                    None => {
+                        return BackendEvent::TaskCompleted {
+                            task: Task::Document(task),
+                            execution_result: Err(
+                                "No loaded identity for signing vote transaction".to_string(),
+                            ),
+                        };
+                    }
+                };
 
                 let mut signer = SimpleSigner::default();
                 let Identity::V0(identity_v0) = &loaded_identity_lock;
@@ -840,6 +911,7 @@ impl AppState {
                     Purpose::VOTING,
                     HashSet::from(SecurityLevel::full_range()),
                     HashSet::from(KeyType::all_key_types()),
+                    false,
                 ) {
                     Some(voting_key) => voting_key,
                     None => {
@@ -928,6 +1000,7 @@ async fn broadcast_random_documents<'s>(
             Purpose::AUTHENTICATION,
             HashSet::from([document_type.security_level_requirement()]),
             HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
+            false,
         )
         .ok_or(Error::DocumentSigningError(
             "No public key matching security level requirements".to_string(),

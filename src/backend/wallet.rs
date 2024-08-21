@@ -30,8 +30,9 @@ use rand::{prelude::StdRng, Rng, SeedableRng};
 use rs_dapi_client::DapiRequestExecutor;
 use tokio::sync::{Mutex, MutexGuard};
 
-use super::{AppStateUpdate, BackendEvent, CompletedTaskPayload, Task};
+use super::{set_clipboard, AppStateUpdate, BackendEvent, CompletedTaskPayload, Task};
 use crate::backend::insight::{InsightAPIClient, InsightError};
+use crate::backend::Wallet::SingleKeyWallet as BackendWallet;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum WalletTask {
@@ -43,39 +44,65 @@ pub enum WalletTask {
     SplitUTXOs(u32),
 }
 
-pub async fn add_wallet_by_private_key_as_string(
+pub async fn add_wallet_by_private_key_as_string<'s>(
     wallet_state: &Mutex<Option<Wallet>>,
     private_key: &String,
-) {
+    insight: &'s InsightAPIClient,
+) -> Result<(), WalletError> {
     let private_key = match private_key.len() {
         64 => {
             // hex
-            let bytes = hex::decode(private_key).expect("expected hex"); // TODO error hadling
-            PrivateKey::from_slice(bytes.as_slice(), Network::Testnet)
-                .expect("expected private key")
+            let bytes = match hex::decode(private_key) {
+                Ok(bytes) => bytes,
+                Err(_) => return Err(WalletError::Custom("Failed to decode hex".to_string())),
+            };
+            match PrivateKey::from_slice(bytes.as_slice(), Network::Testnet) {
+                Ok(key) => key,
+                Err(_) => return Err(WalletError::Custom("Expected private key".to_string())),
+            }
         }
-        0 => {
-            return;
+        51 | 52 => {
+            // wif
+            match PrivateKey::from_wif(private_key) {
+                Ok(key) => key,
+                Err(_) => return Err(WalletError::Custom("Expected WIF key".to_string())),
+            }
         }
-        _ => PrivateKey::from_wif(private_key.as_str()).expect("expected WIF key"),
+        _ => {
+            return Err(WalletError::Custom(
+                "Private key in env file can't be decoded".to_string(),
+            ));
+        }
     };
-    add_wallet_by_private_key(wallet_state, private_key).await
+    Ok(add_wallet_by_private_key(wallet_state, private_key, insight).await)
 }
 
-pub async fn add_wallet_by_private_key(
-    wallet_state: &Mutex<Option<Wallet>>,
+pub async fn add_wallet_by_private_key<'s>(
+    wallet_state: &'s Mutex<Option<Wallet>>,
     private_key: PrivateKey,
+    insight: &'s InsightAPIClient,
 ) {
     let secp = Secp256k1::new();
     let public_key = private_key.public_key(&secp);
     // todo: make the network be part of state
     let address = Address::p2pkh(&public_key, Network::Testnet);
-    let wallet = Wallet::SingleKeyWallet(SingleKeyWallet {
+    let mut wallet = Wallet::SingleKeyWallet(SingleKeyWallet {
         private_key,
         public_key,
         address,
         utxos: Default::default(),
     });
+
+    match wallet.reload_utxos(insight).await {
+        Ok(utxos) => match wallet {
+            BackendWallet(ref mut single_key_wallet) => {
+                single_key_wallet.utxos = utxos;
+            }
+        },
+        Err(_) => {
+            // nothing
+        }
+    };
 
     let mut wallet_guard = wallet_state.lock().await;
     *wallet_guard = Some(wallet);
@@ -89,7 +116,7 @@ pub(super) async fn run_wallet_task<'s>(
 ) -> BackendEvent<'s> {
     match task {
         WalletTask::AddByPrivateKey(ref private_key) => {
-            add_wallet_by_private_key_as_string(&wallet_state, private_key).await;
+            add_wallet_by_private_key_as_string(&wallet_state, private_key, insight).await;
 
             let wallet_guard = wallet_state.lock().await;
             let loaded_wallet_update = MutexGuard::map(wallet_guard, |opt| {
@@ -105,7 +132,7 @@ pub(super) async fn run_wallet_task<'s>(
         WalletTask::AddRandomKey => {
             let mut rng = StdRng::from_entropy();
             let private_key = PrivateKey::new(SecretKey::new(&mut rng), Network::Testnet);
-            add_wallet_by_private_key(&wallet_state, private_key).await;
+            add_wallet_by_private_key(&wallet_state, private_key, insight).await;
 
             let wallet_guard = wallet_state.lock().await;
             let loaded_wallet_update = MutexGuard::map(wallet_guard, |opt| {
@@ -148,10 +175,16 @@ pub(super) async fn run_wallet_task<'s>(
             let wallet_guard = wallet_state.lock().await;
             if let Some(wallet) = wallet_guard.deref() {
                 let address = wallet.receive_address();
-                cli_clipboard::set_contents(address.to_string()).unwrap();
-                BackendEvent::TaskCompleted {
-                    task: Task::Wallet(task),
-                    execution_result: Ok("Copied Address".into()),
+                if set_clipboard(address.to_string()).await.is_ok() {
+                    BackendEvent::TaskCompleted {
+                        task: Task::Wallet(task),
+                        execution_result: Ok("Copied Address".into()),
+                    }
+                } else {
+                    BackendEvent::TaskCompleted {
+                        task: Task::Wallet(task),
+                        execution_result: Err("Clipboard is not supported".into()),
+                    }
                 }
             } else {
                 BackendEvent::TaskCompleted {

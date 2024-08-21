@@ -391,6 +391,7 @@ async fn broadcast_contract_variants(
             Purpose::AUTHENTICATION,
             HashSet::from([SecurityLevel::CRITICAL]),
             HashSet::from([KeyType::ECDSA_SECP256K1]),
+            false,
         )
         .expect("expected to get a key");
 
@@ -514,6 +515,7 @@ async fn broadcast_random_documents_load_test(
             Purpose::AUTHENTICATION,
             HashSet::from([document_type.security_level_requirement()]),
             HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
+            false,
         )
         .expect("No public key matching security level requirements");
 

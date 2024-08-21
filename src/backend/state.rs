@@ -3,12 +3,10 @@
 //! persistence required by backend.
 
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{collections::BTreeMap, fs};
 
 use bincode::{Decode, Encode};
-use clap::Id;
 use dpp::{
     dashcore::{
         psbt::serialize::{Deserialize, Serialize},
@@ -31,7 +29,7 @@ use strategy_tests::Strategy;
 use tokio::sync::Mutex;
 use walkdir::{DirEntry, WalkDir};
 
-use super::wallet::{add_wallet_by_private_key, add_wallet_by_private_key_as_string, Wallet};
+use super::wallet::{add_wallet_by_private_key_as_string, Wallet};
 use crate::{backend::insight::InsightAPIClient, config::Config};
 
 const CURRENT_PROTOCOL_VERSION: ProtocolVersion = 1;
@@ -58,6 +56,7 @@ pub struct AppState {
     pub loaded_wallet: Mutex<Option<Wallet>>,
     pub drive: Mutex<Drive>,
     pub known_identities: Mutex<BTreeMap<Identifier, Identity>>,
+    pub known_identities_names: Mutex<BTreeMap<Identifier, Vec<String>>>,
     pub known_contracts: Mutex<KnownContractsMap>,
     pub supporting_contracts: Mutex<BTreeMap<String, DataContract>>, /* Contracts from
                                                                       * supporting_files */
@@ -134,6 +133,7 @@ impl Default for AppState {
             known_contracts: BTreeMap::new().into(),
             supporting_contracts: supporting_contracts_raw.into(),
             known_identities: BTreeMap::new().into(),
+            known_identities_names: BTreeMap::new().into(),
             available_strategies: BTreeMap::new().into(),
             selected_strategy: None.into(),
             identity_asset_lock_private_key_in_creation: None.into(),
@@ -150,6 +150,7 @@ struct AppStateInSerializationFormat {
     pub identity_private_keys: IdentityPrivateKeysMap,
     pub loaded_wallet: Option<Wallet>,
     pub known_identities: BTreeMap<Identifier, Identity>,
+    pub known_identities_names: BTreeMap<Identifier, Vec<String>>,
     pub known_contracts: BTreeMap<String, Vec<u8>>,
     pub supporting_contracts: BTreeMap<String, Vec<u8>>,
     pub available_strategies: BTreeMap<String, Vec<u8>>,
@@ -187,6 +188,7 @@ impl PlatformSerializableWithPlatformVersion for AppState {
             loaded_wallet,
             drive,
             known_identities,
+            known_identities_names,
             known_contracts,
             supporting_contracts,
             available_strategies,
@@ -258,6 +260,7 @@ impl PlatformSerializableWithPlatformVersion for AppState {
             identity_private_keys: identity_private_keys.blocking_lock().clone(),
             loaded_wallet: loaded_wallet.blocking_lock().clone(),
             known_identities: known_identities.blocking_lock().clone(),
+            known_identities_names: known_identities_names.blocking_lock().clone(),
             known_contracts: known_contracts_in_serialization_format,
             supporting_contracts: supporting_contracts_in_serialization_format,
             available_strategies: available_strategies_in_serialization_format,
@@ -304,6 +307,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
             identity_private_keys,
             loaded_wallet,
             known_identities,
+            known_identities_names,
             known_contracts,
             supporting_contracts,
             available_strategies,
@@ -400,7 +404,10 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
         // Deserialize the wallet state and wrap it in Arc<Mutex<_>>
         let deserialized_wallet_state = loaded_wallet
             .map(|wallet| Mutex::new(Some(wallet)))
-            .unwrap_or_else(|| Mutex::new(None));
+            .unwrap_or_else(|| {
+                tracing::warn!("Failed to deserialize loaded wallet state.");
+                Mutex::new(None)
+            });
 
         Ok(AppState {
             loaded_identity: loaded_identity.into(),
@@ -409,6 +416,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
             loaded_wallet: deserialized_wallet_state,
             drive: drive.into(),
             known_identities: known_identities.into(),
+            known_identities_names: known_identities_names.into(),
             known_contracts: known_contracts.into(),
             supporting_contracts: supporting_contracts.into(),
             available_strategies: available_strategies.into(),
@@ -427,10 +435,11 @@ impl AppState {
         let path = config.state_file_path();
 
         let Ok(read_result) = fs::read(path.clone()) else {
+            tracing::warn!("No state file exists or we failed to read it. This is expected on the first time loading the app on a new network.");
             let state = AppState::default();
             if let Some(private_key) = &config.wallet_private_key {
                 let wallet_state = &state.loaded_wallet;
-                add_wallet_by_private_key_as_string(&wallet_state, private_key).await;
+                add_wallet_by_private_key_as_string(&wallet_state, private_key, insight).await;
             }
             return state;
         };
@@ -440,6 +449,7 @@ impl AppState {
             false,
             PlatformVersion::get(CURRENT_PROTOCOL_VERSION).unwrap(),
         ) else {
+            tracing::warn!("Failed to deserialize app state after reading state file.");
             let start = SystemTime::now();
             let since_the_epoch = start
                 .duration_since(UNIX_EPOCH)
@@ -456,14 +466,15 @@ impl AppState {
             let state = AppState::default();
             if let Some(private_key) = &config.wallet_private_key {
                 let wallet_state = &state.loaded_wallet;
-                add_wallet_by_private_key_as_string(&wallet_state, private_key).await;
+                add_wallet_by_private_key_as_string(&wallet_state, private_key, insight).await;
             }
             return state;
         };
 
+        // Load wallet by private key, overriding the state file
         if let Some(private_key) = &config.wallet_private_key {
             let wallet_state = &app_state.loaded_wallet;
-            add_wallet_by_private_key_as_string(&wallet_state, private_key).await;
+            add_wallet_by_private_key_as_string(&wallet_state, private_key, insight).await;
         }
 
         // Load supporting contracts
