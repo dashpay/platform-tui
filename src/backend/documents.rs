@@ -878,12 +878,17 @@ impl AppState {
                 // Get signer from loaded_identity
                 // Convert loaded_identity to SimpleSigner
                 let identity_private_keys_lock = self.identity_private_keys.lock().await;
-                let loaded_identity_lock = self
-                    .loaded_identity
-                    .lock()
-                    .await
-                    .clone()
-                    .expect("Expected to get a loaded identity");
+                let loaded_identity_lock = match self.loaded_identity.lock().await.clone() {
+                    Some(identity) => identity,
+                    None => {
+                        return BackendEvent::TaskCompleted {
+                            task: Task::Document(task),
+                            execution_result: Err(
+                                "No loaded identity for signing vote transaction".to_string(),
+                            ),
+                        };
+                    }
+                };
 
                 let mut signer = SimpleSigner::default();
                 let Identity::V0(identity_v0) = &loaded_identity_lock;
