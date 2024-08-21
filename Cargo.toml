@@ -51,3 +51,4 @@ dashmap = "5.5.3"
 grovedb-version = { git = "https://github.com/dashpay/grovedb", rev = "713ad96a0ca443f72fa15738e82df529be1becbb"}
 sha2 = "0.10.8"
 arboard = { version = "3.4.0", default-features = false, features = ["windows-sys"] }
+hdrhistogram = "7.5.4"
