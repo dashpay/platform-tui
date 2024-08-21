@@ -113,7 +113,7 @@ pub enum IdentityTask {
     ClearLoadedIdentity,
     ClearRegistrationOfIdentityInProgress,
     TransferCredits(String, f64),
-    LoadEvonodeIdentity(String, String),
+    LoadMasternodeIdentity(String, String),
     LoadIdentityById(String),
     AddPrivateKeys(Vec<String>),
     ForgetIdentity(Identifier),
@@ -422,7 +422,7 @@ impl AppState {
                     }
                 }
             }
-            IdentityTask::LoadEvonodeIdentity(ref pro_tx_hash, ref private_key_in_wif) => {
+            IdentityTask::LoadMasternodeIdentity(ref pro_tx_hash, ref private_key_in_wif) => {
                 // Convert proTxHash to bytes
                 let pro_tx_hash_bytes = match hex::decode(pro_tx_hash) {
                     Ok(hash) => hash,
@@ -493,6 +493,11 @@ impl AppState {
                                 (evonode_identity.id(), fetched_voting_public_key.id()),
                                 private_key.to_bytes(),
                             );
+
+                            // Insert into known_identities
+                            let mut known_identities_lock = self.known_identities.lock().await;
+                            known_identities_lock
+                                .insert(evonode_identity.id(), evonode_identity.clone());
 
                             // Set loaded identity
                             let mut loaded_identity = self.loaded_identity.lock().await;

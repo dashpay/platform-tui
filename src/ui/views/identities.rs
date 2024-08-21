@@ -847,7 +847,10 @@ impl FormController for LoadMasternodeIdentityFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
         match self.input.on_event(event) {
             InputStatus::Done((pro_tx_hash, private_key)) => FormStatus::Done {
-                task: Task::Identity(IdentityTask::LoadEvonodeIdentity(pro_tx_hash, private_key)),
+                task: Task::Identity(IdentityTask::LoadMasternodeIdentity(
+                    pro_tx_hash,
+                    private_key,
+                )),
                 block: true,
             },
             status => status.into(),
