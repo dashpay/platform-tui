@@ -74,8 +74,6 @@ fn join_commands(
         if identity_registration_in_progress {
             commands.push(ScreenCommandKey::new("r", "Continue identity registration"));
             commands.push(ScreenCommandKey::new("g", "Restart identity registration"));
-        } else {
-            commands.push(ScreenCommandKey::new("r", "Register identity"));
         }
     }
 

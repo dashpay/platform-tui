@@ -42,24 +42,13 @@ const IDENTITY_LOADED_COMMANDS: [ScreenCommandKey; 2] = [
 ];
 
 #[memoize::memoize]
-fn join_commands(
-    wallet_loaded: bool,
-    identity_loaded: bool,
-    identity_registration_in_progress: bool,
-) -> &'static [ScreenCommandKey] {
+fn join_commands(wallet_loaded: bool, identity_loaded: bool) -> &'static [ScreenCommandKey] {
     let mut commands = vec![ScreenCommandKey::new("q", "Back to Main")];
 
     if wallet_loaded {
         commands.extend_from_slice(&WALLET_LOADED_COMMANDS);
         if identity_loaded {
             commands.extend_from_slice(&IDENTITY_LOADED_COMMANDS);
-        } else {
-            if identity_registration_in_progress {
-                commands.push(ScreenCommandKey::new("i", "Continue identity registration"));
-                commands.push(ScreenCommandKey::new("g", "Restart identity registration"));
-            } else {
-                commands.push(ScreenCommandKey::new("i", "Register identity"));
-            }
         }
     } else {
         commands.push(ScreenCommandKey::new("a", "Add wallet by private key"));
@@ -103,7 +92,9 @@ impl WalletScreenController {
                     .is_some();
                 (
                     Info::new_fixed(&display_wallet(wallet)),
-                    Info::new_fixed("No identity loaded yet. Go to Identities screen to load one."),
+                    Info::new_fixed(
+                        "No identity loaded yet. Go to Identities screen to load or register one.",
+                    ),
                     true,
                     false,
                     identity_registration_in_progress,
@@ -112,7 +103,9 @@ impl WalletScreenController {
         } else {
             (
                 Info::new_fixed("Wallet management commands\n\nNo wallet loaded yet"),
-                Info::new_fixed("No identity loaded yet. Go to Identities screen to load one."),
+                Info::new_fixed(
+                    "No identity loaded yet. Go to Identities screen to load or register one.",
+                ),
                 false,
                 false,
                 false,
@@ -144,11 +137,7 @@ impl ScreenController for WalletScreenController {
     }
 
     fn command_keys(&self) -> &[ScreenCommandKey] {
-        join_commands(
-            self.wallet_loaded,
-            self.identity_loaded,
-            self.identity_registration_in_progress,
-        )
+        join_commands(self.wallet_loaded, self.identity_loaded)
     }
 
     fn toggle_keys(&self) -> &[ScreenToggleKey] {
