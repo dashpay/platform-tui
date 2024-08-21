@@ -65,6 +65,11 @@ const DPNS_KNOWN_COMMAND_KEYS: [ScreenCommandKey; 8] = [
     ScreenCommandKey::new("v", "Voting screen"),
 ];
 
+const DPNS_KNOWN_NO_IDENTITIES_COMMAND_KEYS: [ScreenCommandKey; 2] = [
+    ScreenCommandKey::new("q", "Back"),
+    ScreenCommandKey::new("v", "Voting screen"),
+];
+
 pub(crate) struct DpnsUsernamesScreenController {
     identities_map: BTreeMap<Identifier, Identity>,
     identities_names_map: BTreeMap<Identifier, Vec<String>>,
@@ -172,10 +177,12 @@ impl ScreenController for DpnsUsernamesScreenController {
     }
 
     fn command_keys(&self) -> &[ScreenCommandKey] {
-        if self.dpns_contract.is_some() {
+        if self.dpns_contract.is_some() && self.identity_ids_vec.len() > 0 {
             DPNS_KNOWN_COMMAND_KEYS.as_ref()
-        } else {
+        } else if self.dpns_contract.is_none() {
             DPNS_UNKNOWN_COMMAND_KEYS.as_ref()
+        } else {
+            DPNS_KNOWN_NO_IDENTITIES_COMMAND_KEYS.as_ref()
         }
     }
 

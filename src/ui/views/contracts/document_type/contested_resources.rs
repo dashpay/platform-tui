@@ -16,7 +16,6 @@ use dpp::{
     },
 };
 use drive_proof_verifier::types::{Contenders, ContestedResource, ContestedResources};
-use itertools::Itertools;
 use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
 use crate::{
@@ -33,7 +32,7 @@ use tuirealm::{
 };
 
 use crate::{
-    backend::{as_json_string, BackendEvent, CompletedTaskPayload},
+    backend::{BackendEvent, CompletedTaskPayload},
     ui::screen::{
         widgets::info::Info, ScreenCommandKey, ScreenController, ScreenFeedback, ScreenToggleKey,
     },
@@ -42,8 +41,8 @@ use crate::{
 
 const COMMAND_KEYS: [ScreenCommandKey; 5] = [
     ScreenCommandKey::new("q", "Back"),
-    ScreenCommandKey::new("↓", "Next resource"),
-    ScreenCommandKey::new("↑", "Prev resource"),
+    ScreenCommandKey::new("↓", "Next username"),
+    ScreenCommandKey::new("↑", "Prev username"),
     ScreenCommandKey::new("s", "Status"),
     ScreenCommandKey::new("v", "Vote"),
 ];
@@ -91,15 +90,7 @@ impl ContestedResourcesScreenController {
         resource_select.attr(Attribute::Scroll, AttrValue::Flag(true));
         resource_select.attr(Attribute::Focus, AttrValue::Flag(true));
 
-        let resource_view = Info::new_scrollable(
-            &current_batch
-                .0
-                .get(0)
-                .and_then(|v| match v {
-                    ContestedResource::Value(value) => Some(as_json_string(value)),
-                })
-                .unwrap_or_else(String::new),
-        );
+        let resource_view = Info::new_fixed("Press 's' to see the voting status of this username");
 
         Self {
             current_batch,
@@ -112,16 +103,7 @@ impl ContestedResourcesScreenController {
     }
 
     fn update_resource_view(&mut self) {
-        self.resource_view = Info::new_scrollable(
-            &self
-                .current_batch
-                .0
-                .get(self.resource_select.state().unwrap_one().unwrap_usize())
-                .and_then(|v| match v {
-                    ContestedResource::Value(value) => Some(as_json_string(value)),
-                })
-                .unwrap_or_else(String::new),
-        );
+        self.resource_view = Info::new_fixed("Press 's' to see the voting status of this username");
     }
 
     fn get_selected_resource(&self) -> Option<&Value> {
@@ -286,6 +268,7 @@ impl ScreenController for ContestedResourcesScreenController {
                 task: Task::Document(DocumentTask::VoteOnContestedResource(_, _)),
                 execution_result,
             }) => {
+                self.want_to_vote = false;
                 self.resource_view = Info::new_from_result(execution_result);
                 ScreenFeedback::Redraw
             }
@@ -328,7 +311,9 @@ impl FormController for ContestedResourceVoteFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
         match self.input.on_event(event) {
             InputStatus::Done(vote_string) => {
-                let parsed_vote_string = vote_string.split_whitespace().next().unwrap_or("");
+                tracing::info!("{vote_string}");
+                let parsed_vote_string = vote_string.split_whitespace().last().unwrap_or("");
+                tracing::info!("{parsed_vote_string}");
                 let vote = match parsed_vote_string {
                     "Abstain" => ResourceVoteChoice::Abstain,
                     "Lock" => ResourceVoteChoice::Lock,
