@@ -16,6 +16,7 @@ use dpp::{
     },
 };
 use drive_proof_verifier::types::{Contenders, ContestedResource, ContestedResources};
+use itertools::Itertools;
 use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
 use crate::{
@@ -70,7 +71,13 @@ impl ContestedResourcesScreenController {
                     .enumerate()
                     .map(|(_, v)| {
                         vec![TextSpan::new(match v {
-                            ContestedResource::Value(value) => value.to_string(),
+                            ContestedResource::Value(value) => {
+                                let value_str = value.to_string();
+                                let parts: Vec<&str> = value_str.split_whitespace().collect();
+                                let second_part =
+                                    parts.get(1).expect("Expected a second part to the string");
+                                second_part.to_string()
+                            }
                         })]
                     })
                     .collect(),
@@ -249,17 +256,17 @@ impl ScreenController for ContestedResourcesScreenController {
                     } else {
                         let mut options: Vec<String> = vec![
                             format!(
-                                "Abstain ({})",
+                                "{} - Abstain",
                                 contenders.abstain_vote_tally.unwrap_or_default()
                             ),
-                            format!("Lock ({})", contenders.lock_vote_tally.unwrap_or_default()),
+                            format!("{} - Lock", contenders.lock_vote_tally.unwrap_or_default()),
                         ];
                         for contender in contenders.contenders.clone() {
                             let identity_id = contender.0;
                             options.push(format!(
-                                "{} ({})",
+                                "{} - {}",
+                                contender.1.vote_tally().unwrap_or_default(),
                                 identity_id.to_string(Encoding::Base58),
-                                contender.1.vote_tally().unwrap_or_default()
                             ));
                         }
 
@@ -297,17 +304,17 @@ impl ContestedResourceVoteFormController {
     pub fn new(vote_poll: ContestedDocumentResourceVotePoll, contenders: Contenders) -> Self {
         let mut options: Vec<String> = vec![
             format!(
-                "Abstain ({})",
+                "{} - Abstain",
                 contenders.abstain_vote_tally.unwrap_or_default()
             ),
-            format!("Lock ({})", contenders.lock_vote_tally.unwrap_or_default()),
+            format!("{} - Lock", contenders.lock_vote_tally.unwrap_or_default()),
         ];
         for contender in contenders.contenders {
             let identity_id = contender.0;
             options.push(format!(
-                "{} ({})",
+                "{} - {}",
+                contender.1.vote_tally().unwrap_or_default(),
                 identity_id.to_string(Encoding::Base58),
-                contender.1.vote_tally().unwrap_or_default()
             ));
         }
         Self {
