@@ -366,6 +366,7 @@ impl AppState {
                         Purpose::TRANSFER,
                         HashSet::from([SecurityLevel::CRITICAL]),
                         HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
+                        false,
                     ) else {
                         return BackendEvent::TaskCompleted {
                             task: Task::Identity(task),
@@ -474,6 +475,7 @@ impl AppState {
                                     Purpose::VOTING,
                                     SecurityLevel::full_range().into(),
                                     KeyType::all_key_types().into(),
+                                    false,
                                 );
 
                             let fetched_voting_public_key = match fetched_voting_public_key_result {
@@ -780,6 +782,7 @@ impl AppState {
                 Purpose::AUTHENTICATION,
                 HashSet::from([SecurityLevel::CRITICAL]),
                 HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
+                false,
             ) {
                 Some(key) => key,
                 None => return Err(Error::DPNSError(
@@ -813,6 +816,7 @@ impl AppState {
                         Purpose::AUTHENTICATION,
                         HashSet::from([SecurityLevel::CRITICAL]),
                         HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
+                        false,
                     )
                     .expect("expected to get a signing key"),
                 identity_contract_nonce + 1,
@@ -1257,6 +1261,7 @@ impl AppState {
                 KeyPurpose::TRANSFER,
                 KeySecurityLevel::full_range().into(),
                 KeyType::all_key_types().into(),
+                false,
             )
             .ok_or(Error::IdentityWithdrawalError(
                 "no withdrawal public key".to_string(),
