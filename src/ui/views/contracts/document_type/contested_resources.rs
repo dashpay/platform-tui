@@ -39,10 +39,11 @@ use crate::{
     Event,
 };
 
-const COMMAND_KEYS: [ScreenCommandKey; 4] = [
+const COMMAND_KEYS: [ScreenCommandKey; 5] = [
     ScreenCommandKey::new("q", "Back"),
     ScreenCommandKey::new("↓", "Next resource"),
     ScreenCommandKey::new("↑", "Prev resource"),
+    ScreenCommandKey::new("s", "Status"),
     ScreenCommandKey::new("v", "Vote"),
 ];
 
@@ -52,6 +53,7 @@ pub(crate) struct ContestedResourcesScreenController {
     resource_view: Info,
     data_contract: DataContract,
     document_type: DocumentType,
+    want_to_vote: bool,
 }
 
 impl ContestedResourcesScreenController {
@@ -98,6 +100,7 @@ impl ContestedResourcesScreenController {
             resource_view,
             data_contract,
             document_type,
+            want_to_vote: false,
         }
     }
 
@@ -155,9 +158,37 @@ impl ScreenController for ContestedResourcesScreenController {
                 code: Key::Char('q'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::PreviousScreen,
-
             Event::Key(KeyEvent {
                 code: Key::Char('v'),
+                modifiers: KeyModifiers::NONE,
+            }) => {
+                self.want_to_vote = true;
+
+                let resource = self
+                    .get_selected_resource()
+                    .expect("Expected to get a resource from the selection");
+
+                let index_values = vec![Value::from("dash"), resource.clone()]; // hardcoded for dpns
+
+                let index = self
+                    .document_type
+                    .find_contested_index()
+                    .expect("Expected to find a contested index");
+
+                let index_name = &index.name;
+
+                ScreenFeedback::Task {
+                    task: Task::Document(DocumentTask::QueryVoteContenders(
+                        index_name.to_string(),
+                        index_values,
+                        self.document_type.name().to_string(),
+                        self.data_contract.id(),
+                    )),
+                    block: true,
+                }
+            }
+            Event::Key(KeyEvent {
+                code: Key::Char('s'),
                 modifiers: KeyModifiers::NONE,
             }) => {
                 let resource = self
@@ -210,10 +241,32 @@ impl ScreenController for ContestedResourcesScreenController {
                 execution_result,
             }) => match execution_result {
                 Ok(CompletedTaskPayload::ContestedResourceContenders(vote_poll, contenders)) => {
-                    ScreenFeedback::Form(Box::new(ContestedResourceVoteFormController::new(
-                        vote_poll.clone(),
-                        contenders.clone(),
-                    )) as Box<dyn FormController>)
+                    if self.want_to_vote {
+                        ScreenFeedback::Form(Box::new(ContestedResourceVoteFormController::new(
+                            vote_poll.clone(),
+                            contenders.clone(),
+                        )) as Box<dyn FormController>)
+                    } else {
+                        let mut options: Vec<String> = vec![
+                            format!(
+                                "Abstain ({})",
+                                contenders.abstain_vote_tally.unwrap_or_default()
+                            ),
+                            format!("Lock ({})", contenders.lock_vote_tally.unwrap_or_default()),
+                        ];
+                        for contender in contenders.contenders.clone() {
+                            let identity_id = contender.0;
+                            options.push(format!(
+                                "{} ({})",
+                                identity_id.to_string(Encoding::Base58),
+                                contender.1.vote_tally().unwrap_or_default()
+                            ));
+                        }
+
+                        self.resource_view = Info::new_fixed(&options.join("\n"));
+
+                        ScreenFeedback::Redraw
+                    }
                 }
                 Err(_) => {
                     self.resource_view = Info::new_from_result(execution_result);

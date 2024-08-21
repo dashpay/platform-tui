@@ -1925,6 +1925,7 @@ pub async fn run_strategy_task<'s>(
                             Purpose::TRANSFER,
                             [SecurityLevel::CRITICAL].into(),
                             KeyType::all_key_types().into(),
+                            false,
                         )
                         .is_some()
                     {

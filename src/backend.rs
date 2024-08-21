@@ -82,6 +82,7 @@ pub enum CompletedTaskPayload {
     String(String),
     ContestedResources(ContestedResources),
     ContestedResourceContenders(ContestedDocumentResourceVotePoll, Contenders),
+    DocumentsAndContestedResources(BTreeMap<Identifier, Option<Document>>, ContestedResources),
 }
 
 impl From<String> for CompletedTaskPayload {
@@ -153,7 +154,7 @@ pub(crate) enum AppStateUpdate<'s> {
     ClearedLoadedWallet,
     IdentityCreditsTransferred,
     DPNSNameRegistered(String),
-    DPNSNameRegistrationFailed,
+    DPNSNameRegistrationFailed(String),
 }
 
 /// Represents the result of completing a strategy.
