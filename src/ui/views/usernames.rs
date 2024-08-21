@@ -62,7 +62,7 @@ const DPNS_KNOWN_COMMAND_KEYS: [ScreenCommandKey; 8] = [
     ScreenCommandKey::new("↑", "Scroll up"),
     ScreenCommandKey::new("r", "Register username for selected identity"),
     ScreenCommandKey::new("g", "Query names for selected identity"),
-    ScreenCommandKey::new("v", "Voting"),
+    ScreenCommandKey::new("v", "Voting screen"),
 ];
 
 pub(crate) struct DpnsUsernamesScreenController {
@@ -112,8 +112,7 @@ impl DpnsUsernamesScreenController {
                         .unwrap_or_else(String::new),
                 )
             } else {
-                // Handle the case where identity_ids_vec is empty
-                Info::new_scrollable(&String::new())
+                Info::new_scrollable(&String::from("No known identities"))
             }
         } else {
             Info::new_fixed("DPNS contract not known yet. Please press 'f' to fetch it.")
