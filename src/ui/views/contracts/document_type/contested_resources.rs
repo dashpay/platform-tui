@@ -151,11 +151,14 @@ impl ScreenController for ContestedResourcesScreenController {
                 code: Key::Char('v'),
                 modifiers: KeyModifiers::NONE,
             }) => {
-                self.want_to_vote = true;
-
-                let resource = self
-                    .get_selected_resource()
-                    .expect("Expected to get a resource from the selection");
+                let resource = match self.get_selected_resource() {
+                    Some(resource) => resource,
+                    None => {
+                        self.resource_view =
+                            Info::new_fixed("No contested usernames on Platform yet");
+                        return ScreenFeedback::Redraw;
+                    }
+                };
 
                 let index_values = vec![Value::from("dash"), resource.clone()]; // hardcoded for dpns
 
@@ -165,6 +168,8 @@ impl ScreenController for ContestedResourcesScreenController {
                     .expect("Expected to find a contested index");
 
                 let index_name = &index.name;
+
+                self.want_to_vote = true;
 
                 ScreenFeedback::Task {
                     task: Task::Document(DocumentTask::QueryVoteContenders(
@@ -180,9 +185,14 @@ impl ScreenController for ContestedResourcesScreenController {
                 code: Key::Char('s'),
                 modifiers: KeyModifiers::NONE,
             }) => {
-                let resource = self
-                    .get_selected_resource()
-                    .expect("Expected to get a resource from the selection");
+                let resource = match self.get_selected_resource() {
+                    Some(resource) => resource,
+                    None => {
+                        self.resource_view =
+                            Info::new_fixed("No contested usernames on Platform yet");
+                        return ScreenFeedback::Redraw;
+                    }
+                };
 
                 let index_values = vec![Value::from("dash"), resource.clone()]; // hardcoded for dpns
 
