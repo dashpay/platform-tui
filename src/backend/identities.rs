@@ -707,6 +707,13 @@ impl AppState {
             Ok(contract) => contract.unwrap(),
             Err(e) => return Err(Error::SdkError(e)),
         };
+
+        // Add DPNS to known contracts in app state
+        let mut known_contracts = self.known_contracts.lock().await;
+        known_contracts
+            .entry("DPNS".to_string())
+            .or_insert(dpns_contract.clone());
+
         let preorder_document_type = dpns_contract
             .document_type_for_name("preorder")
             .map_err(|_| Error::DPNSError("DPNS preorder document type not found".to_string()))?;

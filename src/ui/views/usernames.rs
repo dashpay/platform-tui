@@ -102,11 +102,14 @@ impl DpnsUsernamesScreenController {
         identity_select.attr(Attribute::Focus, AttrValue::Flag(true));
 
         let known_contracts_lock = app_state.known_contracts.lock().await;
-        let maybe_dpns_contract = known_contracts_lock.get(
+        let maybe_dpns_contract = match known_contracts_lock.get(
             &Identifier::from_bytes(&dpns_contract::ID_BYTES)
                 .unwrap()
                 .to_string(Encoding::Base58),
-        );
+        ) {
+            Some(contract) => Some(contract),
+            None => known_contracts_lock.get(&String::from("DPNS")),
+        };
 
         let identity_view = if maybe_dpns_contract.is_some() {
             if let Some(first_identity_id) = identity_ids_vec.get(0) {
@@ -199,13 +202,13 @@ impl ScreenController for DpnsUsernamesScreenController {
             Event::Key(KeyEvent {
                 code: Key::Char('r'),
                 modifiers: KeyModifiers::NONE,
-            }) => ScreenFeedback::Form(Box::new(RegisterDPNSNameFormController::new(
-                self.get_selected_identity().cloned(),
-            ))),
+            }) if self.identity_ids_vec.len() > 0 => ScreenFeedback::Form(Box::new(
+                RegisterDPNSNameFormController::new(self.get_selected_identity().cloned()),
+            )),
             Event::Key(KeyEvent {
                 code: Key::Char('g'),
                 modifiers: KeyModifiers::NONE,
-            }) => {
+            }) if self.identity_ids_vec.len() > 0 => {
                 let ours_query_part = format!(
                     "where `records.identity` = '{}' ", // hardcoded for dpns. $ownerId only works if its indexed.
                     self.get_selected_identity()
@@ -434,11 +437,14 @@ impl ScreenController for DpnsUsernamesScreenController {
                 if execution_result.is_ok() {
                     match app_state_update {
                         crate::backend::AppStateUpdate::KnownContracts(contracts_lock) => {
-                            let dpns_contract = contracts_lock.get(
+                            let dpns_contract = match contracts_lock.get(
                                 &Identifier::from_bytes(&dpns_contract::ID_BYTES)
                                     .unwrap()
                                     .to_string(Encoding::Base58),
-                            );
+                            ) {
+                                Some(contract) => Some(contract),
+                                None => contracts_lock.get(&String::from("DPNS")),
+                            };
                             self.dpns_contract = dpns_contract.cloned();
                         }
                         _ => todo!(),

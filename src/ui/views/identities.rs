@@ -38,7 +38,9 @@ use crate::{
     Event,
 };
 
-const COMMAND_KEYS: [ScreenCommandKey; 15] = [
+use super::wallet;
+
+const IDENTITY_LOADED_COMMAND_KEYS: [ScreenCommandKey; 15] = [
     ScreenCommandKey::new("q", "Back to Main"),
     ScreenCommandKey::new("r", "Register new"),
     ScreenCommandKey::new("l", "Load identity with private key(s)"),
@@ -56,26 +58,66 @@ const COMMAND_KEYS: [ScreenCommandKey; 15] = [
     ScreenCommandKey::new("↑", "Scroll up"),
 ];
 
+const NO_KNOWN_IDENTITIES_COMMAND_KEYS: [ScreenCommandKey; 5] = [
+    ScreenCommandKey::new("q", "Back to Main"),
+    ScreenCommandKey::new("r", "Register new"),
+    ScreenCommandKey::new("l", "Load identity with private key(s)"),
+    ScreenCommandKey::new("m", "Load masternode identity"),
+    ScreenCommandKey::new("i", "Query by ID"),
+];
+
+const IDENTITIES_KNOWN_NONE_LOADED_COMMAND_KEYS: [ScreenCommandKey; 11] = [
+    ScreenCommandKey::new("q", "Back to Main"),
+    ScreenCommandKey::new("r", "Register new"),
+    ScreenCommandKey::new("l", "Load identity with private key(s)"),
+    ScreenCommandKey::new("m", "Load masternode identity"),
+    ScreenCommandKey::new("s", "Set loaded"),
+    ScreenCommandKey::new("C-f", "Forget selected"),
+    ScreenCommandKey::new("i", "Query by ID"),
+    ScreenCommandKey::new("C-n", "Next"),
+    ScreenCommandKey::new("C-p", "Previous"),
+    ScreenCommandKey::new("↓", "Scroll down"),
+    ScreenCommandKey::new("↑", "Scroll up"),
+];
+
 #[memoize::memoize]
 fn join_commands(
     identity_loaded: bool,
     identity_registration_in_progress: bool,
     identity_top_up_in_progress: bool,
+    no_known_identities: bool,
+    wallet_loaded: bool,
 ) -> &'static [ScreenCommandKey] {
-    let mut commands = COMMAND_KEYS.to_vec();
+    let mut commands;
 
     if identity_loaded {
+        commands = IDENTITY_LOADED_COMMAND_KEYS.to_vec();
         if identity_top_up_in_progress {
             commands.push(ScreenCommandKey::new("t", "Continue top up"));
         } else {
-            commands.push(ScreenCommandKey::new("t", "Top up loaded"));
+            if wallet_loaded {
+                commands.push(ScreenCommandKey::new("t", "Top up loaded"));
+            }
         }
     } else {
-        if identity_registration_in_progress {
-            commands.push(ScreenCommandKey::new("r", "Continue identity registration"));
-            commands.push(ScreenCommandKey::new("g", "Restart identity registration"));
+        if no_known_identities {
+            commands = NO_KNOWN_IDENTITIES_COMMAND_KEYS.to_vec();
+            if identity_registration_in_progress {
+                commands.push(ScreenCommandKey::new("r", "Continue identity registration"));
+                commands.push(ScreenCommandKey::new("g", "Restart identity registration"));
+            }
+        } else {
+            commands = IDENTITIES_KNOWN_NONE_LOADED_COMMAND_KEYS.to_vec();
+            if identity_registration_in_progress {
+                commands.push(ScreenCommandKey::new("r", "Continue identity registration"));
+                commands.push(ScreenCommandKey::new("g", "Restart identity registration"));
+            }
         }
     }
+
+    if !wallet_loaded {
+        commands.remove(1);
+    };
 
     commands.leak()
 }
@@ -122,12 +164,18 @@ impl IdentitiesScreenController {
 
         let wallet_loaded = app_state.loaded_wallet.lock().await.is_some();
 
-        let identity_view = Info::new_scrollable(
-            &known_identities
-                .first_key_value()
-                .map(|(_, v)| as_json_string(v))
-                .unwrap_or_else(String::new),
-        );
+        let identity_view = if wallet_loaded {
+            Info::new_scrollable(
+                &known_identities
+                    .first_key_value()
+                    .map(|(_, v)| as_json_string(v))
+                    .unwrap_or_else(String::new),
+            )
+        } else {
+            Info::new_fixed(
+                "Note no wallet is loaded so identity registration and top up are not available",
+            )
+        };
 
         let mut identity_select = tui_realm_stdlib::List::default()
             .rows(
@@ -243,6 +291,8 @@ impl ScreenController for IdentitiesScreenController {
             self.loaded_identity.is_some(),
             self.identity_registration_in_progress,
             self.identity_top_up_in_progress,
+            self.current_batch.is_empty(),
+            self.wallet_loaded,
         )
     }
 
