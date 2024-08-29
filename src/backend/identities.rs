@@ -129,7 +129,7 @@ impl AppState {
                 let result = self.register_new_identity(sdk, amount).await;
                 let execution_result = result
                     .as_ref()
-                    .map(|_| "Executed successfully".into())
+                    .map(|_| "Executed successfully. Private key logged to supporting_files/new_identity_private_keys.log".into())
                     .map_err(|e| e.to_string());
                 let app_state_update = match result {
                     Ok(identity) => AppStateUpdate::LoadedIdentity(identity),
@@ -1641,10 +1641,11 @@ fn log_identity_keys(
     for (key, private_key) in keys {
         writeln!(
             file,
-            "Date: {}, Identity ID: {}, Public Key: {}, Private Key: {:x?}",
+            "{}, Identity ID: {}, Public Key: {} ({}), Private Key: {:x?}",
             now,
             identity.id(),
             key.id(),
+            key.purpose(),
             hex::encode(private_key)
         )?;
     }
