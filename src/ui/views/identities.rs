@@ -766,7 +766,7 @@ impl AddPrivateKeysFormController {
         Self {
             private_keys: vec![],
             input: ComposedInput::new((
-                Field::new("Private key", TextInput::new("Private key")),
+                Field::new("Private key", TextInput::new("Private key in hex or wif")),
                 Field::new(
                     "Add another private key?",
                     SelectInput::new(vec!["No".to_string(), "Yes".to_string()]),

@@ -1,9 +1,11 @@
 //! Identities backend logic.
 
+use chrono::Utc;
 use dashcore::hashes::Hash;
-use itertools::Itertools;
+use std::io::Write;
 use std::{
     collections::{BTreeMap, HashSet},
+    fs::OpenOptions,
     time::Duration,
 };
 
@@ -1080,7 +1082,7 @@ impl AppState {
 
         let mut signer = SimpleSigner::default();
 
-        signer.add_keys(keys);
+        signer.add_keys(keys.clone());
 
         let updated_identity = identity
             .put_to_platform_and_wait_for_response(
@@ -1094,6 +1096,10 @@ impl AppState {
         if updated_identity.id() != identity.id() {
             panic!("identity ids don't match");
         }
+
+        // Log the identity ID and the private keys to a file
+        let _ = log_identity_keys(&identity, &keys)
+            .map_err(|e| tracing::error!("Failed to log private keys: {e}"));
 
         let mut loaded_identity = self.loaded_identity.lock().await;
 
@@ -1467,7 +1473,7 @@ impl AppState {
                 }
                 _ => {
                     return Err(WalletError::Custom(
-                        "Private key can't be decoded".to_string(),
+                        "Private key can't be decoded from hex or wif".to_string(),
                     ));
                 }
             })
@@ -1509,9 +1515,6 @@ impl AppState {
                 .public_keys()
                 .iter()
                 .filter_map(|(key_id, identity_public_key)| {
-                    tracing::info!("1: {:?}", private_key.public_key(&secp));
-                    tracing::info!("2: {:?}", identity_public_key.public_key_hash().unwrap());
-
                     if identity_public_key.public_key_hash().unwrap()
                         == public_key_hash.to_byte_array()
                     {
@@ -1619,4 +1622,32 @@ async fn add_identity_key<'a>(
     );
 
     Ok(AppStateUpdate::LoadedIdentity(loaded_identity))
+}
+
+fn log_identity_keys(
+    identity: &Identity,
+    keys: &BTreeMap<IdentityPublicKey, Vec<u8>>,
+) -> std::io::Result<()> {
+    // Open the log file in append mode
+    let mut file = OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open("supporting_files/new_identity_private_keys.log")?;
+
+    // Get the current date and time
+    let now = Utc::now().to_rfc3339();
+
+    // Log each key in the identity
+    for (key, private_key) in keys {
+        writeln!(
+            file,
+            "Date: {}, Identity ID: {}, Public Key: {}, Private Key: {:x?}",
+            now,
+            identity.id(),
+            key.id(),
+            hex::encode(private_key)
+        )?;
+    }
+
+    Ok(())
 }
