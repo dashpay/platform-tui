@@ -908,7 +908,13 @@ impl AppState {
         if let Some(identity) = loaded_identity.as_ref() {
             let refreshed_identity = Identity::fetch(sdk, identity.id()).await?;
             if let Some(refreshed_identity) = refreshed_identity {
-                loaded_identity.replace(refreshed_identity);
+                loaded_identity.replace(refreshed_identity.clone());
+
+                let mut known_identities = self.known_identities.lock().await;
+                known_identities
+                    .entry(refreshed_identity.id())
+                    .and_modify(|id| *id = refreshed_identity.clone())
+                    .or_insert(refreshed_identity);
             }
         } else {
             return Err(Error::IdentityRefreshError(
