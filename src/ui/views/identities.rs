@@ -40,12 +40,13 @@ use crate::{
 
 use super::wallet;
 
-const IDENTITY_LOADED_COMMAND_KEYS: [ScreenCommandKey; 15] = [
+const IDENTITY_LOADED_COMMAND_KEYS: [ScreenCommandKey; 16] = [
     ScreenCommandKey::new("q", "Back to Main"),
     ScreenCommandKey::new("r", "Register new"),
     ScreenCommandKey::new("l", "Load identity with private key(s)"),
     ScreenCommandKey::new("m", "Load masternode identity"),
     ScreenCommandKey::new("s", "Set loaded"),
+    ScreenCommandKey::new("b", "Identity refresh"),
     ScreenCommandKey::new("t", "Transfer credits from loaded"),
     ScreenCommandKey::new("d", "Register DPNS name for loaded"),
     ScreenCommandKey::new("k", "Add key to loaded"),
@@ -341,6 +342,14 @@ impl ScreenController for IdentitiesScreenController {
                 self.toggle_keys[0].toggle = !self.toggle_keys[0].toggle;
                 ScreenFeedback::Redraw
             }
+
+            Event::Key(KeyEvent {
+                code: Key::Char('b'),
+                modifiers: KeyModifiers::NONE,
+            }) if self.loaded_identity.is_some() => ScreenFeedback::Task {
+                task: Task::Identity(IdentityTask::Refresh),
+                block: true,
+            },
 
             Event::Key(KeyEvent {
                 code: Key::Char('d'),
