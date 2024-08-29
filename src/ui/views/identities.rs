@@ -50,7 +50,7 @@ const IDENTITY_LOADED_COMMAND_KEYS: [ScreenCommandKey; 15] = [
     ScreenCommandKey::new("d", "Register DPNS name for loaded"),
     ScreenCommandKey::new("k", "Add key to loaded"),
     ScreenCommandKey::new("C-f", "Forget selected"),
-    ScreenCommandKey::new("d", "Copy loaded ID"),
+    ScreenCommandKey::new("c", "Copy loaded ID"),
     ScreenCommandKey::new("i", "Query by ID"),
     ScreenCommandKey::new("C-n", "Next"),
     ScreenCommandKey::new("C-p", "Previous"),
@@ -392,7 +392,7 @@ impl ScreenController for IdentitiesScreenController {
             }
 
             Event::Key(KeyEvent {
-                code: Key::Char('d'),
+                code: Key::Char('c'),
                 modifiers: KeyModifiers::NONE,
             }) if self.loaded_identity.is_some() => ScreenFeedback::Task {
                 task: Task::Identity(IdentityTask::CopyIdentityId),
