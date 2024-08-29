@@ -106,6 +106,7 @@ pub enum IdentityTask {
     TopUpIdentity(u64),
     WithdrawFromIdentity(u64),
     Refresh,
+    RefreshAllKnown,
     CopyIdentityId,
     AddIdentityKey {
         key_type: KeyType,
@@ -228,6 +229,23 @@ impl AppState {
                     .map_err(|e| e.to_string());
                 let app_state_update = match result {
                     Ok(identity) => AppStateUpdate::LoadedIdentity(identity),
+                    Err(_) => AppStateUpdate::IdentityRegistrationProgressed,
+                };
+
+                BackendEvent::TaskCompletedStateChange {
+                    task: Task::Identity(task),
+                    execution_result,
+                    app_state_update,
+                }
+            }
+            IdentityTask::RefreshAllKnown => {
+                let result = self.refresh_all_known_identities(sdk).await;
+                let execution_result = result
+                    .as_ref()
+                    .map(|_| "Executed successfully".into())
+                    .map_err(|e| e.to_string());
+                let app_state_update = match result {
+                    Ok(identities) => AppStateUpdate::KnownIdentities(identities),
                     Err(_) => AppStateUpdate::IdentityRegistrationProgressed,
                 };
 
@@ -933,7 +951,10 @@ impl AppState {
         Ok(identity_result)
     }
 
-    pub(crate) async fn refresh_all_identities<'s>(&'s self, sdk: &Sdk) -> Result<(), Error> {
+    pub(crate) async fn refresh_all_known_identities<'s>(
+        &'s self,
+        sdk: &Sdk,
+    ) -> Result<MappedMutexGuard<'s, BTreeMap<Identifier, Identity>>, Error> {
         let mut known_identities = self.known_identities.lock().await;
 
         let mut identities_to_refresh = Vec::new();
@@ -957,7 +978,8 @@ impl AppState {
             }
         }
 
-        Ok(())
+        let identity_result = MutexGuard::map(known_identities, |x| x);
+        Ok(identity_result)
     }
 
     pub(crate) async fn refresh_loaded_identity_balance(&mut self, sdk: &Sdk) -> Result<(), Error> {

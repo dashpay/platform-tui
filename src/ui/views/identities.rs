@@ -38,15 +38,14 @@ use crate::{
     Event,
 };
 
-use super::wallet;
-
-const IDENTITY_LOADED_COMMAND_KEYS: [ScreenCommandKey; 16] = [
+const IDENTITY_LOADED_COMMAND_KEYS: [ScreenCommandKey; 17] = [
     ScreenCommandKey::new("q", "Back to Main"),
     ScreenCommandKey::new("r", "Register new"),
     ScreenCommandKey::new("l", "Load identity with private key(s)"),
     ScreenCommandKey::new("m", "Load masternode identity"),
     ScreenCommandKey::new("s", "Set loaded"),
-    ScreenCommandKey::new("b", "Identity refresh"),
+    ScreenCommandKey::new("b", "Refresh loaded"),
+    ScreenCommandKey::new("a", "Refresh all"),
     ScreenCommandKey::new("t", "Transfer credits from loaded"),
     ScreenCommandKey::new("d", "Register DPNS name for loaded"),
     ScreenCommandKey::new("k", "Add key to loaded"),
@@ -352,6 +351,14 @@ impl ScreenController for IdentitiesScreenController {
             },
 
             Event::Key(KeyEvent {
+                code: Key::Char('a'),
+                modifiers: KeyModifiers::NONE,
+            }) if self.loaded_identity.is_some() => ScreenFeedback::Task {
+                task: Task::Identity(IdentityTask::RefreshAllKnown),
+                block: true,
+            },
+
+            Event::Key(KeyEvent {
                 code: Key::Char('d'),
                 modifiers: KeyModifiers::NONE,
             }) if self.loaded_identity.is_some() => ScreenFeedback::Form(Box::new(
@@ -489,6 +496,21 @@ impl ScreenController for IdentitiesScreenController {
                 execution_result: Ok(_),
                 app_state_update: _,
             }) => ScreenFeedback::Form(Box::new(AddPrivateKeysFormController::new())),
+
+            Event::Backend(BackendEvent::TaskCompletedStateChange {
+                task: Task::Identity(IdentityTask::RefreshAllKnown),
+                execution_result,
+                app_state_update: identities,
+            }) => {
+                self.known_identities = match identities {
+                    crate::backend::AppStateUpdate::KnownIdentities(identities) => {
+                        (*identities).clone()
+                    }
+                    _ => return ScreenFeedback::Redraw,
+                };
+                self.identity_view = Info::new_from_result(execution_result);
+                ScreenFeedback::Redraw
+            }
 
             Event::Backend(BackendEvent::TaskCompletedStateChange {
                 task: Task::Identity(IdentityTask::LoadIdentityById(_)),

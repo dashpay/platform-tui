@@ -135,6 +135,7 @@ pub enum BackendEvent<'s> {
 #[derive(Debug)]
 pub(crate) enum AppStateUpdate<'s> {
     KnownContracts(MutexGuard<'s, KnownContractsMap>),
+    KnownIdentities(MappedMutexGuard<'s, BTreeMap<Identifier, Identity>>),
     LoadedWallet(MappedMutexGuard<'s, Wallet>),
     Strategies(
         MutexGuard<'s, StrategiesMap>,
