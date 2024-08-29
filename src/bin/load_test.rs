@@ -255,7 +255,7 @@ async fn main() {
     let identity_lock = backend.state().loaded_identity.lock().await;
     let identity = identity_lock.as_ref().expect("no loaded identity");
 
-    let identity_private_keys_lock = backend.state().identity_private_keys.lock().await;
+    let identity_private_keys_lock = backend.state().known_identities_private_keys.lock().await;
 
     let mut signer = SimpleSigner::default();
 

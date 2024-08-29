@@ -26,13 +26,13 @@ use crate::{
     Event,
 };
 
-const COMMAND_KEYS: [ScreenCommandKey; 8] = [
+const COMMAND_KEYS: [ScreenCommandKey; 7] = [
     ScreenCommandKey::new("q", "Quit"),
     ScreenCommandKey::new("i", "Identities"),
     ScreenCommandKey::new("c", "Contracts"),
     ScreenCommandKey::new("s", "Strategies"),
     ScreenCommandKey::new("w", "Wallet"),
-    ScreenCommandKey::new("v", "Version Upgrade"),
+    // ScreenCommandKey::new("v", "Version Upgrade"),
     ScreenCommandKey::new("p", "Platform information"),
     ScreenCommandKey::new("d", "DPNS"),
 ];
@@ -98,10 +98,10 @@ impl ScreenController for MainScreenController {
                 code: Key::Char('c'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::NextScreen(ContractsScreenController::builder()),
-            Event::Key(KeyEvent {
-                code: Key::Char('v'),
-                modifiers: KeyModifiers::NONE,
-            }) => ScreenFeedback::None,
+            // Event::Key(KeyEvent {
+            //     code: Key::Char('v'),
+            //     modifiers: KeyModifiers::NONE,
+            // }) => ScreenFeedback::None,
             Event::Key(KeyEvent {
                 code: Key::Char('p'),
                 modifiers: KeyModifiers::NONE,

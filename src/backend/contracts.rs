@@ -49,7 +49,7 @@ impl AppState {
 
                         let contract_name = get_dpns_name(sdk, &data_contract.id())
                             .await
-                            .unwrap_or_else(|| data_contract.id().to_string(Encoding::Base58));
+                            .unwrap_or_else(|| "Dashpay".to_string());
 
                         contracts_lock.insert(contract_name, data_contract);
 
@@ -79,7 +79,7 @@ impl AppState {
 
                         let contract_name = get_dpns_name(sdk, &data_contract.id())
                             .await
-                            .unwrap_or_else(|| data_contract.id().to_string(Encoding::Base58));
+                            .unwrap_or_else(|| "DPNS".to_string());
 
                         contracts_lock.insert(contract_name, data_contract);
 

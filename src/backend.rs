@@ -135,6 +135,7 @@ pub enum BackendEvent<'s> {
 #[derive(Debug)]
 pub(crate) enum AppStateUpdate<'s> {
     KnownContracts(MutexGuard<'s, KnownContractsMap>),
+    KnownIdentities(MappedMutexGuard<'s, BTreeMap<Identifier, Identity>>),
     LoadedWallet(MappedMutexGuard<'s, Wallet>),
     Strategies(
         MutexGuard<'s, StrategiesMap>,
@@ -156,6 +157,7 @@ pub(crate) enum AppStateUpdate<'s> {
     IdentityCreditsTransferred,
     DPNSNameRegistered(String),
     DPNSNameRegistrationFailed(String),
+    ForgotIdentity,
 }
 
 /// Represents the result of completing a strategy.

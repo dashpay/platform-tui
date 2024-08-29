@@ -32,7 +32,7 @@ use tuirealm::{
 };
 
 use crate::{
-    backend::{as_json_string, BackendEvent, CompletedTaskPayload},
+    backend::{BackendEvent, CompletedTaskPayload},
     ui::screen::{
         widgets::info::Info, ScreenCommandKey, ScreenController, ScreenFeedback, ScreenToggleKey,
     },
@@ -41,8 +41,8 @@ use crate::{
 
 const COMMAND_KEYS: [ScreenCommandKey; 5] = [
     ScreenCommandKey::new("q", "Back"),
-    ScreenCommandKey::new("↓", "Next resource"),
-    ScreenCommandKey::new("↑", "Prev resource"),
+    ScreenCommandKey::new("↓", "Next username"),
+    ScreenCommandKey::new("↑", "Prev username"),
     ScreenCommandKey::new("s", "Status"),
     ScreenCommandKey::new("v", "Vote"),
 ];
@@ -70,7 +70,13 @@ impl ContestedResourcesScreenController {
                     .enumerate()
                     .map(|(_, v)| {
                         vec![TextSpan::new(match v {
-                            ContestedResource::Value(value) => value.to_string(),
+                            ContestedResource::Value(value) => {
+                                let value_str = value.to_string();
+                                let parts: Vec<&str> = value_str.split_whitespace().collect();
+                                let second_part =
+                                    parts.get(1).expect("Expected a second part to the string");
+                                second_part.to_string()
+                            }
                         })]
                     })
                     .collect(),
@@ -84,15 +90,7 @@ impl ContestedResourcesScreenController {
         resource_select.attr(Attribute::Scroll, AttrValue::Flag(true));
         resource_select.attr(Attribute::Focus, AttrValue::Flag(true));
 
-        let resource_view = Info::new_scrollable(
-            &current_batch
-                .0
-                .get(0)
-                .and_then(|v| match v {
-                    ContestedResource::Value(value) => Some(as_json_string(value)),
-                })
-                .unwrap_or_else(String::new),
-        );
+        let resource_view = Info::new_fixed("Press 's' to see the voting status of this username");
 
         Self {
             current_batch,
@@ -105,16 +103,7 @@ impl ContestedResourcesScreenController {
     }
 
     fn update_resource_view(&mut self) {
-        self.resource_view = Info::new_scrollable(
-            &self
-                .current_batch
-                .0
-                .get(self.resource_select.state().unwrap_one().unwrap_usize())
-                .and_then(|v| match v {
-                    ContestedResource::Value(value) => Some(as_json_string(value)),
-                })
-                .unwrap_or_else(String::new),
-        );
+        self.resource_view = Info::new_fixed("Press 's' to see the voting status of this username");
     }
 
     fn get_selected_resource(&self) -> Option<&Value> {
@@ -162,11 +151,14 @@ impl ScreenController for ContestedResourcesScreenController {
                 code: Key::Char('v'),
                 modifiers: KeyModifiers::NONE,
             }) => {
-                self.want_to_vote = true;
-
-                let resource = self
-                    .get_selected_resource()
-                    .expect("Expected to get a resource from the selection");
+                let resource = match self.get_selected_resource() {
+                    Some(resource) => resource,
+                    None => {
+                        self.resource_view =
+                            Info::new_fixed("No contested usernames on Platform yet");
+                        return ScreenFeedback::Redraw;
+                    }
+                };
 
                 let index_values = vec![Value::from("dash"), resource.clone()]; // hardcoded for dpns
 
@@ -176,6 +168,8 @@ impl ScreenController for ContestedResourcesScreenController {
                     .expect("Expected to find a contested index");
 
                 let index_name = &index.name;
+
+                self.want_to_vote = true;
 
                 ScreenFeedback::Task {
                     task: Task::Document(DocumentTask::QueryVoteContenders(
@@ -191,9 +185,10 @@ impl ScreenController for ContestedResourcesScreenController {
                 code: Key::Char('s'),
                 modifiers: KeyModifiers::NONE,
             }) => {
-                let resource = self
-                    .get_selected_resource()
-                    .expect("Expected to get a resource from the selection");
+                let Some(resource) = self.get_selected_resource() else {
+                    self.resource_view = Info::new_fixed("No contested usernames on Platform yet");
+                    return ScreenFeedback::Redraw;
+                };
 
                 let index_values = vec![Value::from("dash"), resource.clone()]; // hardcoded for dpns
 
@@ -249,17 +244,17 @@ impl ScreenController for ContestedResourcesScreenController {
                     } else {
                         let mut options: Vec<String> = vec![
                             format!(
-                                "Abstain ({})",
+                                "{} - Abstain",
                                 contenders.abstain_vote_tally.unwrap_or_default()
                             ),
-                            format!("Lock ({})", contenders.lock_vote_tally.unwrap_or_default()),
+                            format!("{} - Lock", contenders.lock_vote_tally.unwrap_or_default()),
                         ];
                         for contender in contenders.contenders.clone() {
                             let identity_id = contender.0;
                             options.push(format!(
-                                "{} ({})",
+                                "{} - {}",
+                                contender.1.vote_tally().unwrap_or_default(),
                                 identity_id.to_string(Encoding::Base58),
-                                contender.1.vote_tally().unwrap_or_default()
                             ));
                         }
 
@@ -279,6 +274,7 @@ impl ScreenController for ContestedResourcesScreenController {
                 task: Task::Document(DocumentTask::VoteOnContestedResource(_, _)),
                 execution_result,
             }) => {
+                self.want_to_vote = false;
                 self.resource_view = Info::new_from_result(execution_result);
                 ScreenFeedback::Redraw
             }
@@ -297,17 +293,17 @@ impl ContestedResourceVoteFormController {
     pub fn new(vote_poll: ContestedDocumentResourceVotePoll, contenders: Contenders) -> Self {
         let mut options: Vec<String> = vec![
             format!(
-                "Abstain ({})",
+                "{} - Abstain",
                 contenders.abstain_vote_tally.unwrap_or_default()
             ),
-            format!("Lock ({})", contenders.lock_vote_tally.unwrap_or_default()),
+            format!("{} - Lock", contenders.lock_vote_tally.unwrap_or_default()),
         ];
         for contender in contenders.contenders {
             let identity_id = contender.0;
             options.push(format!(
-                "{} ({})",
+                "{} - {}",
+                contender.1.vote_tally().unwrap_or_default(),
                 identity_id.to_string(Encoding::Base58),
-                contender.1.vote_tally().unwrap_or_default()
             ));
         }
         Self {
@@ -321,7 +317,9 @@ impl FormController for ContestedResourceVoteFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
         match self.input.on_event(event) {
             InputStatus::Done(vote_string) => {
-                let parsed_vote_string = vote_string.split_whitespace().next().unwrap_or("");
+                tracing::info!("{vote_string}");
+                let parsed_vote_string = vote_string.split_whitespace().last().unwrap_or("");
+                tracing::info!("{parsed_vote_string}");
                 let vote = match parsed_vote_string {
                     "Abstain" => ResourceVoteChoice::Abstain,
                     "Lock" => ResourceVoteChoice::Lock,
