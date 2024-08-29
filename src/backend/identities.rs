@@ -355,10 +355,17 @@ impl AppState {
                 let loaded_identity = self.loaded_identity.lock().await;
                 if let Some(identity) = loaded_identity.as_ref() {
                     transfer_transition.set_identity_id(identity.id());
-                    let nonce = sdk
-                        .get_identity_nonce(identity.id(), true, None)
-                        .await
-                        .expect("Expected to get an identity nonce in creating credit transfer");
+                    let nonce = match sdk.get_identity_nonce(identity.id(), true, None).await {
+                        Ok(nonce) => nonce,
+                        Err(e) => {
+                            return BackendEvent::TaskCompleted {
+                                task: Task::Identity(task),
+                                execution_result: Err(format!(
+                                    "Failed to get nonce from Platform: {e}"
+                                )),
+                            }
+                        }
+                    };
                     transfer_transition.set_nonce(nonce);
 
                     let mut transition =
