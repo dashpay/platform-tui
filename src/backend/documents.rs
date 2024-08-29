@@ -166,7 +166,7 @@ impl AppState {
                 };
 
                 match broadcast_stats {
-                    Ok(stats) => match self.refresh_identity(sdk).await {
+                    Ok(stats) => match self.refresh_loaded_identity(sdk).await {
                         Ok(updated_identity) => BackendEvent::TaskCompletedStateChange {
                             task: Task::Document(task),
                             execution_result: Ok(CompletedTaskPayload::String(
@@ -473,7 +473,7 @@ impl AppState {
                             )
                             .await
                         {
-                            Ok(document) => match self.refresh_identity(sdk).await {
+                            Ok(document) => match self.refresh_loaded_identity(sdk).await {
                                 Ok(updated_identity) => BackendEvent::TaskCompletedStateChange {
                                     task: Task::Document(task),
                                     execution_result: Ok(format!(
@@ -578,7 +578,7 @@ impl AppState {
                             )
                             .await
                         {
-                            Ok(document) => match self.refresh_identity(sdk).await {
+                            Ok(document) => match self.refresh_loaded_identity(sdk).await {
                                 Ok(updated_identity) => BackendEvent::TaskCompletedStateChange {
                                     task: Task::Document(task),
                                     execution_result: Ok(format!(
@@ -705,7 +705,7 @@ impl AppState {
                         )
                         .await
                     {
-                        Ok(document) => match self.refresh_identity(sdk).await {
+                        Ok(document) => match self.refresh_loaded_identity(sdk).await {
                             Ok(updated_identity) => BackendEvent::TaskCompletedStateChange {
                                 task: Task::Document(task),
                                 execution_result: Ok(format!(

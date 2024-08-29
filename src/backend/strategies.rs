@@ -819,7 +819,7 @@ impl AppState {
                 };
     
                 // Refresh loaded_identity and get the current balance at strategy start
-                let mut loaded_identity_lock = match self.refresh_identity(&sdk).await {
+                let mut loaded_identity_lock = match self.refresh_loaded_identity(&sdk).await {
                     Ok(lock) => lock,
                     Err(e) => {
                         tracing::debug!("Failed to refresh loaded identity: {:?}", e);
@@ -2150,7 +2150,7 @@ impl AppState {
 
                 // Refresh the identity at the end
                 drop(loaded_identity_lock);
-                let refresh_result = self.refresh_identity(&sdk).await;
+                let refresh_result = self.refresh_loaded_identity(&sdk).await;
                 if let Err(ref e) = refresh_result {
                     tracing::warn!("Failed to refresh identity after running strategy: {:?}", e);
                 }

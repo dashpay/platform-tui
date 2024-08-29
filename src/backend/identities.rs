@@ -221,7 +221,7 @@ impl AppState {
                 }
             }
             IdentityTask::Refresh => {
-                let result = self.refresh_identity(sdk).await;
+                let result = self.refresh_loaded_identity(sdk).await;
                 let execution_result = result
                     .as_ref()
                     .map(|_| "Executed successfully".into())
@@ -899,7 +899,7 @@ impl AppState {
         Ok(())
     }
 
-    pub(crate) async fn refresh_identity<'s>(
+    pub(crate) async fn refresh_loaded_identity<'s>(
         &'s self,
         sdk: &Sdk,
     ) -> Result<MappedMutexGuard<'s, Identity>, Error> {
@@ -926,7 +926,34 @@ impl AppState {
         Ok(identity_result)
     }
 
-    pub(crate) async fn refresh_identity_balance(&mut self, sdk: &Sdk) -> Result<(), Error> {
+    pub(crate) async fn refresh_all_identities<'s>(&'s self, sdk: &Sdk) -> Result<(), Error> {
+        let mut known_identities = self.known_identities.lock().await;
+
+        let mut identities_to_refresh = Vec::new();
+
+        // Collect all known identity IDs to refresh
+        for identity in known_identities.values() {
+            identities_to_refresh.push(identity.id());
+        }
+
+        for identity_id in identities_to_refresh {
+            if let Some(refreshed_identity) = Identity::fetch(sdk, identity_id).await? {
+                known_identities
+                    .entry(identity_id)
+                    .and_modify(|id| *id = refreshed_identity.clone())
+                    .or_insert(refreshed_identity);
+            } else {
+                return Err(Error::IdentityRefreshError(format!(
+                    "Failed to refresh identity with ID: {}",
+                    identity_id
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
+    pub(crate) async fn refresh_loaded_identity_balance(&mut self, sdk: &Sdk) -> Result<(), Error> {
         if let Some(identity) = self.loaded_identity.blocking_lock().as_mut() {
             let balance = u64::fetch(
                 sdk,
