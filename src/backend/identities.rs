@@ -129,7 +129,7 @@ impl AppState {
                 let result = self.register_new_identity(sdk, amount).await;
                 let execution_result = result
                     .as_ref()
-                    .map(|_| "Executed successfully. Private key logged to supporting_files/new_identity_private_keys.log".into())
+                    .map(|_| "Executed successfully.\n\nPrivate keys were logged to supporting_files/new_identity_private_keys.log\n\nIt's recommended that you copy this file to a safe place so you don't lost your funds.".into())
                     .map_err(|e| e.to_string());
                 let app_state_update = match result {
                     Ok(identity) => AppStateUpdate::LoadedIdentity(identity),

@@ -1037,7 +1037,7 @@ impl AppState {
                                         revision: None,
                                         not_found_public_keys: BTreeSet::new(),
                                     });
-                                tracing::info!(
+                                tracing::trace!(
                                     "Fetched identity info for identifier {}: {:?}",
                                     identifier,
                                     partial_identity
@@ -1151,7 +1151,7 @@ impl AppState {
                             match result {
                                 Ok(asset_lock_proof) => {
                                     let prev = processed.fetch_add(1, Ordering::SeqCst);
-                                    tracing::info!(
+                                    tracing::trace!(
                                         "Successfully obtained asset lock proof {} of {}",
                                         prev + 1,
                                         num_asset_lock_proofs_needed
@@ -1543,7 +1543,7 @@ impl AppState {
                                                 success_count.fetch_add(1, Ordering::SeqCst);
                                                 let transition_owner_id = transition_clone.owner_id().to_string(Encoding::Base58);
                                                 if !block_mode && loop_index != 1 && loop_index != 2 {
-                                                    tracing::info!("Successfully broadcasted transition: {}. ID: {}. Owner ID: {:?}", transition_clone.name(), transition_id, transition_owner_id);
+                                                    tracing::trace!("Successfully broadcasted transition: {}. ID: {}. Owner ID: {:?}", transition_clone.name(), transition_id, transition_owner_id);
                                                 }
                                                 if transition_clone.name() == "DocumentsBatch" {
                                                     let contract_ids = match transition_clone.clone() {
@@ -1560,7 +1560,7 @@ impl AppState {
                                                         let mut mempool_document_counter_clone_lock = mempool_document_counter_clone.lock().await;
                                                         let count = mempool_document_counter_clone_lock.entry((transition_clone.owner_id(), contract_id)).or_insert(0);
                                                         *count += 1;
-                                                        // tracing::info!(" + Incremented identity {} tx counter for contract {}. Count: {}", transition_owner_id, contract_id.to_string(Encoding::Base58), count);
+                                                        // tracing::trace!(" + Incremented identity {} tx counter for contract {}. Count: {}", transition_owner_id, contract_id.to_string(Encoding::Base58), count);
                                                     }
                                                 }
                                                 Ok((transition_clone, broadcast_result))
@@ -1938,7 +1938,7 @@ impl AppState {
                                                                 // Decrement the transitions counter
                                                                 wait_oks.fetch_add(1, Ordering::SeqCst);
                                                                 ongoing_waits.fetch_sub(1, Ordering::SeqCst);
-                                                                tracing::info!(" >>> Transition was included in a block. ID: {}", transition_id);
+                                                                tracing::trace!(" >>> Transition was included in a block. ID: {}", transition_id);
                                                                 if transition_type == "DocumentsBatch" {
                                                                     let contract_ids = match transition.clone() {
                                                                         StateTransition::DocumentsBatch(DocumentsBatchTransition::V0(transition)) => transition.transitions.iter().map(|document_transition|
@@ -1954,7 +1954,7 @@ impl AppState {
                                                                         let mut mempool_document_counter_lock = mempool_document_counter_clone.lock().await;
                                                                         let count = mempool_document_counter_lock.entry((transition.owner_id(), contract_id)).or_insert(0);
                                                                         *count -= 1;
-                                                                        // tracing::info!(" - Decremented identity {} tx counter for contract {}. Count: {}", transition_owner_id, contract_id.to_string(Encoding::Base58), count);
+                                                                        // tracing::trace!(" - Decremented identity {} tx counter for contract {}. Count: {}", transition_owner_id, contract_id.to_string(Encoding::Base58), count);
                                                                     }
                                                                 }
                                                             } else if let Some(wait_for_state_transition_result_response_v0::Result::Error(e)) = &v0_response.result {
@@ -1976,7 +1976,7 @@ impl AppState {
                                                                         let mut mempool_document_counter_lock = mempool_document_counter_clone.lock().await;
                                                                         let count = mempool_document_counter_lock.entry((transition.owner_id(), contract_id)).or_insert(0);
                                                                         *count -= 1;
-                                                                        // tracing::info!(" - Decremented identity {} tx counter for contract {}. Count: {}", transition_owner_id, contract_id.to_string(Encoding::Base58), count);
+                                                                        // tracing::trace!(" - Decremented identity {} tx counter for contract {}. Count: {}", transition_owner_id, contract_id.to_string(Encoding::Base58), count);
                                                                     }
                                                                 }
                                                             } else {
