@@ -614,12 +614,11 @@ impl AppState {
                 )
                 .await;
 
-                if result.is_err() {
+                if let Err(e) = result {
                     return BackendEvent::TaskCompleted {
                         task: Task::Identity(task),
                         execution_result: Err(format!(
-                            "Failed to add identity with private keys: {}",
-                            result.unwrap_err()
+                            "Failed to add identity with private keys: {e}"
                         )),
                     };
                 }
@@ -971,10 +970,7 @@ impl AppState {
                     .and_modify(|id| *id = refreshed_identity.clone())
                     .or_insert(refreshed_identity);
             } else {
-                return Err(Error::IdentityRefreshError(format!(
-                    "Failed to refresh identity with ID: {}",
-                    identity_id
-                )));
+                tracing::error!("Failed to refresh identity with ID: {}", identity_id);
             }
         }
 
@@ -1577,13 +1573,11 @@ impl AppState {
                 .public_keys()
                 .iter()
                 .filter_map(|(key_id, identity_public_key)| {
-                    if identity_public_key.public_key_hash().unwrap()
-                        == public_key_hash.to_byte_array()
-                    {
-                        Some(key_id)
-                    } else {
-                        None
-                    }
+                    (identity_public_key
+                        .public_key_hash()
+                        .expect("Expected to get public key hash from public key")
+                        == public_key_hash.to_byte_array())
+                    .then_some(key_id)
                 })
                 .next();
 

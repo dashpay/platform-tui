@@ -185,13 +185,9 @@ impl ScreenController for ContestedResourcesScreenController {
                 code: Key::Char('s'),
                 modifiers: KeyModifiers::NONE,
             }) => {
-                let resource = match self.get_selected_resource() {
-                    Some(resource) => resource,
-                    None => {
-                        self.resource_view =
-                            Info::new_fixed("No contested usernames on Platform yet");
-                        return ScreenFeedback::Redraw;
-                    }
+                let Some(resource) = self.get_selected_resource() else {
+                    self.resource_view = Info::new_fixed("No contested usernames on Platform yet");
+                    return ScreenFeedback::Redraw;
                 };
 
                 let index_values = vec![Value::from("dash"), resource.clone()]; // hardcoded for dpns
