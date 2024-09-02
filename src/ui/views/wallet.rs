@@ -2,7 +2,7 @@
 
 use dpp::dashcore::psbt::serialize::Serialize;
 
-mod add_identity_key;
+pub(crate) mod add_identity_key;
 
 use std::ops::Deref;
 
