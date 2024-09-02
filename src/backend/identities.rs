@@ -1515,7 +1515,7 @@ impl AppState {
                             return Err(WalletError::Custom("Failed to decode hex".to_string()))
                         }
                     };
-                    match PrivateKey::from_slice(bytes.as_slice(), Network::Testnet) {
+                    match PrivateKey::from_slice(bytes.as_slice(), Network::Dash) {
                         Ok(key) => Ok(key),
                         Err(_) => {
                             return Err(WalletError::Custom("Expected private key".to_string()))
@@ -1674,8 +1674,14 @@ async fn add_identity_key<'a>(
 
     identity_private_keys.insert(
         (loaded_identity.id(), identity_public_key.id()),
-        private_key,
+        private_key.clone(),
     );
+
+    // Log the newly added key
+    let mut keys_to_log = BTreeMap::new();
+    keys_to_log.insert(identity_public_key.clone(), private_key);
+    log_identity_keys(&loaded_identity, &keys_to_log)
+        .map_err(|e| format!("Failed to log identity keys: {e}"))?;
 
     Ok(AppStateUpdate::LoadedIdentity(loaded_identity))
 }

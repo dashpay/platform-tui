@@ -379,7 +379,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
                         Transaction::deserialize(&transaction)
                             .expect("expected to deserialize transaction"),
                         // TODO: Should use network from config
-                        PrivateKey::from_slice(&private_key, Network::Testnet)
+                        PrivateKey::from_slice(&private_key, Network::Dash)
                             .expect("expected private key"),
                         asset_lock_proof,
                         identity_info,
@@ -393,7 +393,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
                     Transaction::deserialize(&transaction)
                         .expect("expected to deserialize transaction"),
                     // TODO: Should use network from config
-                    PrivateKey::from_slice(&private_key, Network::Testnet)
+                    PrivateKey::from_slice(&private_key, Network::Dash)
                         .expect("expected private key"),
                     asset_lock_proof,
                 )

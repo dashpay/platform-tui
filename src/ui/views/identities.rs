@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 
+use crate::ui::views::wallet::add_identity_key::AddIdentityKeyFormController;
 use dpp::{
     identity::accessors::IdentityGettersV0,
     platform_value::string_encoding::Encoding,
@@ -448,7 +449,7 @@ impl ScreenController for IdentitiesScreenController {
                 code: Key::Char('k'),
                 modifiers: KeyModifiers::NONE,
             }) if self.loaded_identity.is_some() => {
-                ScreenFeedback::Form(Box::new(GetIdentityByIdFormController::new()))
+                ScreenFeedback::Form(Box::new(AddIdentityKeyFormController::new()))
             }
 
             // Identity view keys
