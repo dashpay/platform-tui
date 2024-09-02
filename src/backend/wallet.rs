@@ -56,7 +56,7 @@ pub async fn add_wallet_by_private_key_as_string<'s>(
                 Ok(bytes) => bytes,
                 Err(_) => return Err(WalletError::Custom("Failed to decode hex".to_string())),
             };
-            match PrivateKey::from_slice(bytes.as_slice(), Network::Testnet) {
+            match PrivateKey::from_slice(bytes.as_slice(), Network::Dash) {
                 Ok(key) => key,
                 Err(_) => return Err(WalletError::Custom("Expected private key".to_string())),
             }
@@ -85,7 +85,7 @@ pub async fn add_wallet_by_private_key<'s>(
     let secp = Secp256k1::new();
     let public_key = private_key.public_key(&secp);
     // todo: make the network be part of state
-    let address = Address::p2pkh(&public_key, Network::Testnet);
+    let address = Address::p2pkh(&public_key, Network::Dash);
     let mut wallet = Wallet::SingleKeyWallet(SingleKeyWallet {
         private_key,
         public_key,
@@ -131,7 +131,7 @@ pub(super) async fn run_wallet_task<'s>(
         }
         WalletTask::AddRandomKey => {
             let mut rng = StdRng::from_entropy();
-            let private_key = PrivateKey::new(SecretKey::new(&mut rng), Network::Testnet);
+            let private_key = PrivateKey::new(SecretKey::new(&mut rng), Network::Dash);
             add_wallet_by_private_key(&wallet_state, private_key, insight).await;
 
             let wallet_guard = wallet_state.lock().await;
@@ -266,7 +266,7 @@ impl Wallet {
         };
         let fee = 30_000;
         let random_private_key: [u8; 32] = rng.gen();
-        let private_key = PrivateKey::from_slice(&random_private_key, Network::Testnet)
+        let private_key = PrivateKey::from_slice(&random_private_key, Network::Dash)
             .expect("expected a private key");
 
         let secp = Secp256k1::new();
@@ -483,13 +483,13 @@ impl Decode for SingleKeyWallet {
         let bytes = <[u8; 32]>::decode(decoder)?;
         let string_utxos = Vec::<(String, u64, String)>::decode(decoder)?;
 
-        let private_key = PrivateKey::from_slice(bytes.as_slice(), Network::Testnet)
-            .expect("expected private key");
+        let private_key =
+            PrivateKey::from_slice(bytes.as_slice(), Network::Dash).expect("expected private key");
 
         let secp = Secp256k1::new();
         let public_key = private_key.public_key(&secp);
         // todo: make the network be part of state
-        let address = Address::p2pkh(&public_key, Network::Testnet);
+        let address = Address::p2pkh(&public_key, Network::Dash);
 
         let utxos = string_utxos
             .iter()
@@ -526,13 +526,13 @@ impl<'a> BorrowDecode<'a> for SingleKeyWallet {
         let bytes = <[u8; 32]>::decode(decoder)?;
         let string_utxos = Vec::<(String, u64, String)>::decode(decoder)?;
 
-        let private_key = PrivateKey::from_slice(bytes.as_slice(), Network::Testnet)
-            .expect("expected private key");
+        let private_key =
+            PrivateKey::from_slice(bytes.as_slice(), Network::Dash).expect("expected private key");
 
         let secp = Secp256k1::new();
         let public_key = private_key.public_key(&secp);
         // todo: make the network be part of state
-        let address = Address::p2pkh(&public_key, Network::Testnet);
+        let address = Address::p2pkh(&public_key, Network::Dash);
 
         let utxos = string_utxos
             .iter()

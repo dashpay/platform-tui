@@ -1515,7 +1515,7 @@ impl AppState {
                             return Err(WalletError::Custom("Failed to decode hex".to_string()))
                         }
                     };
-                    match PrivateKey::from_slice(bytes.as_slice(), Network::Testnet) {
+                    match PrivateKey::from_slice(bytes.as_slice(), Network::Dash) {
                         Ok(key) => Ok(key),
                         Err(_) => {
                             return Err(WalletError::Custom("Expected private key".to_string()))
