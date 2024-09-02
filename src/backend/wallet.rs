@@ -65,7 +65,7 @@ pub async fn add_wallet_by_private_key_as_string<'s>(
             // wif
             match PrivateKey::from_wif(private_key) {
                 Ok(key) => key,
-                Err(_) => return Err(WalletError::Custom("Expected WIF key".to_string())),
+                Err(e) => return Err(WalletError::Custom(format!("Expected WIF key {}", e))),
             }
         }
         _ => {
