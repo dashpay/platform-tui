@@ -255,7 +255,7 @@ async fn main() {
     let identity_lock = backend.state().loaded_identity.lock().await;
     let identity = identity_lock.as_ref().expect("no loaded identity");
 
-    let identity_private_keys_lock = backend.state().identity_private_keys.lock().await;
+    let identity_private_keys_lock = backend.state().known_identities_private_keys.lock().await;
 
     let mut signer = SimpleSigner::default();
 
@@ -391,6 +391,7 @@ async fn broadcast_contract_variants(
             Purpose::AUTHENTICATION,
             HashSet::from([SecurityLevel::CRITICAL]),
             HashSet::from([KeyType::ECDSA_SECP256K1]),
+            false,
         )
         .expect("expected to get a key");
 
@@ -514,6 +515,7 @@ async fn broadcast_random_documents_load_test(
             Purpose::AUTHENTICATION,
             HashSet::from([document_type.security_level_requirement()]),
             HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
+            false,
         )
         .expect("No public key matching security level requirements");
 

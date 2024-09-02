@@ -29,7 +29,7 @@ use strategy_tests::Strategy;
 use tokio::sync::Mutex;
 use walkdir::{DirEntry, WalkDir};
 
-use super::wallet::{add_wallet_by_private_key, add_wallet_by_private_key_as_string, Wallet};
+use super::wallet::{add_wallet_by_private_key_as_string, Wallet};
 use crate::{backend::insight::InsightAPIClient, config::Config};
 
 const CURRENT_PROTOCOL_VERSION: ProtocolVersion = 1;
@@ -42,6 +42,7 @@ pub(super) type StrategiesMap = BTreeMap<String, Strategy>;
 pub(crate) type StrategyContractNames =
     Vec<(ContractFileName, Option<BTreeMap<u64, ContractFileName>>)>;
 pub(super) type KnownContractsMap = BTreeMap<String, DataContract>;
+/// <(Known identity ID, Public key ID), Private key bytes>
 pub type IdentityPrivateKeysMap = BTreeMap<(Identifier, KeyID), Vec<u8>>;
 
 // TODO: each state part should be in it's own mutex in case multiple backend
@@ -52,10 +53,11 @@ pub type IdentityPrivateKeysMap = BTreeMap<(Identifier, KeyID), Vec<u8>>;
 pub struct AppState {
     pub loaded_identity: Mutex<Option<Identity>>,
     pub loaded_identity_pro_tx_hash: Mutex<Option<Identifier>>,
-    pub identity_private_keys: Mutex<IdentityPrivateKeysMap>,
     pub loaded_wallet: Mutex<Option<Wallet>>,
     pub drive: Mutex<Drive>,
     pub known_identities: Mutex<BTreeMap<Identifier, Identity>>,
+    pub known_identities_private_keys: Mutex<IdentityPrivateKeysMap>,
+    pub known_identities_names: Mutex<BTreeMap<Identifier, Vec<String>>>,
     pub known_contracts: Mutex<KnownContractsMap>,
     pub supporting_contracts: Mutex<BTreeMap<String, DataContract>>, /* Contracts from
                                                                       * supporting_files */
@@ -126,12 +128,13 @@ impl Default for AppState {
         AppState {
             loaded_identity: None.into(),
             loaded_identity_pro_tx_hash: None.into(),
-            identity_private_keys: Default::default(),
+            known_identities_private_keys: Default::default(),
             loaded_wallet: Mutex::new(None),
             drive: Mutex::from(drive),
             known_contracts: BTreeMap::new().into(),
             supporting_contracts: supporting_contracts_raw.into(),
             known_identities: BTreeMap::new().into(),
+            known_identities_names: BTreeMap::new().into(),
             available_strategies: BTreeMap::new().into(),
             selected_strategy: None.into(),
             identity_asset_lock_private_key_in_creation: None.into(),
@@ -148,6 +151,7 @@ struct AppStateInSerializationFormat {
     pub identity_private_keys: IdentityPrivateKeysMap,
     pub loaded_wallet: Option<Wallet>,
     pub known_identities: BTreeMap<Identifier, Identity>,
+    pub known_identities_names: BTreeMap<Identifier, Vec<String>>,
     pub known_contracts: BTreeMap<String, Vec<u8>>,
     pub supporting_contracts: BTreeMap<String, Vec<u8>>,
     pub available_strategies: BTreeMap<String, Vec<u8>>,
@@ -181,10 +185,11 @@ impl PlatformSerializableWithPlatformVersion for AppState {
         let AppState {
             loaded_identity,
             loaded_identity_pro_tx_hash,
-            identity_private_keys,
+            known_identities_private_keys: identity_private_keys,
             loaded_wallet,
             drive,
             known_identities,
+            known_identities_names,
             known_contracts,
             supporting_contracts,
             available_strategies,
@@ -256,6 +261,7 @@ impl PlatformSerializableWithPlatformVersion for AppState {
             identity_private_keys: identity_private_keys.blocking_lock().clone(),
             loaded_wallet: loaded_wallet.blocking_lock().clone(),
             known_identities: known_identities.blocking_lock().clone(),
+            known_identities_names: known_identities_names.blocking_lock().clone(),
             known_contracts: known_contracts_in_serialization_format,
             supporting_contracts: supporting_contracts_in_serialization_format,
             available_strategies: available_strategies_in_serialization_format,
@@ -302,6 +308,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
             identity_private_keys,
             loaded_wallet,
             known_identities,
+            known_identities_names,
             known_contracts,
             supporting_contracts,
             available_strategies,
@@ -372,7 +379,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
                         Transaction::deserialize(&transaction)
                             .expect("expected to deserialize transaction"),
                         // TODO: Should use network from config
-                        PrivateKey::from_slice(&private_key, Network::Testnet)
+                        PrivateKey::from_slice(&private_key, Network::Dash)
                             .expect("expected private key"),
                         asset_lock_proof,
                         identity_info,
@@ -386,7 +393,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
                     Transaction::deserialize(&transaction)
                         .expect("expected to deserialize transaction"),
                     // TODO: Should use network from config
-                    PrivateKey::from_slice(&private_key, Network::Testnet)
+                    PrivateKey::from_slice(&private_key, Network::Dash)
                         .expect("expected private key"),
                     asset_lock_proof,
                 )
@@ -406,10 +413,11 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
         Ok(AppState {
             loaded_identity: loaded_identity.into(),
             loaded_identity_pro_tx_hash: loaded_identity_pro_tx_hash.into(),
-            identity_private_keys: identity_private_keys.into(),
+            known_identities_private_keys: identity_private_keys.into(),
             loaded_wallet: deserialized_wallet_state,
             drive: drive.into(),
             known_identities: known_identities.into(),
+            known_identities_names: known_identities_names.into(),
             known_contracts: known_contracts.into(),
             supporting_contracts: supporting_contracts.into(),
             available_strategies: available_strategies.into(),

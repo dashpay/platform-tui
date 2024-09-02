@@ -38,7 +38,7 @@ impl Display for IdentityBalanceStatus {
         match self {
             IdentityBalanceStatus::NoIdentity => write!(f, "No identity"),
             IdentityBalanceStatus::Balance(balance) => {
-                write!(f, "Platform balance: {}", balance.dash_str())
+                write!(f, "Loaded identity balance: {}", balance.dash_str())
             }
             IdentityBalanceStatus::RefreshError => write!(f, "Balance refresh error"),
         }

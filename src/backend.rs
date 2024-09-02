@@ -82,6 +82,7 @@ pub enum CompletedTaskPayload {
     String(String),
     ContestedResources(ContestedResources),
     ContestedResourceContenders(ContestedDocumentResourceVotePoll, Contenders),
+    DocumentsAndContestedResources(BTreeMap<Identifier, Option<Document>>, ContestedResources),
 }
 
 impl From<String> for CompletedTaskPayload {
@@ -134,6 +135,7 @@ pub enum BackendEvent<'s> {
 #[derive(Debug)]
 pub(crate) enum AppStateUpdate<'s> {
     KnownContracts(MutexGuard<'s, KnownContractsMap>),
+    KnownIdentities(MappedMutexGuard<'s, BTreeMap<Identifier, Identity>>),
     LoadedWallet(MappedMutexGuard<'s, Wallet>),
     Strategies(
         MutexGuard<'s, StrategiesMap>,
@@ -151,9 +153,11 @@ pub(crate) enum AppStateUpdate<'s> {
     FailedToRefreshIdentity,
     ClearedLoadedIdentity,
     ClearedLoadedWallet,
+    ClearedKnownContracts,
     IdentityCreditsTransferred,
     DPNSNameRegistered(String),
-    DPNSNameRegistrationFailed,
+    DPNSNameRegistrationFailed(String),
+    ForgotIdentity,
 }
 
 /// Represents the result of completing a strategy.
@@ -222,13 +226,9 @@ impl<'a> Backend<'a> {
                 }
             }
             Task::Strategy(strategy_task) => {
-                strategies::run_strategy_task(
-                    &self.sdk,
-                    &self.app_state,
-                    strategy_task,
-                    &self.insight,
-                )
-                .await
+                self.app_state
+                    .run_strategy_task(&self.sdk, strategy_task, &self.insight)
+                    .await
             }
             Task::Wallet(wallet_task) => {
                 wallet::run_wallet_task(
@@ -240,12 +240,9 @@ impl<'a> Backend<'a> {
                 .await
             }
             Task::Contract(contract_task) => {
-                contracts::run_contract_task(
-                    self.sdk,
-                    &self.app_state.known_contracts,
-                    contract_task,
-                )
-                .await
+                self.app_state
+                    .run_contract_task(self.sdk, &self.app_state.known_contracts, contract_task)
+                    .await
             }
             Task::Identity(identity_task) => {
                 self.app_state

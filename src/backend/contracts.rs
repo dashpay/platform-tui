@@ -15,7 +15,9 @@ use dpp::{
 use drive::query::{WhereClause, WhereOperator};
 use tokio::sync::Mutex;
 
-use super::{as_json_string, state::KnownContractsMap, AppStateUpdate, BackendEvent, Task};
+use super::{
+    as_json_string, state::KnownContractsMap, AppState, AppStateUpdate, BackendEvent, Task,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum ContractTask {
@@ -23,105 +25,122 @@ pub(crate) enum ContractTask {
     FetchDPNSContract,
     RemoveContract(String),
     FetchContract(String),
+    ClearKnownContracts,
 }
 
-pub(super) async fn run_contract_task<'s>(
-    sdk: &Sdk,
-    known_contracts: &'s Mutex<KnownContractsMap>,
-    task: ContractTask,
-) -> BackendEvent<'s> {
-    match task {
-        ContractTask::FetchDashpayContract => {
-            match DataContract::fetch(&sdk, Into::<Identifier>::into(dashpay_contract::ID_BYTES))
+impl AppState {
+    pub(super) async fn run_contract_task<'s>(
+        &self,
+        sdk: &Sdk,
+        known_contracts: &'s Mutex<KnownContractsMap>,
+        task: ContractTask,
+    ) -> BackendEvent<'s> {
+        match task {
+            ContractTask::FetchDashpayContract => {
+                match DataContract::fetch(
+                    &sdk,
+                    Into::<Identifier>::into(dashpay_contract::ID_BYTES),
+                )
                 .await
-            {
-                Ok(Some(data_contract)) => {
-                    let contract_str = as_json_string(&data_contract);
-                    let mut contracts_lock = known_contracts.lock().await;
+                {
+                    Ok(Some(data_contract)) => {
+                        let contract_str = as_json_string(&data_contract);
+                        let mut contracts_lock = known_contracts.lock().await;
 
-                    let contract_name = get_dpns_name(sdk, &data_contract.id())
-                        .await
-                        .unwrap_or_else(|| data_contract.id().to_string(Encoding::Base58));
+                        let contract_name = get_dpns_name(sdk, &data_contract.id())
+                            .await
+                            .unwrap_or_else(|| "Dashpay".to_string());
 
-                    contracts_lock.insert(contract_name, data_contract);
+                        contracts_lock.insert(contract_name, data_contract);
 
-                    BackendEvent::TaskCompletedStateChange {
-                        task: Task::Contract(task),
-                        execution_result: Ok(contract_str.into()),
-                        app_state_update: AppStateUpdate::KnownContracts(contracts_lock),
+                        BackendEvent::TaskCompletedStateChange {
+                            task: Task::Contract(task),
+                            execution_result: Ok(contract_str.into()),
+                            app_state_update: AppStateUpdate::KnownContracts(contracts_lock),
+                        }
                     }
-                }
-                Ok(None) => BackendEvent::TaskCompleted {
-                    task: Task::Contract(task),
-                    execution_result: Ok("No contract".into()),
-                },
-                Err(e) => BackendEvent::TaskCompleted {
-                    task: Task::Contract(task),
-                    execution_result: Err(e.to_string()),
-                },
-            }
-        }
-        ContractTask::FetchDPNSContract => {
-            match DataContract::fetch(&sdk, Into::<Identifier>::into(dpns_contract::ID_BYTES)).await
-            {
-                Ok(Some(data_contract)) => {
-                    let contract_str = as_json_string(&data_contract);
-                    let mut contracts_lock = known_contracts.lock().await;
-
-                    let contract_name = get_dpns_name(sdk, &data_contract.id())
-                        .await
-                        .unwrap_or_else(|| data_contract.id().to_string(Encoding::Base58));
-
-                    contracts_lock.insert(contract_name, data_contract);
-
-                    BackendEvent::TaskCompletedStateChange {
+                    Ok(None) => BackendEvent::TaskCompleted {
                         task: Task::Contract(task),
-                        execution_result: Ok(contract_str.into()),
-                        app_state_update: AppStateUpdate::KnownContracts(contracts_lock),
-                    }
-                }
-                Ok(None) => BackendEvent::TaskCompleted {
-                    task: Task::Contract(task),
-                    execution_result: Ok("No contract".into()),
-                },
-                Err(e) => BackendEvent::TaskCompleted {
-                    task: Task::Contract(task),
-                    execution_result: Err(e.to_string()),
-                },
-            }
-        }
-        ContractTask::RemoveContract(ref contract_name) => {
-            let mut contracts_lock = known_contracts.lock().await;
-            contracts_lock.remove(contract_name);
-            BackendEvent::TaskCompletedStateChange {
-                task: Task::Contract(task),
-                execution_result: Ok("Contract removed".into()),
-                app_state_update: AppStateUpdate::KnownContracts(contracts_lock),
-            }
-        }
-        ContractTask::FetchContract(ref contract_id_string) => {
-            let id = Identifier::from_string(&contract_id_string, Encoding::Base58)
-                .expect("Expected to convert contract_id_string to Identifier");
-            match DataContract::fetch(&sdk, id).await {
-                Ok(Some(data_contract)) => {
-                    let contract_str = as_json_string(&data_contract);
-                    let mut contracts_lock = known_contracts.lock().await;
-                    contracts_lock.insert(contract_id_string.to_string(), data_contract);
-
-                    BackendEvent::TaskCompletedStateChange {
+                        execution_result: Ok("No contract".into()),
+                    },
+                    Err(e) => BackendEvent::TaskCompleted {
                         task: Task::Contract(task),
-                        execution_result: Ok(contract_str.into()),
-                        app_state_update: AppStateUpdate::KnownContracts(contracts_lock),
-                    }
+                        execution_result: Err(e.to_string()),
+                    },
                 }
-                Ok(None) => BackendEvent::TaskCompleted {
+            }
+            ContractTask::FetchDPNSContract => {
+                match DataContract::fetch(&sdk, Into::<Identifier>::into(dpns_contract::ID_BYTES))
+                    .await
+                {
+                    Ok(Some(data_contract)) => {
+                        let contract_str = as_json_string(&data_contract);
+                        let mut contracts_lock = known_contracts.lock().await;
+
+                        let contract_name = get_dpns_name(sdk, &data_contract.id())
+                            .await
+                            .unwrap_or_else(|| "DPNS".to_string());
+
+                        contracts_lock.insert(contract_name, data_contract);
+
+                        BackendEvent::TaskCompletedStateChange {
+                            task: Task::Contract(task),
+                            execution_result: Ok(contract_str.into()),
+                            app_state_update: AppStateUpdate::KnownContracts(contracts_lock),
+                        }
+                    }
+                    Ok(None) => BackendEvent::TaskCompleted {
+                        task: Task::Contract(task),
+                        execution_result: Ok("No contract".into()),
+                    },
+                    Err(e) => BackendEvent::TaskCompleted {
+                        task: Task::Contract(task),
+                        execution_result: Err(e.to_string()),
+                    },
+                }
+            }
+            ContractTask::RemoveContract(ref contract_name) => {
+                let mut contracts_lock = known_contracts.lock().await;
+                contracts_lock.remove(contract_name);
+                BackendEvent::TaskCompletedStateChange {
                     task: Task::Contract(task),
-                    execution_result: Ok("No contract".into()),
-                },
-                Err(e) => BackendEvent::TaskCompleted {
+                    execution_result: Ok("Contract removed".into()),
+                    app_state_update: AppStateUpdate::KnownContracts(contracts_lock),
+                }
+            }
+            ContractTask::FetchContract(ref contract_id_string) => {
+                let id = Identifier::from_string(&contract_id_string, Encoding::Base58)
+                    .expect("Expected to convert contract_id_string to Identifier");
+                match DataContract::fetch(&sdk, id).await {
+                    Ok(Some(data_contract)) => {
+                        let contract_str = as_json_string(&data_contract);
+                        let mut contracts_lock = known_contracts.lock().await;
+                        contracts_lock.insert(contract_id_string.to_string(), data_contract);
+
+                        BackendEvent::TaskCompletedStateChange {
+                            task: Task::Contract(task),
+                            execution_result: Ok(contract_str.into()),
+                            app_state_update: AppStateUpdate::KnownContracts(contracts_lock),
+                        }
+                    }
+                    Ok(None) => BackendEvent::TaskCompleted {
+                        task: Task::Contract(task),
+                        execution_result: Ok("No contract".into()),
+                    },
+                    Err(e) => BackendEvent::TaskCompleted {
+                        task: Task::Contract(task),
+                        execution_result: Err(e.to_string()),
+                    },
+                }
+            }
+            ContractTask::ClearKnownContracts => {
+                let mut known_contracts = self.known_contracts.lock().await;
+                known_contracts.clear();
+                BackendEvent::TaskCompletedStateChange {
                     task: Task::Contract(task),
-                    execution_result: Err(e.to_string()),
-                },
+                    execution_result: Ok("Cleared known contracts".into()),
+                    app_state_update: AppStateUpdate::ClearedKnownContracts,
+                }
             }
         }
     }

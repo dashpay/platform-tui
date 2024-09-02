@@ -1,8 +1,11 @@
 //! Identities backend logic.
 
+use chrono::Utc;
 use dashcore::hashes::Hash;
+use std::io::Write;
 use std::{
     collections::{BTreeMap, HashSet},
+    fs::OpenOptions,
     time::Duration,
 };
 
@@ -20,14 +23,18 @@ use dash_sdk::{
     platform::{
         transition::{
             broadcast::BroadcastStateTransition, put_document::PutDocument,
-            put_identity::PutIdentity, top_up_identity::TopUpIdentity,
+            put_identity::PutIdentity, put_settings::PutSettings, top_up_identity::TopUpIdentity,
             withdraw_from_identity::WithdrawFromIdentity,
         },
         Fetch,
     },
     Sdk,
 };
-use dpp::data_contract::DataContract;
+use dpp::{
+    dashcore::Network,
+    data_contract::DataContract,
+    identity::{hash::IdentityPublicKeyHashMethodsV0, KeyID},
+};
 use dpp::{
     dashcore::{self, key::Secp256k1},
     identity::SecurityLevel,
@@ -94,11 +101,12 @@ pub(super) async fn fetch_identity_by_b58_id(
 #[derive(Debug, Clone, PartialEq)]
 pub enum IdentityTask {
     RegisterIdentity(u64),
-    LoadKnownIdentity(String),
+    LoadKnownIdentity(Identifier),
     ContinueRegisteringIdentity,
     TopUpIdentity(u64),
     WithdrawFromIdentity(u64),
     Refresh,
+    RefreshAllKnown,
     CopyIdentityId,
     AddIdentityKey {
         key_type: KeyType,
@@ -108,8 +116,11 @@ pub enum IdentityTask {
     ClearLoadedIdentity,
     ClearRegistrationOfIdentityInProgress,
     TransferCredits(String, f64),
-    LoadEvonodeIdentity(String, String),
-    RegisterDPNSName(String),
+    LoadMasternodeIdentity(String, String),
+    LoadIdentityById(String),
+    AddPrivateKeys(Vec<String>),
+    ForgetIdentity(Identifier),
+    RegisterDPNSName(Identity, String),
 }
 
 impl AppState {
@@ -119,7 +130,7 @@ impl AppState {
                 let result = self.register_new_identity(sdk, amount).await;
                 let execution_result = result
                     .as_ref()
-                    .map(|_| "Executed successfully".into())
+                    .map(|_| "Executed successfully.\n\nPrivate keys were logged to supporting_files/new_identity_private_keys.log\n\nIt's recommended that you copy this file to a safe place so you don't lost your funds.".into())
                     .map_err(|e| e.to_string());
                 let app_state_update = match result {
                     Ok(identity) => AppStateUpdate::LoadedIdentity(identity),
@@ -132,35 +143,35 @@ impl AppState {
                     app_state_update,
                 }
             }
-            IdentityTask::LoadKnownIdentity(ref id_string) => {
-                let private_key_map = self.identity_private_keys.lock().await;
-                if !private_key_map.contains_key(&(
-                    Identifier::from_string(&id_string, Encoding::Base58)
-                        .expect("Expected to convert id_string to Identifier"),
-                    0,
-                )) {
+            IdentityTask::LoadKnownIdentity(ref identifier) => {
+                let private_key_map = self.known_identities_private_keys.lock().await;
+
+                // Check if any key in the map matches the identifier, regardless of the key ID
+                let has_identifier = private_key_map.keys().any(|(id, _)| *id == identifier);
+
+                if !has_identifier {
                     return BackendEvent::TaskCompleted {
                         task: Task::Identity(task),
                         execution_result: Err(format!(
-                            "The identity ID provided is not in the private keys map"
+                            "No private keys known for this identity. Try loading it with the private keys."
                         )),
                     };
                 }
-                match Identity::fetch(
-                    &sdk,
-                    Identifier::from_string(&id_string, Encoding::Base58)
-                        .expect("Expected to convert id_string to Identifier"),
-                )
-                .await
-                {
+
+                match Identity::fetch(&sdk, *identifier).await {
                     Ok(new_identity) => {
                         let mut loaded_identity_lock = self.loaded_identity.lock().await;
                         *loaded_identity_lock = new_identity;
-                        BackendEvent::AppStateUpdated(AppStateUpdate::LoadedKnownIdentity(
-                            MutexGuard::map(loaded_identity_lock, |identity| {
-                                identity.as_mut().expect("checked above")
-                            }),
-                        ))
+                        BackendEvent::TaskCompletedStateChange {
+                            task: Task::Identity(task),
+                            execution_result: Ok(CompletedTaskPayload::String(
+                                "Successfully loaded identity".to_owned(),
+                            )),
+                            app_state_update: AppStateUpdate::LoadedIdentity(MutexGuard::map(
+                                loaded_identity_lock,
+                                |identity| identity.as_mut().expect("checked above"),
+                            )),
+                        }
                     }
                     Err(e) => BackendEvent::TaskCompleted {
                         task: Task::Identity(task),
@@ -211,13 +222,30 @@ impl AppState {
                 }
             }
             IdentityTask::Refresh => {
-                let result = self.refresh_identity(sdk).await;
+                let result = self.refresh_loaded_identity(sdk).await;
                 let execution_result = result
                     .as_ref()
                     .map(|_| "Executed successfully".into())
                     .map_err(|e| e.to_string());
                 let app_state_update = match result {
                     Ok(identity) => AppStateUpdate::LoadedIdentity(identity),
+                    Err(_) => AppStateUpdate::IdentityRegistrationProgressed,
+                };
+
+                BackendEvent::TaskCompletedStateChange {
+                    task: Task::Identity(task),
+                    execution_result,
+                    app_state_update,
+                }
+            }
+            IdentityTask::RefreshAllKnown => {
+                let result = self.refresh_all_known_identities(sdk).await;
+                let execution_result = result
+                    .as_ref()
+                    .map(|_| "Executed successfully".into())
+                    .map_err(|e| e.to_string());
+                let app_state_update = match result {
+                    Ok(identities) => AppStateUpdate::KnownIdentities(identities),
                     Err(_) => AppStateUpdate::IdentityRegistrationProgressed,
                 };
 
@@ -301,7 +329,7 @@ impl AppState {
                     };
                 };
 
-                let identity_private_keys_lock = self.identity_private_keys.lock().await;
+                let identity_private_keys_lock = self.known_identities_private_keys.lock().await;
                 match add_identity_key(
                     sdk,
                     loaded_identity,
@@ -345,32 +373,42 @@ impl AppState {
                 let loaded_identity = self.loaded_identity.lock().await;
                 if let Some(identity) = loaded_identity.as_ref() {
                     transfer_transition.set_identity_id(identity.id());
-                    let nonce = sdk
-                        .get_identity_nonce(identity.id(), true, None)
-                        .await
-                        .expect("Expected to get an identity nonce in creating credit transfer");
+                    let nonce = match sdk.get_identity_nonce(identity.id(), true, None).await {
+                        Ok(nonce) => nonce,
+                        Err(e) => {
+                            return BackendEvent::TaskCompleted {
+                                task: Task::Identity(task),
+                                execution_result: Err(format!(
+                                    "Failed to get nonce from Platform: {e}"
+                                )),
+                            }
+                        }
+                    };
                     transfer_transition.set_nonce(nonce);
 
                     let mut transition =
                         StateTransition::IdentityCreditTransfer(transfer_transition);
 
-                    let identity_public_key = identity
-                        .get_first_public_key_matching(
-                            Purpose::TRANSFER,
-                            HashSet::from([SecurityLevel::CRITICAL]),
-                            HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
-                        )
-                        .expect("Expected to get a signing key");
+                    let Some(identity_public_key) = identity.get_first_public_key_matching(
+                        Purpose::TRANSFER,
+                        HashSet::from([SecurityLevel::CRITICAL]),
+                        HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
+                        false,
+                    ) else {
+                        return BackendEvent::TaskCompleted {
+                            task: Task::Identity(task),
+                            execution_result: Err("No public key for transfer".to_string()),
+                        };
+                    };
 
-                    let loaded_identity_private_keys = self.identity_private_keys.lock().await;
+                    let loaded_identity_private_keys =
+                        self.known_identities_private_keys.lock().await;
                     let Some(private_key) = loaded_identity_private_keys
                         .get(&(identity.id(), identity_public_key.id()))
                     else {
                         return BackendEvent::TaskCompleted {
                             task: Task::Identity(task),
-                            execution_result: Ok(CompletedTaskPayload::String(
-                                "No private key for transfer".to_string(),
-                            )),
+                            execution_result: Err("No private key for transfer".to_string()),
                         };
                     };
 
@@ -411,7 +449,7 @@ impl AppState {
                     }
                 }
             }
-            IdentityTask::LoadEvonodeIdentity(ref pro_tx_hash, ref private_key_in_wif) => {
+            IdentityTask::LoadMasternodeIdentity(ref pro_tx_hash, ref private_key_in_wif) => {
                 // Convert proTxHash to bytes
                 let pro_tx_hash_bytes = match hex::decode(pro_tx_hash) {
                     Ok(hash) => hash,
@@ -464,6 +502,7 @@ impl AppState {
                                     Purpose::VOTING,
                                     SecurityLevel::full_range().into(),
                                     KeyType::all_key_types().into(),
+                                    false,
                                 );
 
                             let fetched_voting_public_key = match fetched_voting_public_key_result {
@@ -475,11 +514,17 @@ impl AppState {
                             };
 
                             // Insert private key into the state for later use
-                            let mut identity_private_keys = self.identity_private_keys.lock().await;
+                            let mut identity_private_keys =
+                                self.known_identities_private_keys.lock().await;
                             identity_private_keys.insert(
                                 (evonode_identity.id(), fetched_voting_public_key.id()),
                                 private_key.to_bytes(),
                             );
+
+                            // Insert into known_identities
+                            let mut known_identities_lock = self.known_identities.lock().await;
+                            known_identities_lock
+                                .insert(evonode_identity.id(), evonode_identity.clone());
 
                             // Set loaded identity
                             let mut loaded_identity = self.loaded_identity.lock().await;
@@ -518,30 +563,33 @@ impl AppState {
                     },
                 }
             }
-            IdentityTask::RegisterDPNSName(ref name) => {
-                let loaded_identity_lock = self.loaded_identity.lock().await;
-                let identity = match loaded_identity_lock.as_ref() {
-                    Some(identity) => identity,
-                    None => {
-                        return BackendEvent::TaskCompleted {
-                            task: Task::Identity(task),
-                            execution_result: Ok(CompletedTaskPayload::String(
-                                "No loaded identity".to_string(),
-                            )),
-                        }
-                    }
-                };
+            IdentityTask::RegisterDPNSName(ref identity, ref name) => {
                 let identity_id = identity.id();
-                drop(loaded_identity_lock);
 
-                let result = self.register_dpns_name(sdk, &identity_id, name).await;
+                let result = self
+                    .register_dpns_name(sdk, identity, &identity_id, name)
+                    .await;
                 let execution_result = result
                     .as_ref()
                     .map(|_| "DPNS name registration successful".into())
                     .map_err(|e| e.to_string());
                 let app_state_update = match result {
-                    Ok(_) => AppStateUpdate::DPNSNameRegistered(name.clone()),
-                    Err(_) => AppStateUpdate::DPNSNameRegistrationFailed,
+                    Ok(_) => {
+                        // Add the username to the map of known identities to usernames
+                        let mut names_map = self.known_identities_names.lock().await;
+                        names_map
+                            .entry(identity_id.clone())
+                            .or_insert_with(Vec::new)
+                            .push(
+                                name.to_lowercase()
+                                    .replace('l', "1")
+                                    .replace('o', "0")
+                                    .to_string(),
+                            );
+
+                        AppStateUpdate::DPNSNameRegistered(name.clone())
+                    }
+                    Err(e) => AppStateUpdate::DPNSNameRegistrationFailed(e.to_string()),
                 };
 
                 BackendEvent::TaskCompletedStateChange {
@@ -550,22 +598,131 @@ impl AppState {
                     app_state_update,
                 }
             }
+            IdentityTask::AddPrivateKeys(ref private_key_strings) => {
+                let loaded_identity_lock = self.loaded_identity.lock().await;
+                let identity_id = &loaded_identity_lock
+                    .clone()
+                    .expect("An identity should be loaded")
+                    .id();
+                drop(loaded_identity_lock);
+
+                let result = Self::add_identity_with_private_keys_as_strings(
+                    &self,
+                    identity_id,
+                    &private_key_strings,
+                    sdk,
+                )
+                .await;
+
+                if let Err(e) = result {
+                    return BackendEvent::TaskCompleted {
+                        task: Task::Identity(task),
+                        execution_result: Err(format!(
+                            "Failed to add identity with private keys: {e}"
+                        )),
+                    };
+                }
+
+                let loaded_identity_lock = self.loaded_identity.lock().await;
+                let loaded_identity_update = MutexGuard::map(loaded_identity_lock, |opt| {
+                    opt.as_mut().expect("identity was set above")
+                });
+
+                BackendEvent::TaskCompletedStateChange {
+                    task: Task::Identity(task),
+                    execution_result: Ok("Added identity".into()),
+                    app_state_update: AppStateUpdate::LoadedIdentity(loaded_identity_update),
+                }
+            }
+            IdentityTask::LoadIdentityById(ref identity_id_string) => {
+                let identity_id =
+                    match Identifier::from_string(identity_id_string, Encoding::Base58) {
+                        Ok(id) => id,
+                        Err(e) => {
+                            return BackendEvent::TaskCompleted {
+                                task: Task::Identity(task),
+                                execution_result: Err(format!(
+                                    "Error converting base58 string to Identifier: {}",
+                                    e
+                                )),
+                            };
+                        }
+                    };
+                let identity_fetch_result = Identity::fetch_by_identifier(sdk, identity_id).await;
+                match identity_fetch_result {
+                    Ok(Some(identity)) => {
+                        let mut loaded_identity_lock = self.loaded_identity.lock().await;
+                        loaded_identity_lock.replace(identity.clone());
+                        let loaded_identity_update = MutexGuard::map(loaded_identity_lock, |opt| {
+                            opt.as_mut().expect("identity was set above")
+                        });
+                        let mut known_identities_lock = self.known_identities.lock().await;
+                        known_identities_lock.insert(identity_id, identity);
+                        BackendEvent::TaskCompletedStateChange {
+                            task: Task::Identity(task),
+                            execution_result: Ok("Loaded identity from base58 id".into()),
+                            app_state_update: AppStateUpdate::LoadedIdentity(
+                                loaded_identity_update,
+                            ),
+                        }
+                    }
+                    Ok(None) => BackendEvent::TaskCompleted {
+                        task: Task::Identity(task),
+                        execution_result: Err("No identity found with that id".into()),
+                    },
+                    Err(e) => BackendEvent::TaskCompleted {
+                        task: Task::Identity(task),
+                        execution_result: Err(format!("Error fetching identity by id: {}", e)),
+                    },
+                }
+            }
+            IdentityTask::ForgetIdentity(identifier) => {
+                // Remove from known_identities
+                let mut known_identities = self.known_identities.lock().await;
+                known_identities.remove(&identifier);
+
+                // Remove from known_identities_private_keys
+                let mut known_identities_private_keys =
+                    self.known_identities_private_keys.lock().await;
+                let keys_to_remove: Vec<(Identifier, KeyID)> = known_identities_private_keys
+                    .keys()
+                    .filter(|(id, _)| *id == identifier)
+                    .cloned()
+                    .collect();
+                for key in keys_to_remove {
+                    known_identities_private_keys.remove(&key);
+                }
+
+                // If this is the loaded identity, remove it from there
+                let mut loaded_identity = self.loaded_identity.lock().await;
+                if loaded_identity.is_some() {
+                    let some_loaded_identity =
+                        loaded_identity.clone().expect("Expected a loaded identity");
+                    if some_loaded_identity.id() == identifier {
+                        *loaded_identity = None;
+                    }
+                }
+
+                BackendEvent::TaskCompletedStateChange {
+                    task: Task::Identity(IdentityTask::ForgetIdentity(identifier)),
+                    execution_result: Ok(CompletedTaskPayload::String(
+                        "Successfully removed identity from TUI state".to_string(),
+                    )),
+                    app_state_update: AppStateUpdate::ForgotIdentity,
+                }
+            }
         }
     }
 
     pub(crate) async fn register_dpns_name(
         &self,
         sdk: &Sdk,
+        identity: &Identity,      // Identity to register the name for and sign tx
         _identifier: &Identifier, // Once contract names are enabled, we can use this field
         name: &str,
     ) -> Result<(), Error> {
         let mut rng = StdRng::from_entropy();
         let platform_version = PlatformVersion::latest();
-
-        let loaded_identity = self.loaded_identity.lock().await;
-        let identity = loaded_identity
-            .as_ref()
-            .ok_or_else(|| Error::IdentityError("No loaded identity".to_string()))?;
 
         let dpns_contract = match DataContract::fetch(
             &sdk,
@@ -576,6 +733,13 @@ impl AppState {
             Ok(contract) => contract.unwrap(),
             Err(e) => return Err(Error::SdkError(e)),
         };
+
+        // Add DPNS to known contracts in app state
+        let mut known_contracts = self.known_contracts.lock().await;
+        known_contracts
+            .entry("DPNS".to_string())
+            .or_insert(dpns_contract.clone());
+
         let preorder_document_type = dpns_contract
             .document_type_for_name("preorder")
             .map_err(|_| Error::DPNSError("DPNS preorder document type not found".to_string()))?;
@@ -623,7 +787,16 @@ impl AppState {
         domain_document.set("preorderSalt", salt.into());
 
         let identity_contract_nonce = match sdk
-            .get_identity_contract_nonce(identity.id(), dpns_contract.id(), true, None)
+            .get_identity_contract_nonce(
+                identity.id(),
+                dpns_contract.id(),
+                true,
+                Some(PutSettings {
+                    request_settings: RequestSettings::default(),
+                    identity_nonce_stale_time_s: Some(0),
+                    user_fee_increase: None,
+                }),
+            )
             .await
         {
             Ok(nonce) => nonce,
@@ -633,7 +806,7 @@ impl AppState {
         // TODO this is used in strategy tests too. It should be a function.
         // Get signer from loaded_identity
         // Convert loaded_identity to SimpleSigner
-        let identity_private_keys_lock = self.identity_private_keys.lock().await;
+        let identity_private_keys_lock = self.known_identities_private_keys.lock().await;
         let signer = {
             let mut new_signer = SimpleSigner::default();
             let Identity::V0(identity_v0) = &*identity;
@@ -655,6 +828,7 @@ impl AppState {
                 Purpose::AUTHENTICATION,
                 HashSet::from([SecurityLevel::CRITICAL]),
                 HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
+                false,
             ) {
                 Some(key) => key,
                 None => return Err(Error::DPNSError(
@@ -688,6 +862,7 @@ impl AppState {
                         Purpose::AUTHENTICATION,
                         HashSet::from([SecurityLevel::CRITICAL]),
                         HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
+                        false,
                     )
                     .expect("expected to get a signing key"),
                 identity_contract_nonce + 1,
@@ -748,7 +923,7 @@ impl AppState {
         Ok(())
     }
 
-    pub(crate) async fn refresh_identity<'s>(
+    pub(crate) async fn refresh_loaded_identity<'s>(
         &'s self,
         sdk: &Sdk,
     ) -> Result<MappedMutexGuard<'s, Identity>, Error> {
@@ -757,7 +932,13 @@ impl AppState {
         if let Some(identity) = loaded_identity.as_ref() {
             let refreshed_identity = Identity::fetch(sdk, identity.id()).await?;
             if let Some(refreshed_identity) = refreshed_identity {
-                loaded_identity.replace(refreshed_identity);
+                loaded_identity.replace(refreshed_identity.clone());
+
+                let mut known_identities = self.known_identities.lock().await;
+                known_identities
+                    .entry(refreshed_identity.id())
+                    .and_modify(|id| *id = refreshed_identity.clone())
+                    .or_insert(refreshed_identity);
             }
         } else {
             return Err(Error::IdentityRefreshError(
@@ -769,7 +950,35 @@ impl AppState {
         Ok(identity_result)
     }
 
-    pub(crate) async fn refresh_identity_balance(&mut self, sdk: &Sdk) -> Result<(), Error> {
+    pub(crate) async fn refresh_all_known_identities<'s>(
+        &'s self,
+        sdk: &Sdk,
+    ) -> Result<MappedMutexGuard<'s, BTreeMap<Identifier, Identity>>, Error> {
+        let mut known_identities = self.known_identities.lock().await;
+
+        let mut identities_to_refresh = Vec::new();
+
+        // Collect all known identity IDs to refresh
+        for identity in known_identities.values() {
+            identities_to_refresh.push(identity.id());
+        }
+
+        for identity_id in identities_to_refresh {
+            if let Some(refreshed_identity) = Identity::fetch(sdk, identity_id).await? {
+                known_identities
+                    .entry(identity_id)
+                    .and_modify(|id| *id = refreshed_identity.clone())
+                    .or_insert(refreshed_identity);
+            } else {
+                tracing::error!("Failed to refresh identity with ID: {}", identity_id);
+            }
+        }
+
+        let identity_result = MutexGuard::map(known_identities, |x| x);
+        Ok(identity_result)
+    }
+
+    pub(crate) async fn refresh_loaded_identity_balance(&mut self, sdk: &Sdk) -> Result<(), Error> {
         if let Some(identity) = self.loaded_identity.blocking_lock().as_mut() {
             let balance = u64::fetch(
                 sdk,
@@ -931,7 +1140,7 @@ impl AppState {
 
         let mut signer = SimpleSigner::default();
 
-        signer.add_keys(keys);
+        signer.add_keys(keys.clone());
 
         let updated_identity = identity
             .put_to_platform_and_wait_for_response(
@@ -946,9 +1155,13 @@ impl AppState {
             panic!("identity ids don't match");
         }
 
+        // Log the identity ID and the private keys to a file
+        let _ = log_identity_keys(&identity, &keys)
+            .map_err(|e| tracing::error!("Failed to log private keys: {e}"));
+
         let mut loaded_identity = self.loaded_identity.lock().await;
 
-        loaded_identity.replace(updated_identity.clone());
+        loaded_identity.replace(identity.clone());
         let identity_result =
             MutexGuard::map(loaded_identity, |x| x.as_mut().expect("assigned above"));
 
@@ -961,9 +1174,12 @@ impl AppState {
             .into_iter()
             .map(|(key, private_key)| ((identity.id(), key.id()), private_key));
 
-        let mut identity_private_keys = self.identity_private_keys.lock().await;
+        let mut identity_private_keys = self.known_identities_private_keys.lock().await;
 
         identity_private_keys.extend(keys);
+
+        let mut known_identities_lock = self.known_identities.lock().await;
+        known_identities_lock.insert(identity.id(), identity);
 
         Ok(identity_result)
     }
@@ -1060,7 +1276,9 @@ impl AppState {
             Err(dash_sdk::Error::DapiClientError(error_string)) => {
                 //todo in the future, errors should be proved with a proof, even from tenderdash
 
-                if error_string.starts_with("Transport(Status { code: AlreadyExists, message: \"state transition already in chain\"") {
+                if error_string.contains("state transition already in chain")
+                    || error_string.contains("already completely used")
+                {
                     // This state transition already existed
                     tracing::info!("we are starting over as the previous top up already existed");
                     let (new_asset_lock_transaction, new_asset_lock_proof_private_key) =
@@ -1077,10 +1295,10 @@ impl AppState {
                         &new_asset_lock_transaction,
                         &wallet.receive_address(),
                     )
-                        .await
-                        .map_err(|e| {
-                            Error::SdkExplainedError("error broadcasting transaction".to_string(), e)
-                        })?;
+                    .await
+                    .map_err(|e| {
+                        Error::SdkExplainedError("error broadcasting transaction".to_string(), e)
+                    })?;
 
                     identity_asset_lock_private_key_in_top_up.replace((
                         new_asset_lock_transaction.clone(),
@@ -1089,10 +1307,15 @@ impl AppState {
                     ));
 
                     identity
-                        .top_up_identity(sdk, new_asset_lock_proof.clone(), &new_asset_lock_proof_private_key, None)
+                        .top_up_identity(
+                            sdk,
+                            new_asset_lock_proof.clone(),
+                            &new_asset_lock_proof_private_key,
+                            None,
+                        )
                         .await?;
                 } else {
-                    return Err(dash_sdk::Error::DapiClientError(error_string).into())
+                    return Err(dash_sdk::Error::DapiClientError(error_string).into());
                 }
             }
             Err(e) => return Err(e.into()),
@@ -1132,12 +1355,13 @@ impl AppState {
                 KeyPurpose::TRANSFER,
                 KeySecurityLevel::full_range().into(),
                 KeyType::all_key_types().into(),
+                false,
             )
             .ok_or(Error::IdentityWithdrawalError(
                 "no withdrawal public key".to_string(),
             ))?;
 
-        let loaded_identity_private_keys = self.identity_private_keys.lock().await;
+        let loaded_identity_private_keys = self.known_identities_private_keys.lock().await;
         let Some(private_key) =
             loaded_identity_private_keys.get(&(identity.id(), identity_public_key.id()))
         else {
@@ -1273,6 +1497,102 @@ impl AppState {
             Err(e) => Err(Error::SdkError(e)),
         }
     }
+
+    pub async fn add_identity_with_private_keys_as_strings<'s>(
+        &self,
+        identity_id: &Identifier,
+        private_keys_as_strings: &Vec<String>,
+        sdk: &Sdk,
+    ) -> Result<(), WalletError> {
+        let private_keys = private_keys_as_strings
+            .iter()
+            .map(|private_key| match private_key.len() {
+                64 => {
+                    // hex
+                    let bytes = match hex::decode(private_key) {
+                        Ok(bytes) => bytes,
+                        Err(_) => {
+                            return Err(WalletError::Custom("Failed to decode hex".to_string()))
+                        }
+                    };
+                    match PrivateKey::from_slice(bytes.as_slice(), Network::Dash) {
+                        Ok(key) => Ok(key),
+                        Err(_) => {
+                            return Err(WalletError::Custom("Expected private key".to_string()))
+                        }
+                    }
+                }
+                51 | 52 => {
+                    // wif
+                    match PrivateKey::from_wif(private_key) {
+                        Ok(key) => Ok(key),
+                        Err(_) => return Err(WalletError::Custom("Expected WIF key".to_string())),
+                    }
+                }
+                _ => {
+                    return Err(WalletError::Custom(
+                        "Private key can't be decoded from hex or wif".to_string(),
+                    ));
+                }
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Self::add_identity_with_private_keys(&self, identity_id, private_keys, sdk).await
+    }
+
+    pub async fn add_identity_with_private_keys<'s>(
+        &self,
+        identity_id: &Identifier,
+        private_keys: Vec<PrivateKey>,
+        sdk: &Sdk,
+    ) -> Result<(), WalletError> {
+        let identity_fetch_result = Identity::fetch(sdk, *identity_id).await;
+        let identity = match identity_fetch_result {
+            Ok(Some(identity)) => identity,
+            Ok(None) => {
+                return Err(WalletError::Custom(
+                    "No identity found with that ID".to_string(),
+                ));
+            }
+            Err(e) => {
+                return Err(WalletError::Custom(format!(
+                    "Error fetching identity: {}",
+                    e
+                )));
+            }
+        };
+
+        let mut loaded_identity_lock = self.loaded_identity.lock().await;
+        *loaded_identity_lock = Some(identity.clone());
+
+        let mut identity_private_keys_map_lock = self.known_identities_private_keys.lock().await;
+
+        for private_key in private_keys.iter() {
+            let secp = Secp256k1::new();
+            let public_key_hash = private_key.public_key(&secp).pubkey_hash();
+            let key_id = identity
+                .public_keys()
+                .iter()
+                .filter_map(|(key_id, identity_public_key)| {
+                    (identity_public_key
+                        .public_key_hash()
+                        .expect("Expected to get public key hash from public key")
+                        == public_key_hash.to_byte_array())
+                    .then_some(key_id)
+                })
+                .next();
+
+            if let Some(key_id) = key_id {
+                identity_private_keys_map_lock
+                    .insert((*identity_id, *key_id), private_key.to_bytes().to_vec());
+            } else {
+                return Err(WalletError::Custom(
+                    "Public key hash derived from input private key does not match any identity public key".to_string(),
+                ));
+            }
+        }
+
+        Ok(())
+    }
 }
 
 async fn add_identity_key<'a>(
@@ -1358,4 +1678,33 @@ async fn add_identity_key<'a>(
     );
 
     Ok(AppStateUpdate::LoadedIdentity(loaded_identity))
+}
+
+fn log_identity_keys(
+    identity: &Identity,
+    keys: &BTreeMap<IdentityPublicKey, Vec<u8>>,
+) -> std::io::Result<()> {
+    // Open the log file in append mode
+    let mut file = OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open("supporting_files/new_identity_private_keys.log")?;
+
+    // Get the current date and time
+    let now = Utc::now().to_rfc3339();
+
+    // Log each key in the identity
+    for (key, private_key) in keys {
+        writeln!(
+            file,
+            "{}, Identity ID: {}, Public Key: {} ({}), Private Key: {:x?}",
+            now,
+            identity.id(),
+            key.id(),
+            key.purpose(),
+            hex::encode(private_key)
+        )?;
+    }
+
+    Ok(())
 }
