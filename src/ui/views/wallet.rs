@@ -37,7 +37,7 @@ const WALLET_LOADED_COMMANDS: [ScreenCommandKey; 4] = [
 ];
 
 const IDENTITY_LOADED_COMMANDS: [ScreenCommandKey; 2] = [
-    ScreenCommandKey::new("r", "Identity refresh"),
+    ScreenCommandKey::new("i", "Identity refresh"),
     ScreenCommandKey::new("w", "Withdraw identity balance to wallet"),
 ];
 
@@ -167,7 +167,7 @@ impl ScreenController for WalletScreenController {
             },
 
             Event::Key(KeyEvent {
-                code: Key::Char('k'),
+                code: Key::Char('r'),
                 modifiers: KeyModifiers::NONE,
             }) if !self.wallet_loaded => ScreenFeedback::Task {
                 task: Task::Wallet(WalletTask::AddRandomKey),
@@ -175,7 +175,7 @@ impl ScreenController for WalletScreenController {
             },
 
             Event::Key(KeyEvent {
-                code: Key::Char('r'),
+                code: Key::Char('i'),
                 modifiers: KeyModifiers::NONE,
             }) if self.identity_loaded => ScreenFeedback::Task {
                 task: Task::Identity(IdentityTask::Refresh),
