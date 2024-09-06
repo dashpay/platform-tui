@@ -16,7 +16,7 @@ use dapi_grpc::core::v0::{
     GetTransactionResponse,
 };
 use dash_sdk::{RequestSettings, Sdk};
-use dpp::dashcore::secp256k1::SecretKey;
+use dpp::dashcore::{base58, secp256k1::SecretKey};
 use dpp::dashcore::{
     hashes::Hash,
     psbt::serialize::Serialize,
@@ -28,11 +28,15 @@ use dpp::dashcore::{
 };
 use rand::{prelude::StdRng, Rng, SeedableRng};
 use rs_dapi_client::DapiRequestExecutor;
+use sha2::{Digest, Sha256};
 use tokio::sync::{Mutex, MutexGuard};
 
 use super::{set_clipboard, AppStateUpdate, BackendEvent, CompletedTaskPayload, Task};
-use crate::backend::insight::{InsightAPIClient, InsightError};
 use crate::backend::Wallet::SingleKeyWallet as BackendWallet;
+use crate::{
+    backend::insight::{InsightAPIClient, InsightError},
+    config::Config,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum WalletTask {
@@ -56,24 +60,71 @@ pub async fn add_wallet_by_private_key_as_string<'s>(
                 Ok(bytes) => bytes,
                 Err(_) => return Err(WalletError::Custom("Failed to decode hex".to_string())),
             };
-            match PrivateKey::from_slice(bytes.as_slice(), Network::Dash) {
+            let network = Config::load().core_network();
+            match PrivateKey::from_slice(bytes.as_slice(), network) {
                 Ok(key) => key,
                 Err(_) => return Err(WalletError::Custom("Expected private key".to_string())),
             }
         }
         51 | 52 => {
             // wif
-            match PrivateKey::from_wif(private_key) {
-                Ok(key) => key,
-                Err(_) => return Err(WalletError::Custom("Expected WIF key".to_string())),
+            tracing::info!("Attempting to decode WIF private key: {}", private_key);
+
+            // Decode base58 (without checksum verification)
+            match base58::decode(private_key) {
+                Ok(decoded_bytes) => {
+                    if decoded_bytes.len() < 4 {
+                        return Err(WalletError::Custom("WIF too short".to_string()));
+                    }
+                    // Split data and checksum
+                    let (data, checksum) = decoded_bytes.split_at(decoded_bytes.len() - 4);
+
+                    // Log the first byte of data (network version byte)
+                    tracing::info!("Network version byte: {}", data[0]);
+
+                    // Compute checksum
+                    let hash = Sha256::digest(&Sha256::digest(data));
+                    let computed_checksum = &hash[..4];
+
+                    tracing::info!("Computed checksum: {:x?}", computed_checksum);
+                    tracing::info!("Provided checksum: {:x?}", checksum);
+
+                    // Compare checksums
+                    if computed_checksum != checksum {
+                        return Err(WalletError::Custom(format!(
+                            "Checksum mismatch: computed {:x?}, expected {:x?}",
+                            computed_checksum, checksum
+                        )));
+                    }
+
+                    match PrivateKey::from_wif(private_key) {
+                        Ok(key) => {
+                            tracing::info!("Successfully decoded WIF private key.");
+                            key
+                        }
+                        Err(e) => {
+                            tracing::info!("Failed to decode WIF private key: {:?}", e);
+                            return Err(WalletError::Custom(format!("{e}")));
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::info!("Failed to decode base58: {:?}", e);
+                    return Err(WalletError::Custom(format!(
+                        "Failed to decode base58: {:?}",
+                        e
+                    )));
+                }
             }
         }
         _ => {
             return Err(WalletError::Custom(
-                "Private key in env file can't be decoded".to_string(),
+                "Private key can't be decoded".to_string(),
             ));
         }
     };
+
+    tracing::info!("Adding wallet using decoded private key.");
     Ok(add_wallet_by_private_key(wallet_state, private_key, insight).await)
 }
 
@@ -84,8 +135,8 @@ pub async fn add_wallet_by_private_key<'s>(
 ) {
     let secp = Secp256k1::new();
     let public_key = private_key.public_key(&secp);
-    // todo: make the network be part of state
-    let address = Address::p2pkh(&public_key, Network::Dash);
+    let network = Config::load().core_network();
+    let address = Address::p2pkh(&public_key, network);
     let mut wallet = Wallet::SingleKeyWallet(SingleKeyWallet {
         private_key,
         public_key,
@@ -116,22 +167,29 @@ pub(super) async fn run_wallet_task<'s>(
 ) -> BackendEvent<'s> {
     match task {
         WalletTask::AddByPrivateKey(ref private_key) => {
-            add_wallet_by_private_key_as_string(&wallet_state, private_key, insight).await;
+            match add_wallet_by_private_key_as_string(&wallet_state, private_key, insight).await {
+                Ok(_) => {
+                    let wallet_guard = wallet_state.lock().await;
+                    let loaded_wallet_update = MutexGuard::map(wallet_guard, |opt| {
+                        opt.as_mut().expect("wallet was set above")
+                    });
 
-            let wallet_guard = wallet_state.lock().await;
-            let loaded_wallet_update = MutexGuard::map(wallet_guard, |opt| {
-                opt.as_mut().expect("wallet was set above")
-            });
-
-            BackendEvent::TaskCompletedStateChange {
-                task: Task::Wallet(task),
-                execution_result: Ok("Added wallet".into()),
-                app_state_update: AppStateUpdate::LoadedWallet(loaded_wallet_update),
+                    BackendEvent::TaskCompletedStateChange {
+                        task: Task::Wallet(task),
+                        execution_result: Ok("Added wallet".into()),
+                        app_state_update: AppStateUpdate::LoadedWallet(loaded_wallet_update),
+                    }
+                }
+                Err(e) => BackendEvent::TaskCompleted {
+                    task: Task::Wallet(task),
+                    execution_result: Err(format!("{e}")),
+                },
             }
         }
         WalletTask::AddRandomKey => {
             let mut rng = StdRng::from_entropy();
-            let private_key = PrivateKey::new(SecretKey::new(&mut rng), Network::Dash);
+            let network = Config::load().core_network();
+            let private_key = PrivateKey::new(SecretKey::new(&mut rng), network);
             add_wallet_by_private_key(&wallet_state, private_key, insight).await;
 
             let wallet_guard = wallet_state.lock().await;
@@ -266,8 +324,9 @@ impl Wallet {
         };
         let fee = 30_000;
         let random_private_key: [u8; 32] = rng.gen();
-        let private_key = PrivateKey::from_slice(&random_private_key, Network::Dash)
-            .expect("expected a private key");
+        let network = Config::load().core_network();
+        let private_key =
+            PrivateKey::from_slice(&random_private_key, network).expect("expected a private key");
 
         let secp = Secp256k1::new();
         let asset_lock_public_key = private_key.public_key(&secp);
@@ -482,14 +541,14 @@ impl Decode for SingleKeyWallet {
     fn decode<D: Decoder>(decoder: &mut D) -> Result<Self, DecodeError> {
         let bytes = <[u8; 32]>::decode(decoder)?;
         let string_utxos = Vec::<(String, u64, String)>::decode(decoder)?;
+        let network = Config::load().core_network();
 
         let private_key =
-            PrivateKey::from_slice(bytes.as_slice(), Network::Dash).expect("expected private key");
+            PrivateKey::from_slice(bytes.as_slice(), network).expect("expected private key");
 
         let secp = Secp256k1::new();
         let public_key = private_key.public_key(&secp);
-        // todo: make the network be part of state
-        let address = Address::p2pkh(&public_key, Network::Dash);
+        let address = Address::p2pkh(&public_key, network);
 
         let utxos = string_utxos
             .iter()
@@ -525,14 +584,15 @@ impl<'a> BorrowDecode<'a> for SingleKeyWallet {
     fn borrow_decode<D: BorrowDecoder<'a>>(decoder: &mut D) -> Result<Self, DecodeError> {
         let bytes = <[u8; 32]>::decode(decoder)?;
         let string_utxos = Vec::<(String, u64, String)>::decode(decoder)?;
+        let network = Config::load().core_network();
 
         let private_key =
-            PrivateKey::from_slice(bytes.as_slice(), Network::Dash).expect("expected private key");
+            PrivateKey::from_slice(bytes.as_slice(), network).expect("expected private key");
 
         let secp = Secp256k1::new();
         let public_key = private_key.public_key(&secp);
         // todo: make the network be part of state
-        let address = Address::p2pkh(&public_key, Network::Dash);
+        let address = Address::p2pkh(&public_key, network);
 
         let utxos = string_utxos
             .iter()

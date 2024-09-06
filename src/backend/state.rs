@@ -372,14 +372,15 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
             })
             .collect::<Result<BTreeMap<String, Strategy>, ProtocolError>>()?;
 
+        let network = Config::load().core_network();
+
         let identity_asset_lock_private_key_in_creation =
             identity_asset_lock_private_key_in_creation.map(
                 |(transaction, private_key, asset_lock_proof, identity_info)| {
                     (
                         Transaction::deserialize(&transaction)
                             .expect("expected to deserialize transaction"),
-                        // TODO: Should use network from config
-                        PrivateKey::from_slice(&private_key, Network::Dash)
+                        PrivateKey::from_slice(&private_key, network)
                             .expect("expected private key"),
                         asset_lock_proof,
                         identity_info,
@@ -392,9 +393,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
                 (
                     Transaction::deserialize(&transaction)
                         .expect("expected to deserialize transaction"),
-                    // TODO: Should use network from config
-                    PrivateKey::from_slice(&private_key, Network::Dash)
-                        .expect("expected private key"),
+                    PrivateKey::from_slice(&private_key, network).expect("expected private key"),
                     asset_lock_proof,
                 )
             });
