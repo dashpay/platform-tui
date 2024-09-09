@@ -16,19 +16,17 @@ use dapi_grpc::core::v0::{
     GetTransactionResponse,
 };
 use dash_sdk::{RequestSettings, Sdk};
-use dpp::dashcore::{base58, secp256k1::SecretKey};
+use dpp::dashcore::secp256k1::SecretKey;
 use dpp::dashcore::{
     hashes::Hash,
     psbt::serialize::Serialize,
     secp256k1::{Message, Secp256k1},
     sighash::SighashCache,
     transaction::special_transaction::{asset_lock::AssetLockPayload, TransactionPayload},
-    Address, Network, OutPoint, PrivateKey, PublicKey, ScriptBuf, Transaction, TxIn, TxOut,
-    Witness,
+    Address, OutPoint, PrivateKey, PublicKey, ScriptBuf, Transaction, TxIn, TxOut, Witness,
 };
 use rand::{prelude::StdRng, Rng, SeedableRng};
 use rs_dapi_client::DapiRequestExecutor;
-use sha2::{Digest, Sha256};
 use tokio::sync::{Mutex, MutexGuard};
 
 use super::{set_clipboard, AppStateUpdate, BackendEvent, CompletedTaskPayload, Task};
