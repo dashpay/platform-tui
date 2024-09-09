@@ -10,7 +10,7 @@ use bincode::{Decode, Encode};
 use dpp::{
     dashcore::{
         psbt::serialize::{Deserialize, Serialize},
-        Network, PrivateKey, Transaction,
+        PrivateKey, Transaction,
     },
     identity::{IdentityPublicKey, KeyID},
     prelude::{AssetLockProof, DataContract, Identifier, Identity},
