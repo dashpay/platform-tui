@@ -86,6 +86,7 @@ use super::{
     AppStateUpdate, CompletedTaskPayload, Wallet,
 };
 use crate::backend::{error::Error, stringify_result_keep_item, AppState, BackendEvent, Task};
+use crate::config::Config;
 
 pub(super) async fn fetch_identity_by_b58_id(
     sdk: &Sdk,
@@ -1515,7 +1516,8 @@ impl AppState {
                             return Err(WalletError::Custom("Failed to decode hex".to_string()))
                         }
                     };
-                    match PrivateKey::from_slice(bytes.as_slice(), Network::Dash) {
+                    let network = Config::load().core_network();
+                    match PrivateKey::from_slice(bytes.as_slice(), network) {
                         Ok(key) => Ok(key),
                         Err(_) => {
                             return Err(WalletError::Custom("Expected private key".to_string()))

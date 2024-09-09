@@ -101,15 +101,30 @@ impl WalletScreenController {
                 )
             }
         } else {
-            (
-                Info::new_fixed("Wallet management commands\n\nNo wallet loaded yet"),
-                Info::new_fixed(
-                    "No identity loaded yet. Go to Identities screen to load or register one.",
-                ),
-                false,
-                false,
-                false,
-            )
+            if let Some(identity) = app_state.loaded_identity.lock().await.as_ref() {
+                (
+                    Info::new_fixed("Wallet management commands\n\nNo wallet loaded yet"),
+                    Info::new_fixed(&display_info(identity)),
+                    false,
+                    true,
+                    false,
+                )
+            } else {
+                let identity_registration_in_progress = app_state
+                    .identity_asset_lock_private_key_in_creation
+                    .lock()
+                    .await
+                    .is_some();
+                (
+                    Info::new_fixed("Wallet management commands\n\nNo wallet loaded yet"),
+                    Info::new_fixed(
+                        "No identity loaded yet. Go to Identities screen to load or register one.",
+                    ),
+                    false,
+                    false,
+                    identity_registration_in_progress,
+                )
+            }
         };
 
         Self {

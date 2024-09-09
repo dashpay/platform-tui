@@ -173,7 +173,6 @@ impl Ui {
             },
         ) = &event
         {
-            self.status_bar_state.clear_balance();
             redraw = true;
         }
 
