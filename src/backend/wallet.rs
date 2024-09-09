@@ -66,65 +66,16 @@ pub async fn add_wallet_by_private_key_as_string<'s>(
                 Err(_) => return Err(WalletError::Custom("Expected private key".to_string())),
             }
         }
-        51 | 52 => {
-            // wif
-            tracing::info!("Attempting to decode WIF private key: {}", private_key);
-
-            // Decode base58 (without checksum verification)
-            match base58::decode(private_key) {
-                Ok(decoded_bytes) => {
-                    if decoded_bytes.len() < 4 {
-                        return Err(WalletError::Custom("WIF too short".to_string()));
-                    }
-                    // Split data and checksum
-                    let (data, checksum) = decoded_bytes.split_at(decoded_bytes.len() - 4);
-
-                    // Log the first byte of data (network version byte)
-                    tracing::info!("Network version byte: {}", data[0]);
-
-                    // Compute checksum
-                    let hash = Sha256::digest(&Sha256::digest(data));
-                    let computed_checksum = &hash[..4];
-
-                    tracing::info!("Computed checksum: {:x?}", computed_checksum);
-                    tracing::info!("Provided checksum: {:x?}", checksum);
-
-                    // Compare checksums
-                    if computed_checksum != checksum {
-                        return Err(WalletError::Custom(format!(
-                            "Checksum mismatch: computed {:x?}, expected {:x?}",
-                            computed_checksum, checksum
-                        )));
-                    }
-
-                    match PrivateKey::from_wif(private_key) {
-                        Ok(key) => {
-                            tracing::info!("Successfully decoded WIF private key.");
-                            key
-                        }
-                        Err(e) => {
-                            tracing::info!("Failed to decode WIF private key: {:?}", e);
-                            return Err(WalletError::Custom(format!("{e}")));
-                        }
-                    }
-                }
-                Err(e) => {
-                    tracing::info!("Failed to decode base58: {:?}", e);
-                    return Err(WalletError::Custom(format!(
-                        "Failed to decode base58: {:?}",
-                        e
-                    )));
-                }
-            }
-        }
+        51 | 52 => match PrivateKey::from_wif(private_key) {
+            Ok(key) => key,
+            Err(_) => return Err(WalletError::Custom("Expected WIF key".to_string())),
+        },
         _ => {
             return Err(WalletError::Custom(
-                "Private key can't be decoded".to_string(),
+                "Private key in env file can't be decoded".to_string(),
             ));
         }
     };
-
-    tracing::info!("Adding wallet using decoded private key.");
     Ok(add_wallet_by_private_key(wallet_state, private_key, insight).await)
 }
 
