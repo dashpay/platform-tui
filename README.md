@@ -58,6 +58,7 @@ rustup target add wasm32-unknown-unknown`
 Install build-essential tools, SSL development libraries, and Clang. On Ubuntu, use:
 
 ```shell
+sudo apt update
 sudo apt install -y build-essential cmake libssl-dev pkg-config clang unzip`
 ```
 
