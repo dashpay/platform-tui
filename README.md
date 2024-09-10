@@ -33,11 +33,10 @@ Clone the [TUI repo](https://github.com/dashpay/platform-tui):
 git clone https://github.com/dashpay/platform-tui.git
 ```
 
-Open the TUI repo in your terminal
+Open the TUI repo in your terminal:
 
 ```shell
-cd rs-platform-explorer`
-```
+cd rs-platform-explorer
 
 Install Rust if you don't already have it
 
