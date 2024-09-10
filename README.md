@@ -38,7 +38,7 @@ Open the TUI repo in your terminal:
 ```shell
 cd rs-platform-explorer
 
-Install Rust if you don't already have it
+Install Rust if you don't already have it:
 
 ```shell
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
