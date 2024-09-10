@@ -2,7 +2,7 @@
 
 The Dash Platform Terminal User Interface (TUI) is a Rust-based user interface for interacting with Dash Platform in the terminal. Its purpose is to enable users to perform all actions permitted by Dash Platform, which, broadly speaking, means broadcasting state transitions and querying the network.
 
-The TUI can connect to any instance of a Dash Platform network, including the mainnet, testnet, devnets, and local networks. The main Install section of this readme covers connecting to mainnet and testnet, with a brief explanation of how to connect to a local network to follow. Check out the TUI documentation [here](https://docs.dash.org/projects/platform/en/1.0.0/docs/tutorials/tui/index.html), and for further steps on running strategy tests, read [Paul DeLucia's guide](https://www.dash.org/blog/strategy-tests-usage-guide/).
+The TUI can connect to any instance of a Dash Platform network, including the mainnet, testnet, devnets, and local networks. The main [Install section](#install) of this readme covers connecting to mainnet and testnet, with a brief explanation of how to connect to a local network to follow. Check out the [TUI documentation](https://docs.dash.org/projects/platform/en/stable/docs/tutorials/tui/index.html), and for further steps on running strategy tests, read [Paul DeLucia's guide](https://www.dash.org/blog/strategy-tests-usage-guide/).
 
 # Install
 
