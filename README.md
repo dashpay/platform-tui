@@ -110,4 +110,4 @@ Now that we are inside the TUI, we will load a wallet, an identity, and register
 * If you register a new one, fund it with 0.01 DASH. This should be more than enough to register a (uncontested) DPNS username. The private keys of the newly created identity will be logged to `platform-tui/supporting_files/new_identity_private_keys.log`. Be sure to save a copy of that file somewhere safe.
 * After registering or loading an identity, refresh the identity balance until you see the funds appear.
 * Now, you can register a DPNS username for the identity.
-* After registering the username from the Identities screen, you can navigate back to the Main screen, then the DPNS screen, and from there, query the names for the selected identity, and you should see the name there that you just registered, fetched from the Dash Platform state.
+* After registering the username from the Identities screen, you can navigate back to the Main screen, then the DPNS screen. From there, query the names for the selected identity, and you should see the name you just registered, which is fetched from the Dash Platform state.
