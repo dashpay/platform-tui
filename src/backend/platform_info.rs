@@ -14,6 +14,7 @@ use dpp::{
     },
     version::ProtocolVersionVoteCount,
 };
+use drive_proof_verifier::types::ProtocolVersionUpgrades;
 
 use crate::backend::{as_json_string, BackendEvent, Task};
 
@@ -145,6 +146,9 @@ pub(super) async fn run_platform_task<'s>(sdk: &Sdk, task: PlatformInfoTask) -> 
         PlatformInfoTask::FetchCurrentVersionVotingState => {
             match ProtocolVersionVoteCount::fetch_many(&sdk, ()).await {
                 Ok(votes) => {
+                    // Explicitly annotate the type of `votes`
+                    let votes: ProtocolVersionUpgrades = votes;
+
                     let votes_info = votes
                         .into_iter()
                         .map(|(key, value)| {
