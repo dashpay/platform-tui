@@ -14,7 +14,8 @@ use dpp::{
     },
     version::ProtocolVersionVoteCount,
 };
-
+use dpp::dashcore::Network;
+use drive::config::DriveConfig;
 use crate::backend::{as_json_string, BackendEvent, Task};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -29,6 +30,7 @@ fn format_extended_epoch_info(
     epoch_info: ExtendedEpochInfo,
     metadata: ResponseMetadata,
     proof: Proof,
+    network: Network,
     is_current: bool,
 ) -> String {
     let readable_block_time = match Utc.timestamp_millis_opt(metadata.time_ms as i64) {
@@ -43,7 +45,7 @@ fn format_extended_epoch_info(
         LocalResult::Ambiguous(..) => String::new(),
     };
 
-    let readable_epoch_start_time = match Utc
+    let readable_epoch_start_time_as_time_away = match Utc
         .timestamp_millis_opt(epoch_info.first_block_time() as i64)
     {
         LocalResult::None => String::new(),
@@ -51,8 +53,20 @@ fn format_extended_epoch_info(
             // Get the current time for comparison
             let now = Utc::now();
             let duration = now.signed_duration_since(block_time);
-            let human_readable = HumanTime::from(duration).to_text_en(Accuracy::Rough, Tense::Past);
+            let human_readable = HumanTime::from(duration).to_text_en(Accuracy::Precise, Tense::Past);
             human_readable
+        }
+        LocalResult::Ambiguous(..) => String::new(),
+    };
+
+    let readable_epoch_start_time_as_time = match Utc.timestamp_millis_opt(epoch_info.first_block_time() as i64) {
+        LocalResult::None => String::new(),
+        LocalResult::Single(block_time) => {
+            // Convert block_time to local time
+            let local_time = block_time.with_timezone(&Local);
+
+            // Format the local time in ISO 8601 format
+            local_time.to_rfc2822()
         }
         LocalResult::Ambiguous(..) => String::new(),
     };
@@ -63,10 +77,41 @@ fn format_extended_epoch_info(
         String::default()
     };
 
+    let epoch_estimated_time = match network {
+        Network::Dash => 788_400_000,
+        Network::Testnet => 3_600_000,
+        Network::Devnet => 3_600_000,
+        Network::Regtest => 1_200_000,
+        _ => 3_600_000,
+    };
+
+    let readable_epoch_end_time = match Utc
+        .timestamp_millis_opt(epoch_info.first_block_time() as i64 + epoch_estimated_time as i64)
+    {
+        LocalResult::None => String::new(),
+        LocalResult::Single(block_time) => {
+            // Get the current time for comparison
+            let now = Utc::now();
+            let duration = block_time.signed_duration_since(now);
+
+            let human_readable = if duration.num_milliseconds() >= 0 {
+                // Time is in the future
+                HumanTime::from(duration).to_text_en(Accuracy::Precise, Tense::Future)
+            } else {
+                // Time is in the past
+                HumanTime::from(-duration).to_text_en(Accuracy::Precise, Tense::Past)
+            };
+
+            human_readable
+        }
+        LocalResult::Ambiguous(..) => String::new(),
+    };
+
     format!(
-        "current height: {}\ncurrent core height: {}\ncurrent block time: {} ({})\n{}epoch: {}\n \
-         * start height: {}\n * start core height: {}\n * start time: {} ({})\n * fee multiplier: \
+        "protocol version: {}\n current height: {}\ncurrent core height: {}\ncurrent block time: {} ({})\n{}epoch: {}\n \
+         * start height: {}\n * start core height: {}\n * start time: {} ({} - {})\n * estimated end time: {} ({})\n * fee multiplier: \
          {}\n\nproof: {}",
+        epoch_info.protocol_version(),
         metadata.height,
         metadata.core_chain_locked_height,
         metadata.time_ms,
@@ -76,7 +121,10 @@ fn format_extended_epoch_info(
         epoch_info.first_block_height(),
         epoch_info.first_core_block_height(),
         epoch_info.first_block_time(),
-        readable_epoch_start_time,
+        readable_epoch_start_time_as_time,
+        readable_epoch_start_time_as_time_away,
+        epoch_info.first_block_time() + epoch_estimated_time,
+        readable_epoch_end_time,
         epoch_info.fee_multiplier_permille(),
         prettify_proof(&proof)
     )
@@ -89,7 +137,7 @@ pub(super) async fn run_platform_task<'s>(sdk: &Sdk, task: PlatformInfoTask) -> 
                 Ok((epoch_info, metadata, proof)) => BackendEvent::TaskCompleted {
                     task: Task::PlatformInfo(task),
                     execution_result: Ok(format_extended_epoch_info(
-                        epoch_info, metadata, proof, true,
+                        epoch_info, metadata, proof, sdk.network, true,
                     )
                     .into()),
                 },
@@ -104,7 +152,7 @@ pub(super) async fn run_platform_task<'s>(sdk: &Sdk, task: PlatformInfoTask) -> 
                 Ok((Some(epoch_info), metadata, proof)) => BackendEvent::TaskCompleted {
                     task: Task::PlatformInfo(task),
                     execution_result: Ok(format_extended_epoch_info(
-                        epoch_info, metadata, proof, false,
+                        epoch_info, metadata, proof, sdk.network, false,
                     )
                     .into()),
                 },
