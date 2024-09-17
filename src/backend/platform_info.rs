@@ -1,12 +1,21 @@
+use std::collections::BTreeMap;
+use std::time::Duration;
+
 use chrono::{prelude::*, LocalResult};
 use chrono_humanize::{Accuracy, HumanTime, Tense};
-use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
+use dapi_grpc::platform::v0::{self as platform_proto, Proof, ResponseMetadata};
 use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
+use dash_sdk::platform::Query;
 use dash_sdk::sdk::prettify_proof;
 use dash_sdk::{
     platform::{Fetch, FetchMany, LimitQuery},
     Sdk,
 };
+use dash_sdk::{RequestSettings, SdkBuilder};
+use dpp::node::status::v0::{EvonodeStatusV0, EvonodeStatusV0Getters};
+use dpp::node::status::EvonodeStatus;
+use dpp::prelude::Identifier;
+use dpp::version::PlatformVersion;
 use dpp::{
     block::{
         epoch::EpochIndex,
@@ -14,8 +23,12 @@ use dpp::{
     },
     version::ProtocolVersionVoteCount,
 };
+use rs_dapi_client::{AddressList, DapiClient};
 
 use crate::backend::{as_json_string, BackendEvent, Task};
+use crate::config::Config;
+
+use super::CompletedTaskPayload;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum PlatformInfoTask {
@@ -23,6 +36,7 @@ pub(crate) enum PlatformInfoTask {
     FetchCurrentVersionVotingState,
     FetchSpecificEpochInfo(u16),
     FetchManyEpochInfo(u16, u32), // second is count
+    FetchNodeStatuses,
 }
 
 fn format_extended_epoch_info(
@@ -168,6 +182,71 @@ pub(super) async fn run_platform_task<'s>(sdk: &Sdk, task: PlatformInfoTask) -> 
                     task: Task::PlatformInfo(task),
                     execution_result: Err(e.to_string()),
                 },
+            }
+        }
+        PlatformInfoTask::FetchNodeStatuses => {
+            let address_list = match sdk.address_list() {
+                Ok(list) => list,
+                Err(e) => {
+                    return BackendEvent::TaskCompleted {
+                        task: Task::PlatformInfo(task),
+                        execution_result: Err(format!(
+                            "Failed to fetch DapiClient address list: {e}"
+                        )),
+                    }
+                }
+            };
+
+            tracing::info!("Address list length: {}", address_list.len());
+            tracing::info!("Address list: {:?}", address_list);
+
+            let mut node_statuses = BTreeMap::new();
+
+            let config = Config::load();
+            let request_settings = RequestSettings {
+                connect_timeout: Some(Duration::from_secs(10)),
+                timeout: Some(Duration::from_secs(10)),
+                retries: None,
+                ban_failed_address: Some(false),
+            };
+
+            for address in address_list.addresses() {
+                let mut single_address_list = AddressList::new();
+                single_address_list.add_uri(address.uri().clone());
+                let sdk = SdkBuilder::new(address_list.clone())
+                    .with_version(PlatformVersion::get(1).unwrap())
+                    .with_core(
+                        &config.core_host,
+                        config.core_rpc_port,
+                        &config.core_rpc_user,
+                        &config.core_rpc_password,
+                    )
+                    .with_settings(request_settings)
+                    .build()
+                    .expect("expected to build sdk");
+
+                let node_status = match EvonodeStatus::fetch(&sdk, ()).await {
+                    Ok(result) => match result {
+                        Some(status) => status,
+                        None => {
+                            tracing::info!("None result from fetching EvonodeStatus");
+                            continue;
+                        }
+                    },
+                    Err(e) => {
+                        return BackendEvent::TaskCompleted {
+                            task: Task::PlatformInfo(task),
+                            execution_result: Err(format!("Error fetching node status: {e}")),
+                        }
+                    }
+                };
+
+                node_statuses.insert(node_status.pro_tx_hash(), node_status);
+            }
+
+            BackendEvent::TaskCompleted {
+                task: Task::PlatformInfo(task),
+                execution_result: Ok(CompletedTaskPayload::EvonodeStatuses(node_statuses)),
             }
         }
     }

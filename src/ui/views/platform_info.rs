@@ -1,16 +1,17 @@
 //! Platform info views.
 
+use dpp::node::status::v0::EvonodeStatusV0Getters;
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
     tui::prelude::Rect,
     Frame,
 };
 
-use crate::ui::form::parsers::DocumentQueryTextInputParser;
 use crate::{
     backend::{
         platform_info::PlatformInfoTask::{
-            FetchCurrentEpochInfo, FetchCurrentVersionVotingState, FetchSpecificEpochInfo,
+            self, FetchCurrentEpochInfo, FetchCurrentVersionVotingState, FetchNodeStatuses,
+            FetchSpecificEpochInfo,
         },
         AppState, BackendEvent, Task,
     },
@@ -27,10 +28,11 @@ use crate::{
     Event,
 };
 
-const COMMAND_KEYS: [ScreenCommandKey; 4] = [
+const COMMAND_KEYS: [ScreenCommandKey; 5] = [
     ScreenCommandKey::new("q", "Back to Main"),
     ScreenCommandKey::new("n", "Fetch current Platform epoch info"),
     ScreenCommandKey::new("i", "Fetch previous Platform epoch info"),
+    ScreenCommandKey::new("s", "Fetch node statuses"),
     ScreenCommandKey::new("v", "Current version voting"),
 ];
 
@@ -77,6 +79,14 @@ impl ScreenController for PlatformInfoScreenController {
             },
 
             Event::Key(KeyEvent {
+                code: Key::Char('s'),
+                modifiers: KeyModifiers::NONE,
+            }) => ScreenFeedback::Task {
+                task: Task::PlatformInfo(FetchNodeStatuses),
+                block: true,
+            },
+
+            Event::Key(KeyEvent {
                 code: Key::Char('v'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::Task {
@@ -98,6 +108,35 @@ impl ScreenController for PlatformInfoScreenController {
                 }
             }
 
+            // Backend events
+            Event::Backend(BackendEvent::TaskCompleted {
+                task: Task::PlatformInfo(PlatformInfoTask::FetchNodeStatuses),
+                execution_result,
+            }) => {
+                let info = match execution_result {
+                    Ok(status_info) => match status_info {
+                        crate::backend::CompletedTaskPayload::EvonodeStatuses(info_map) => {
+                            let mut display_string = String::from(
+                                "ProTxHash                                  | Latest Block Height\n",
+                            );
+                            display_string
+                                .push_str("---------------------------------------------------\n");
+
+                            // Iterate through the BTreeMap and append each key and the latest block height to the result
+                            for (pro_tx_hash, status) in info_map.iter() {
+                                let line =
+                                    format!("{} | {}\n", pro_tx_hash, status.latest_block_height());
+                                display_string.push_str(&line);
+                            }
+                            display_string
+                        }
+                        _ => todo!(),
+                    },
+                    Err(e) => e.to_string(),
+                };
+                self.info = Info::new_scrollable(&info);
+                ScreenFeedback::Redraw
+            }
             Event::Backend(BackendEvent::TaskCompleted {
                 task: Task::PlatformInfo(_),
                 execution_result,
@@ -105,6 +144,7 @@ impl ScreenController for PlatformInfoScreenController {
                 self.info = Info::new_from_result(execution_result);
                 ScreenFeedback::Redraw
             }
+
             _ => ScreenFeedback::None,
         }
     }

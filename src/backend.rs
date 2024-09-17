@@ -24,6 +24,7 @@ use dash_sdk::Sdk;
 use dpp::{
     document::Document,
     identity::accessors::IdentityGettersV0,
+    node::status::EvonodeStatus,
     prelude::{Identifier, Identity},
     voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll,
 };
@@ -83,6 +84,7 @@ pub enum CompletedTaskPayload {
     ContestedResources(ContestedResources),
     ContestedResourceContenders(ContestedDocumentResourceVotePoll, Contenders),
     DocumentsAndContestedResources(BTreeMap<Identifier, Option<Document>>, ContestedResources),
+    EvonodeStatuses(BTreeMap<String, EvonodeStatus>),
 }
 
 impl From<String> for CompletedTaskPayload {
