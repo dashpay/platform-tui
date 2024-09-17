@@ -14,7 +14,7 @@ enum AddIdentityKeyFormStep {
     KeyType(SelectInput<KeyType>),
 }
 
-pub(super) struct AddIdentityKeyFormController {
+pub struct AddIdentityKeyFormController {
     step: AddIdentityKeyFormStep,
     purpose_result: Option<KeyPurpose>,
     security_result: Option<KeySecurityLevel>,

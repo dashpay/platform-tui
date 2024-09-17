@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use crate::backend::{as_json_string, BackendEvent, Task};
 use chrono::{prelude::*, LocalResult};
 use chrono_humanize::{Accuracy, HumanTime, Tense};
@@ -8,6 +10,10 @@ use dash_sdk::{
     platform::{Fetch, FetchMany, LimitQuery},
     Sdk,
 };
+use dpp::block::epoch::Epoch;
+use dpp::core_subsidy::NetworkCoreSubsidy;
+use dpp::dashcore::Network;
+use dpp::version::PlatformVersion;
 use dpp::{
     block::{
         epoch::EpochIndex,
@@ -15,17 +21,13 @@ use dpp::{
     },
     version::ProtocolVersionVoteCount,
 };
-use dpp::block::epoch::Epoch;
-use dpp::core_subsidy::NetworkCoreSubsidy;
-use dpp::dashcore::Network;
-use drive_proof_verifier::ContextProvider;
-use dpp::version::PlatformVersion;
 use drive::drive::credit_pools::epochs::epoch_key_constants::KEY_START_BLOCK_CORE_HEIGHT;
-use drive::drive::RootTree;
 use drive::drive::credit_pools::epochs::epochs_root_tree_key_constants::KEY_UNPAID_EPOCH_INDEX;
 use drive::drive::credit_pools::epochs::paths::EpochProposers;
+use drive::drive::RootTree;
 use drive::grovedb::{Element, GroveDb, PathQuery, Query, SizedQuery};
-use drive_proof_verifier::types::TotalCreditsOnPlatform;
+use drive_proof_verifier::types::TotalCreditsInPlatform;
+use drive_proof_verifier::ContextProvider;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum PlatformInfoTask {
@@ -40,6 +42,7 @@ fn format_extended_epoch_info(
     epoch_info: ExtendedEpochInfo,
     metadata: ResponseMetadata,
     proof: Proof,
+    network: Network,
     is_current: bool,
 ) -> String {
     let readable_block_time = match Utc.timestamp_millis_opt(metadata.time_ms as i64) {
@@ -54,19 +57,32 @@ fn format_extended_epoch_info(
         LocalResult::Ambiguous(..) => String::new(),
     };
 
-    let readable_epoch_start_time = match Utc
-        .timestamp_millis_opt(epoch_info.first_block_time() as i64)
-    {
-        LocalResult::None => String::new(),
-        LocalResult::Single(block_time) => {
-            // Get the current time for comparison
-            let now = Utc::now();
-            let duration = now.signed_duration_since(block_time);
-            let human_readable = HumanTime::from(duration).to_text_en(Accuracy::Rough, Tense::Past);
-            human_readable
-        }
-        LocalResult::Ambiguous(..) => String::new(),
-    };
+    let readable_epoch_start_time_as_time_away =
+        match Utc.timestamp_millis_opt(epoch_info.first_block_time() as i64) {
+            LocalResult::None => String::new(),
+            LocalResult::Single(block_time) => {
+                // Get the current time for comparison
+                let now = Utc::now();
+                let duration = now.signed_duration_since(block_time);
+                let human_readable =
+                    HumanTime::from(duration).to_text_en(Accuracy::Precise, Tense::Past);
+                human_readable
+            }
+            LocalResult::Ambiguous(..) => String::new(),
+        };
+
+    let readable_epoch_start_time_as_time =
+        match Utc.timestamp_millis_opt(epoch_info.first_block_time() as i64) {
+            LocalResult::None => String::new(),
+            LocalResult::Single(block_time) => {
+                // Convert block_time to local time
+                let local_time = block_time.with_timezone(&Local);
+
+                // Format the local time in ISO 8601 format
+                local_time.to_rfc2822()
+            }
+            LocalResult::Ambiguous(..) => String::new(),
+        };
 
     let in_string = if is_current {
         "in ".to_string()
@@ -74,10 +90,41 @@ fn format_extended_epoch_info(
         String::default()
     };
 
+    let epoch_estimated_time = match network {
+        Network::Dash => 788_400_000,
+        Network::Testnet => 3_600_000,
+        Network::Devnet => 3_600_000,
+        Network::Regtest => 1_200_000,
+        _ => 3_600_000,
+    };
+
+    let readable_epoch_end_time = match Utc
+        .timestamp_millis_opt(epoch_info.first_block_time() as i64 + epoch_estimated_time as i64)
+    {
+        LocalResult::None => String::new(),
+        LocalResult::Single(block_time) => {
+            // Get the current time for comparison
+            let now = Utc::now();
+            let duration = block_time.signed_duration_since(now);
+
+            let human_readable = if duration.num_milliseconds() >= 0 {
+                // Time is in the future
+                HumanTime::from(duration).to_text_en(Accuracy::Precise, Tense::Future)
+            } else {
+                // Time is in the past
+                HumanTime::from(-duration).to_text_en(Accuracy::Precise, Tense::Past)
+            };
+
+            human_readable
+        }
+        LocalResult::Ambiguous(..) => String::new(),
+    };
+
     format!(
-        "current height: {}\ncurrent core height: {}\ncurrent block time: {} ({})\n{}epoch: {}\n \
-         * start height: {}\n * start core height: {}\n * start time: {} ({})\n * fee multiplier: \
+        "protocol version: {}\n current height: {}\ncurrent core height: {}\ncurrent block time: {} ({})\n{}epoch: {}\n \
+         * start height: {}\n * start core height: {}\n * start time: {} ({} - {})\n * estimated end time: {} ({})\n * fee multiplier: \
          {}\n\nproof: {}",
+        epoch_info.protocol_version(),
         metadata.height,
         metadata.core_chain_locked_height,
         metadata.time_ms,
@@ -87,7 +134,10 @@ fn format_extended_epoch_info(
         epoch_info.first_block_height(),
         epoch_info.first_core_block_height(),
         epoch_info.first_block_time(),
-        readable_epoch_start_time,
+        readable_epoch_start_time_as_time,
+        readable_epoch_start_time_as_time_away,
+        epoch_info.first_block_time() + epoch_estimated_time,
+        readable_epoch_end_time,
         epoch_info.fee_multiplier_permille(),
         prettify_proof(&proof)
     )
@@ -96,7 +146,7 @@ fn format_extended_epoch_info(
 fn format_total_credits_on_platform(
     network: Network,
     request_activation_core_height: impl Fn() -> u32,
-    total_credits_on_platform: TotalCreditsOnPlatform,
+    total_credits_on_platform: TotalCreditsInPlatform,
     metadata: ResponseMetadata,
     proof: Proof,
 ) -> String {
@@ -116,7 +166,8 @@ fn format_total_credits_on_platform(
         grovedb_proof,
         &unpaid_epoch_index,
         &platform_version.drive.grove_version,
-    ).expect("expected to verify subset query");
+    )
+    .expect("expected to verify subset query");
 
     let Some(proved_path_key_value) = proved_path_key_values.pop() else {
         return panic!("This proof would show that Platform has not yet been initialized as we can not find a start index");
@@ -134,9 +185,12 @@ fn format_total_credits_on_platform(
         return panic!("We are expecting an item for the epoch index");
     };
 
-    let epoch_index = EpochIndex::from_be_bytes(bytes.as_slice().try_into().expect(
-            "epoch index invalid length"
-        ));
+    let epoch_index = EpochIndex::from_be_bytes(
+        bytes
+            .as_slice()
+            .try_into()
+            .expect("epoch index invalid length"),
+    );
 
     let epoch = Epoch::new(epoch_index).unwrap();
 
@@ -153,14 +207,17 @@ fn format_total_credits_on_platform(
         grovedb_proof,
         &start_core_height_query,
         &platform_version.drive.grove_version,
-    ).expect("expected to verify subset query");
+    )
+    .expect("expected to verify subset query");
 
     let Some(proved_path_key_value) = proved_path_key_values.pop() else {
         return panic!("We can not find the start core height of the unpaid epoch");
     };
 
     if proved_path_key_value.0 != start_core_height_query.path {
-        return panic!("The result of this proof is not what we asked for (start core height path)");
+        return panic!(
+            "The result of this proof is not what we asked for (start core height path)"
+        );
     }
 
     if proved_path_key_value.1 != KEY_START_BLOCK_CORE_HEIGHT.to_vec() {
@@ -171,8 +228,12 @@ fn format_total_credits_on_platform(
         return panic!("We are expecting an item for the start core height of the unpaid epoch");
     };
 
-    let start_core_height = u32::from_be_bytes(bytes.as_slice().try_into().expect(
-            "start core height invalid length"));
+    let start_core_height = u32::from_be_bytes(
+        bytes
+            .as_slice()
+            .try_into()
+            .expect("start core height invalid length"),
+    );
 
     let readable_block_time = match Utc.timestamp_millis_opt(metadata.time_ms as i64) {
         LocalResult::None => String::new(),
@@ -216,7 +277,11 @@ pub(super) async fn run_platform_task<'s>(sdk: &Sdk, task: PlatformInfoTask) -> 
                 Ok((epoch_info, metadata, proof)) => BackendEvent::TaskCompleted {
                     task: Task::PlatformInfo(task),
                     execution_result: Ok(format_extended_epoch_info(
-                        epoch_info, metadata, proof, true,
+                        epoch_info,
+                        metadata,
+                        proof,
+                        sdk.network,
+                        true,
                     )
                     .into()),
                 },
@@ -231,7 +296,11 @@ pub(super) async fn run_platform_task<'s>(sdk: &Sdk, task: PlatformInfoTask) -> 
                 Ok((Some(epoch_info), metadata, proof)) => BackendEvent::TaskCompleted {
                     task: Task::PlatformInfo(task),
                     execution_result: Ok(format_extended_epoch_info(
-                        epoch_info, metadata, proof, false,
+                        epoch_info,
+                        metadata,
+                        proof,
+                        sdk.network,
+                        false,
                     )
                     .into()),
                 },
@@ -272,9 +341,10 @@ pub(super) async fn run_platform_task<'s>(sdk: &Sdk, task: PlatformInfoTask) -> 
         PlatformInfoTask::FetchCurrentVersionVotingState => {
             match ProtocolVersionVoteCount::fetch_many(&sdk, ()).await {
                 Ok(votes) => {
+                    let votes: BTreeMap<u32, Option<u64>> = votes;
                     let votes_info = votes
                         .into_iter()
-                        .map(|(key, value)| {
+                        .map(|(key, value): (u32, Option<u64>)| {
                             format!(
                                 "Version {} -> {}",
                                 key,
@@ -298,19 +368,22 @@ pub(super) async fn run_platform_task<'s>(sdk: &Sdk, task: PlatformInfoTask) -> 
             }
         }
         PlatformInfoTask::FetchTotalCreditsOnPlatform => {
-            match TotalCreditsOnPlatform::fetch_current_with_metadata_and_proof(sdk).await {
-                Ok((epoch_info, metadata, proof)) => {
-                    BackendEvent::TaskCompleted {
-                        task: Task::PlatformInfo(task),
-                        execution_result: Ok(format_total_credits_on_platform(
-                            sdk.network,
-                            || {
-                                sdk.context_provider().expect("expected context provider").get_platform_activation_height().expect("expected platform activation height")
-                            },
-                            epoch_info, metadata, proof,
-                        )
-                            .into()),
-                    }
+            match TotalCreditsInPlatform::fetch_current_with_metadata_and_proof(sdk).await {
+                Ok((epoch_info, metadata, proof)) => BackendEvent::TaskCompleted {
+                    task: Task::PlatformInfo(task),
+                    execution_result: Ok(format_total_credits_on_platform(
+                        sdk.network,
+                        || {
+                            sdk.context_provider()
+                                .expect("expected context provider")
+                                .get_platform_activation_height()
+                                .expect("expected platform activation height")
+                        },
+                        epoch_info,
+                        metadata,
+                        proof,
+                    )
+                    .into()),
                 },
                 Err(e) => BackendEvent::TaskCompleted {
                     task: Task::PlatformInfo(task),

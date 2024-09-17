@@ -1,14 +1,14 @@
-# Terminal User Interface
+# Dash Platform Terminal User Interface
 
 The Dash Platform Terminal User Interface (TUI) is a Rust-based user interface for interacting with Dash Platform in the terminal. Its purpose is to enable users to perform all actions permitted by Dash Platform, which, broadly speaking, means broadcasting state transitions and querying the network.
 
-The TUI can connect to any instance of a Dash Platform network, including the testnet, devnets, local networks, and soon, the mainnet. However, for now this readme will only cover connecting to a testnet, and steps to connect to a local network will be added soon. Further steps on running strategies, read [Paul Delucia's guide](https://www.dash.org/blog/strategy-tests-usage-guide/)
+The TUI can connect to any instance of a Dash Platform network, including the mainnet, testnet, devnets, and local networks. The main [Install section](#install) of this readme covers connecting to mainnet and testnet, with a brief explanation of how to connect to a local network to follow. Check out the [TUI documentation](https://docs.dash.org/projects/platform/en/stable/docs/tutorials/tui/index.html), and for further steps on running strategy tests, read [Paul DeLucia's guide](https://www.dash.org/blog/strategy-tests-usage-guide/).
 
 # Install
 
 ## Setup Dash Core
 
-First, you need to run a Dash Core testnet node in order to connect to the testnet. Download the latest version of Dash Core [here](https://www.dash.org/downloads/#desktop). Run Dash Core and then configure the `dash.conf` file as follows, 
+First, you need to run a Dash Core node in order to connect to mainnet or testnet. Download the latest version of Dash Core [here](https://www.dash.org/downloads/#desktop). Run Dash Core and then configure the `dash.conf` file as follows, 
 replacing `***` with a username and password of your choosing (find the `dash.conf` file by right-clicking the Dash Core icon and selecting "Open Wallet Configuration File"):
 
 ```conf
@@ -17,8 +17,9 @@ listen=1
 rpcallowip=127.0.0.1
 rpcuser=***
 rpcpassword=***
-testnet=1
 ```
+
+Put `testnet=1` if you're connecting to the testnet.
 
 Restart Dash Core for the changes to take effect.
 
@@ -32,10 +33,14 @@ Clone the [TUI repo](https://github.com/dashpay/platform-tui):
 git clone https://github.com/dashpay/platform-tui.git
 ```
 
-Open the TUI repo in your terminal and install Rust
+Open the TUI repo in your terminal:
 
 ```shell
-cd rs-platform-explorer`
+cd rs-platform-explorer
+
+Install Rust if you don't already have it:
+
+```shell
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
@@ -52,6 +57,7 @@ rustup target add wasm32-unknown-unknown`
 Install build-essential tools, SSL development libraries, and Clang. On Ubuntu, use:
 
 ```shell
+sudo apt update
 sudo apt install -y build-essential cmake libssl-dev pkg-config clang unzip`
 ```
 
@@ -74,7 +80,7 @@ sudo unzip protoc-*-linux-x86_64.zip -d /usr/local`
 
 ### Setup env file
 
-Now, create a file named `.env` in the highest level of the TUI directory, and copy the contents of `.env.testnet` into it. Set the username and password in the `.env` file to the username and password in your Dash Core `wallet.conf` file and save.
+Now, create a file named `.env` in the highest level of the TUI directory, and copy the contents of `.env.mainnet` or `.env.testnet` into it. Set the username and password in the `.env` file to the username and password in your Dash Core `dash.conf` file and save. Optionally, you can also put the private key of your Dash wallet into the `.env` file as well (hex or WIF format), otherwise you can load it into the TUI later inside the interface.
 
 ### Build and run
 
@@ -84,16 +90,24 @@ Do `cargo run` to start the TUI:
 cargo run
 ```
 
-## Wallet operations
+### Connect to local network
 
-Now that we are inside the TUI, we need to load a wallet and an identity.
+Connecting to a local network follows almost the same steps as connecting to mainnet or testnet, with the following differences:
 
-* Go to the Wallet screen and add a wallet by private key. You can generate a private key on [this website](https://passwordsgenerator.net/sha256-hash-generator/) by typing in a seed (it can be any random word or phrase), and then paste that key into the TUI. (take note: the key has to be in hexadecimal format!)
-* After entering the private key, copy the Wallet receive address and paste it into the [testnet faucet](https://faucet.testnet.networks.dash.org/) to get some Dash funds. Use promo code `platform` to get 50 DASH (normally it only dispenses around 2-5).
-* In the TUI, refresh the wallet balance until the funds appear.
-* Register an identity and fund it with 1 DASH. This is more than enough for the example test we’ll be running.
-* Refresh the identity balance until you see the funds appear.
+* You don't need to run Dash Core. Instead, you need to run a local Platform network. The steps to do this are in the [FAQ](https://github.com/dashpay/platform?tab=readme-ov-file#how-to-build-and-set-up-a-node-from-the-code-in-this-repo) of the Platform Readme.
+* To get the username and password for the `.env` file, run `yarn dashmate config get core.rpc --config=local_seed` in the local Platform directory after you get a network running. Use the password for `dashmate` and `dashmate` as the username.
 
-## Strategy tests
+## DPNS Username Registration Tutorial
 
-Now, we’re ready to build and run a strategy. for further indication on how to do so, you can look [Paul Delucia's guide](https://www.dash.org/blog/strategy-tests-usage-guide/)
+Now that we are inside the TUI, we will load a wallet, an identity, and register a DPNS username for the identity.
+
+* Go to the Wallet screen and add a wallet by private key.
+* If you don't already have a mainnet wallet, you can generate one on [paper.dash.org](https://paper.dash.org/). Save the address and private key (secret key) somewhere safe, then copy and paste the private key into the TUI. For all other networks, you can use [this website](https://passwordsgenerator.net/sha256-hash-generator/) to generate a new wallet private key if you don't already have one.
+* Refresh the wallet balance.
+* If your wallet is not yet funded, you'll need to send it some Dash before you can register an identity. After sending funds, you'll need to refresh the wallet balance again until the funds appear.
+* Now go back to the Main screen and then to the Identities screen.
+* Here, you can either load an existing identity if you have its ID and private keys, or register a new one.
+* If you register a new one, fund it with 0.01 DASH. This should be more than enough to register a (uncontested) DPNS username. The private keys of the newly created identity will be logged to `platform-tui/supporting_files/new_identity_private_keys.log`. Be sure to save a copy of that file somewhere safe.
+* After registering or loading an identity, refresh the identity balance until you see the funds appear.
+* Now, you can register a DPNS username for the identity.
+* After registering the username from the Identities screen, you can navigate back to the Main screen, then the DPNS screen. From there, query the names for the selected identity, and you should see the name you just registered, which is fetched from the Dash Platform state.

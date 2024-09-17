@@ -26,25 +26,18 @@ use dash_sdk::{
 };
 use dashmap::DashMap;
 use dpp::{
-    block::{block_info::BlockInfo, epoch::Epoch},
-    dashcore::{Address, PrivateKey, Transaction},
-    data_contract::{
+    block::{block_info::BlockInfo, epoch::Epoch}, dashcore::{Address, PrivateKey, Transaction}, data_contract::{
         accessors::v0::{DataContractV0Getters, DataContractV0Setters},
         created_data_contract::CreatedDataContract,
         document_type::random_document::{DocumentFieldFillSize, DocumentFieldFillType},
         DataContract,
-    },
-    document::Document,
-    identity::{
+    }, data_contracts::{dashpay_contract, dpns_contract}, document::Document, identity::{
         accessors::IdentityGettersV0, state_transition::asset_lock_proof::AssetLockProof, Identity,
         KeyType, PartialIdentity, Purpose, SecurityLevel,
-    },
-    platform_value::{string_encoding::Encoding, Identifier},
-    serialization::{
+    }, platform_value::{string_encoding::Encoding, Identifier}, serialization::{
         PlatformDeserializableWithPotentialValidationFromVersionedStructure,
         PlatformSerializableWithPlatformVersion,
-    },
-    state_transition::{
+    }, state_transition::{
         data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0,
         documents_batch_transition::{
             document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods,
@@ -56,7 +49,7 @@ use dpp::{
             methods::IdentityTopUpTransitionMethodsV0, IdentityTopUpTransition,
         },
         StateTransition, StateTransitionLike,
-    },
+    }
 };
 use drive::{
     drive::{
@@ -2452,8 +2445,16 @@ impl AppState {
         drop(contracts_lock);
 
         for contract_id_str in contract_ids.iter() {
-            let contract_id = Identifier::from_string(contract_id_str, Encoding::Base58)
-                .expect("Failed to convert ID string to Identifier");
+            let contract_id = match Identifier::from_string(contract_id_str, Encoding::Base58) {
+                Ok(id) => id,
+                Err(e) => {
+                    match contract_id_str.as_str() {
+                        "DPNS" => dpns_contract::ID,
+                        "Dashpay" => dashpay_contract::ID,
+                        _ => return Err(format!("Failed to update known contracts: {e}"))
+                    }
+                },
+            };
 
             match DataContract::fetch(&*sdk, contract_id).await {
                 Ok(Some(data_contract)) => {

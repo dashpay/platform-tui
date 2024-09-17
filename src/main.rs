@@ -76,6 +76,7 @@ async fn main() {
             &config.core_rpc_password,
         )
         .with_settings(request_settings)
+        .with_network(config.core_network())
         .build()
         .expect("expected to build sdk");
 

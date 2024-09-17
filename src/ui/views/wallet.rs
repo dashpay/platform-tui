@@ -2,7 +2,7 @@
 
 use dpp::dashcore::psbt::serialize::Serialize;
 
-mod add_identity_key;
+pub(crate) mod add_identity_key;
 
 use std::ops::Deref;
 
@@ -37,7 +37,7 @@ const WALLET_LOADED_COMMANDS: [ScreenCommandKey; 4] = [
 ];
 
 const IDENTITY_LOADED_COMMANDS: [ScreenCommandKey; 2] = [
-    ScreenCommandKey::new("r", "Identity refresh"),
+    ScreenCommandKey::new("i", "Identity refresh"),
     ScreenCommandKey::new("w", "Withdraw identity balance to wallet"),
 ];
 
@@ -101,15 +101,30 @@ impl WalletScreenController {
                 )
             }
         } else {
-            (
-                Info::new_fixed("Wallet management commands\n\nNo wallet loaded yet"),
-                Info::new_fixed(
-                    "No identity loaded yet. Go to Identities screen to load or register one.",
-                ),
-                false,
-                false,
-                false,
-            )
+            if let Some(identity) = app_state.loaded_identity.lock().await.as_ref() {
+                (
+                    Info::new_fixed("Wallet management commands\n\nNo wallet loaded yet"),
+                    Info::new_fixed(&display_info(identity)),
+                    false,
+                    true,
+                    false,
+                )
+            } else {
+                let identity_registration_in_progress = app_state
+                    .identity_asset_lock_private_key_in_creation
+                    .lock()
+                    .await
+                    .is_some();
+                (
+                    Info::new_fixed("Wallet management commands\n\nNo wallet loaded yet"),
+                    Info::new_fixed(
+                        "No identity loaded yet. Go to Identities screen to load or register one.",
+                    ),
+                    false,
+                    false,
+                    identity_registration_in_progress,
+                )
+            }
         };
 
         Self {
@@ -167,7 +182,7 @@ impl ScreenController for WalletScreenController {
             },
 
             Event::Key(KeyEvent {
-                code: Key::Char('k'),
+                code: Key::Char('r'),
                 modifiers: KeyModifiers::NONE,
             }) if !self.wallet_loaded => ScreenFeedback::Task {
                 task: Task::Wallet(WalletTask::AddRandomKey),
@@ -175,7 +190,7 @@ impl ScreenController for WalletScreenController {
             },
 
             Event::Key(KeyEvent {
-                code: Key::Char('r'),
+                code: Key::Char('i'),
                 modifiers: KeyModifiers::NONE,
             }) if self.identity_loaded => ScreenFeedback::Task {
                 task: Task::Identity(IdentityTask::Refresh),
