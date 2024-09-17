@@ -234,10 +234,8 @@ pub(super) async fn run_platform_task<'s>(sdk: &Sdk, task: PlatformInfoTask) -> 
                         }
                     },
                     Err(e) => {
-                        return BackendEvent::TaskCompleted {
-                            task: Task::PlatformInfo(task),
-                            execution_result: Err(format!("Error fetching node status: {e}")),
-                        }
+                        tracing::debug!("Error fetching node status: {e}");
+                        continue;
                     }
                 };
 

@@ -117,10 +117,10 @@ impl ScreenController for PlatformInfoScreenController {
                     Ok(status_info) => match status_info {
                         crate::backend::CompletedTaskPayload::EvonodeStatuses(info_map) => {
                             let mut display_string = String::from(
-                                "ProTxHash                                  | Latest Block Height\n",
+                                "ProTxHash                                    | Latest Block Height\n",
                             );
                             display_string
-                                .push_str("---------------------------------------------------\n");
+                                .push_str("----------------------------------------------------\n");
 
                             // Iterate through the BTreeMap and append each key and the latest block height to the result
                             for (pro_tx_hash, status) in info_map.iter() {
