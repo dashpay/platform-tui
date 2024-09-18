@@ -170,19 +170,21 @@ fn format_total_credits_on_platform(
     .expect("expected to verify subset query");
 
     let Some(proved_path_key_value) = proved_path_key_values.pop() else {
-        return panic!("This proof would show that Platform has not yet been initialized as we can not find a start index");
+        return ("This proof would show that Platform has not yet been initialized as we can not find a start index").to_string();
     };
 
     if proved_path_key_value.0 != unpaid_epoch_index.path {
-        return panic!("The result of this proof is not what we asked for (unpaid epoch path)");
+        return ("The result of this proof is not what we asked for (unpaid epoch path)")
+            .to_string();
     }
 
     if proved_path_key_value.1 != KEY_UNPAID_EPOCH_INDEX.to_vec() {
-        return panic!("The result of this proof is not what we asked for (unpaid epoch key)");
+        return ("The result of this proof is not what we asked for (unpaid epoch key)")
+            .to_string();
     }
 
     let Some(Element::Item(bytes, _)) = proved_path_key_value.2 else {
-        return panic!("We are expecting an item for the epoch index");
+        return ("We are expecting an item for the epoch index").to_string();
     };
 
     let epoch_index = EpochIndex::from_be_bytes(
@@ -211,21 +213,22 @@ fn format_total_credits_on_platform(
     .expect("expected to verify subset query");
 
     let Some(proved_path_key_value) = proved_path_key_values.pop() else {
-        return panic!("We can not find the start core height of the unpaid epoch");
+        return ("We can not find the start core height of the unpaid epoch").to_string();
     };
 
     if proved_path_key_value.0 != start_core_height_query.path {
-        return panic!(
-            "The result of this proof is not what we asked for (start core height path)"
-        );
+        return ("The result of this proof is not what we asked for (start core height path)")
+            .to_string();
     }
 
     if proved_path_key_value.1 != KEY_START_BLOCK_CORE_HEIGHT.to_vec() {
-        return panic!("The result of this proof is not what we asked for (start core height key)");
+        return ("The result of this proof is not what we asked for (start core height key)")
+            .to_string();
     }
 
     let Some(Element::Item(bytes, _)) = proved_path_key_value.2 else {
-        return panic!("We are expecting an item for the start core height of the unpaid epoch");
+        return ("We are expecting an item for the start core height of the unpaid epoch")
+            .to_string();
     };
 
     let start_core_height = u32::from_be_bytes(
