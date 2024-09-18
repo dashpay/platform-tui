@@ -197,9 +197,6 @@ pub(super) async fn run_platform_task<'s>(sdk: &Sdk, task: PlatformInfoTask) -> 
                 }
             };
 
-            tracing::info!("Address list length: {}", address_list.len());
-            tracing::info!("Address list: {:?}", address_list);
-
             let config = Config::load();
             let request_settings = RequestSettings {
                 connect_timeout: Some(Duration::from_secs(10)),
@@ -208,7 +205,6 @@ pub(super) async fn run_platform_task<'s>(sdk: &Sdk, task: PlatformInfoTask) -> 
                 ban_failed_address: Some(false),
             };
 
-            // Create a vector to hold the handles for all the spawned tasks
             let mut handles = Vec::new();
 
             for address in address_list.addresses() {
@@ -218,10 +214,9 @@ pub(super) async fn run_platform_task<'s>(sdk: &Sdk, task: PlatformInfoTask) -> 
                 let mut single_address_list = AddressList::new();
                 single_address_list.add_uri(address);
 
-                // Spawn a task for each iteration
                 let handle = task::spawn(async move {
                     let sdk = SdkBuilder::new(single_address_list.clone())
-                        .with_version(PlatformVersion::get(1).unwrap())
+                        .with_version(PlatformVersion::latest())
                         .with_core(
                             &config.core_host,
                             config.core_rpc_port,
@@ -229,6 +224,7 @@ pub(super) async fn run_platform_task<'s>(sdk: &Sdk, task: PlatformInfoTask) -> 
                             &config.core_rpc_password,
                         )
                         .with_settings(request_settings)
+                        .with_network(config.core_network())
                         .build()
                         .expect("expected to build sdk");
 
@@ -248,10 +244,9 @@ pub(super) async fn run_platform_task<'s>(sdk: &Sdk, task: PlatformInfoTask) -> 
                     }
                 });
 
-                handles.push(handle); // Push each spawned task's handle into the vector
+                handles.push(handle);
             }
 
-            // Await all tasks to finish
             let results = join_all(handles).await;
 
             let mut node_statuses = BTreeMap::new();

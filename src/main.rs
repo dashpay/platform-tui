@@ -67,7 +67,7 @@ async fn main() {
         ban_failed_address: Some(false),
     };
     let sdk = SdkBuilder::new(address_list)
-        .with_version(PlatformVersion::get(1).unwrap())
+        .with_version(PlatformVersion::latest())
         .with_core(
             &config.core_host,
             config.core_rpc_port,
@@ -75,6 +75,7 @@ async fn main() {
             &config.core_rpc_password,
         )
         .with_settings(request_settings)
+        .with_network(config.core_network())
         .build()
         .expect("expected to build sdk");
 
