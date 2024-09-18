@@ -6,6 +6,7 @@ use tuirealm::{
     Frame,
 };
 
+use crate::backend::platform_info::PlatformInfoTask::FetchTotalCreditsOnPlatform;
 use crate::ui::form::parsers::DocumentQueryTextInputParser;
 use crate::{
     backend::{
@@ -27,9 +28,10 @@ use crate::{
     Event,
 };
 
-const COMMAND_KEYS: [ScreenCommandKey; 4] = [
+const COMMAND_KEYS: [ScreenCommandKey; 5] = [
     ScreenCommandKey::new("q", "Back to Main"),
-    ScreenCommandKey::new("n", "Fetch current Platform epoch info"),
+    ScreenCommandKey::new("c", "Fetch current Platform epoch info"),
+    ScreenCommandKey::new("m", "Fetch total credits on platform"),
     ScreenCommandKey::new("i", "Fetch previous Platform epoch info"),
     ScreenCommandKey::new("v", "Current version voting"),
 ];
@@ -69,10 +71,18 @@ impl ScreenController for PlatformInfoScreenController {
             }) => ScreenFeedback::PreviousScreen,
 
             Event::Key(KeyEvent {
-                code: Key::Char('n'),
+                code: Key::Char('c'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::Task {
                 task: Task::PlatformInfo(FetchCurrentEpochInfo),
+                block: true,
+            },
+
+            Event::Key(KeyEvent {
+                code: Key::Char('m'),
+                modifiers: KeyModifiers::NONE,
+            }) => ScreenFeedback::Task {
+                task: Task::PlatformInfo(FetchTotalCreditsOnPlatform),
                 block: true,
             },
 
