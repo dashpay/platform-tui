@@ -47,7 +47,7 @@ const IDENTITY_LOADED_COMMAND_KEYS: [ScreenCommandKey; 17] = [
     ScreenCommandKey::new("s", "Set loaded"),
     ScreenCommandKey::new("b", "Refresh loaded"),
     ScreenCommandKey::new("a", "Refresh all"),
-    ScreenCommandKey::new("t", "Transfer credits from loaded"),
+    ScreenCommandKey::new("n", "Transfer credits from loaded"),
     ScreenCommandKey::new("d", "Register DPNS name for loaded"),
     ScreenCommandKey::new("k", "Add key to loaded"),
     ScreenCommandKey::new("C-f", "Forget selected"),
@@ -314,7 +314,7 @@ impl ScreenController for IdentitiesScreenController {
             }) => ScreenFeedback::Form(Box::new(GetIdentityByIdFormController::new())),
 
             Event::Key(KeyEvent {
-                code: Key::Char('t'),
+                code: Key::Char('n'),
                 modifiers: KeyModifiers::NONE,
             }) if self.loaded_identity.is_some() => {
                 ScreenFeedback::Form(Box::new(TransferCreditsFormController::new()))
