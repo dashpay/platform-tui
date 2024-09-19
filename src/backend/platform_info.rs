@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use crate::backend::{as_json_string, BackendEvent, Task};
 use chrono::{prelude::*, LocalResult};
 use chrono_humanize::{Accuracy, HumanTime, Tense};
@@ -21,6 +19,8 @@ use dpp::{
     },
     version::ProtocolVersionVoteCount,
 };
+use drive_proof_verifier::types::ProtocolVersionUpgrades;
+
 use drive::drive::credit_pools::epochs::epoch_key_constants::KEY_START_BLOCK_CORE_HEIGHT;
 use drive::drive::credit_pools::epochs::epochs_root_tree_key_constants::KEY_UNPAID_EPOCH_INDEX;
 use drive::drive::credit_pools::epochs::paths::EpochProposers;
@@ -344,7 +344,8 @@ pub(super) async fn run_platform_task<'s>(sdk: &Sdk, task: PlatformInfoTask) -> 
         PlatformInfoTask::FetchCurrentVersionVotingState => {
             match ProtocolVersionVoteCount::fetch_many(&sdk, ()).await {
                 Ok(votes) => {
-                    let votes: BTreeMap<u32, Option<u64>> = votes;
+                    let votes: ProtocolVersionUpgrades = votes;
+
                     let votes_info = votes
                         .into_iter()
                         .map(|(key, value): (u32, Option<u64>)| {

@@ -1,5 +1,6 @@
 //! Contested resources screen
 
+use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo::{NoWinner, Locked, WonByIdentity};
 use dpp::{
     data_contract::{
         accessors::v0::DataContractV0Getters,
@@ -236,6 +237,17 @@ impl ScreenController for ContestedResourcesScreenController {
                 execution_result,
             }) => match execution_result {
                 Ok(CompletedTaskPayload::ContestedResourceContenders(vote_poll, contenders)) => {
+                    let vote_status_string = match contenders.winner {
+                        Some(maybe_winner) => match maybe_winner.0 {
+                            NoWinner => "Vote status: No winner".to_string(),
+                            WonByIdentity(id) => format!(
+                                "Vote status: Ended with winner {}",
+                                id.to_string(Encoding::Base58)
+                            ),
+                            Locked => "Vote status: Locked".to_string(),
+                        },
+                        None => "Vote status: In progress".to_string(),
+                    };
                     if self.want_to_vote {
                         ScreenFeedback::Form(Box::new(ContestedResourceVoteFormController::new(
                             vote_poll.clone(),
@@ -243,6 +255,8 @@ impl ScreenController for ContestedResourcesScreenController {
                         )) as Box<dyn FormController>)
                     } else {
                         let mut options: Vec<String> = vec![
+                            vote_status_string.clone(),
+                            "".to_string(),
                             format!(
                                 "{} - Abstain",
                                 contenders.abstain_vote_tally.unwrap_or_default()
@@ -251,11 +265,19 @@ impl ScreenController for ContestedResourcesScreenController {
                         ];
                         for contender in contenders.contenders.clone() {
                             let identity_id = contender.0;
-                            options.push(format!(
-                                "{} - {}",
-                                contender.1.vote_tally().unwrap_or_default(),
-                                identity_id.to_string(Encoding::Base58),
-                            ));
+                            if identity_id.to_string(Encoding::Base58) == vote_status_string {
+                                options.push(format!(
+                                    "{} - {} *WINNER*",
+                                    contender.1.vote_tally().unwrap_or_default(),
+                                    identity_id.to_string(Encoding::Base58),
+                                ));
+                            } else {
+                                options.push(format!(
+                                    "{} - {}",
+                                    contender.1.vote_tally().unwrap_or_default(),
+                                    identity_id.to_string(Encoding::Base58),
+                                ));
+                            }
                         }
 
                         self.resource_view = Info::new_fixed(&options.join("\n"));
