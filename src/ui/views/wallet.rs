@@ -278,6 +278,15 @@ impl ScreenController for WalletScreenController {
             },
 
             Event::Backend(BackendEvent::TaskCompletedStateChange {
+                task: Task::Identity(IdentityTask::WithdrawFromIdentity(_)),
+                execution_result,
+                app_state_update: AppStateUpdate::LoadedIdentity(_),
+            }) => {
+                self.identity_info = Info::new_from_result(execution_result);
+                ScreenFeedback::Redraw
+            }
+
+            Event::Backend(BackendEvent::TaskCompletedStateChange {
                 execution_result,
                 app_state_update: AppStateUpdate::LoadedIdentity(identity),
                 ..

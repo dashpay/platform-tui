@@ -278,7 +278,9 @@ impl AppState {
                 let result = self.withdraw_from_identity(sdk, amount).await;
                 let execution_result = result
                     .as_ref()
-                    .map(|_| "Successful withdrawal".into())
+                    .map(|_| {
+                        format!("Successfully withdrew {} Dash from loaded identity. Refresh wallet and identity.", amount).into()
+                    })
                     .map_err(|e| e.to_string());
                 match result {
                     Ok(identity) => BackendEvent::TaskCompletedStateChange {
@@ -1378,7 +1380,15 @@ impl AppState {
         //// Platform steps
 
         let updated_identity_balance = identity
-            .withdraw(sdk, Some(new_receive_address), amount, None, None, signer, None)
+            .withdraw(
+                sdk,
+                Some(new_receive_address),
+                amount,
+                None,
+                None,
+                signer,
+                None,
+            )
             .await?;
 
         identity.set_balance(updated_identity_balance);
