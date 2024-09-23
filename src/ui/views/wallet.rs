@@ -459,7 +459,7 @@ impl FormController for WithdrawFromIdentityFormController {
         match self.input.on_event(event) {
             InputStatus::Done(amount) => FormStatus::Done {
                 task: Task::Identity(IdentityTask::WithdrawFromIdentity(
-                    (amount * 100000000.0) as u64,
+                    (amount * 100000000000.0) as u64,
                 )),
                 block: true,
             },
