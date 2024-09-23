@@ -453,6 +453,30 @@ impl ScreenController for DpnsUsernamesScreenController {
                 }
                 ScreenFeedback::Redraw
             }
+            Event::Backend(BackendEvent::TaskCompletedStateChange {
+                               task: Task::Contract(ContractTask::FetchWithdrawalsContract),
+                               execution_result,
+                               app_state_update,
+                           }) => {
+                if execution_result.is_ok() {
+                    match app_state_update {
+                        crate::backend::AppStateUpdate::KnownContracts(contracts_lock) => {
+                            let dpns_contract = match contracts_lock.get(
+                                &Identifier::from_bytes(&dpns_contract::ID_BYTES)
+                                    .unwrap()
+                                    .to_string(Encoding::Base58),
+                            ) {
+                                Some(contract) => Some(contract),
+                                None => contracts_lock.get(&String::from("Withdrawals")),
+                            };
+                            self.dpns_contract = dpns_contract.cloned();
+                        }
+                        _ => todo!(),
+                    }
+                    self.update_identity_view();
+                }
+                ScreenFeedback::Redraw
+            }
 
             _ => ScreenFeedback::None,
         }

@@ -12,6 +12,7 @@ use dpp::{
     prelude::{DataContract, Identifier},
     system_data_contracts::{dashpay_contract, dpns_contract},
 };
+use dpp::system_data_contracts::withdrawals_contract;
 use drive::query::{WhereClause, WhereOperator};
 use tokio::sync::Mutex;
 
@@ -23,6 +24,7 @@ use super::{
 pub(crate) enum ContractTask {
     FetchDashpayContract,
     FetchDPNSContract,
+    FetchWithdrawalsContract,
     RemoveContract(String),
     FetchContract(String),
     ClearKnownContracts,
@@ -80,6 +82,34 @@ impl AppState {
                         let contract_name = get_dpns_name(sdk, &data_contract.id())
                             .await
                             .unwrap_or_else(|| "DPNS".to_string());
+
+                        contracts_lock.insert(contract_name, data_contract);
+
+                        BackendEvent::TaskCompletedStateChange {
+                            task: Task::Contract(task),
+                            execution_result: Ok(contract_str.into()),
+                            app_state_update: AppStateUpdate::KnownContracts(contracts_lock),
+                        }
+                    }
+                    Ok(None) => BackendEvent::TaskCompleted {
+                        task: Task::Contract(task),
+                        execution_result: Ok("No contract".into()),
+                    },
+                    Err(e) => BackendEvent::TaskCompleted {
+                        task: Task::Contract(task),
+                        execution_result: Err(e.to_string()),
+                    },
+                }
+            }
+            ContractTask::FetchWithdrawalsContract => {
+                match DataContract::fetch(&sdk, Into::<Identifier>::into(withdrawals_contract::ID_BYTES))
+                    .await
+                {
+                    Ok(Some(data_contract)) => {
+                        let contract_str = as_json_string(&data_contract);
+                        let mut contracts_lock = known_contracts.lock().await;
+
+                        let contract_name = "Withdrawals".to_string();
 
                         contracts_lock.insert(contract_name, data_contract);
 
