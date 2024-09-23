@@ -67,7 +67,7 @@ async fn main() {
         ban_failed_address: Some(false),
     };
     let sdk = SdkBuilder::new(address_list)
-        .with_version(PlatformVersion::get(1).unwrap())
+        .with_version(PlatformVersion::get(4).unwrap())
         .with_network(config.core_network())
         .with_core(
             &config.core_host,

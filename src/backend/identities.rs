@@ -1378,7 +1378,7 @@ impl AppState {
         //// Platform steps
 
         let updated_identity_balance = identity
-            .withdraw(sdk, new_receive_address, amount, None, None, signer, None)
+            .withdraw(sdk, Some(new_receive_address), amount, None, None, signer, None)
             .await?;
 
         identity.set_balance(updated_identity_balance);

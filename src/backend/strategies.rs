@@ -2103,7 +2103,7 @@ impl AppState {
                         let result = identity
                             .withdraw(
                                 sdk,
-                                wallet_lock.receive_address(),
+                                Some(wallet_lock.receive_address()),
                                 identity.balance() - 1_000_000, // not sure what this should be
                                 None,
                                 None,
