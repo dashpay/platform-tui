@@ -442,12 +442,12 @@ fn display_wallet(wallet: &Wallet) -> String {
     }
 }
 
-struct WithdrawFromIdentityFormController {
+pub struct WithdrawFromIdentityFormController {
     input: TextInput<DefaultTextInputParser<f64>>,
 }
 
 impl WithdrawFromIdentityFormController {
-    fn new() -> Self {
+    pub fn new() -> Self {
         WithdrawFromIdentityFormController {
             input: TextInput::new("Quantity (in Dash)"),
         }

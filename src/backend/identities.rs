@@ -2,7 +2,9 @@
 
 use chrono::Utc;
 use dashcore::hashes::Hash;
+use dpp::dashcore::address::Payload;
 use std::io::Write;
+use std::str::FromStr;
 use std::{
     collections::{BTreeMap, HashSet},
     fs::OpenOptions,
@@ -29,11 +31,6 @@ use dash_sdk::{
         Fetch,
     },
     Sdk,
-};
-use dpp::{
-    dashcore::Network,
-    data_contract::DataContract,
-    identity::{hash::IdentityPublicKeyHashMethodsV0, KeyID},
 };
 use dpp::{
     dashcore::{self, key::Secp256k1},
@@ -74,6 +71,10 @@ use dpp::{
     util::{hash::hash_double, strings::convert_to_homograph_safe_chars},
     version::PlatformVersion,
 };
+use dpp::{
+    data_contract::DataContract,
+    identity::{hash::IdentityPublicKeyHashMethodsV0, KeyID},
+};
 use dpp::{identity::Purpose, ProtocolError};
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use rs_dapi_client::{DapiRequestExecutor, RequestSettings};
@@ -85,6 +86,7 @@ use super::{
     insight::InsightError, set_clipboard, state::IdentityPrivateKeysMap, wallet::WalletError,
     AppStateUpdate, CompletedTaskPayload, Wallet,
 };
+use crate::backend::wallet::WalletError::Custom;
 use crate::backend::{error::Error, stringify_result_keep_item, AppState, BackendEvent, Task};
 use crate::config::Config;
 
@@ -122,6 +124,9 @@ pub enum IdentityTask {
     AddPrivateKeys(Vec<String>),
     ForgetIdentity(Identifier),
     RegisterDPNSName(Identity, String),
+
+    // Withdrawals Testing Tasks
+    WithdrawToWrongAddress,
 }
 
 impl AppState {
@@ -714,6 +719,28 @@ impl AppState {
                     app_state_update: AppStateUpdate::ForgotIdentity,
                 }
             }
+            IdentityTask::WithdrawToWrongAddress => {
+                let result = self
+                    .withdraw_from_identity_to_wrong_wallet(sdk, 20_000)
+                    .await;
+                let execution_result = result
+                    .as_ref()
+                    .map(|_| {
+                        format!("Successfully withdrew {} Dash from loaded identity. Refresh wallet and identity.", 20_000).into()
+                    })
+                    .map_err(|e| e.to_string());
+                match result {
+                    Ok(identity) => BackendEvent::TaskCompletedStateChange {
+                        task: Task::Identity(task),
+                        execution_result,
+                        app_state_update: AppStateUpdate::LoadedIdentity(identity),
+                    },
+                    Err(e) => BackendEvent::TaskCompleted {
+                        task: Task::Identity(task),
+                        execution_result: Err(e.to_string()),
+                    },
+                }
+            }
         }
     }
 
@@ -981,7 +1008,10 @@ impl AppState {
         Ok(identity_result)
     }
 
-    pub(crate) async fn refresh_loaded_identity_balance(&mut self, sdk: &Sdk) -> Result<(), Error> {
+    pub(crate) async fn _refresh_loaded_identity_balance(
+        &mut self,
+        sdk: &Sdk,
+    ) -> Result<(), Error> {
         if let Some(identity) = self.loaded_identity.blocking_lock().as_mut() {
             let balance = u64::fetch(
                 sdk,
@@ -1341,9 +1371,7 @@ impl AppState {
 
         let mut loaded_wallet = self.loaded_wallet.lock().await;
         let Some(wallet) = loaded_wallet.as_mut() else {
-            return Err(Error::IdentityRegistrationError(
-                "No wallet loaded".to_string(),
-            ));
+            return Err(Error::WalletError(Custom("No wallet loaded".to_string())));
         };
 
         let new_receive_address = wallet.receive_address();
@@ -1383,6 +1411,68 @@ impl AppState {
             .withdraw(
                 sdk,
                 Some(new_receive_address),
+                amount,
+                None,
+                None,
+                signer,
+                None,
+            )
+            .await?;
+
+        identity.set_balance(updated_identity_balance);
+
+        Ok(MutexGuard::map(identity_lock, |identity| {
+            identity.as_mut().expect("checked above")
+        })) // TODO
+    }
+
+    pub(crate) async fn withdraw_from_identity_to_wrong_wallet<'s>(
+        &'s self,
+        sdk: &Sdk,
+        amount: u64,
+    ) -> Result<MappedMutexGuard<'s, Identity>, Error> {
+        // First we need to make the transaction from the wallet
+        // We start by getting a lock on the wallet
+
+        let random_receive_address = Address::from_str("yMh5GoSb4kRa1L4SxW15Tn4GiFLAS4uzth")
+            .expect("Expected to convert str to Address")
+            .assume_checked();
+
+        let mut identity_lock = self.loaded_identity.lock().await;
+        let Some(identity) = identity_lock.as_mut() else {
+            return Err(Error::IdentityTopUpError("No identity loaded".to_string()));
+        };
+
+        let identity_public_key = identity
+            .get_first_public_key_matching(
+                KeyPurpose::TRANSFER,
+                KeySecurityLevel::full_range().into(),
+                KeyType::all_key_types().into(),
+                false,
+            )
+            .ok_or(Error::IdentityWithdrawalError(
+                "no withdrawal public key".to_string(),
+            ))?;
+
+        let loaded_identity_private_keys = self.known_identities_private_keys.lock().await;
+        let Some(private_key) =
+            loaded_identity_private_keys.get(&(identity.id(), identity_public_key.id()))
+        else {
+            return Err(Error::IdentityTopUpError(
+                "No private key for withdrawal".to_string(),
+            ));
+        };
+
+        let mut signer = SimpleSigner::default();
+
+        signer.add_key(identity_public_key.clone(), private_key.to_vec());
+
+        //// Platform steps
+
+        let updated_identity_balance = identity
+            .withdraw(
+                sdk,
+                Some(random_receive_address),
                 amount,
                 None,
                 None,
@@ -1482,7 +1572,7 @@ impl AppState {
         .await
     }
 
-    pub async fn retrieve_asset_lock_proof(
+    pub async fn _retrieve_asset_lock_proof(
         sdk: &Sdk,
         wallet: &mut Wallet,
         amount: u64,

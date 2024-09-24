@@ -244,7 +244,7 @@ pub enum WalletError {
     Insight(InsightError),
     #[error("not enough balance")]
     Balance,
-    #[error("Wallet error: {0}")]
+    #[error("{0}")]
     Custom(String),
 }
 
