@@ -2,7 +2,6 @@
 
 use chrono::Utc;
 use dashcore::hashes::Hash;
-use dpp::dashcore::address::Payload;
 use std::io::Write;
 use std::str::FromStr;
 use std::{
@@ -126,7 +125,8 @@ pub enum IdentityTask {
     RegisterDPNSName(Identity, String),
 
     // Withdrawals Testing Tasks
-    WithdrawToWrongAddress,
+    WithdrawToNoAddress,
+    SelectKeyTypeWithdrawal(String),
 }
 
 impl AppState {
@@ -281,17 +281,90 @@ impl AppState {
             }
             IdentityTask::WithdrawFromIdentity(amount) => {
                 let result = self.withdraw_from_identity(sdk, amount).await;
+                let amount_in_dash = amount as f64 / 100_000_000_000.00;
                 let execution_result = result
                     .as_ref()
-                    .map(|_| {
-                        format!("Successfully withdrew {} Dash from loaded identity. Refresh wallet and identity.", amount).into()
+                    .map(|identity_and_address_string| {
+                        format!(
+                            "Successfully withdrew {} Dash from loaded identity to address {}.",
+                            amount_in_dash, identity_and_address_string.1
+                        )
+                        .into()
                     })
                     .map_err(|e| e.to_string());
                 match result {
-                    Ok(identity) => BackendEvent::TaskCompletedStateChange {
+                    Ok(identity_and_address_string) => BackendEvent::TaskCompletedStateChange {
                         task: Task::Identity(task),
                         execution_result,
-                        app_state_update: AppStateUpdate::LoadedIdentity(identity),
+                        app_state_update: AppStateUpdate::WithdrewFromIdentityToAddress(
+                            identity_and_address_string,
+                        ),
+                    },
+                    Err(e) => BackendEvent::TaskCompleted {
+                        task: Task::Identity(task),
+                        execution_result: Err(e.to_string()),
+                    },
+                }
+            }
+            IdentityTask::WithdrawToNoAddress => {
+                let amount = 200_000; // credits
+                let amount_in_dash = amount as f64 / 100_000_000_000.00;
+                let result = self.withdraw_from_identity_to_no_address(sdk, amount).await;
+                let execution_result = result
+                    .as_ref()
+                    .map(|identity_and_address_string| {
+                        format!(
+                            "Successfully withdrew {} Dash from loaded identity to address {}.",
+                            amount_in_dash, identity_and_address_string.1
+                        )
+                        .into()
+                    })
+                    .map_err(|e| e.to_string());
+                match result {
+                    Ok(identity_and_address_string) => BackendEvent::TaskCompletedStateChange {
+                        task: Task::Identity(task),
+                        execution_result,
+                        app_state_update: AppStateUpdate::WithdrewFromIdentityToAddress(
+                            identity_and_address_string,
+                        ),
+                    },
+                    Err(e) => BackendEvent::TaskCompleted {
+                        task: Task::Identity(task),
+                        execution_result: Err(e.to_string()),
+                    },
+                }
+            }
+            IdentityTask::SelectKeyTypeWithdrawal(ref key_type_string) => {
+                let amount = 200_000; // credits
+                let amount_in_dash = amount as f64 / 100_000_000_000.00;
+                let key_type = match key_type_string.as_str() {
+                    "ECDSA_SECP256K1" => KeyType::ECDSA_SECP256K1,
+                    "BLS12_381" => KeyType::BLS12_381,
+                    "ECDSA_HASH160" => KeyType::ECDSA_HASH160,
+                    "BIP13_SCRIPT_HASH" => KeyType::BIP13_SCRIPT_HASH,
+                    "EDDSA_25519_HASH160" => KeyType::EDDSA_25519_HASH160,
+                    &_ => todo!(),
+                };
+                let result = self
+                    .withdraw_from_identity_custom_key_type(sdk, amount, key_type)
+                    .await;
+                let execution_result = result
+                    .as_ref()
+                    .map(|identity_and_address_string| {
+                        format!(
+                            "Successfully withdrew {} Dash from loaded identity to address {}.",
+                            amount_in_dash, identity_and_address_string.1
+                        )
+                        .into()
+                    })
+                    .map_err(|e| e.to_string());
+                match result {
+                    Ok(identity_and_address_string) => BackendEvent::TaskCompletedStateChange {
+                        task: Task::Identity(task),
+                        execution_result,
+                        app_state_update: AppStateUpdate::WithdrewFromIdentityToAddress(
+                            identity_and_address_string,
+                        ),
                     },
                     Err(e) => BackendEvent::TaskCompleted {
                         task: Task::Identity(task),
@@ -717,28 +790,6 @@ impl AppState {
                         "Successfully removed identity from TUI state".to_string(),
                     )),
                     app_state_update: AppStateUpdate::ForgotIdentity,
-                }
-            }
-            IdentityTask::WithdrawToWrongAddress => {
-                let result = self
-                    .withdraw_from_identity_to_wrong_wallet(sdk, 20_000)
-                    .await;
-                let execution_result = result
-                    .as_ref()
-                    .map(|_| {
-                        format!("Successfully withdrew {} Dash from loaded identity. Refresh wallet and identity.", 20_000).into()
-                    })
-                    .map_err(|e| e.to_string());
-                match result {
-                    Ok(identity) => BackendEvent::TaskCompletedStateChange {
-                        task: Task::Identity(task),
-                        execution_result,
-                        app_state_update: AppStateUpdate::LoadedIdentity(identity),
-                    },
-                    Err(e) => BackendEvent::TaskCompleted {
-                        task: Task::Identity(task),
-                        execution_result: Err(e.to_string()),
-                    },
                 }
             }
         }
@@ -1365,7 +1416,7 @@ impl AppState {
         &'s self,
         sdk: &Sdk,
         amount: u64,
-    ) -> Result<MappedMutexGuard<'s, Identity>, Error> {
+    ) -> Result<(MappedMutexGuard<'s, Identity>, String), Error> {
         // First we need to make the transaction from the wallet
         // We start by getting a lock on the wallet
 
@@ -1389,7 +1440,7 @@ impl AppState {
                 false,
             )
             .ok_or(Error::IdentityWithdrawalError(
-                "no withdrawal public key".to_string(),
+                "No matching withdrawal public key".to_string(),
             ))?;
 
         let loaded_identity_private_keys = self.known_identities_private_keys.lock().await;
@@ -1410,7 +1461,7 @@ impl AppState {
         let updated_identity_balance = identity
             .withdraw(
                 sdk,
-                Some(new_receive_address),
+                Some(new_receive_address.clone()),
                 amount,
                 None,
                 None,
@@ -1421,22 +1472,21 @@ impl AppState {
 
         identity.set_balance(updated_identity_balance);
 
-        Ok(MutexGuard::map(identity_lock, |identity| {
-            identity.as_mut().expect("checked above")
-        })) // TODO
+        Ok((
+            MutexGuard::map(identity_lock, |identity| {
+                identity.as_mut().expect("checked above")
+            }),
+            new_receive_address.to_string(),
+        ))
     }
 
-    pub(crate) async fn withdraw_from_identity_to_wrong_wallet<'s>(
+    pub(crate) async fn withdraw_from_identity_to_no_address<'s>(
         &'s self,
         sdk: &Sdk,
         amount: u64,
-    ) -> Result<MappedMutexGuard<'s, Identity>, Error> {
+    ) -> Result<(MappedMutexGuard<'s, Identity>, String), Error> {
         // First we need to make the transaction from the wallet
         // We start by getting a lock on the wallet
-
-        let random_receive_address = Address::from_str("yMh5GoSb4kRa1L4SxW15Tn4GiFLAS4uzth")
-            .expect("Expected to convert str to Address")
-            .assume_checked();
 
         let mut identity_lock = self.loaded_identity.lock().await;
         let Some(identity) = identity_lock.as_mut() else {
@@ -1451,7 +1501,68 @@ impl AppState {
                 false,
             )
             .ok_or(Error::IdentityWithdrawalError(
-                "no withdrawal public key".to_string(),
+                "No matching withdrawal public key".to_string(),
+            ))?;
+
+        let loaded_identity_private_keys = self.known_identities_private_keys.lock().await;
+        let Some(private_key) =
+            loaded_identity_private_keys.get(&(identity.id(), identity_public_key.id()))
+        else {
+            return Err(Error::IdentityTopUpError(
+                "No private key for withdrawal".to_string(),
+            ));
+        };
+
+        let mut signer = SimpleSigner::default();
+
+        signer.add_key(identity_public_key.clone(), private_key.to_vec());
+
+        //// Platform steps
+
+        let updated_identity_balance = identity
+            .withdraw(sdk, None, amount, None, None, signer, None)
+            .await?;
+
+        identity.set_balance(updated_identity_balance);
+
+        Ok((
+            MutexGuard::map(identity_lock, |identity| {
+                identity.as_mut().expect("checked above")
+            }),
+            "*empty address*".to_string(),
+        ))
+    }
+
+    pub(crate) async fn withdraw_from_identity_custom_key_type<'s>(
+        &'s self,
+        sdk: &Sdk,
+        amount: u64,
+        key_type: KeyType,
+    ) -> Result<(MappedMutexGuard<'s, Identity>, String), Error> {
+        // First we need to make the transaction from the wallet
+        // We start by getting a lock on the wallet
+
+        let mut loaded_wallet = self.loaded_wallet.lock().await;
+        let Some(wallet) = loaded_wallet.as_mut() else {
+            return Err(Error::WalletError(Custom("No wallet loaded".to_string())));
+        };
+
+        let new_receive_address = wallet.receive_address();
+
+        let mut identity_lock = self.loaded_identity.lock().await;
+        let Some(identity) = identity_lock.as_mut() else {
+            return Err(Error::IdentityTopUpError("No identity loaded".to_string()));
+        };
+
+        let identity_public_key = identity
+            .get_first_public_key_matching(
+                KeyPurpose::TRANSFER,
+                HashSet::from([KeySecurityLevel::CRITICAL]),
+                HashSet::from([key_type]),
+                false,
+            )
+            .ok_or(Error::IdentityWithdrawalError(
+                "No matching withdrawal public key".to_string(),
             ))?;
 
         let loaded_identity_private_keys = self.known_identities_private_keys.lock().await;
@@ -1472,7 +1583,7 @@ impl AppState {
         let updated_identity_balance = identity
             .withdraw(
                 sdk,
-                Some(random_receive_address),
+                Some(new_receive_address.clone()),
                 amount,
                 None,
                 None,
@@ -1483,9 +1594,12 @@ impl AppState {
 
         identity.set_balance(updated_identity_balance);
 
-        Ok(MutexGuard::map(identity_lock, |identity| {
-            identity.as_mut().expect("checked above")
-        })) // TODO
+        Ok((
+            MutexGuard::map(identity_lock, |identity| {
+                identity.as_mut().expect("checked above")
+            }),
+            new_receive_address.to_string(),
+        ))
     }
 
     pub(crate) async fn broadcast_and_retrieve_asset_lock(

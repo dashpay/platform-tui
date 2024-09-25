@@ -150,6 +150,16 @@ impl Ui {
                 .update_balance(IdentityBalance::from_credits(identity.balance()));
             redraw = true;
         }
+        if let Event::Backend(BackendEvent::AppStateUpdated(
+            AppStateUpdate::WithdrewFromIdentityToAddress(identity_and_address_string),
+        )) = &event
+        {
+            self.status_bar_state
+                .update_balance(IdentityBalance::from_credits(
+                    identity_and_address_string.0.balance(),
+                ));
+            redraw = true;
+        }
 
         // Identity cleared
         if let Event::Backend(

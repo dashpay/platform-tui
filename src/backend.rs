@@ -158,6 +158,7 @@ pub(crate) enum AppStateUpdate<'s> {
     DPNSNameRegistered(String),
     DPNSNameRegistrationFailed(String),
     ForgotIdentity,
+    WithdrewFromIdentityToAddress((MappedMutexGuard<'s, Identity>, String)),
 }
 
 /// Represents the result of completing a strategy.
