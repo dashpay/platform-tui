@@ -22,11 +22,12 @@ use tuirealm::{
 
 use super::wallet::WithdrawFromIdentityFormController;
 
-const COMMAND_KEYS: [ScreenCommandKey; 4] = [
+const COMMAND_KEYS: [ScreenCommandKey; 5] = [
     ScreenCommandKey::new("q", "Quit"),
     ScreenCommandKey::new("1", "Working withdrawal"),
     ScreenCommandKey::new("2", "Withdraw to empty address"),
     ScreenCommandKey::new("3", "Select key type withdrawal"),
+    ScreenCommandKey::new("4", "Withdraw to other wallet address"),
 ];
 
 pub(crate) struct WithdrawalsScreenController {
@@ -87,6 +88,13 @@ impl ScreenController for WithdrawalsScreenController {
                 code: Key::Char('3'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::Form(Box::new(SelectKeyTypeWithdrawalFormController::new())),
+            Event::Key(KeyEvent {
+                code: Key::Char('4'),
+                modifiers: KeyModifiers::NONE,
+            }) => ScreenFeedback::Task {
+                task: Task::Identity(IdentityTask::WithdrawToOtherWalletAddress),
+                block: true,
+            },
 
             // Backend Event Handling
             Event::Backend(BackendEvent::TaskCompletedStateChange {
@@ -129,6 +137,21 @@ impl ScreenController for WithdrawalsScreenController {
             }
             Event::Backend(BackendEvent::TaskCompleted {
                 task: Task::Identity(IdentityTask::SelectKeyTypeWithdrawal(_)),
+                execution_result,
+            }) => {
+                self.info = Info::new_from_result(execution_result);
+                ScreenFeedback::Redraw
+            }
+            Event::Backend(BackendEvent::TaskCompletedStateChange {
+                task: Task::Identity(IdentityTask::WithdrawToOtherWalletAddress),
+                execution_result,
+                app_state_update: AppStateUpdate::WithdrewFromIdentityToAddress(_),
+            }) => {
+                self.info = Info::new_from_result(execution_result);
+                ScreenFeedback::Redraw
+            }
+            Event::Backend(BackendEvent::TaskCompleted {
+                task: Task::Identity(IdentityTask::WithdrawToOtherWalletAddress),
                 execution_result,
             }) => {
                 self.info = Info::new_from_result(execution_result);

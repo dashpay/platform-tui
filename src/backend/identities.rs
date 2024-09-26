@@ -127,6 +127,7 @@ pub enum IdentityTask {
     // Withdrawals Testing Tasks
     WithdrawToNoAddress,
     SelectKeyTypeWithdrawal(String),
+    WithdrawToOtherWalletAddress,
 }
 
 impl AppState {
@@ -372,6 +373,36 @@ impl AppState {
                     },
                 }
             }
+            IdentityTask::WithdrawToOtherWalletAddress => {
+                let amount = 200_000; // credits
+                let amount_in_dash = amount as f64 / 100_000_000_000.00;
+                let result = self
+                    .withdraw_from_identity_to_other_wallet_address(sdk, amount)
+                    .await;
+                let execution_result = result
+                    .as_ref()
+                    .map(|identity_and_address_string| {
+                        format!(
+                            "Successfully withdrew {} Dash from loaded identity to address {}.",
+                            amount_in_dash, identity_and_address_string.1
+                        )
+                        .into()
+                    })
+                    .map_err(|e| e.to_string());
+                match result {
+                    Ok(identity_and_address_string) => BackendEvent::TaskCompletedStateChange {
+                        task: Task::Identity(task),
+                        execution_result,
+                        app_state_update: AppStateUpdate::WithdrewFromIdentityToAddress(
+                            identity_and_address_string,
+                        ),
+                    },
+                    Err(e) => BackendEvent::TaskCompleted {
+                        task: Task::Identity(task),
+                        execution_result: Err(e.to_string()),
+                    },
+                }
+            }
             IdentityTask::CopyIdentityId => {
                 if let Some(loaded_identity) = self.loaded_identity.lock().await.as_ref() {
                     let id = loaded_identity.id();
@@ -472,7 +503,7 @@ impl AppState {
 
                     let Some(identity_public_key) = identity.get_first_public_key_matching(
                         Purpose::TRANSFER,
-                        HashSet::from([SecurityLevel::CRITICAL]),
+                        SecurityLevel::full_range().into(),
                         HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
                         false,
                     ) else {
@@ -1599,6 +1630,68 @@ impl AppState {
                 identity.as_mut().expect("checked above")
             }),
             new_receive_address.to_string(),
+        ))
+    }
+
+    pub(crate) async fn withdraw_from_identity_to_other_wallet_address<'s>(
+        &'s self,
+        sdk: &Sdk,
+        amount: u64,
+    ) -> Result<(MappedMutexGuard<'s, Identity>, String), Error> {
+        let other_wallet_receive_address = Address::from_str("yfeTRX1yXSe9ELNjNDNWsUnNSCeAJ1govA")
+            .expect("Expected to convert str to Address")
+            .assume_checked();
+
+        let mut identity_lock = self.loaded_identity.lock().await;
+        let Some(identity) = identity_lock.as_mut() else {
+            return Err(Error::IdentityTopUpError("No identity loaded".to_string()));
+        };
+
+        let identity_public_key = identity
+            .get_first_public_key_matching(
+                KeyPurpose::TRANSFER,
+                SecurityLevel::full_range().into(),
+                KeyType::all_key_types().into(),
+                false,
+            )
+            .ok_or(Error::IdentityWithdrawalError(
+                "No matching withdrawal public key".to_string(),
+            ))?;
+
+        let loaded_identity_private_keys = self.known_identities_private_keys.lock().await;
+        let Some(private_key) =
+            loaded_identity_private_keys.get(&(identity.id(), identity_public_key.id()))
+        else {
+            return Err(Error::IdentityTopUpError(
+                "No private key for withdrawal".to_string(),
+            ));
+        };
+
+        let mut signer = SimpleSigner::default();
+
+        signer.add_key(identity_public_key.clone(), private_key.to_vec());
+
+        //// Platform steps
+
+        let updated_identity_balance = identity
+            .withdraw(
+                sdk,
+                Some(other_wallet_receive_address.clone()),
+                amount,
+                None,
+                None,
+                signer,
+                None,
+            )
+            .await?;
+
+        identity.set_balance(updated_identity_balance);
+
+        Ok((
+            MutexGuard::map(identity_lock, |identity| {
+                identity.as_mut().expect("checked above")
+            }),
+            other_wallet_receive_address.to_string(),
         ))
     }
 
