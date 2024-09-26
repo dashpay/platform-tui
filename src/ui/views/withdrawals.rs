@@ -22,12 +22,13 @@ use tuirealm::{
 
 use super::wallet::WithdrawFromIdentityFormController;
 
-const COMMAND_KEYS: [ScreenCommandKey; 5] = [
+const COMMAND_KEYS: [ScreenCommandKey; 6] = [
     ScreenCommandKey::new("q", "Quit"),
     ScreenCommandKey::new("1", "Working withdrawal"),
     ScreenCommandKey::new("2", "Withdraw to empty address"),
     ScreenCommandKey::new("3", "Select key type withdrawal"),
     ScreenCommandKey::new("4", "Withdraw to other wallet address"),
+    ScreenCommandKey::new("5", "Withdraw using master key"),
 ];
 
 pub(crate) struct WithdrawalsScreenController {
@@ -95,10 +96,17 @@ impl ScreenController for WithdrawalsScreenController {
                 task: Task::Identity(IdentityTask::WithdrawToOtherWalletAddress),
                 block: true,
             },
+            Event::Key(KeyEvent {
+                code: Key::Char('5'),
+                modifiers: KeyModifiers::NONE,
+            }) => ScreenFeedback::Task {
+                task: Task::Identity(IdentityTask::WithdrawWithMasterKey),
+                block: true,
+            },
 
             // Backend Event Handling
             Event::Backend(BackendEvent::TaskCompletedStateChange {
-                task: Task::Identity(IdentityTask::WithdrawFromIdentity(_)),
+                task: Task::Identity(_),
                 execution_result,
                 app_state_update: AppStateUpdate::WithdrewFromIdentityToAddress(_),
             }) => {
@@ -106,52 +114,7 @@ impl ScreenController for WithdrawalsScreenController {
                 ScreenFeedback::Redraw
             }
             Event::Backend(BackendEvent::TaskCompleted {
-                task: Task::Identity(IdentityTask::WithdrawFromIdentity(_)),
-                execution_result,
-            }) => {
-                self.info = Info::new_from_result(execution_result);
-                ScreenFeedback::Redraw
-            }
-            Event::Backend(BackendEvent::TaskCompletedStateChange {
-                task: Task::Identity(IdentityTask::WithdrawToNoAddress),
-                execution_result,
-                app_state_update: AppStateUpdate::WithdrewFromIdentityToAddress(_),
-            }) => {
-                self.info = Info::new_from_result(execution_result);
-                ScreenFeedback::Redraw
-            }
-            Event::Backend(BackendEvent::TaskCompleted {
-                task: Task::Identity(IdentityTask::WithdrawToNoAddress),
-                execution_result,
-            }) => {
-                self.info = Info::new_from_result(execution_result);
-                ScreenFeedback::Redraw
-            }
-            Event::Backend(BackendEvent::TaskCompletedStateChange {
-                task: Task::Identity(IdentityTask::SelectKeyTypeWithdrawal(_)),
-                execution_result,
-                app_state_update: AppStateUpdate::WithdrewFromIdentityToAddress(_),
-            }) => {
-                self.info = Info::new_from_result(execution_result);
-                ScreenFeedback::Redraw
-            }
-            Event::Backend(BackendEvent::TaskCompleted {
-                task: Task::Identity(IdentityTask::SelectKeyTypeWithdrawal(_)),
-                execution_result,
-            }) => {
-                self.info = Info::new_from_result(execution_result);
-                ScreenFeedback::Redraw
-            }
-            Event::Backend(BackendEvent::TaskCompletedStateChange {
-                task: Task::Identity(IdentityTask::WithdrawToOtherWalletAddress),
-                execution_result,
-                app_state_update: AppStateUpdate::WithdrewFromIdentityToAddress(_),
-            }) => {
-                self.info = Info::new_from_result(execution_result);
-                ScreenFeedback::Redraw
-            }
-            Event::Backend(BackendEvent::TaskCompleted {
-                task: Task::Identity(IdentityTask::WithdrawToOtherWalletAddress),
+                task: Task::Identity(_),
                 execution_result,
             }) => {
                 self.info = Info::new_from_result(execution_result);
