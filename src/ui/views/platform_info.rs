@@ -123,8 +123,11 @@ impl ScreenController for PlatformInfoScreenController {
 
                             // Iterate through the BTreeMap and append each key and the latest block height to the result
                             for (pro_tx_hash, status) in info_map.iter() {
-                                let line =
-                                    format!("{} | {}\n", pro_tx_hash, status.latest_block_height);
+                                let line = format!(
+                                    "{} | {}\n",
+                                    pro_tx_hash,
+                                    status.latest_block_height.unwrap_or_default()
+                                );
                                 display_string.push_str(&line);
                             }
                             display_string

@@ -211,7 +211,10 @@ pub(super) async fn run_platform_task<'s>(sdk: &Sdk, task: PlatformInfoTask) -> 
                     match EvonodeStatus::fetch_unproved_with_settings(&sdk, node.clone(), settings)
                         .await
                     {
-                        Ok((Some(status), _)) => Some((status.pro_tx_hash.encode_hex(), status)),
+                        Ok((Some(status), _)) => {
+                            let protx: String = status.pro_tx_hash.unwrap_or_default().encode_hex();
+                            Some((protx, status))
+                        }
                         Ok((None, _)) => {
                             tracing::warn!(
                                 ?node,
