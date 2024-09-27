@@ -24,11 +24,10 @@ use dash_sdk::Sdk;
 use dpp::{
     document::Document,
     identity::accessors::IdentityGettersV0,
-    node::status::EvonodeStatus,
     prelude::{Identifier, Identity},
     voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll,
 };
-use drive_proof_verifier::types::{Contenders, ContestedResources};
+use drive_proof_verifier::types::{Contenders, ContestedResources, EvonodeStatus};
 use serde::Serialize;
 pub(crate) use state::AppState;
 use strategy_tests::Strategy;

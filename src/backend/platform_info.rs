@@ -1,19 +1,20 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
+use super::CompletedTaskPayload;
+use crate::backend::{as_json_string, BackendEvent, Task};
 use chrono::{prelude::*, LocalResult};
 use chrono_humanize::{Accuracy, HumanTime, Tense};
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
+use dash_sdk::platform::types::evonode::EvoNode;
+use dash_sdk::platform::FetchUnproved;
 use dash_sdk::sdk::prettify_proof;
+use dash_sdk::RequestSettings;
 use dash_sdk::{
     platform::{Fetch, FetchMany, LimitQuery},
     Sdk,
 };
-use dash_sdk::{RequestSettings, SdkBuilder};
-use dpp::node::status::v0::EvonodeStatusV0Getters;
-use dpp::node::status::EvonodeStatus;
-use dpp::version::PlatformVersion;
 use dpp::{
     block::{
         epoch::EpochIndex,
@@ -21,14 +22,10 @@ use dpp::{
     },
     version::ProtocolVersionVoteCount,
 };
+use drive_proof_verifier::types::EvonodeStatus;
 use futures::future::join_all;
-use rs_dapi_client::AddressList;
+use hex::ToHex;
 use tokio::task;
-
-use crate::backend::{as_json_string, BackendEvent, Task};
-use crate::config::Config;
-
-use super::CompletedTaskPayload;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum PlatformInfoTask {
@@ -159,6 +156,7 @@ pub(super) async fn run_platform_task<'s>(sdk: &Sdk, task: PlatformInfoTask) -> 
         PlatformInfoTask::FetchCurrentVersionVotingState => {
             match ProtocolVersionVoteCount::fetch_many(&sdk, ()).await {
                 Ok(votes) => {
+                    let votes: BTreeMap<u32, Option<u64>> = votes;
                     let votes_info = votes
                         .into_iter()
                         .map(|(key, value)| {
@@ -170,7 +168,7 @@ pub(super) async fn run_platform_task<'s>(sdk: &Sdk, task: PlatformInfoTask) -> 
                                     .unwrap_or("No votes".to_string())
                             )
                         })
-                        .collect::<Vec<_>>()
+                        .collect::<Vec<String>>()
                         .join("\n");
 
                     BackendEvent::TaskCompleted {
@@ -197,8 +195,7 @@ pub(super) async fn run_platform_task<'s>(sdk: &Sdk, task: PlatformInfoTask) -> 
                 }
             };
 
-            let config = Config::load();
-            let request_settings = RequestSettings {
+            let settings = RequestSettings {
                 connect_timeout: Some(Duration::from_secs(10)),
                 timeout: Some(Duration::from_secs(10)),
                 retries: None,
@@ -207,35 +204,20 @@ pub(super) async fn run_platform_task<'s>(sdk: &Sdk, task: PlatformInfoTask) -> 
 
             let mut handles = Vec::new();
 
-            for address in address_list.addresses() {
-                let address = address.uri().clone();
-                let config = config.clone();
-                let request_settings = request_settings.clone();
-                let mut single_address_list = AddressList::new();
-                single_address_list.add_uri(address);
-
+            for address in address_list {
+                let sdk = sdk.clone();
                 let handle = task::spawn(async move {
-                    let sdk = SdkBuilder::new(single_address_list.clone())
-                        .with_version(PlatformVersion::latest())
-                        .with_core(
-                            &config.core_host,
-                            config.core_rpc_port,
-                            &config.core_rpc_user,
-                            &config.core_rpc_password,
-                        )
-                        .with_settings(request_settings)
-                        .with_network(config.core_network())
-                        .build()
-                        .expect("expected to build sdk");
-
-                    match EvonodeStatus::fetch(&sdk, ()).await {
-                        Ok(result) => {
-                            if let Some(status) = result {
-                                Some((status.pro_tx_hash(), status))
-                            } else {
-                                tracing::info!("None result from fetching EvonodeStatus");
-                                None
-                            }
+                    let node = EvoNode::new(address);
+                    match EvonodeStatus::fetch_unproved_with_settings(&sdk, node.clone(), settings)
+                        .await
+                    {
+                        Ok((Some(status), _)) => Some((status.pro_tx_hash.encode_hex(), status)),
+                        Ok((None, _)) => {
+                            tracing::warn!(
+                                ?node,
+                                "no status found for node; this should not happen"
+                            );
+                            None
                         }
                         Err(e) => {
                             tracing::debug!("Error fetching node status: {e}");

@@ -1,6 +1,5 @@
 //! Platform info views.
 
-use dpp::node::status::v0::EvonodeStatusV0Getters;
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
     tui::prelude::Rect,
@@ -125,7 +124,7 @@ impl ScreenController for PlatformInfoScreenController {
                             // Iterate through the BTreeMap and append each key and the latest block height to the result
                             for (pro_tx_hash, status) in info_map.iter() {
                                 let line =
-                                    format!("{} | {}\n", pro_tx_hash, status.latest_block_height());
+                                    format!("{} | {}\n", pro_tx_hash, status.latest_block_height);
                                 display_string.push_str(&line);
                             }
                             display_string
