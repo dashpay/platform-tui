@@ -22,7 +22,7 @@ use dpp::{
     },
     version::ProtocolVersionVoteCount,
 };
-use drive_proof_verifier::types::EvonodeStatus;
+use drive_proof_verifier::types::EvoNodeStatus;
 use futures::future::join_all;
 use hex::ToHex;
 use tokio::task;
@@ -208,11 +208,16 @@ pub(super) async fn run_platform_task<'s>(sdk: &Sdk, task: PlatformInfoTask) -> 
                 let sdk = sdk.clone();
                 let handle = task::spawn(async move {
                     let node = EvoNode::new(address);
-                    match EvonodeStatus::fetch_unproved_with_settings(&sdk, node.clone(), settings)
+                    match EvoNodeStatus::fetch_unproved_with_settings(&sdk, node.clone(), settings)
                         .await
                     {
                         Ok((Some(status), _)) => {
-                            let protx: String = status.pro_tx_hash.unwrap_or_default().encode_hex();
+                            let protx: String = status
+                                .node
+                                .pro_tx_hash
+                                .as_ref()
+                                .map(|h| h.encode_hex())
+                                .unwrap_or_default();
                             Some((protx, status))
                         }
                         Ok((None, _)) => {

@@ -27,7 +27,7 @@ use dpp::{
     prelude::{Identifier, Identity},
     voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll,
 };
-use drive_proof_verifier::types::{Contenders, ContestedResources, EvonodeStatus};
+use drive_proof_verifier::types::{Contenders, ContestedResources, EvoNodeStatus};
 use serde::Serialize;
 pub(crate) use state::AppState;
 use strategy_tests::Strategy;
@@ -83,7 +83,7 @@ pub enum CompletedTaskPayload {
     ContestedResources(ContestedResources),
     ContestedResourceContenders(ContestedDocumentResourceVotePoll, Contenders),
     DocumentsAndContestedResources(BTreeMap<Identifier, Option<Document>>, ContestedResources),
-    EvonodeStatuses(BTreeMap<String, EvonodeStatus>),
+    EvonodeStatuses(BTreeMap<String, EvoNodeStatus>),
 }
 
 impl From<String> for CompletedTaskPayload {

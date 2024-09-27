@@ -125,8 +125,7 @@ impl ScreenController for PlatformInfoScreenController {
                             for (pro_tx_hash, status) in info_map.iter() {
                                 let line = format!(
                                     "{} | {}\n",
-                                    pro_tx_hash,
-                                    status.latest_block_height.unwrap_or_default()
+                                    pro_tx_hash, status.chain.latest_block_height
                                 );
                                 display_string.push_str(&line);
                             }
