@@ -1078,6 +1078,7 @@ dependencies = [
 [[package]]
 name = "dapi-grpc"
 version = "1.4.0-dev.1"
+source = "git+https://github.com/dashpay/platform?branch=feat/get-node-status-in-sdk#baa706fa72534ff898c6b8b8c13f1e46a7a86b4b"
 dependencies = [
  "dapi-grpc-macros",
  "futures-core",
@@ -1094,6 +1095,7 @@ dependencies = [
 [[package]]
 name = "dapi-grpc-macros"
 version = "1.4.0-dev.1"
+source = "git+https://github.com/dashpay/platform?branch=feat/get-node-status-in-sdk#baa706fa72534ff898c6b8b8c13f1e46a7a86b4b"
 dependencies = [
  "heck 0.5.0",
  "quote",
@@ -1138,6 +1140,7 @@ dependencies = [
 [[package]]
 name = "dash-sdk"
 version = "1.4.0-dev.1"
+source = "git+https://github.com/dashpay/platform?branch=feat/get-node-status-in-sdk#baa706fa72534ff898c6b8b8c13f1e46a7a86b4b"
 dependencies = [
  "arc-swap",
  "async-trait",
@@ -1243,6 +1246,7 @@ dependencies = [
 [[package]]
 name = "dashpay-contract"
 version = "1.4.0-dev.1"
+source = "git+https://github.com/dashpay/platform?branch=feat/get-node-status-in-sdk#baa706fa72534ff898c6b8b8c13f1e46a7a86b4b"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -1253,6 +1257,7 @@ dependencies = [
 [[package]]
 name = "data-contracts"
 version = "1.4.0-dev.1"
+source = "git+https://github.com/dashpay/platform?branch=feat/get-node-status-in-sdk#baa706fa72534ff898c6b8b8c13f1e46a7a86b4b"
 dependencies = [
  "dashpay-contract",
  "dpns-contract",
@@ -1354,6 +1359,7 @@ checksum = "75b325c5dbd37f80359721ad39aca5a29fb04c89279657cffdda8736d0c0b9d2"
 [[package]]
 name = "dpns-contract"
 version = "1.4.0-dev.1"
+source = "git+https://github.com/dashpay/platform?branch=feat/get-node-status-in-sdk#baa706fa72534ff898c6b8b8c13f1e46a7a86b4b"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -1364,6 +1370,7 @@ dependencies = [
 [[package]]
 name = "dpp"
 version = "1.4.0-dev.1"
+source = "git+https://github.com/dashpay/platform?branch=feat/get-node-status-in-sdk#baa706fa72534ff898c6b8b8c13f1e46a7a86b4b"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1411,6 +1418,7 @@ dependencies = [
 [[package]]
 name = "drive"
 version = "1.4.0-dev.1"
+source = "git+https://github.com/dashpay/platform?branch=feat/get-node-status-in-sdk#baa706fa72534ff898c6b8b8c13f1e46a7a86b4b"
 dependencies = [
  "arc-swap",
  "base64 0.22.1",
@@ -1448,6 +1456,7 @@ dependencies = [
 [[package]]
 name = "drive-proof-verifier"
 version = "1.4.0-dev.1"
+source = "git+https://github.com/dashpay/platform?branch=feat/get-node-status-in-sdk#baa706fa72534ff898c6b8b8c13f1e46a7a86b4b"
 dependencies = [
  "bincode",
  "dapi-grpc",
@@ -1668,6 +1677,7 @@ checksum = "e8c02a5121d4ea3eb16a80748c74f5549a5665e4c21333c6098f283870fbdea6"
 [[package]]
 name = "feature-flags-contract"
 version = "1.4.0-dev.1"
+source = "git+https://github.com/dashpay/platform?branch=feat/get-node-status-in-sdk#baa706fa72534ff898c6b8b8c13f1e46a7a86b4b"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -2592,6 +2602,7 @@ dependencies = [
 [[package]]
 name = "json-schema-compatibility-validator"
 version = "1.4.0-dev.1"
+source = "git+https://github.com/dashpay/platform?branch=feat/get-node-status-in-sdk#baa706fa72534ff898c6b8b8c13f1e46a7a86b4b"
 dependencies = [
  "json-patch",
  "once_cell",
@@ -2810,6 +2821,7 @@ dependencies = [
 [[package]]
 name = "masternode-reward-shares-contract"
 version = "1.4.0-dev.1"
+source = "git+https://github.com/dashpay/platform?branch=feat/get-node-status-in-sdk#baa706fa72534ff898c6b8b8c13f1e46a7a86b4b"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -3441,6 +3453,7 @@ checksum = "953ec861398dccce10c670dfeaf3ec4911ca479e9c02154b3a215178c5f566f2"
 [[package]]
 name = "platform-serialization"
 version = "1.4.0-dev.1"
+source = "git+https://github.com/dashpay/platform?branch=feat/get-node-status-in-sdk#baa706fa72534ff898c6b8b8c13f1e46a7a86b4b"
 dependencies = [
  "bincode",
  "platform-version",
@@ -3449,6 +3462,7 @@ dependencies = [
 [[package]]
 name = "platform-serialization-derive"
 version = "1.4.0-dev.1"
+source = "git+https://github.com/dashpay/platform?branch=feat/get-node-status-in-sdk#baa706fa72534ff898c6b8b8c13f1e46a7a86b4b"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3459,6 +3473,7 @@ dependencies = [
 [[package]]
 name = "platform-value"
 version = "1.4.0-dev.1"
+source = "git+https://github.com/dashpay/platform?branch=feat/get-node-status-in-sdk#baa706fa72534ff898c6b8b8c13f1e46a7a86b4b"
 dependencies = [
  "base64 0.22.1",
  "bincode",
@@ -3480,6 +3495,7 @@ dependencies = [
 [[package]]
 name = "platform-version"
 version = "1.4.0-dev.1"
+source = "git+https://github.com/dashpay/platform?branch=feat/get-node-status-in-sdk#baa706fa72534ff898c6b8b8c13f1e46a7a86b4b"
 dependencies = [
  "bincode",
  "grovedb-version",
@@ -3491,6 +3507,7 @@ dependencies = [
 [[package]]
 name = "platform-versioning"
 version = "1.4.0-dev.1"
+source = "git+https://github.com/dashpay/platform?branch=feat/get-node-status-in-sdk#baa706fa72534ff898c6b8b8c13f1e46a7a86b4b"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4050,6 +4067,7 @@ dependencies = [
 [[package]]
 name = "rs-dapi-client"
 version = "1.4.0-dev.1"
+source = "git+https://github.com/dashpay/platform?branch=feat/get-node-status-in-sdk#baa706fa72534ff898c6b8b8c13f1e46a7a86b4b"
 dependencies = [
  "backon",
  "chrono",
@@ -4560,6 +4578,7 @@ checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
 [[package]]
 name = "simple-signer"
 version = "1.4.0-dev.1"
+source = "git+https://github.com/dashpay/platform?branch=feat/get-node-status-in-sdk#baa706fa72534ff898c6b8b8c13f1e46a7a86b4b"
 dependencies = [
  "base64 0.22.1",
  "bincode",
@@ -4712,6 +4731,7 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 [[package]]
 name = "strategy-tests"
 version = "1.4.0-dev.1"
+source = "git+https://github.com/dashpay/platform?branch=feat/get-node-status-in-sdk#baa706fa72534ff898c6b8b8c13f1e46a7a86b4b"
 dependencies = [
  "bincode",
  "dpp",
@@ -6029,6 +6049,7 @@ dependencies = [
 [[package]]
 name = "withdrawals-contract"
 version = "1.4.0-dev.1"
+source = "git+https://github.com/dashpay/platform?branch=feat/get-node-status-in-sdk#baa706fa72534ff898c6b8b8c13f1e46a7a86b4b"
 dependencies = [
  "num_enum",
  "platform-value",
