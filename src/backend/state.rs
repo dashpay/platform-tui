@@ -432,7 +432,11 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
 }
 
 impl AppState {
-    pub async fn load(insight: &InsightAPIClient, core_client: &Client, config: &Config) -> AppState {
+    pub async fn load(
+        insight: &InsightAPIClient,
+        core_client: &Client,
+        config: &Config,
+    ) -> AppState {
         let path = config.state_file_path();
 
         let Ok(read_result) = fs::read(path.clone()) else {
@@ -440,7 +444,13 @@ impl AppState {
             let state = AppState::default();
             if let Some(private_key) = &config.wallet_private_key {
                 let wallet_state = &state.loaded_wallet;
-                add_wallet_by_private_key_as_string(&wallet_state, private_key, insight, core_client).await;
+                add_wallet_by_private_key_as_string(
+                    &wallet_state,
+                    private_key,
+                    insight,
+                    core_client,
+                )
+                .await;
             }
             return state;
         };
@@ -467,7 +477,13 @@ impl AppState {
             let state = AppState::default();
             if let Some(private_key) = &config.wallet_private_key {
                 let wallet_state = &state.loaded_wallet;
-                add_wallet_by_private_key_as_string(&wallet_state, private_key, insight, core_client).await;
+                add_wallet_by_private_key_as_string(
+                    &wallet_state,
+                    private_key,
+                    insight,
+                    core_client,
+                )
+                .await;
             }
             return state;
         };
@@ -475,7 +491,8 @@ impl AppState {
         // Load wallet by private key, overriding the state file
         if let Some(private_key) = &config.wallet_private_key {
             let wallet_state = &app_state.loaded_wallet;
-            add_wallet_by_private_key_as_string(&wallet_state, private_key, insight, core_client).await;
+            add_wallet_by_private_key_as_string(&wallet_state, private_key, insight, core_client)
+                .await;
         }
 
         // Load supporting contracts

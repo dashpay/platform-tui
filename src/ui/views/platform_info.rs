@@ -6,7 +6,11 @@ use tuirealm::{
     Frame,
 };
 
-use crate::backend::platform_info::PlatformInfoTask::{FetchCurrentValidatorSetInfo, FetchTotalCreditsOnPlatform};
+use crate::backend::platform_info::PlatformInfoTask::{
+    FetchCurrentValidatorSetInfo, FetchCurrentValidatorSetInfoAndShowQueue,
+    FetchCurrentValidatorSetInfoAndShowReducedQueue, FetchCurrentWithdrawalsInQueue,
+    FetchTotalCreditsOnPlatform,
+};
 use crate::ui::form::parsers::DocumentQueryTextInputParser;
 use crate::{
     backend::{
@@ -28,13 +32,16 @@ use crate::{
     Event,
 };
 
-const COMMAND_KEYS: [ScreenCommandKey; 6] = [
+const COMMAND_KEYS: [ScreenCommandKey; 9] = [
     ScreenCommandKey::new("q", "Back to Main"),
     ScreenCommandKey::new("c", "Fetch current Platform epoch info"),
     ScreenCommandKey::new("m", "Fetch total credits on platform"),
     ScreenCommandKey::new("i", "Fetch previous Platform epoch info"),
     ScreenCommandKey::new("v", "Current version voting"),
     ScreenCommandKey::new("p", "Current proposer and validator set info"),
+    ScreenCommandKey::new("k", "View Proposer Queues"),
+    ScreenCommandKey::new("l", "View Reduced Proposer Queues"),
+    ScreenCommandKey::new("w", "View Withdrawals in Queue"),
 ];
 
 pub(crate) struct PlatformInfoScreenController {
@@ -96,10 +103,34 @@ impl ScreenController for PlatformInfoScreenController {
             },
 
             Event::Key(KeyEvent {
-                           code: Key::Char('p'),
-                           modifiers: KeyModifiers::NONE,
-                       }) => ScreenFeedback::Task {
+                code: Key::Char('p'),
+                modifiers: KeyModifiers::NONE,
+            }) => ScreenFeedback::Task {
                 task: Task::PlatformInfo(FetchCurrentValidatorSetInfo),
+                block: true,
+            },
+
+            Event::Key(KeyEvent {
+                code: Key::Char('k'),
+                modifiers: KeyModifiers::NONE,
+            }) => ScreenFeedback::Task {
+                task: Task::PlatformInfo(FetchCurrentValidatorSetInfoAndShowQueue),
+                block: true,
+            },
+
+            Event::Key(KeyEvent {
+                code: Key::Char('l'),
+                modifiers: KeyModifiers::NONE,
+            }) => ScreenFeedback::Task {
+                task: Task::PlatformInfo(FetchCurrentValidatorSetInfoAndShowReducedQueue),
+                block: true,
+            },
+
+            Event::Key(KeyEvent {
+                code: Key::Char('w'),
+                modifiers: KeyModifiers::NONE,
+            }) => ScreenFeedback::Task {
+                task: Task::PlatformInfo(FetchCurrentWithdrawalsInQueue),
                 block: true,
             },
 

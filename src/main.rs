@@ -2,8 +2,8 @@ use std::{fs::File, panic, time::Duration};
 
 use crossterm::event::{Event as TuiEvent, EventStream};
 use dapi_grpc::core::v0::core_client::CoreClient;
-use dash_sdk::{RequestSettings, sdk, SdkBuilder};
 use dash_sdk::dashcore_rpc::{Auth, Client};
+use dash_sdk::{sdk, RequestSettings, SdkBuilder};
 use dpp::{identity::accessors::IdentityGettersV0, version::PlatformVersion};
 use futures::{future::OptionFuture, select, FutureExt, StreamExt};
 use rs_platform_explorer::{
@@ -85,8 +85,12 @@ async fn main() {
     let addr = format!("http://{}:{}", &config.core_host, config.core_rpc_port);
     let core = Client::new(
         &addr,
-        Auth::UserPass(config.core_rpc_user.to_string(), config.core_rpc_password.to_string()),
-    ).expect("expected core client");
+        Auth::UserPass(
+            config.core_rpc_user.to_string(),
+            config.core_rpc_password.to_string(),
+        ),
+    )
+    .expect("expected core client");
 
     let insight = InsightAPIClient::new(config.insight_api_uri());
 

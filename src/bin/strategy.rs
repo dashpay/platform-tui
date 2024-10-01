@@ -1,4 +1,5 @@
 use clap::{ArgAction, Parser};
+use dash_sdk::dashcore_rpc::{Auth, Client};
 use dash_sdk::{RequestSettings, SdkBuilder};
 use dpp::{identity::accessors::IdentityGettersV0, version::PlatformVersion};
 use rs_platform_explorer::{
@@ -13,7 +14,6 @@ use rs_platform_explorer::{
 };
 use std::os::fd::IntoRawFd;
 use std::{fs::File, panic, time::Duration};
-use dash_sdk::dashcore_rpc::{Auth, Client};
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::EnvFilter;
 
@@ -139,8 +139,12 @@ async fn main() {
     let addr = format!("http://{}:{}", &config.core_host, config.core_rpc_port);
     let core = Client::new(
         &addr,
-        Auth::UserPass(config.core_rpc_user.to_string(), config.core_rpc_password.to_string()),
-    ).expect("expected core client");
+        Auth::UserPass(
+            config.core_rpc_user.to_string(),
+            config.core_rpc_password.to_string(),
+        ),
+    )
+    .expect("expected core client");
 
     let insight = InsightAPIClient::new(config.insight_api_uri());
 
@@ -239,8 +243,12 @@ async fn main() {
     let addr = format!("http://{}:{}", &config.core_host, config.core_rpc_port);
     let core = Client::new(
         &addr,
-        Auth::UserPass(config.core_rpc_user.to_string(), config.core_rpc_password.to_string()),
-    ).expect("expected core client");
+        Auth::UserPass(
+            config.core_rpc_user.to_string(),
+            config.core_rpc_password.to_string(),
+        ),
+    )
+    .expect("expected core client");
 
     if let Some(test_name) = args.test {
         let block_mode = if args.second { false } else { true };

@@ -15,8 +15,8 @@ use dapi_grpc::core::v0::{
     BroadcastTransactionRequest, BroadcastTransactionResponse, GetTransactionRequest,
     GetTransactionResponse,
 };
-use dash_sdk::{RequestSettings, Sdk};
 use dash_sdk::dashcore_rpc::{Client, RpcApi};
+use dash_sdk::{RequestSettings, Sdk};
 use dpp::dashcore::secp256k1::SecretKey;
 use dpp::dashcore::{
     hashes::Hash,
@@ -120,7 +120,14 @@ pub(super) async fn run_wallet_task<'s>(
 ) -> BackendEvent<'s> {
     match task {
         WalletTask::AddByPrivateKey(ref private_key) => {
-            match add_wallet_by_private_key_as_string(&wallet_state, private_key, insight, core_client).await {
+            match add_wallet_by_private_key_as_string(
+                &wallet_state,
+                private_key,
+                insight,
+                core_client,
+            )
+            .await
+            {
                 Ok(_) => {
                     let wallet_guard = wallet_state.lock().await;
                     let loaded_wallet_update = MutexGuard::map(wallet_guard, |opt| {
@@ -220,7 +227,10 @@ pub(super) async fn run_wallet_task<'s>(
             if let Some(wallet) = &mut *wallet_guard {
                 match wallet {
                     Wallet::SingleKeyWallet(sk_wallet) => {
-                        match sk_wallet.split_utxos(sdk, count as usize, insight, core_client).await {
+                        match sk_wallet
+                            .split_utxos(sdk, count as usize, insight, core_client)
+                            .await
+                        {
                             Ok(_) => BackendEvent::TaskCompleted {
                                 task: Task::Wallet(task),
                                 execution_result: Ok("Split UTXOs".into()),
@@ -626,9 +636,7 @@ impl SingleKeyWallet {
         core_client: &Client,
     ) -> Result<HashMap<OutPoint, TxOut>, String> {
         // First, let's try to get UTXOs from the RPC client using `list_unspent`.
-        match core_client
-            .list_unspent(Some(1), None, Some(&[&self.address]), None, None)
-        {
+        match core_client.list_unspent(Some(1), None, Some(&[&self.address]), None, None) {
             Ok(utxos) => {
                 // Test log statement
                 tracing::info!("{:?} utxos", utxos.len());
@@ -656,7 +664,11 @@ impl SingleKeyWallet {
                         self.utxos = utxos.clone();
                         Ok(utxos)
                     }
-                    Err(err) => Err(format!("First error from Core: {}, Second Error from Insight: {}", first_error.to_string(), err.to_string())),
+                    Err(err) => Err(format!(
+                        "First error from Core: {}, Second Error from Insight: {}",
+                        first_error.to_string(),
+                        err.to_string()
+                    )),
                 }
             }
         }

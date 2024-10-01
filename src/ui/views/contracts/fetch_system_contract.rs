@@ -77,9 +77,9 @@ impl ScreenController for FetchSystemContractScreenController {
             },
 
             Event::Key(KeyEvent {
-                           code: Key::Char('w'),
-                           modifiers: KeyModifiers::NONE,
-                       }) => ScreenFeedback::Task {
+                code: Key::Char('w'),
+                modifiers: KeyModifiers::NONE,
+            }) => ScreenFeedback::Task {
                 task: Task::Contract(ContractTask::FetchWithdrawalsContract),
                 block: true,
             },

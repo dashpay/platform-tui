@@ -454,10 +454,10 @@ impl ScreenController for DpnsUsernamesScreenController {
                 ScreenFeedback::Redraw
             }
             Event::Backend(BackendEvent::TaskCompletedStateChange {
-                               task: Task::Contract(ContractTask::FetchWithdrawalsContract),
-                               execution_result,
-                               app_state_update,
-                           }) => {
+                task: Task::Contract(ContractTask::FetchWithdrawalsContract),
+                execution_result,
+                app_state_update,
+            }) => {
                 if execution_result.is_ok() {
                     match app_state_update {
                         crate::backend::AppStateUpdate::KnownContracts(contracts_lock) => {

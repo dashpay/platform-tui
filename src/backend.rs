@@ -195,7 +195,12 @@ pub struct Backend<'a> {
 }
 
 impl<'a> Backend<'a> {
-    pub async fn new(sdk: &'a Sdk, insight: InsightAPIClient, core_client: Client, config: Config) -> Backend<'a> {
+    pub async fn new(
+        sdk: &'a Sdk,
+        insight: InsightAPIClient,
+        core_client: Client,
+        config: Config,
+    ) -> Backend<'a> {
         Backend {
             sdk,
             app_state: AppState::load(&insight, &core_client, &config).await,

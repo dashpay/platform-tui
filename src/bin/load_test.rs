@@ -12,6 +12,7 @@ use std::{
 };
 
 use clap::Parser;
+use dash_sdk::dashcore_rpc::{Auth, Client};
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::{
     platform::{
@@ -20,7 +21,6 @@ use dash_sdk::{
     },
     Sdk, SdkBuilder,
 };
-use dash_sdk::dashcore_rpc::{Auth, Client};
 use dpp::prelude::IdentityNonce;
 use dpp::state_transition::StateTransition;
 use dpp::{
@@ -164,8 +164,12 @@ async fn main() {
     let addr = format!("http://{}:{}", &config.core_host, config.core_rpc_port);
     let core = Client::new(
         &addr,
-        Auth::UserPass(config.core_rpc_user.to_string(), config.core_rpc_password.to_string()),
-    ).expect("expected core client");
+        Auth::UserPass(
+            config.core_rpc_user.to_string(),
+            config.core_rpc_password.to_string(),
+        ),
+    )
+    .expect("expected core client");
 
     let insight = InsightAPIClient::new(config.insight_api_uri());
 

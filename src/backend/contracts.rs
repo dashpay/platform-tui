@@ -5,6 +5,7 @@ use dash_sdk::{
     platform::{DocumentQuery, Fetch},
     Sdk,
 };
+use dpp::system_data_contracts::withdrawals_contract;
 use dpp::{
     data_contract::accessors::v0::DataContractV0Getters,
     document::{Document, DocumentV0Getters},
@@ -12,7 +13,6 @@ use dpp::{
     prelude::{DataContract, Identifier},
     system_data_contracts::{dashpay_contract, dpns_contract},
 };
-use dpp::system_data_contracts::withdrawals_contract;
 use drive::query::{WhereClause, WhereOperator};
 use tokio::sync::Mutex;
 
@@ -102,8 +102,11 @@ impl AppState {
                 }
             }
             ContractTask::FetchWithdrawalsContract => {
-                match DataContract::fetch(&sdk, Into::<Identifier>::into(withdrawals_contract::ID_BYTES))
-                    .await
+                match DataContract::fetch(
+                    &sdk,
+                    Into::<Identifier>::into(withdrawals_contract::ID_BYTES),
+                )
+                .await
                 {
                     Ok(Some(data_contract)) => {
                         let contract_str = as_json_string(&data_contract);
