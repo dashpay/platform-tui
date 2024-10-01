@@ -24,6 +24,7 @@ use dash_sdk::{
     platform::{transition::broadcast_request::BroadcastRequestForStateTransition, Fetch},
     Sdk,
 };
+use dash_sdk::dashcore_rpc::Client;
 use dashmap::DashMap;
 use dpp::{
     block::{block_info::BlockInfo, epoch::Epoch}, dashcore::{Address, PrivateKey, Transaction}, data_contract::{
@@ -51,6 +52,7 @@ use dpp::{
         StateTransition, StateTransitionLike,
     }
 };
+use dpp::fee::Credits;
 use drive::{
     drive::{
         document::query::{QueryDocumentsOutcome, QueryDocumentsOutcomeV0Methods},
@@ -95,6 +97,7 @@ pub enum StrategyTask {
     SetIdentityInserts {
         strategy_name: String,
         identity_inserts_frequency: Frequency,
+        start_balance: Credits,
     },
     SetStartIdentities {
         strategy_name: String,
@@ -124,6 +127,7 @@ impl AppState {
         sdk: &Sdk,
         task: StrategyTask,
         insight: &'s InsightAPIClient,
+        core_client: &'s Client,
     ) -> BackendEvent<'s> {
         match task {
             StrategyTask::CreateStrategy(strategy_name) => {
@@ -697,7 +701,7 @@ impl AppState {
             }
             StrategyTask::SetIdentityInserts {
                 strategy_name,
-                identity_inserts_frequency,
+                identity_inserts_frequency, start_balance,
             } => {
                 let mut strategies_lock = self.available_strategies.lock().await;
                 if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
@@ -705,6 +709,7 @@ impl AppState {
                         frequency: identity_inserts_frequency,
                         start_keys: 3,
                         extra_keys: BTreeMap::new(),
+                        start_balance_range: start_balance..=start_balance,
                     };
                     BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
                         strategy_name.clone(),
@@ -826,7 +831,7 @@ impl AppState {
                 // Refresh UTXOs for the loaded wallet and get initial wallet balance
                 let mut loaded_wallet_lock = self.loaded_wallet.lock().await;
                 if let Some(ref mut wallet) = *loaded_wallet_lock {
-                    let _ = wallet.reload_utxos(insight).await;
+                    let _ = wallet.reload_utxos(insight, core_client).await;
                 }
                 let initial_balance_wallet = loaded_wallet_lock.clone().unwrap().balance();
                 drop(loaded_wallet_lock);
@@ -835,7 +840,7 @@ impl AppState {
                 let mut strategies_lock = self.available_strategies.lock().await;
                 if strategies_lock.get_mut(&strategy_name).is_none() {
                     return BackendEvent::StrategyError {
-                        error: format!("No known strategy with that name in app state"),
+                        error: "No known strategy with that name in app state".to_string(),
                     };
                 };
                 let strategy = strategies_lock.get_mut(&strategy_name).expect("Expected to get a strategy with that name");
@@ -1065,7 +1070,7 @@ impl AppState {
                         .unwrap_or(1.0)) as u64;
                 let mut num_top_ups: u64 = 0;
                 for operation in &strategy.operations {
-                    if operation.op_type == OperationType::IdentityTopUp {
+                    if matches!(operation.op_type,OperationType::IdentityTopUp(_)) {
                         num_top_ups += (operation.frequency.times_per_block_range.start as f64
                             * num_blocks_or_seconds as f64
                             * operation.frequency.chance_per_block.unwrap_or(1.0))
@@ -2103,7 +2108,7 @@ impl AppState {
                         let result = identity
                             .withdraw(
                                 sdk,
-                                wallet_lock.receive_address(),
+                                Some(wallet_lock.receive_address()),
                                 identity.balance() - 1_000_000, // not sure what this should be
                                 None,
                                 None,
@@ -2310,7 +2315,7 @@ impl AppState {
                     ))
                 } else {
                     BackendEvent::StrategyError {
-                        error: format!("Strategy doesn't exist in app state"),
+                        error: "Strategy doesn't exist in app state".to_string(),
                     }
                 }
             }
@@ -2402,7 +2407,7 @@ impl AppState {
                     ))
                 } else {
                     BackendEvent::StrategyError {
-                        error: format!("Strategy doesn't exist in app state"),
+                        error: "Strategy doesn't exist in app state".to_string(),
                     }
                 }
             }
@@ -2422,7 +2427,7 @@ impl AppState {
                     ))
                 } else {
                     BackendEvent::StrategyError {
-                        error: format!("Strategy doesn't exist in app state"),
+                        error: "Strategy doesn't exist in app state".to_string(),
                     }
                 }
             }

@@ -20,6 +20,7 @@ use dash_sdk::{
     },
     Sdk, SdkBuilder,
 };
+use dash_sdk::dashcore_rpc::{Auth, Client};
 use dpp::prelude::IdentityNonce;
 use dpp::state_transition::StateTransition;
 use dpp::{
@@ -160,9 +161,15 @@ async fn main() {
         .build()
         .expect("expected to build sdk");
 
+    let addr = format!("http://{}:{}", &config.core_host, config.core_rpc_port);
+    let core = Client::new(
+        &addr,
+        Auth::UserPass(config.core_rpc_user.to_string(), config.core_rpc_password.to_string()),
+    ).expect("expected core client");
+
     let insight = InsightAPIClient::new(config.insight_api_uri());
 
-    let backend = Backend::new(&sdk, insight, config.clone()).await;
+    let backend = Backend::new(&sdk, insight, core, config.clone()).await;
 
     // Create wallet if not initialized
     if backend.state().loaded_wallet.lock().await.is_none() {

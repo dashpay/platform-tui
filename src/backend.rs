@@ -20,6 +20,7 @@ use std::{
 };
 
 use arboard::Clipboard;
+use dash_sdk::dashcore_rpc::Client;
 use dash_sdk::Sdk;
 use dpp::{
     document::Document,
@@ -188,15 +189,17 @@ pub struct Backend<'a> {
     pub sdk: &'a Sdk,
     app_state: AppState,
     insight: InsightAPIClient,
+    core_client: Client,
     pub config: Config,
 }
 
 impl<'a> Backend<'a> {
-    pub async fn new(sdk: &'a Sdk, insight: InsightAPIClient, config: Config) -> Backend<'a> {
+    pub async fn new(sdk: &'a Sdk, insight: InsightAPIClient, core_client: Client, config: Config) -> Backend<'a> {
         Backend {
             sdk,
-            app_state: AppState::load(&insight, &config).await,
+            app_state: AppState::load(&insight, &core_client, &config).await,
             insight,
+            core_client,
             config,
         }
     }
@@ -227,7 +230,7 @@ impl<'a> Backend<'a> {
             }
             Task::Strategy(strategy_task) => {
                 self.app_state
-                    .run_strategy_task(&self.sdk, strategy_task, &self.insight)
+                    .run_strategy_task(&self.sdk, strategy_task, &self.insight, &self.core_client)
                     .await
             }
             Task::Wallet(wallet_task) => {
@@ -236,6 +239,7 @@ impl<'a> Backend<'a> {
                     &self.app_state.loaded_wallet,
                     wallet_task,
                     &self.insight,
+                    &self.core_client,
                 )
                 .await
             }
