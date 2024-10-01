@@ -6,7 +6,7 @@ use tuirealm::{
     Frame,
 };
 
-use crate::backend::platform_info::PlatformInfoTask::FetchTotalCreditsOnPlatform;
+use crate::backend::platform_info::PlatformInfoTask::{FetchCurrentValidatorSetInfo, FetchTotalCreditsOnPlatform};
 use crate::ui::form::parsers::DocumentQueryTextInputParser;
 use crate::{
     backend::{
@@ -28,12 +28,13 @@ use crate::{
     Event,
 };
 
-const COMMAND_KEYS: [ScreenCommandKey; 5] = [
+const COMMAND_KEYS: [ScreenCommandKey; 6] = [
     ScreenCommandKey::new("q", "Back to Main"),
     ScreenCommandKey::new("c", "Fetch current Platform epoch info"),
     ScreenCommandKey::new("m", "Fetch total credits on platform"),
     ScreenCommandKey::new("i", "Fetch previous Platform epoch info"),
     ScreenCommandKey::new("v", "Current version voting"),
+    ScreenCommandKey::new("p", "Current proposer and validator set info"),
 ];
 
 pub(crate) struct PlatformInfoScreenController {
@@ -91,6 +92,14 @@ impl ScreenController for PlatformInfoScreenController {
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::Task {
                 task: Task::PlatformInfo(FetchCurrentVersionVotingState),
+                block: true,
+            },
+
+            Event::Key(KeyEvent {
+                           code: Key::Char('p'),
+                           modifiers: KeyModifiers::NONE,
+                       }) => ScreenFeedback::Task {
+                task: Task::PlatformInfo(FetchCurrentValidatorSetInfo),
                 block: true,
             },
 

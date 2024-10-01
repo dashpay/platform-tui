@@ -1,13 +1,14 @@
 use crate::backend::{as_json_string, BackendEvent, Task};
 use chrono::{prelude::*, LocalResult};
 use chrono_humanize::{Accuracy, HumanTime, Tense};
-use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
+use dapi_grpc::platform::v0::{get_current_quorums_info_request, GetCurrentQuorumsInfoRequest, Proof, ResponseMetadata};
 use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
 use dash_sdk::sdk::prettify_proof;
 use dash_sdk::{
     platform::{Fetch, FetchMany, LimitQuery},
     Sdk,
 };
+use dash_sdk::platform::FetchUnproved;
 use dpp::block::epoch::Epoch;
 use dpp::core_subsidy::NetworkCoreSubsidy;
 use dpp::dashcore::Network;
@@ -19,7 +20,7 @@ use dpp::{
     },
     version::ProtocolVersionVoteCount,
 };
-use drive_proof_verifier::types::ProtocolVersionUpgrades;
+use drive_proof_verifier::types::{CurrentQuorumsInfo, NoParamQuery, ProtocolVersionUpgrades};
 
 use drive::drive::credit_pools::epochs::epoch_key_constants::KEY_START_BLOCK_CORE_HEIGHT;
 use drive::drive::credit_pools::epochs::epochs_root_tree_key_constants::KEY_UNPAID_EPOCH_INDEX;
@@ -28,12 +29,14 @@ use drive::drive::RootTree;
 use drive::grovedb::{Element, GroveDb, PathQuery, Query, SizedQuery};
 use drive_proof_verifier::types::TotalCreditsInPlatform;
 use drive_proof_verifier::ContextProvider;
+use itertools::Itertools;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum PlatformInfoTask {
     FetchCurrentEpochInfo,
     FetchTotalCreditsOnPlatform,
     FetchCurrentVersionVotingState,
+    FetchCurrentValidatorSetInfo,
     FetchSpecificEpochInfo(u16),
     FetchManyEpochInfo(u16, u32), // second is count
 }
@@ -140,6 +143,30 @@ fn format_extended_epoch_info(
         readable_epoch_end_time,
         epoch_info.fee_multiplier_permille(),
         prettify_proof(&proof)
+    )
+}
+
+fn format_current_quorums_info(current_quorums_info: &CurrentQuorumsInfo) -> String {
+    format!(
+        "CurrentQuorumsInfo {{\n
+    quorum_hashes: [{}],\n
+    current_quorum_hash: {},\n
+    validator_sets: [{}],\n
+    last_block_proposer: {},\n
+    last_platform_block_height: {},\n
+    last_core_block_height: {}\n
+}}",
+        current_quorums_info
+            .quorum_hashes
+            .iter()
+            .map(|hash| hex::encode(hash))
+            .collect::<Vec<_>>()
+            .join(", "),
+        hex::encode(current_quorums_info.current_quorum_hash),
+        current_quorums_info.validator_sets.iter().join(", "),
+        hex::encode(current_quorums_info.last_block_proposer),
+        current_quorums_info.last_platform_block_height,
+        current_quorums_info.last_core_block_height
     )
 }
 
@@ -388,6 +415,22 @@ pub(super) async fn run_platform_task<'s>(sdk: &Sdk, task: PlatformInfoTask) -> 
                         proof,
                     )
                     .into()),
+                },
+                Err(e) => BackendEvent::TaskCompleted {
+                    task: Task::PlatformInfo(task),
+                    execution_result: Err(e.to_string()),
+                },
+            }
+        }
+        PlatformInfoTask::FetchCurrentValidatorSetInfo => {
+            match CurrentQuorumsInfo::fetch_unproved(sdk, NoParamQuery{}).await {
+                Ok(Some(current_quorums_info)) => BackendEvent::TaskCompleted {
+                    task: Task::PlatformInfo(task),
+                    execution_result: Ok(format_current_quorums_info(&current_quorums_info).into()),
+                },
+                Ok(None) => BackendEvent::TaskCompleted {
+                    task: Task::PlatformInfo(task),
+                    execution_result: Ok("No current quorums".into()),
                 },
                 Err(e) => BackendEvent::TaskCompleted {
                     task: Task::PlatformInfo(task),
