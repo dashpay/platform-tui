@@ -1,6 +1,8 @@
+use chrono::{DateTime, Duration, Utc};
 use dash_sdk::platform::transition::vote::PutVote;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
+    fmt::format,
     iter,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
@@ -42,6 +44,7 @@ use dpp::{
     },
     platform_value::{btreemap_extensions::BTreeValueMapHelper, string_encoding::Encoding, Value},
     prelude::{DataContract, Identity, IdentityPublicKey},
+    version::PlatformVersion,
     voting::{
         contender_structs::ContenderWithSerializedDocument,
         vote_choices::resource_vote_choice::ResourceVoteChoice,
@@ -56,6 +59,7 @@ use drive::query::{
         ContestedDocumentVotePollDriveQuery, ContestedDocumentVotePollDriveQueryResultType,
     },
     vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery,
+    VotePollsByEndDateDriveQuery,
 };
 use drive_proof_verifier::types::ContestedResource;
 
@@ -64,7 +68,10 @@ use rand::{prelude::StdRng, Rng, SeedableRng};
 use simple_signer::signer::SimpleSigner;
 
 use super::{state::IdentityPrivateKeysMap, AppStateUpdate, CompletedTaskPayload};
-use crate::backend::{error::Error, AppState, BackendEvent, Task};
+use crate::{
+    backend::{error::Error, AppState, BackendEvent, Task},
+    config::Config,
+};
 
 #[derive(Debug, Clone)]
 pub(crate) enum DocumentTask {
@@ -810,37 +817,83 @@ impl AppState {
                 document_type_name,
                 contract_id,
             ) => {
-                let query = ContestedDocumentVotePollDriveQuery {
+                let vote_poll = ContestedDocumentResourceVotePoll {
+                    index_name: index_name.to_string(),
+                    index_values: index_values.to_vec(),
+                    document_type_name: document_type_name.to_string(),
+                    contract_id: *contract_id,
+                };
+
+                let contenders_query = ContestedDocumentVotePollDriveQuery {
                     limit: None,
                     offset: None,
                     start_at: None,
-                    vote_poll: ContestedDocumentResourceVotePoll {
-                        index_name: index_name.to_string(),
-                        index_values: index_values.to_vec(),
-                        document_type_name: document_type_name.to_string(),
-                        contract_id: *contract_id,
-                    },
+                    vote_poll: vote_poll.clone(),
                     allow_include_locked_and_abstaining_vote_tally: true,
                     result_type:
                         ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally,
                 };
 
-                let contenders =
-                    match ContenderWithSerializedDocument::fetch_many(sdk, query.clone()).await {
-                        Ok(contenders) => contenders,
-                        Err(e) => {
-                            return BackendEvent::TaskCompleted {
-                                task: Task::Document(task),
-                                execution_result: Err(format!("{e}")),
-                            }
+                let contenders = match ContenderWithSerializedDocument::fetch_many(
+                    sdk,
+                    contenders_query.clone(),
+                )
+                .await
+                {
+                    Ok(contenders) => contenders,
+                    Err(e) => {
+                        return BackendEvent::TaskCompleted {
+                            task: Task::Document(task),
+                            execution_result: Err(format!("{e}")),
                         }
-                    };
+                    }
+                };
+
+                let now: DateTime<Utc> = Utc::now();
+                let start_time_dt = now - Duration::weeks(2);
+                let end_time_dt = now + Duration::weeks(2);
+                let start_time = Some((start_time_dt.timestamp_millis() as u64, true));
+                let end_time = Some((end_time_dt.timestamp_millis() as u64, true));
+
+                let end_time_query = VotePollsByEndDateDriveQuery {
+                    start_time,
+                    end_time,
+                    limit: None,
+                    offset: None,
+                    order_ascending: true,
+                };
+
+                let vote_polls_by_timestamp = match VotePoll::fetch_many(sdk, end_time_query).await
+                {
+                    Ok(polls_by_timestamp) => polls_by_timestamp,
+                    Err(error) => {
+                        return BackendEvent::TaskCompleted {
+                            task: Task::Document(task),
+                            execution_result: Err(format!(
+                                "Failed to fetch vote polls by timestamp: {error}"
+                            )),
+                        }
+                    }
+                };
+
+                let mut end_timestamp = None;
+                for (timestamp, vote_polls) in &vote_polls_by_timestamp.0 {
+                    if vote_polls.iter().any(|vp| match vp {
+                        VotePoll::ContestedDocumentResourceVotePoll(inner_vote_poll) => {
+                            inner_vote_poll == &vote_poll
+                        }
+                    }) {
+                        end_timestamp = Some(*timestamp);
+                        break;
+                    }
+                }
 
                 BackendEvent::TaskCompleted {
                     task: Task::Document(task),
                     execution_result: Ok(CompletedTaskPayload::ContestedResourceContenders(
-                        query.vote_poll,
+                        contenders_query.vote_poll,
                         contenders,
+                        end_timestamp,
                     )),
                 }
             }

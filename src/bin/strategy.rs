@@ -13,6 +13,7 @@ use rs_platform_explorer::{
 };
 use std::os::fd::IntoRawFd;
 use std::{fs::File, panic, time::Duration};
+use dash_sdk::dashcore_rpc::{Auth, Client};
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::EnvFilter;
 
@@ -135,9 +136,15 @@ async fn main() {
         .build()
         .expect("expected to build sdk");
 
+    let addr = format!("http://{}:{}", &config.core_host, config.core_rpc_port);
+    let core = Client::new(
+        &addr,
+        Auth::UserPass(config.core_rpc_user.to_string(), config.core_rpc_password.to_string()),
+    ).expect("expected core client");
+
     let insight = InsightAPIClient::new(config.insight_api_uri());
 
-    let backend = Backend::new(&sdk, insight.clone(), config.clone()).await;
+    let backend = Backend::new(&sdk, insight.clone(), core, config.clone()).await;
 
     // Create wallet if not initialized
     if backend.state().loaded_wallet.lock().await.is_none() {
@@ -229,6 +236,12 @@ async fn main() {
 
     let credit_amount = (args.top_up_amount * 100_000_000_000.0) as u64;
 
+    let addr = format!("http://{}:{}", &config.core_host, config.core_rpc_port);
+    let core = Client::new(
+        &addr,
+        Auth::UserPass(config.core_rpc_user.to_string(), config.core_rpc_password.to_string()),
+    ).expect("expected core client");
+
     if let Some(test_name) = args.test {
         let block_mode = if args.second { false } else { true };
         backend
@@ -243,6 +256,7 @@ async fn main() {
                     credit_amount,
                 ),
                 &insight,
+                &core,
             )
             .await;
     }

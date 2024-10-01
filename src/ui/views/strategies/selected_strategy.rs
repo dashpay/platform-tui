@@ -269,9 +269,9 @@ fn display_strategy(
                         op.contract.id().to_string(Encoding::Base58)
                     )
                 }
-                OperationType::IdentityTopUp => "IdentityTopUp".to_string(),
+                OperationType::IdentityTopUp(amount) => format!("IdentityTopUp [{}..{}]", amount.start(), amount.end()),
                 OperationType::IdentityUpdate(op) => format!("IdentityUpdate({:?})", op),
-                OperationType::IdentityWithdrawal => "IdentityWithdrawal".to_string(),
+                OperationType::IdentityWithdrawal(amount) => format!("IdentityWithdrawal [{}..{}]", amount.start(), amount.end()),
                 OperationType::ContractCreate(..) => "ContractCreateRandom".to_string(),
                 OperationType::ContractUpdate(op) => {
                     let op_type = match op.action {
