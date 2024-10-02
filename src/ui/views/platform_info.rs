@@ -9,9 +9,9 @@ use tuirealm::{
 use crate::backend::platform_info::PlatformInfoTask::{
     FetchCurrentValidatorSetInfo, FetchCurrentValidatorSetInfoAndShowQueue,
     FetchCurrentValidatorSetInfoAndShowReducedQueue, FetchCurrentWithdrawalsInQueue,
-    FetchTotalCreditsOnPlatform,
+    FetchRecentlyCompletedWithdrawals, FetchTotalCreditsOnPlatform,
 };
-use crate::ui::form::parsers::DocumentQueryTextInputParser;
+
 use crate::{
     backend::{
         platform_info::PlatformInfoTask::{
@@ -32,7 +32,7 @@ use crate::{
     Event,
 };
 
-const COMMAND_KEYS: [ScreenCommandKey; 9] = [
+const COMMAND_KEYS: [ScreenCommandKey; 10] = [
     ScreenCommandKey::new("q", "Back to Main"),
     ScreenCommandKey::new("c", "Fetch current Platform epoch info"),
     ScreenCommandKey::new("m", "Fetch total credits on platform"),
@@ -42,6 +42,7 @@ const COMMAND_KEYS: [ScreenCommandKey; 9] = [
     ScreenCommandKey::new("k", "View Proposer Queues"),
     ScreenCommandKey::new("l", "View Reduced Proposer Queues"),
     ScreenCommandKey::new("w", "View Withdrawals in Queue"),
+    ScreenCommandKey::new("e", "View Recently Completed Withdrawals"),
 ];
 
 pub(crate) struct PlatformInfoScreenController {
@@ -131,6 +132,14 @@ impl ScreenController for PlatformInfoScreenController {
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::Task {
                 task: Task::PlatformInfo(FetchCurrentWithdrawalsInQueue),
+                block: true,
+            },
+
+            Event::Key(KeyEvent {
+                code: Key::Char('e'),
+                modifiers: KeyModifiers::NONE,
+            }) => ScreenFeedback::Task {
+                task: Task::PlatformInfo(FetchRecentlyCompletedWithdrawals),
                 block: true,
             },
 
