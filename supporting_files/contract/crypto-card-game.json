@@ -5,6 +5,7 @@
     "version": 1,
     "documentSchemas": {
         "card": {
+            "position": 0,
             "type": "object",
             "documentsMutable": false,
             "canBeDeleted": true,
@@ -29,12 +30,12 @@
                 "attack": {
                     "type": "integer",
                     "description": "Attack power of the card",
-                    "position": 5
+                    "position": 2
                 },
                 "defense": {
                     "type": "integer",
                     "description": "Defense level of the card",
-                    "position": 6
+                    "position": 3
                 }
             },
             "indices": [

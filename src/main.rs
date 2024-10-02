@@ -1,7 +1,9 @@
 use std::{fs::File, panic, time::Duration};
 
 use crossterm::event::{Event as TuiEvent, EventStream};
-use dash_sdk::{RequestSettings, SdkBuilder};
+use dapi_grpc::core::v0::core_client::CoreClient;
+use dash_sdk::dashcore_rpc::{Auth, Client};
+use dash_sdk::{sdk, RequestSettings, SdkBuilder};
 use dpp::{identity::accessors::IdentityGettersV0, version::PlatformVersion};
 use futures::{future::OptionFuture, select, FutureExt, StreamExt};
 use rs_platform_explorer::{
@@ -67,7 +69,7 @@ async fn main() {
         ban_failed_address: Some(false),
     };
     let sdk = SdkBuilder::new(address_list)
-        .with_version(PlatformVersion::get(1).unwrap())
+        .with_version(PlatformVersion::get(4).unwrap())
         .with_network(config.core_network())
         .with_core(
             &config.core_host,
@@ -80,9 +82,19 @@ async fn main() {
         .build()
         .expect("expected to build sdk");
 
+    let addr = format!("http://{}:{}", &config.core_host, config.core_rpc_port);
+    let core = Client::new(
+        &addr,
+        Auth::UserPass(
+            config.core_rpc_user.to_string(),
+            config.core_rpc_password.to_string(),
+        ),
+    )
+    .expect("expected core client");
+
     let insight = InsightAPIClient::new(config.insight_api_uri());
 
-    let backend = Backend::new(&sdk, insight, config).await;
+    let backend = Backend::new(&sdk, insight, core, config).await;
 
     // Add loaded identity to known identities if it's not already there
     // And set selected_strategy to None
