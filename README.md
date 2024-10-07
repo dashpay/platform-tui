@@ -37,6 +37,7 @@ Open the TUI repo in your terminal:
 
 ```shell
 cd platform-tui
+```
 
 Install Rust if you don't already have it:
 
