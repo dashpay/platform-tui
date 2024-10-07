@@ -50,7 +50,7 @@ After installing Rust, restart your terminal and navigate back to the platform-t
 ### Add the WebAssembly target to Rust
 
 ```shell
-rustup target add wasm32-unknown-unknown`
+rustup target add wasm32-unknown-unknown
 ```
 
 ### Install dependencies
@@ -59,7 +59,7 @@ Install build-essential tools, SSL development libraries, and Clang. On Ubuntu, 
 
 ```shell
 sudo apt update
-sudo apt install -y build-essential cmake libssl-dev pkg-config clang unzip`
+sudo apt install -y build-essential cmake libssl-dev pkg-config clang unzip
 ```
 
 On other Unix-like systems, use the equivalent package management commands.
@@ -67,7 +67,7 @@ On other Unix-like systems, use the equivalent package management commands.
 ### Install wasm-bindgen-cli
 
 ```shell
-cargo install wasm-bindgen-cli@0.2.85`
+cargo install wasm-bindgen-cli@0.2.85
 ```
 
 ### Install Protocol Buffers Compiler (protoc)
@@ -75,8 +75,8 @@ cargo install wasm-bindgen-cli@0.2.85`
 Download the appropriate protoc binary for your system, unzip, and install:
 
 ```shell
-wget https://github.com/protocolbuffers/protobuf/releases/download/v26.1/protoc-26.1-linux-x86_64.zip`
-sudo unzip protoc-*-linux-x86_64.zip -d /usr/local`
+wget https://github.com/protocolbuffers/protobuf/releases/download/v26.1/protoc-26.1-linux-x86_64.zip
+sudo unzip protoc-*-linux-x86_64.zip -d /usr/local
 ```
 
 ### Setup env file
