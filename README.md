@@ -36,7 +36,7 @@ git clone https://github.com/dashpay/platform-tui.git
 Open the TUI repo in your terminal:
 
 ```shell
-cd rs-platform-explorer
+cd platform-tui
 
 Install Rust if you don't already have it:
 
