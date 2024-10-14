@@ -331,9 +331,7 @@ impl ScreenController for IdentitiesScreenController {
             Event::Key(KeyEvent {
                 code: Key::Char('m'),
                 modifiers: KeyModifiers::NONE,
-            }) if self.wallet_loaded => {
-                ScreenFeedback::Form(Box::new(LoadMasternodeIdentityFormController::new()))
-            }
+            }) => ScreenFeedback::Form(Box::new(LoadMasternodeIdentityFormController::new())),
 
             Event::Key(KeyEvent {
                 code: Key::Char('p'),
