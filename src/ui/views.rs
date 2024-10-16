@@ -11,3 +11,4 @@ pub(crate) mod platform_info;
 pub(crate) mod strategies;
 pub mod usernames;
 pub(crate) mod wallet;
+pub mod withdrawals;

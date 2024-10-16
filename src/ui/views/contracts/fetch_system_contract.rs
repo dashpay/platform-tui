@@ -15,10 +15,11 @@ use crate::{
     Event,
 };
 
-const COMMAND_KEYS: [ScreenCommandKey; 3] = [
+const COMMAND_KEYS: [ScreenCommandKey; 4] = [
     ScreenCommandKey::new("q", "Back to Contracts"),
     ScreenCommandKey::new("p", "Fetch Dashpay contract"),
     ScreenCommandKey::new("n", "Fetch DPNS contract"),
+    ScreenCommandKey::new("w", "Fetch Withdrawals contract"),
 ];
 
 pub(crate) struct FetchSystemContractScreenController {
@@ -72,6 +73,14 @@ impl ScreenController for FetchSystemContractScreenController {
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::Task {
                 task: Task::Contract(ContractTask::FetchDPNSContract),
+                block: true,
+            },
+
+            Event::Key(KeyEvent {
+                code: Key::Char('w'),
+                modifiers: KeyModifiers::NONE,
+            }) => ScreenFeedback::Task {
+                task: Task::Contract(ContractTask::FetchWithdrawalsContract),
                 block: true,
             },
 

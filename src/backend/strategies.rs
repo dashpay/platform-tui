@@ -12,32 +12,45 @@ use std::{
 };
 
 use crossterm::style::Stylize;
-use dapi_grpc::{platform::v0::{
-    get_epochs_info_request, get_epochs_info_response,
-    wait_for_state_transition_result_response::{
-        self, wait_for_state_transition_result_response_v0,
+use dapi_grpc::{
+    platform::v0::{
+        get_epochs_info_request, get_epochs_info_response,
+        wait_for_state_transition_result_response::{
+            self, wait_for_state_transition_result_response_v0,
+        },
+        GetEpochsInfoRequest,
     },
-    GetEpochsInfoRequest,
-}, tonic::Code};
+    tonic::Code,
+};
+use dash_sdk::dashcore_rpc::Client;
 use dash_sdk::platform::transition::withdraw_from_identity::WithdrawFromIdentity;
 use dash_sdk::{
     platform::{transition::broadcast_request::BroadcastRequestForStateTransition, Fetch},
     Sdk,
 };
 use dashmap::DashMap;
+use dpp::fee::Credits;
 use dpp::{
-    block::{block_info::BlockInfo, epoch::Epoch}, dashcore::{Address, PrivateKey, Transaction}, data_contract::{
+    block::{block_info::BlockInfo, epoch::Epoch},
+    dashcore::{Address, PrivateKey, Transaction},
+    data_contract::{
         accessors::v0::{DataContractV0Getters, DataContractV0Setters},
         created_data_contract::CreatedDataContract,
         document_type::random_document::{DocumentFieldFillSize, DocumentFieldFillType},
         DataContract,
-    }, data_contracts::{dashpay_contract, dpns_contract}, document::Document, identity::{
+    },
+    data_contracts::{dashpay_contract, dpns_contract},
+    document::Document,
+    identity::{
         accessors::IdentityGettersV0, state_transition::asset_lock_proof::AssetLockProof, Identity,
         KeyType, PartialIdentity, Purpose, SecurityLevel,
-    }, platform_value::{string_encoding::Encoding, Identifier}, serialization::{
+    },
+    platform_value::{string_encoding::Encoding, Identifier},
+    serialization::{
         PlatformDeserializableWithPotentialValidationFromVersionedStructure,
         PlatformSerializableWithPlatformVersion,
-    }, state_transition::{
+    },
+    state_transition::{
         data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0,
         documents_batch_transition::{
             document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods,
@@ -49,7 +62,7 @@ use dpp::{
             methods::IdentityTopUpTransitionMethodsV0, IdentityTopUpTransition,
         },
         StateTransition, StateTransitionLike,
-    }
+    },
 };
 use drive::{
     drive::{
@@ -95,6 +108,7 @@ pub enum StrategyTask {
     SetIdentityInserts {
         strategy_name: String,
         identity_inserts_frequency: Frequency,
+        start_balance: Credits,
     },
     SetStartIdentities {
         strategy_name: String,
@@ -124,18 +138,18 @@ impl AppState {
         sdk: &Sdk,
         task: StrategyTask,
         insight: &'s InsightAPIClient,
+        core_client: &'s Client,
     ) -> BackendEvent<'s> {
         match task {
             StrategyTask::CreateStrategy(strategy_name) => {
                 let mut strategies_lock = self.available_strategies.lock().await;
-                let mut contract_names_lock =
-                    self.available_strategies_contract_names.lock().await;
+                let mut contract_names_lock = self.available_strategies_contract_names.lock().await;
                 let mut selected_strategy_lock = self.selected_strategy.lock().await;
-    
+
                 strategies_lock.insert(strategy_name.clone(), Strategy::default());
                 *selected_strategy_lock = Some(strategy_name.clone());
                 contract_names_lock.insert(strategy_name.clone(), Default::default());
-    
+
                 BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
                     strategy_name.clone(),
                     MutexGuard::map(strategies_lock, |strategies| {
@@ -152,23 +166,28 @@ impl AppState {
                         if response.status().is_success() {
                             match response.bytes().await {
                                 Ok(bytes) => {
-                                    match Strategy::versioned_deserialize(&bytes, true, &sdk.version())
-                                    {
+                                    match Strategy::versioned_deserialize(
+                                        &bytes,
+                                        true,
+                                        &sdk.version(),
+                                    ) {
                                         Ok(strategy) => {
                                             let strategy_name = url.split('/').last()
                                                 .map(|s| s.rsplit_once('.').map_or(s, |(name, _)| name))
                                                 .map(|s| s.to_string())
                                                 .expect("Expected to extract the filename from the imported Strategy file");
-    
+
                                             let mut strategies_lock =
                                                 self.available_strategies.lock().await;
                                             strategies_lock
                                                 .insert(strategy_name.clone(), strategy.clone());
-    
+
                                             // We need to add the contracts to available_strategies_contract_names so they can be displayed.
                                             // In order to do so, we need to convert start_contracts into Base58-encoded IDs
                                             let mut strategy_start_contracts_in_format: StrategyContractNames = Vec::new();
-                                            for (contract, maybe_updates) in strategy.start_contracts {
+                                            for (contract, maybe_updates) in
+                                                strategy.start_contracts
+                                            {
                                                 let contract_name = contract
                                                     .data_contract()
                                                     .id()
@@ -183,8 +202,9 @@ impl AppState {
                                                                 .to_string(Encoding::Base58);
                                                             (block_number, contract_name)
                                                         })
-                                                        .collect::<BTreeMap<u64, ContractFileName>>();
-    
+                                                        .collect::<BTreeMap<u64, ContractFileName>>(
+                                                        );
+
                                                     strategy_start_contracts_in_format.push((
                                                         contract_name,
                                                         Some(formatted_update_map),
@@ -194,7 +214,7 @@ impl AppState {
                                                         .push((contract_name, None));
                                                 }
                                             }
-    
+
                                             let mut contract_names_lock = self
                                                 .available_strategies_contract_names
                                                 .lock()
@@ -203,17 +223,20 @@ impl AppState {
                                                 strategy_name.clone(),
                                                 strategy_start_contracts_in_format,
                                             );
-    
+
                                             let mut selected_strategy =
                                                 self.selected_strategy.lock().await;
                                             *selected_strategy = Some(strategy_name.clone());
-    
+
                                             BackendEvent::AppStateUpdated(
                                                 AppStateUpdate::SelectedStrategy(
                                                     strategy_name.clone(),
-                                                    MutexGuard::map(strategies_lock, |strategies| {
-                                                        strategies.get_mut(&strategy_name).expect("Expected to find the strategy in available_strategies")
-                                                    }),
+                                                    MutexGuard::map(
+                                                        strategies_lock,
+                                                        |strategies| {
+                                                            strategies.get_mut(&strategy_name).expect("Expected to find the strategy in available_strategies")
+                                                        },
+                                                    ),
                                                     MutexGuard::map(contract_names_lock, |names| {
                                                         names.get_mut(&strategy_name).expect("Expected to find the strategy in available_strategies_contract_names")
                                                     }),
@@ -221,9 +244,15 @@ impl AppState {
                                             )
                                         }
                                         Err(e) => {
-                                            tracing::debug!("Failed to deserialize strategy: {}", e);
+                                            tracing::debug!(
+                                                "Failed to deserialize strategy: {}",
+                                                e
+                                            );
                                             BackendEvent::StrategyError {
-                                                error: format!("Failed to deserialize strategy: {}", e),
+                                                error: format!(
+                                                    "Failed to deserialize strategy: {}",
+                                                    e
+                                                ),
                                             }
                                         }
                                     }
@@ -238,7 +267,10 @@ impl AppState {
                         } else {
                             tracing::debug!("Failed to fetch strategy: HTTP {}", response.status());
                             BackendEvent::StrategyError {
-                                error: format!("Failed to fetch strategy: HTTP {}", response.status()),
+                                error: format!(
+                                    "Failed to fetch strategy: HTTP {}",
+                                    response.status()
+                                ),
                             }
                         }
                     }
@@ -256,12 +288,13 @@ impl AppState {
                     .get(strategy_name)
                     .expect("Strategy name doesn't exist in self.available_strategies");
                 let platform_version = sdk.version();
-    
+
                 match strategy.serialize_to_bytes_with_platform_version(&platform_version) {
                     Ok(binary_data) => {
-                        let file_name = format!("supporting_files/strategy_exports/{}", strategy_name);
+                        let file_name =
+                            format!("supporting_files/strategy_exports/{}", strategy_name);
                         let path = std::path::Path::new(&file_name);
-    
+
                         match File::create(&path) {
                             Ok(mut file) => {
                                 if let Err(e) = file.write_all(&binary_data) {
@@ -297,7 +330,7 @@ impl AppState {
             StrategyTask::SelectStrategy(ref strategy_name) => {
                 let mut selected_strategy_lock = self.selected_strategy.lock().await;
                 let strategies_lock = self.available_strategies.lock().await;
-    
+
                 if strategies_lock.contains_key(strategy_name) {
                     *selected_strategy_lock = Some(strategy_name.clone());
                     BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
@@ -318,22 +351,21 @@ impl AppState {
             }
             StrategyTask::DeleteStrategy(strategy_name) => {
                 let mut strategies_lock = self.available_strategies.lock().await;
-                let mut contract_names_lock =
-                    self.available_strategies_contract_names.lock().await;
+                let mut contract_names_lock = self.available_strategies_contract_names.lock().await;
                 let mut selected_strategy_lock = self.selected_strategy.lock().await;
-    
+
                 // Check if the strategy exists and remove it
                 if strategies_lock.contains_key(&strategy_name) {
                     strategies_lock.remove(&strategy_name);
                     contract_names_lock.remove(&strategy_name);
-    
+
                     // If the deleted strategy was the selected one, unset the selected strategy
                     if let Some(selected) = selected_strategy_lock.as_ref() {
                         if selected == &strategy_name {
                             *selected_strategy_lock = None;
                         }
                     }
-    
+
                     BackendEvent::AppStateUpdated(AppStateUpdate::Strategies(
                         strategies_lock,
                         contract_names_lock,
@@ -346,10 +378,9 @@ impl AppState {
             }
             StrategyTask::CloneStrategy(new_strategy_name) => {
                 let mut strategies_lock = self.available_strategies.lock().await;
-                let mut contract_names_lock =
-                    self.available_strategies_contract_names.lock().await;
+                let mut contract_names_lock = self.available_strategies_contract_names.lock().await;
                 let mut selected_strategy_lock = self.selected_strategy.lock().await;
-    
+
                 if let Some(selected_strategy_name) = &*selected_strategy_lock {
                     if let Some(strategy_to_clone) = strategies_lock.get(selected_strategy_name) {
                         let cloned_strategy = strategy_to_clone.clone();
@@ -357,12 +388,12 @@ impl AppState {
                             .get(selected_strategy_name)
                             .cloned()
                             .unwrap_or_default();
-    
+
                         strategies_lock.insert(new_strategy_name.clone(), cloned_strategy);
                         contract_names_lock.insert(new_strategy_name.clone(), cloned_display_data);
-    
+
                         *selected_strategy_lock = Some(new_strategy_name.clone());
-    
+
                         BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
                             new_strategy_name.clone(),
                             MutexGuard::map(strategies_lock, |strategies| {
@@ -392,12 +423,11 @@ impl AppState {
                 let mut strategies_lock = self.available_strategies.lock().await;
                 let known_contracts_lock = self.known_contracts.lock().await;
                 let supporting_contracts_lock = self.supporting_contracts.lock().await;
-                let mut contract_names_lock =
-                    self.available_strategies_contract_names.lock().await;
-    
+                let mut contract_names_lock = self.available_strategies_contract_names.lock().await;
+
                 if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
                     let platform_version = sdk.version();
-    
+
                     // Function to retrieve the contract from either known_contracts or
                     // supporting_contracts
                     let get_contract = |contract_name: &String| {
@@ -406,14 +436,14 @@ impl AppState {
                             .or_else(|| supporting_contracts_lock.get(contract_name))
                             .cloned()
                     };
-    
+
                     // Set a fake identity nonce for now. We will set real identity nonces during strategy execution.
                     let fake_identity_nonce = 1;
-    
+
                     if let Some(first_contract_name) = selected_contract_names.first() {
                         if let Some(mut data_contract) = get_contract(first_contract_name) {
                             data_contract.set_version(1);
-    
+
                             match CreatedDataContract::from_contract_and_identity_nonce(
                                 data_contract,
                                 fake_identity_nonce,
@@ -421,7 +451,7 @@ impl AppState {
                             ) {
                                 Ok(original_contract) => {
                                     let mut updates = BTreeMap::new();
-    
+
                                     for (order, contract_name) in
                                         selected_contract_names.iter().enumerate().skip(1)
                                     {
@@ -448,7 +478,7 @@ impl AppState {
                                             }
                                         }
                                     }
-    
+
                                     strategy.start_contracts.push((
                                         original_contract,
                                         if updates.is_empty() {
@@ -470,7 +500,7 @@ impl AppState {
                             }
                         }
                     }
-    
+
                     let mut transformed_contract_names = Vec::new();
                     if let Some(first_contract_name) = selected_contract_names.first() {
                         let updates: BTreeMap<u64, String> = selected_contract_names
@@ -479,15 +509,17 @@ impl AppState {
                             .skip(1)
                             .map(|(order, name)| (order as u64, name.clone()))
                             .collect();
-                        transformed_contract_names.push((first_contract_name.clone(), Some(updates)));
+                        transformed_contract_names
+                            .push((first_contract_name.clone(), Some(updates)));
                     }
-    
+
                     if let Some(existing_contracts) = contract_names_lock.get_mut(&strategy_name) {
                         existing_contracts.extend(transformed_contract_names);
                     } else {
-                        contract_names_lock.insert(strategy_name.clone(), transformed_contract_names);
+                        contract_names_lock
+                            .insert(strategy_name.clone(), transformed_contract_names);
                     }
-    
+
                     BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
                         strategy_name.clone(),
                         MutexGuard::map(strategies_lock, |strategies| {
@@ -503,17 +535,20 @@ impl AppState {
                     }
                 }
             }
-            StrategyTask::SetStartContractsRandom(strategy_name, selected_contract_name, variants) => {
+            StrategyTask::SetStartContractsRandom(
+                strategy_name,
+                selected_contract_name,
+                variants,
+            ) => {
                 // Attain state locks
                 let mut strategies_lock = self.available_strategies.lock().await;
                 let known_contracts_lock = self.known_contracts.lock().await;
                 let mut supporting_contracts_lock = self.supporting_contracts.lock().await;
-                let mut contract_names_lock =
-                    self.available_strategies_contract_names.lock().await;
-    
+                let mut contract_names_lock = self.available_strategies_contract_names.lock().await;
+
                 if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
                     let platform_version = sdk.version();
-    
+
                     // Function to retrieve the contract from either known_contracts or
                     // supporting_contracts
                     let get_contract = |contract_name: &String| {
@@ -522,14 +557,14 @@ impl AppState {
                             .or_else(|| supporting_contracts_lock.get(contract_name))
                             .cloned()
                     };
-    
+
                     // Set a fake identity nonce for now. We will set real identity nonces during strategy execution.
                     let mut fake_identity_nonce = 1;
-    
+
                     // Add the contracts to the strategy start_contracts
                     if let Some(mut data_contract) = get_contract(&selected_contract_name) {
                         data_contract.set_version(1);
-    
+
                         match CreatedDataContract::from_contract_and_identity_nonce(
                             data_contract,
                             fake_identity_nonce,
@@ -542,7 +577,7 @@ impl AppState {
                                 strategy
                                     .start_contracts
                                     .push((original_contract.clone(), None));
-    
+
                                 // Add i variants of the original contract to the strategy
                                 for i in 0..variants - 1 {
                                     let mut new_data_contract =
@@ -581,15 +616,17 @@ impl AppState {
                                         }
                                     };
                                 }
-    
-                                let contract_id_strings: Vec<(String, Option<BTreeMap<u64, String>>)> =
-                                    contract_variants
-                                        .iter()
-                                        .map(|x| {
-                                            (x.data_contract().id().to_string(Encoding::Base58), None)
-                                        })
-                                        .collect();
-    
+
+                                let contract_id_strings: Vec<(
+                                    String,
+                                    Option<BTreeMap<u64, String>>,
+                                )> = contract_variants
+                                    .iter()
+                                    .map(|x| {
+                                        (x.data_contract().id().to_string(Encoding::Base58), None)
+                                    })
+                                    .collect();
+
                                 // Add the new contracts to self.available_strategies_contract_names
                                 if let Some(existing_strategy_contracts) =
                                     contract_names_lock.get_mut(&strategy_name)
@@ -616,7 +653,7 @@ impl AppState {
                             error: format!("Contract wasn't retrieved by name in StrategyTask::SetContractsWithUpdatesRandom")
                         };
                     }
-    
+
                     BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
                         strategy_name.clone(),
                         MutexGuard::map(strategies_lock, |strategies| {
@@ -655,17 +692,22 @@ impl AppState {
                     }
                 }
             }
-            StrategyTask::RegisterDocsToAllContracts(strategy_name, num_docs, fill_size, fill_type) => {
+            StrategyTask::RegisterDocsToAllContracts(
+                strategy_name,
+                num_docs,
+                fill_size,
+                fill_type,
+            ) => {
                 let mut strategies_lock = self.available_strategies.lock().await;
                 if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
                     for contract_with_updates in &strategy.start_contracts {
                         let contract = &contract_with_updates.0;
                         let document_types = contract.data_contract().document_types();
-                        let document_type = document_types
-                            .values()
-                            .next()
-                            .expect("Expected to get a document type in RegisterDocsToAllContracts");
-                        let action = DocumentAction::DocumentActionInsertRandom(fill_type, fill_size);
+                        let document_type = document_types.values().next().expect(
+                            "Expected to get a document type in RegisterDocsToAllContracts",
+                        );
+                        let action =
+                            DocumentAction::DocumentActionInsertRandom(fill_type, fill_size);
                         let operation = Operation {
                             op_type: OperationType::Document(DocumentOp {
                                 contract: contract.data_contract().clone(),
@@ -698,6 +740,7 @@ impl AppState {
             StrategyTask::SetIdentityInserts {
                 strategy_name,
                 identity_inserts_frequency,
+                start_balance,
             } => {
                 let mut strategies_lock = self.available_strategies.lock().await;
                 if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
@@ -705,6 +748,7 @@ impl AppState {
                         frequency: identity_inserts_frequency,
                         start_keys: 3,
                         extra_keys: BTreeMap::new(),
+                        start_balance_range: start_balance..=start_balance,
                     };
                     BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
                         strategy_name.clone(),
@@ -797,7 +841,7 @@ impl AppState {
                 tracing::info!("-----Starting strategy '{}'-----", strategy_name);
                 let init_start_time = Instant::now(); // Start time of strategy initialization plus execution of first two blocks
                 let mut init_time = Duration::new(0, 0); // Will set this to the time it takes for all initialization plus the first two blocks to complete
-    
+
                 // Fetch known_contracts from the chain to assure local copies match actual state.
                 match AppState::update_known_contracts(&self, sdk, &self.known_contracts).await {
                     Ok(_) => {
@@ -810,7 +854,7 @@ impl AppState {
                         };
                     }
                 };
-    
+
                 // Refresh loaded_identity and get the current balance at strategy start
                 let mut loaded_identity_lock = match self.refresh_loaded_identity(&sdk).await {
                     Ok(lock) => lock,
@@ -822,23 +866,25 @@ impl AppState {
                     }
                 };
                 let initial_balance_identity = loaded_identity_lock.balance();
-    
+
                 // Refresh UTXOs for the loaded wallet and get initial wallet balance
                 let mut loaded_wallet_lock = self.loaded_wallet.lock().await;
                 if let Some(ref mut wallet) = *loaded_wallet_lock {
-                    let _ = wallet.reload_utxos(insight).await;
+                    let _ = wallet.reload_utxos(insight, core_client).await;
                 }
                 let initial_balance_wallet = loaded_wallet_lock.clone().unwrap().balance();
                 drop(loaded_wallet_lock);
-    
+
                 // Get a mutable strategy because we need to modify some properties of contracts on updates
                 let mut strategies_lock = self.available_strategies.lock().await;
                 if strategies_lock.get_mut(&strategy_name).is_none() {
                     return BackendEvent::StrategyError {
-                        error: format!("No known strategy with that name in app state"),
+                        error: "No known strategy with that name in app state".to_string(),
                     };
                 };
-                let strategy = strategies_lock.get_mut(&strategy_name).expect("Expected to get a strategy with that name");
+                let strategy = strategies_lock
+                    .get_mut(&strategy_name)
+                    .expect("Expected to get a strategy with that name");
 
                 // Get block_info
                 // Get block info for the first block by sending a grpc request and looking at
@@ -1065,7 +1111,7 @@ impl AppState {
                         .unwrap_or(1.0)) as u64;
                 let mut num_top_ups: u64 = 0;
                 for operation in &strategy.operations {
-                    if operation.op_type == OperationType::IdentityTopUp {
+                    if matches!(operation.op_type, OperationType::IdentityTopUp(_)) {
                         num_top_ups += (operation.frequency.times_per_block_range.start as f64
                             * num_blocks_or_seconds as f64
                             * operation.frequency.chance_per_block.unwrap_or(1.0))
@@ -1218,7 +1264,9 @@ impl AppState {
                     if loop_index % 10 == 0 {
                         let stats_elapsed = load_start_time.elapsed().as_secs();
                         let stats_attempted = transition_count;
-                        let stats_rate = stats_attempted.checked_div(stats_elapsed.try_into().unwrap()).unwrap_or(0);
+                        let stats_rate = stats_attempted
+                            .checked_div(stats_elapsed.try_into().unwrap())
+                            .unwrap_or(0);
                         let stats_broadcast_successful = broadcast_oks.load(Ordering::SeqCst);
                         let stats_broadcast_failed = broadcast_errs.load(Ordering::SeqCst);
                         let stats_wait_successful = wait_oks.load(Ordering::SeqCst);
@@ -1242,7 +1290,8 @@ impl AppState {
                             let count = entry.value().load(Ordering::SeqCst);
                             stats_wait_error_messages.push(format!("{:?} - {}", code, count));
                         }
-                        let broadcast_error_message = if !stats_broadcast_error_messages.is_empty() {
+                        let broadcast_error_message = if !stats_broadcast_error_messages.is_empty()
+                        {
                             format!("{}", stats_broadcast_error_messages.join(", "))
                         } else {
                             String::new()
@@ -1252,7 +1301,7 @@ impl AppState {
                         } else {
                             String::new()
                         };
-                
+
                         tracing::info!("\n\n{} secs passed. {} broadcast ({} tx/s)\nBroadcast results: {} successful, {} failed, {} ongoing.\nWait results: {} successful, {} failed, {} ongoing.\nBroadcast errors: {}\nWait errors: {}\nWait times (s): 50% - {} 90% - {} 95% - {}", stats_elapsed, stats_attempted, stats_rate, stats_broadcast_successful, stats_broadcast_failed, stats_ongoing_broadcasts, stats_wait_successful, stats_wait_failed, stats_ongoing_waits, broadcast_error_message, wait_error_message, stats_p50, stats_p90, stats_p95);
                     }
 
@@ -1366,7 +1415,9 @@ impl AppState {
                                 }
                             }
                             // Add new documents to the local Drive for later getting documents to delete
-                            StateTransition::DocumentsBatch(DocumentsBatchTransition::V0(documents_batch_transition_v0)) => {
+                            StateTransition::DocumentsBatch(DocumentsBatchTransition::V0(
+                                documents_batch_transition_v0,
+                            )) => {
                                 for document_transition in
                                     &documents_batch_transition_v0.transitions
                                 {
@@ -1376,37 +1427,45 @@ impl AppState {
                                                 document_create_transition_v0,
                                             ),
                                         ) => {
-                                            let document_type_name =
-                                                document_create_transition_v0
-                                                    .base
-                                                    .document_type_name();
-                                            let data_contract_id =
-                                                document_create_transition_v0
-                                                    .base
-                                                    .data_contract_id();
-                                            let known_contracts =
-                                                self.known_contracts.lock().await;
-                                            let maybe_data_contract = known_contracts.get(
-                                                &data_contract_id
-                                                    .to_string(Encoding::Base58),
-                                            );
+                                            let document_type_name = document_create_transition_v0
+                                                .base
+                                                .document_type_name();
+                                            let data_contract_id = document_create_transition_v0
+                                                .base
+                                                .data_contract_id();
+                                            let known_contracts = self.known_contracts.lock().await;
+                                            let maybe_data_contract = known_contracts
+                                                .get(&data_contract_id.to_string(Encoding::Base58));
                                             match maybe_data_contract {
                                                 Some(data_contract) => {
                                                     let maybe_document_type = data_contract
-                                                        .document_type_for_name(
-                                                            document_type_name,
-                                                        );
+                                                        .document_type_for_name(document_type_name);
                                                     match maybe_document_type {
                                                         Ok(document_type) => {
                                                             let maybe_document = Document::try_from_create_transition_v0(document_create_transition_v0, transition.owner_id(), &current_block_info, &document_type, sdk.version());
                                                             match maybe_document {
                                                                 Ok(document) => {
                                                                     let document_info = DocumentInfo::DocumentOwnedInfo((document, None));
-                                                                    let owned_document_info = OwnedDocumentInfo {
-                                                                                document_info,
-                                                                                owner_id: Some(*transition.owner_id().as_bytes())
-                                                                            };
-                                                                    let result = drive_lock.add_document(owned_document_info, data_contract_id, document_type_name, false, &current_block_info, true, None, sdk.version());
+                                                                    let owned_document_info =
+                                                                        OwnedDocumentInfo {
+                                                                            document_info,
+                                                                            owner_id: Some(
+                                                                                *transition
+                                                                                    .owner_id()
+                                                                                    .as_bytes(),
+                                                                            ),
+                                                                        };
+                                                                    let result = drive_lock
+                                                                        .add_document(
+                                                                            owned_document_info,
+                                                                            data_contract_id,
+                                                                            document_type_name,
+                                                                            false,
+                                                                            &current_block_info,
+                                                                            true,
+                                                                            None,
+                                                                            sdk.version(),
+                                                                        );
                                                                     if let Err(e) = result {
                                                                         tracing::debug!("Failed to add document to local drive: {e}");
                                                                     }
@@ -1580,7 +1639,7 @@ impl AppState {
                                                         let current_identities = Arc::clone(&current_identities_clone);
                                                         let sdk_clone = sdk.clone();
                                                         let (tx, rx) = oneshot::channel();
-    
+
                                                         // Lock the wallet and clone the necessary data before moving into the async block
                                                         let asset_lock_transaction;
                                                         let asset_lock_proof_private_key;
@@ -1593,20 +1652,20 @@ impl AppState {
                                                             asset_lock_proof_private_key = asset_lock_proof_key.clone();
                                                             wallet_receive_address = wallet.receive_address();
                                                         }
-    
+
                                                         // Spawn a blocking task for the top-up process
                                                         tokio::task::spawn_blocking(move || {
                                                             // Use block_in_place to run async code within blocking context
                                                             let result = tokio::task::block_in_place(|| {
                                                                 tokio::runtime::Handle::current().block_on(async {
                                                                     let mut current_identities = current_identities.lock().await;
-    
+
                                                                     // Top up
                                                                     match try_broadcast_and_retrieve_asset_lock(&sdk_clone, &asset_lock_transaction, &wallet_receive_address, 2).await {
                                                                         Ok(asset_lock_proof) => {
                                                                             tracing::trace!("Successfully obtained asset lock proof for top up");
                                                                             let identity = current_identities.iter_mut().find(|identity| identity.id() == transition_clone.owner_id()).expect("Expected to find identity ID matching transition owner ID");
-    
+
                                                                             let state_transition = IdentityTopUpTransition::try_from_identity(
                                                                                 identity,
                                                                                 asset_lock_proof,
@@ -1615,9 +1674,9 @@ impl AppState {
                                                                                 sdk_clone.version(),
                                                                                 None,
                                                                             ).expect("Expected to make a top up transition");
-    
+
                                                                             let request = state_transition.broadcast_request_for_state_transition().expect("Expected to create broadcast request for top up");
-    
+
                                                                             match request
                                                                                 .clone()
                                                                                 .execute(&sdk_clone, RequestSettings::default())
@@ -1632,14 +1691,14 @@ impl AppState {
                                                                     }
                                                                 })
                                                             });
-    
+
                                                             // Send the result back to the main async context
                                                             tx.send(result).unwrap();
                                                         });
-    
+
                                                         // Await the result of the blocking task
                                                         let _ = rx.await;
-    
+
                                                     }
                                                 } else if e.to_string().contains("invalid identity nonce") {
                                                     identity_nonce_error_count.fetch_add(1, Ordering::SeqCst);
@@ -1681,7 +1740,6 @@ impl AppState {
 
                             let mut wait_futures = Vec::new();
                             for (tx_index, result) in broadcast_results.into_iter().enumerate() {
-    
                                 match result {
                                     Ok((transition, broadcast_result)) => {
                                         let transition_type = transition.name().to_owned();
@@ -1911,21 +1969,22 @@ impl AppState {
                                             let hist = Arc::clone(&hist);
 
                                             async move {
-                                            if let Ok(wait_request) = transition
-                                                .wait_for_state_transition_result_request()
-                                            {
-                                                ongoing_waits.fetch_add(1, Ordering::SeqCst);
-                                                let wait_start_time = Instant::now();
-                                                match wait_request
-                                                    .execute(&sdk_clone_inner, request_settings)
-                                                    .await
+                                                if let Ok(wait_request) = transition
+                                                    .wait_for_state_transition_result_request()
                                                 {
-                                                    Ok(wait_response) => {
-                                                        let wait_time = wait_start_time.elapsed().as_secs();
-                                                        let mut hist_lock = hist.lock().await;
-                                                        hist_lock.record(wait_time).unwrap();
-                                                                                                        
-                                                        if let Some(wait_for_state_transition_result_response::Version::V0(v0_response)) = &wait_response.version {
+                                                    ongoing_waits.fetch_add(1, Ordering::SeqCst);
+                                                    let wait_start_time = Instant::now();
+                                                    match wait_request
+                                                        .execute(&sdk_clone_inner, request_settings)
+                                                        .await
+                                                    {
+                                                        Ok(wait_response) => {
+                                                            let wait_time =
+                                                                wait_start_time.elapsed().as_secs();
+                                                            let mut hist_lock = hist.lock().await;
+                                                            hist_lock.record(wait_time).unwrap();
+
+                                                            if let Some(wait_for_state_transition_result_response::Version::V0(v0_response)) = &wait_response.version {
                                                             if let Some(wait_for_state_transition_result_response_v0::Result::Proof(_proof)) = &v0_response.result {
                                                                 // Assume the proof is correct in time mode for now
                                                                 // Decrement the transitions counter
@@ -1978,11 +2037,13 @@ impl AppState {
                                                                 tracing::trace!(" >>> Received empty response for transition with ID: {}", transition_id);
                                                             }
                                                         }
-                                                    }
-                                                    Err(e) => {
-                                                        wait_errs.fetch_add(1, Ordering::SeqCst);
-                                                        ongoing_waits.fetch_sub(1, Ordering::SeqCst);
-                                                        match e {
+                                                        }
+                                                        Err(e) => {
+                                                            wait_errs
+                                                                .fetch_add(1, Ordering::SeqCst);
+                                                            ongoing_waits
+                                                                .fetch_sub(1, Ordering::SeqCst);
+                                                            match e {
                                                             rs_dapi_client::DapiClientError::Transport(ref e, ..) => {wait_errors_per_code
                                                                 .entry(e.code())
                                                                 .or_insert_with(|| AtomicU64::new(0))
@@ -1994,13 +2055,14 @@ impl AppState {
                                                                 .fetch_add(1, Ordering::SeqCst);
                                                                 }
                                                         };
-                                                        tracing::debug!("Error waiting for state transition result: {:?}, {}, Tx ID: {}", e, transition_type, transition_id);
+                                                            tracing::debug!("Error waiting for state transition result: {:?}, {}, Tx ID: {}", e, transition_type, transition_id);
+                                                        }
                                                     }
+                                                } else {
+                                                    tracing::debug!("Failed to create wait request for state transition {}: {}", tx_index + 1, transition_type);
                                                 }
-                                            } else {
-                                                tracing::debug!("Failed to create wait request for state transition {}: {}", tx_index + 1, transition_type);
                                             }
-                                        }});
+                                        });
                                     }
                                     Err(_) => {
                                         // This is already logged
@@ -2103,7 +2165,7 @@ impl AppState {
                         let result = identity
                             .withdraw(
                                 sdk,
-                                wallet_lock.receive_address(),
+                                Some(wallet_lock.receive_address()),
                                 identity.balance() - 1_000_000, // not sure what this should be
                                 None,
                                 None,
@@ -2285,20 +2347,19 @@ impl AppState {
             }
             StrategyTask::RemoveLastContract(strategy_name) => {
                 let mut strategies_lock = self.available_strategies.lock().await;
-                let mut contract_names_lock =
-                    self.available_strategies_contract_names.lock().await;
-    
+                let mut contract_names_lock = self.available_strategies_contract_names.lock().await;
+
                 if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
                     // Remove the last contract_with_update entry from the strategy
                     strategy.start_contracts.pop();
-    
+
                     // Also remove the corresponding entry from the displayed contracts
                     if let Some(contract_names) = contract_names_lock.get_mut(&strategy_name) {
                         // Assuming each entry in contract_names corresponds to an entry in
                         // start_contracts
                         contract_names.pop();
                     }
-    
+
                     BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
                         strategy_name.clone(),
                         MutexGuard::map(strategies_lock, |strategies| {
@@ -2310,24 +2371,23 @@ impl AppState {
                     ))
                 } else {
                     BackendEvent::StrategyError {
-                        error: format!("Strategy doesn't exist in app state"),
+                        error: "Strategy doesn't exist in app state".to_string(),
                     }
                 }
             }
             StrategyTask::ClearContracts(strategy_name) => {
                 let mut strategies_lock = self.available_strategies.lock().await;
-                let mut contract_names_lock =
-                    self.available_strategies_contract_names.lock().await;
-    
+                let mut contract_names_lock = self.available_strategies_contract_names.lock().await;
+
                 if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
                     // Clear contract_with_updates for the strategy
                     strategy.start_contracts.clear();
-    
+
                     // Also clear the displayed contracts
                     if let Some(contract_names) = contract_names_lock.get_mut(&strategy_name) {
                         contract_names.clear();
                     }
-    
+
                     BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
                         strategy_name.clone(),
                         MutexGuard::map(strategies_lock, |strategies| {
@@ -2346,11 +2406,11 @@ impl AppState {
             StrategyTask::ClearOperations(strategy_name) => {
                 let mut strategies_lock = self.available_strategies.lock().await;
                 let contract_names_lock = self.available_strategies_contract_names.lock().await;
-    
+
                 if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
                     // Clear operations for the strategy
                     strategy.operations.clear();
-    
+
                     BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
                         strategy_name.clone(),
                         MutexGuard::map(strategies_lock, |strategies| {
@@ -2402,7 +2462,7 @@ impl AppState {
                     ))
                 } else {
                     BackendEvent::StrategyError {
-                        error: format!("Strategy doesn't exist in app state"),
+                        error: "Strategy doesn't exist in app state".to_string(),
                     }
                 }
             }
@@ -2422,13 +2482,13 @@ impl AppState {
                     ))
                 } else {
                     BackendEvent::StrategyError {
-                        error: format!("Strategy doesn't exist in app state"),
+                        error: "Strategy doesn't exist in app state".to_string(),
                     }
                 }
             }
         }
     }
-    
+
     async fn update_known_contracts(
         &self,
         sdk: &Sdk,
@@ -2447,12 +2507,10 @@ impl AppState {
         for contract_id_str in contract_ids.iter() {
             let contract_id = match Identifier::from_string(contract_id_str, Encoding::Base58) {
                 Ok(id) => id,
-                Err(e) => {
-                    match contract_id_str.as_str() {
-                        "DPNS" => dpns_contract::ID,
-                        "Dashpay" => dashpay_contract::ID,
-                        _ => return Err(format!("Failed to update known contracts: {e}"))
-                    }
+                Err(e) => match contract_id_str.as_str() {
+                    "DPNS" => dpns_contract::ID,
+                    "Dashpay" => dashpay_contract::ID,
+                    _ => return Err(format!("Failed to update known contracts: {e}")),
                 },
             };
 
@@ -2472,7 +2530,7 @@ impl AppState {
                 }
             }
         }
-    
+
         Ok(())
     }
 }
