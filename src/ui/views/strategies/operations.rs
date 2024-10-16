@@ -324,9 +324,9 @@ fn format_operation_name(op_type: &StrategyOperationType) -> String {
                 op.contract.id().to_string(Encoding::Base58)
             )
         }
-        StrategyOperationType::IdentityTopUp => "IdentityTopUp".to_string(),
+        StrategyOperationType::IdentityTopUp(_) => "IdentityTopUp".to_string(),
         StrategyOperationType::IdentityUpdate(op) => format!("IdentityUpdate({:?})", op),
-        StrategyOperationType::IdentityWithdrawal => "IdentityWithdrawal".to_string(),
+        StrategyOperationType::IdentityWithdrawal(_) => "IdentityWithdrawal".to_string(),
         StrategyOperationType::ContractCreate(..) => "ContractCreateRandom".to_string(),
         StrategyOperationType::ContractUpdate(op) => match op.action {
             DataContractNewDocumentTypes(_) => format!(

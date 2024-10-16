@@ -44,7 +44,7 @@ impl FormController for StrategyOpIdentityTopUpFormController {
                 task: Task::Strategy(StrategyTask::AddOperation {
                     strategy_name: self.selected_strategy.clone(),
                     operation: Operation {
-                        op_type: OperationType::IdentityTopUp,
+                        op_type: OperationType::IdentityTopUp(1_000_000_000..=1_500_000_000),
                         frequency: Frequency {
                             times_per_block_range: times_per_block..times_per_block + 1,
                             chance_per_block: Some(chance_per_block),

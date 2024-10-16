@@ -2,7 +2,6 @@ use chrono::{DateTime, Duration, Utc};
 use dash_sdk::platform::transition::vote::PutVote;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
-    fmt::format,
     iter,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
@@ -44,7 +43,6 @@ use dpp::{
     },
     platform_value::{btreemap_extensions::BTreeValueMapHelper, string_encoding::Encoding, Value},
     prelude::{DataContract, Identity, IdentityPublicKey},
-    version::PlatformVersion,
     voting::{
         contender_structs::ContenderWithSerializedDocument,
         vote_choices::resource_vote_choice::ResourceVoteChoice,
@@ -68,10 +66,7 @@ use rand::{prelude::StdRng, Rng, SeedableRng};
 use simple_signer::signer::SimpleSigner;
 
 use super::{state::IdentityPrivateKeysMap, AppStateUpdate, CompletedTaskPayload};
-use crate::{
-    backend::{error::Error, AppState, BackendEvent, Task},
-    config::Config,
-};
+use crate::backend::{error::Error, AppState, BackendEvent, Task};
 
 #[derive(Debug, Clone)]
 pub(crate) enum DocumentTask {

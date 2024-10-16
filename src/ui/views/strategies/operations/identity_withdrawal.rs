@@ -8,7 +8,7 @@ use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
 use crate::{
     backend::{StrategyTask, Task},
-    ui::form::{ComposedInput, Field, FormController, FormStatus, Input, InputStatus, SelectInput},
+    ui::form::{FormController, FormStatus, Input, InputStatus, SelectInput},
 };
 
 pub(super) struct StrategyOpIdentityWithdrawalFormController {
@@ -32,7 +32,7 @@ impl FormController for StrategyOpIdentityWithdrawalFormController {
                 task: Task::Strategy(StrategyTask::AddOperation {
                     strategy_name: self.selected_strategy.clone(),
                     operation: Operation {
-                        op_type: OperationType::IdentityWithdrawal,
+                        op_type: OperationType::IdentityWithdrawal(10_000_000..=15_000_000),
                         frequency: Frequency {
                             times_per_block_range: 1..2,
                             chance_per_block: Some(chance_per_block),
