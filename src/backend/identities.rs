@@ -31,11 +31,6 @@ use dash_sdk::{
     Sdk,
 };
 use dpp::{
-    dashcore::Network,
-    data_contract::DataContract,
-    identity::{hash::IdentityPublicKeyHashMethodsV0, KeyID},
-};
-use dpp::{
     dashcore::{self, key::Secp256k1},
     identity::SecurityLevel,
 };
@@ -73,6 +68,10 @@ use dpp::{
     },
     util::{hash::hash_double, strings::convert_to_homograph_safe_chars},
     version::PlatformVersion,
+};
+use dpp::{
+    data_contract::DataContract,
+    identity::{hash::IdentityPublicKeyHashMethodsV0, KeyID},
 };
 use dpp::{identity::Purpose, ProtocolError};
 use rand::{rngs::StdRng, Rng, SeedableRng};
@@ -1378,7 +1377,15 @@ impl AppState {
         //// Platform steps
 
         let updated_identity_balance = identity
-            .withdraw(sdk, new_receive_address, amount, None, None, signer, None)
+            .withdraw(
+                sdk,
+                Some(new_receive_address),
+                amount,
+                None,
+                None,
+                signer,
+                None,
+            )
             .await?;
 
         identity.set_balance(updated_identity_balance);

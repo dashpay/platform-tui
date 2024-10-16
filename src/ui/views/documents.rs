@@ -1,7 +1,6 @@
 //! View for fetched documents navigation and inspection.
 
-use std::collections::BTreeMap;
-
+use dash_sdk::query_types::IndexMap;
 use dpp::{
     data_contract::{document_type::DocumentType, DataContract},
     document::{Document, DocumentV0Getters},
@@ -73,7 +72,7 @@ impl DocumentsQuerysetScreenController {
         data_contract: DataContract,
         document_type: DocumentType,
         identity_id: Option<Identifier>,
-        current_batch: BTreeMap<Identifier, Option<Document>>,
+        current_batch: IndexMap<Identifier, Option<Document>>,
     ) -> Self {
         let mut document_select = tui_realm_stdlib::List::default()
             .rows(
@@ -93,7 +92,7 @@ impl DocumentsQuerysetScreenController {
 
         let document_view = Info::new_scrollable(
             &current_batch
-                .first_key_value()
+                .first()
                 .map(|(_, v)| as_json_string(v))
                 .unwrap_or_else(String::new),
         );

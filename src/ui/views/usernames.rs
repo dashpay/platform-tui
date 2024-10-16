@@ -370,7 +370,7 @@ impl ScreenController for DpnsUsernamesScreenController {
                     .0
                     .iter()
                     .map(|v| match v {
-                        ContestedResource::Value(value) => value
+                        ContestedResource(value) => value
                             .to_string()
                             .split_whitespace()
                             .nth(1)
