@@ -705,6 +705,7 @@ impl AppState {
                         frequency: identity_inserts_frequency,
                         start_keys: 3,
                         extra_keys: BTreeMap::new(),
+                        start_balance_range: 1_000_000_000..=1_500_000_000,
                     };
                     BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
                         strategy_name.clone(),
@@ -1065,7 +1066,7 @@ impl AppState {
                         .unwrap_or(1.0)) as u64;
                 let mut num_top_ups: u64 = 0;
                 for operation in &strategy.operations {
-                    if operation.op_type == OperationType::IdentityTopUp {
+                    if let OperationType::IdentityTopUp(_) = operation.op_type {
                         num_top_ups += (operation.frequency.times_per_block_range.start as f64
                             * num_blocks_or_seconds as f64
                             * operation.frequency.chance_per_block.unwrap_or(1.0))

@@ -28,6 +28,7 @@ use dpp::{
     voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll,
 };
 use drive_proof_verifier::types::{Contenders, ContestedResources};
+use indexmap::IndexMap;
 use serde::Serialize;
 pub(crate) use state::AppState;
 use strategy_tests::Strategy;
@@ -81,7 +82,7 @@ pub enum CompletedTaskPayload {
     Identities(BTreeMap<Identifier, Identity>),
     String(String),
     ContestedResources(ContestedResources),
-    ContestedResourceContenders(ContestedDocumentResourceVotePoll, Contenders),
+    ContestedResourceContenders(ContestedDocumentResourceVotePoll, Contenders, Option<u64>),
     DocumentsAndContestedResources(BTreeMap<Identifier, Option<Document>>, ContestedResources),
 }
 

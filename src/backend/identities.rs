@@ -31,11 +31,6 @@ use dash_sdk::{
     Sdk,
 };
 use dpp::{
-    dashcore::Network,
-    data_contract::DataContract,
-    identity::{hash::IdentityPublicKeyHashMethodsV0, KeyID},
-};
-use dpp::{
     dashcore::{self, key::Secp256k1},
     identity::SecurityLevel,
 };
@@ -73,6 +68,10 @@ use dpp::{
     },
     util::{hash::hash_double, strings::convert_to_homograph_safe_chars},
     version::PlatformVersion,
+};
+use dpp::{
+    data_contract::DataContract,
+    identity::{hash::IdentityPublicKeyHashMethodsV0, KeyID},
 };
 use dpp::{identity::Purpose, ProtocolError};
 use rand::{rngs::StdRng, Rng, SeedableRng};

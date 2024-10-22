@@ -1,5 +1,6 @@
 //! Contested resources screen
 
+use chrono::{DateTime, NaiveDateTime, Utc};
 use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo::{NoWinner, Locked, WonByIdentity};
 use dpp::{
     data_contract::{
@@ -71,7 +72,7 @@ impl ContestedResourcesScreenController {
                     .enumerate()
                     .map(|(_, v)| {
                         vec![TextSpan::new(match v {
-                            ContestedResource::Value(value) => {
+                            ContestedResource(value) => {
                                 let value_str = value.to_string();
                                 let parts: Vec<&str> = value_str.split_whitespace().collect();
                                 let second_part =
@@ -114,7 +115,7 @@ impl ContestedResourcesScreenController {
             .0
             .get(selected_index)
             .and_then(|doc| match doc {
-                ContestedResource::Value(value) => Some(value),
+                ContestedResource(value) => Some(value),
             })
     }
 }
@@ -236,17 +237,38 @@ impl ScreenController for ContestedResourcesScreenController {
                 task: Task::Document(DocumentTask::QueryVoteContenders(_, _, _, _)),
                 execution_result,
             }) => match execution_result {
-                Ok(CompletedTaskPayload::ContestedResourceContenders(vote_poll, contenders)) => {
+                Ok(CompletedTaskPayload::ContestedResourceContenders(
+                    vote_poll,
+                    contenders,
+                    end_timestamp,
+                )) => {
+                    let end_date_string = match end_timestamp {
+                        Some(timestamp) => {
+                            if let Some(naive_datetime) =
+                                NaiveDateTime::from_timestamp_millis(*timestamp as i64)
+                            {
+                                let datetime: DateTime<Utc> =
+                                    DateTime::from_utc(naive_datetime, Utc);
+                                datetime.format("%Y-%m-%d %H:%M:%S UTC").to_string()
+                            } else {
+                                "Invalid end date".to_string()
+                            }
+                        }
+                        None => "No end date".to_string(),
+                    };
+
                     let vote_status_string = match contenders.winner {
                         Some(maybe_winner) => match maybe_winner.0 {
-                            NoWinner => "Vote status: No winner".to_string(),
+                            NoWinner => {
+                                format!("Vote status: No winner.")
+                            }
                             WonByIdentity(id) => format!(
-                                "Vote status: Ended with winner {}",
+                                "Vote status: Ended with winner {}.",
                                 id.to_string(Encoding::Base58)
                             ),
-                            Locked => "Vote status: Locked".to_string(),
+                            Locked => format!("Vote status: Locked."),
                         },
-                        None => "Vote status: In progress".to_string(),
+                        None => format!("Vote status: In progress. Ends on {}", end_date_string),
                     };
                     if self.want_to_vote {
                         ScreenFeedback::Form(Box::new(ContestedResourceVoteFormController::new(
