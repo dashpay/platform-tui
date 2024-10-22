@@ -72,7 +72,7 @@ impl ContestedResourcesScreenController {
                     .enumerate()
                     .map(|(_, v)| {
                         vec![TextSpan::new(match v {
-                            ContestedResource::Value(value) => {
+                            ContestedResource(value) => {
                                 let value_str = value.to_string();
                                 let parts: Vec<&str> = value_str.split_whitespace().collect();
                                 let second_part =
@@ -115,7 +115,7 @@ impl ContestedResourcesScreenController {
             .0
             .get(selected_index)
             .and_then(|doc| match doc {
-                ContestedResource::Value(value) => Some(value),
+                ContestedResource(value) => Some(value),
             })
     }
 }

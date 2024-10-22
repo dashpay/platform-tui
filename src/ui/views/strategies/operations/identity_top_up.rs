@@ -1,5 +1,6 @@
 //! Identity top up form for strategy.
 
+use dpp::dash_to_credits;
 use strategy_tests::{
     frequency::Frequency,
     operations::{Operation, OperationType},
@@ -44,7 +45,9 @@ impl FormController for StrategyOpIdentityTopUpFormController {
                 task: Task::Strategy(StrategyTask::AddOperation {
                     strategy_name: self.selected_strategy.clone(),
                     operation: Operation {
-                        op_type: OperationType::IdentityTopUp,
+                        op_type: OperationType::IdentityTopUp(
+                            dash_to_credits!(1)..=dash_to_credits!(1),
+                        ),
                         frequency: Frequency {
                             times_per_block_range: times_per_block..times_per_block + 1,
                             chance_per_block: Some(chance_per_block),

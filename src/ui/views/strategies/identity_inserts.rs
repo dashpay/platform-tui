@@ -1,5 +1,6 @@
 //! Strategy's identity inserts form.
 
+use dpp::dash_to_credits;
 use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
     tui::prelude::Rect,
@@ -226,6 +227,7 @@ impl FormController for StrategyIdentityInsertsFormController {
                         times_per_block_range: count..count + 1,
                         chance_per_block: Some(chance),
                     },
+                    start_balance: dash_to_credits!(1), //todo, set this
                 }),
                 block: false,
             },

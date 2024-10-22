@@ -15,6 +15,7 @@ use dapi_grpc::core::v0::{
     BroadcastTransactionRequest, BroadcastTransactionResponse, GetTransactionRequest,
     GetTransactionResponse,
 };
+use dash_sdk::dashcore_rpc::{Client, RpcApi};
 use dash_sdk::{RequestSettings, Sdk};
 use dpp::dashcore::secp256k1::SecretKey;
 use dpp::dashcore::{
@@ -50,6 +51,7 @@ pub async fn add_wallet_by_private_key_as_string<'s>(
     wallet_state: &Mutex<Option<Wallet>>,
     private_key: &String,
     insight: &'s InsightAPIClient,
+    core_client: &'s Client,
 ) -> Result<(), WalletError> {
     let private_key = match private_key.len() {
         64 => {
@@ -74,13 +76,14 @@ pub async fn add_wallet_by_private_key_as_string<'s>(
             ));
         }
     };
-    Ok(add_wallet_by_private_key(wallet_state, private_key, insight).await)
+    Ok(add_wallet_by_private_key(wallet_state, private_key, insight, core_client).await)
 }
 
 pub async fn add_wallet_by_private_key<'s>(
     wallet_state: &'s Mutex<Option<Wallet>>,
     private_key: PrivateKey,
     insight: &'s InsightAPIClient,
+    core_client: &Client,
 ) {
     let secp = Secp256k1::new();
     let public_key = private_key.public_key(&secp);
@@ -93,7 +96,7 @@ pub async fn add_wallet_by_private_key<'s>(
         utxos: Default::default(),
     });
 
-    match wallet.reload_utxos(insight).await {
+    match wallet.reload_utxos(insight, core_client).await {
         Ok(utxos) => match wallet {
             BackendWallet(ref mut single_key_wallet) => {
                 single_key_wallet.utxos = utxos;
@@ -113,10 +116,18 @@ pub(super) async fn run_wallet_task<'s>(
     wallet_state: &'s Mutex<Option<Wallet>>,
     task: WalletTask,
     insight: &'s InsightAPIClient,
+    core_client: &'s Client,
 ) -> BackendEvent<'s> {
     match task {
         WalletTask::AddByPrivateKey(ref private_key) => {
-            match add_wallet_by_private_key_as_string(&wallet_state, private_key, insight).await {
+            match add_wallet_by_private_key_as_string(
+                &wallet_state,
+                private_key,
+                insight,
+                core_client,
+            )
+            .await
+            {
                 Ok(_) => {
                     let wallet_guard = wallet_state.lock().await;
                     let loaded_wallet_update = MutexGuard::map(wallet_guard, |opt| {
@@ -139,7 +150,7 @@ pub(super) async fn run_wallet_task<'s>(
             let mut rng = StdRng::from_entropy();
             let network = Config::load().core_network();
             let private_key = PrivateKey::new(SecretKey::new(&mut rng), network);
-            add_wallet_by_private_key(&wallet_state, private_key, insight).await;
+            add_wallet_by_private_key(&wallet_state, private_key, insight, core_client).await;
 
             let wallet_guard = wallet_state.lock().await;
             let loaded_wallet_update = MutexGuard::map(wallet_guard, |opt| {
@@ -155,7 +166,7 @@ pub(super) async fn run_wallet_task<'s>(
         WalletTask::Refresh => {
             let mut wallet_guard = wallet_state.lock().await;
             if let Some(wallet) = wallet_guard.deref_mut() {
-                match wallet.reload_utxos(&insight).await {
+                match wallet.reload_utxos(insight, core_client).await {
                     Ok(_) => {
                         let loaded_wallet_update = MutexGuard::map(wallet_guard, |opt| {
                             opt.as_mut().expect("wallet was set above")
@@ -168,7 +179,7 @@ pub(super) async fn run_wallet_task<'s>(
                     }
                     Err(err) => BackendEvent::TaskCompleted {
                         task: Task::Wallet(task),
-                        execution_result: Err(err.to_string()),
+                        execution_result: Err(err),
                     },
                 }
             } else {
@@ -216,7 +227,10 @@ pub(super) async fn run_wallet_task<'s>(
             if let Some(wallet) = &mut *wallet_guard {
                 match wallet {
                     Wallet::SingleKeyWallet(sk_wallet) => {
-                        match sk_wallet.split_utxos(sdk, count as usize, insight).await {
+                        match sk_wallet
+                            .split_utxos(sdk, count as usize, insight, core_client)
+                            .await
+                        {
                             Ok(_) => BackendEvent::TaskCompleted {
                                 task: Task::Wallet(task),
                                 execution_result: Ok("Split UTXOs".into()),
@@ -244,7 +258,7 @@ pub enum WalletError {
     Insight(InsightError),
     #[error("not enough balance")]
     Balance,
-    #[error("Wallet error: {0}")]
+    #[error("{0}")]
     Custom(String),
 }
 
@@ -442,9 +456,10 @@ impl Wallet {
     pub async fn reload_utxos(
         &mut self,
         insight: &InsightAPIClient,
-    ) -> Result<HashMap<OutPoint, TxOut>, InsightError> {
+        core_client: &Client,
+    ) -> Result<HashMap<OutPoint, TxOut>, String> {
         match self {
-            Wallet::SingleKeyWallet(wallet) => wallet.reload_utxos(insight).await,
+            Wallet::SingleKeyWallet(wallet) => wallet.reload_utxos(insight, core_client).await,
         }
     }
 }
@@ -618,16 +633,44 @@ impl SingleKeyWallet {
     pub async fn reload_utxos(
         &mut self,
         insight: &InsightAPIClient,
-    ) -> Result<HashMap<OutPoint, TxOut>, InsightError> {
-        match insight
-            .utxos_with_amount_for_addresses(&[&self.address])
-            .await
-        {
+        core_client: &Client,
+    ) -> Result<HashMap<OutPoint, TxOut>, String> {
+        // First, let's try to get UTXOs from the RPC client using `list_unspent`.
+        match core_client.list_unspent(Some(1), None, Some(&[&self.address]), None, None) {
             Ok(utxos) => {
-                self.utxos = utxos.clone();
-                Ok(utxos)
+                // Test log statement
+                tracing::info!("{:?} utxos", utxos.len());
+
+                // Convert RPC UTXOs to the desired HashMap format
+                let mut utxo_map = HashMap::new();
+                for utxo in utxos {
+                    let outpoint = OutPoint::new(utxo.txid, utxo.vout);
+                    let tx_out = TxOut {
+                        value: utxo.amount.to_sat(),
+                        script_pubkey: utxo.script_pub_key,
+                    };
+                    utxo_map.insert(outpoint, tx_out);
+                }
+                self.utxos = utxo_map.clone(); // Store the result in `self.utxos`
+                Ok(utxo_map)
             }
-            Err(err) => Err(err),
+            Err(first_error) => {
+                // If that doesn't work, use the Insight API as a fallback
+                match insight
+                    .utxos_with_amount_for_addresses(&[&self.address])
+                    .await
+                {
+                    Ok(utxos) => {
+                        self.utxos = utxos.clone();
+                        Ok(utxos)
+                    }
+                    Err(err) => Err(format!(
+                        "First error from Core: {}, Second Error from Insight: {}",
+                        first_error.to_string(),
+                        err.to_string()
+                    )),
+                }
+            }
         }
     }
 
@@ -646,6 +689,7 @@ impl SingleKeyWallet {
         sdk: &Sdk,
         desired_utxo_count: usize,
         insight: &InsightAPIClient,
+        core_client: &Client,
     ) -> Result<(), WalletError> {
         tracing::info!("Splitting wallet UTXOs into {} UTXOs", desired_utxo_count);
 
@@ -653,7 +697,7 @@ impl SingleKeyWallet {
         const MAX_OUTPUTS_PER_TRANSACTION: usize = 24; // Dash Core only allows 24 outputs per tx
         let current_wallet_balance = self.balance();
         let mut remaining_utxos_in_wallet = self
-            .reload_utxos(insight)
+            .reload_utxos(insight, core_client)
             .await
             .expect("Expected to reload utxos");
         let mut num_utxos_remaining_to_create = desired_utxo_count;

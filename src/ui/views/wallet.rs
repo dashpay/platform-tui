@@ -278,6 +278,15 @@ impl ScreenController for WalletScreenController {
             },
 
             Event::Backend(BackendEvent::TaskCompletedStateChange {
+                task: Task::Identity(IdentityTask::WithdrawFromIdentity(_)),
+                execution_result,
+                app_state_update: AppStateUpdate::LoadedIdentity(_),
+            }) => {
+                self.identity_info = Info::new_from_result(execution_result);
+                ScreenFeedback::Redraw
+            }
+
+            Event::Backend(BackendEvent::TaskCompletedStateChange {
                 execution_result,
                 app_state_update: AppStateUpdate::LoadedIdentity(identity),
                 ..
@@ -433,12 +442,12 @@ fn display_wallet(wallet: &Wallet) -> String {
     }
 }
 
-struct WithdrawFromIdentityFormController {
+pub struct WithdrawFromIdentityFormController {
     input: TextInput<DefaultTextInputParser<f64>>,
 }
 
 impl WithdrawFromIdentityFormController {
-    fn new() -> Self {
+    pub fn new() -> Self {
         WithdrawFromIdentityFormController {
             input: TextInput::new("Quantity (in Dash)"),
         }
@@ -450,7 +459,7 @@ impl FormController for WithdrawFromIdentityFormController {
         match self.input.on_event(event) {
             InputStatus::Done(amount) => FormStatus::Done {
                 task: Task::Identity(IdentityTask::WithdrawFromIdentity(
-                    (amount * 100000000.0) as u64,
+                    (amount * 100000000000.0) as u64,
                 )),
                 block: true,
             },
