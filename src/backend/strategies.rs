@@ -117,6 +117,10 @@ pub enum StrategyTask {
         balance: u64,
         add_transfer_key: bool,
     },
+    AddHardCodedStartIdentity {
+        strategy_name: String,
+        identity_id_str: String,
+    },
     SetStartIdentitiesBalance(String, u64),
     AddOperation {
         strategy_name: String,
@@ -805,6 +809,42 @@ impl AppState {
                     }
                 }
             }
+            StrategyTask::AddHardCodedStartIdentity {
+                strategy_name,
+                identity_id_str,
+            } => {
+                let mut strategies_lock = self.available_strategies.lock().await;
+                if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
+                    let known_identities = self.known_identities.lock().await;
+                    let maybe_identity = known_identities
+                        .get(
+                            &Identifier::from_string(&identity_id_str, Encoding::Base58)
+                                .expect("Expected to convert string to Identifier"),
+                        )
+                        .cloned();
+                    if let Some(identity) = maybe_identity {
+                        strategy.start_identities.hard_coded.push((identity, None));
+                        BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
+                            strategy_name.clone(),
+                            MutexGuard::map(strategies_lock, |strategies| {
+                                strategies.get_mut(&strategy_name).expect("strategy exists")
+                            }),
+                            MutexGuard::map(
+                                self.available_strategies_contract_names.lock().await,
+                                |names| names.get_mut(&strategy_name).expect("inconsistent data"),
+                            ),
+                        ))
+                    } else {
+                        BackendEvent::StrategyError {
+                            error: format!("Identity with id {} not found", identity_id_str),
+                        }
+                    }
+                } else {
+                    BackendEvent::StrategyError {
+                        error: format!("Strategy doesn't exist in app state."),
+                    }
+                }
+            }
             StrategyTask::SetStartIdentitiesBalance(strategy_name, balance) => {
                 let mut strategies_lock = self.available_strategies.lock().await;
                 if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
@@ -910,7 +950,7 @@ impl AppState {
                     {
                         Ok(response) => {
                             if let Some(get_epochs_info_response::Version::V0(response_v0)) =
-                                response.version
+                                response.inner.version
                             {
                                 if let Some(metadata) = response_v0.metadata {
                                     initial_block_info = BlockInfo {
@@ -964,6 +1004,31 @@ impl AppState {
                 // During strategy execution, newly created identities will be added to current_identities
                 let mut loaded_identity_clone = loaded_identity_lock.clone();
                 let current_identities = Arc::new(Mutex::new(vec![loaded_identity_clone.clone()]));
+
+                // Add the hardcoded start identities that are already created to current_identities
+                let hard_coded_start_identities = strategy
+                    .start_identities
+                    .hard_coded
+                    .iter()
+                    .filter_map(|(identity, transition)| {
+                        if transition.is_none() {
+                            Some(identity.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<Identity>>();
+
+                current_identities
+                    .lock()
+                    .await
+                    .extend(hard_coded_start_identities);
+
+                // Add the loaded identity to hardcoded start identities
+                strategy
+                    .start_identities
+                    .hard_coded
+                    .push((loaded_identity_lock.clone(), None));
 
                 // Set the nonce counters
                 let used_contract_ids = strategy.used_contract_ids();
@@ -1618,18 +1683,18 @@ impl AppState {
                                                 Ok((transition_clone, broadcast_result))
                                             },
                                             Err(e) => {
-                                                match e {
-                                                    rs_dapi_client::DapiClientError::Transport(ref e, ..) => {broadcast_errors_per_code
-                                                        .entry(e.code())
-                                                        .or_insert_with(|| AtomicU64::new(0))
-                                                        .fetch_add(1, Ordering::SeqCst);},
-                                                    _ => {
-                                                        broadcast_errors_per_code
-                                                            .entry(Code::Unknown)
-                                                            .or_insert_with(|| AtomicU64::new(0))
-                                                            .fetch_add(1, Ordering::SeqCst);
-                                                    }
-                                                };
+                                                // match e.inner {
+                                                //     rs_dapi_client::DapiClientError::Transport(ref e, ..) => {broadcast_errors_per_code
+                                                //         .entry(e.code())
+                                                //         .or_insert_with(|| AtomicU64::new(0))
+                                                //         .fetch_add(1, Ordering::SeqCst);},
+                                                //     _ => {
+                                                //         broadcast_errors_per_code
+                                                //             .entry(Code::Unknown)
+                                                //             .or_insert_with(|| AtomicU64::new(0))
+                                                //             .fetch_add(1, Ordering::SeqCst);
+                                                //     }
+                                                // };
                                                 broadcast_errs.fetch_add(1, Ordering::SeqCst);
                                                 tracing::error!("Error: Failed to broadcast {} transition: {:?}. ID: {}", transition_clone.name(), e, transition_id);
                                                 if e.to_string().contains("Insufficient identity") {
@@ -1829,7 +1894,7 @@ impl AppState {
 
                                             match wait_result {
                                                 Ok(wait_response) => {
-                                                    Some(if let Some(wait_for_state_transition_result_response::Version::V0(v0_response)) = &wait_response.version {
+                                                    Some(if let Some(wait_for_state_transition_result_response::Version::V0(v0_response)) = &wait_response.inner.version {
                                                         if let Some(metadata) = &v0_response.metadata {
                                                             // Verification of the proof
                                                             if let Some(wait_for_state_transition_result_response_v0::Result::Proof(proof)) = &v0_response.result {
@@ -1984,7 +2049,7 @@ impl AppState {
                                                             let mut hist_lock = hist.lock().await;
                                                             hist_lock.record(wait_time).unwrap();
 
-                                                            if let Some(wait_for_state_transition_result_response::Version::V0(v0_response)) = &wait_response.version {
+                                                            if let Some(wait_for_state_transition_result_response::Version::V0(v0_response)) = &wait_response.inner.version {
                                                             if let Some(wait_for_state_transition_result_response_v0::Result::Proof(_proof)) = &v0_response.result {
                                                                 // Assume the proof is correct in time mode for now
                                                                 // Decrement the transitions counter
@@ -2043,18 +2108,18 @@ impl AppState {
                                                                 .fetch_add(1, Ordering::SeqCst);
                                                             ongoing_waits
                                                                 .fetch_sub(1, Ordering::SeqCst);
-                                                            match e {
-                                                            rs_dapi_client::DapiClientError::Transport(ref e, ..) => {wait_errors_per_code
-                                                                .entry(e.code())
-                                                                .or_insert_with(|| AtomicU64::new(0))
-                                                                .fetch_add(1, Ordering::SeqCst);},
-                                                            _ => {
-                                                                wait_errors_per_code
-                                                                .entry(Code::Unknown)
-                                                                .or_insert_with(|| AtomicU64::new(0))
-                                                                .fetch_add(1, Ordering::SeqCst);
-                                                                }
-                                                        };
+                                                            // match e.inner {
+                                                            //     rs_dapi_client::DapiClientError::Transport(ref e, ..) => {wait_errors_per_code
+                                                            //         .entry(e.code())
+                                                            //         .or_insert_with(|| AtomicU64::new(0))
+                                                            //         .fetch_add(1, Ordering::SeqCst);},
+                                                            //     _ => {
+                                                            //         wait_errors_per_code
+                                                            //         .entry(Code::Unknown)
+                                                            //         .or_insert_with(|| AtomicU64::new(0))
+                                                            //         .fetch_add(1, Ordering::SeqCst);
+                                                            //         }
+                                                            // };
                                                             tracing::debug!("Error waiting for state transition result: {:?}, {}, Tx ID: {}", e, transition_type, transition_id);
                                                         }
                                                     }

@@ -288,7 +288,7 @@ fn display_strategy(
                         op.contract.id().to_string(Encoding::Base58)
                     )
                 }
-                OperationType::IdentityTransfer => "IdentityTransfer".to_string(),
+                OperationType::IdentityTransfer(_) => "IdentityTransfer".to_string(),
                 OperationType::ResourceVote(_) => "ResourceVote".to_string(),
             };
 

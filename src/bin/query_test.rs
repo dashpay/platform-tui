@@ -33,7 +33,7 @@ use governor::state::{InMemoryState, NotKeyed};
 use governor::{Quota, RateLimiter};
 use rand::seq::SliceRandom;
 use rs_dapi_client::{
-    Address, AddressList, DapiClient, DapiClientError, DapiRequest, DapiRequestExecutor,
+    Address, AddressList, DapiClient, DapiClientError, DapiRequest, DapiRequestExecutor, IntoInner,
     RequestSettings,
 };
 use rs_platform_explorer::config::Config;

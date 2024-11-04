@@ -54,8 +54,8 @@ impl From<InsightError> for Error {
     }
 }
 
-impl From<DapiClientError<Status>> for Error {
-    fn from(value: DapiClientError<Status>) -> Self {
+impl From<DapiClientError> for Error {
+    fn from(value: DapiClientError) -> Self {
         SdkError(value.into())
     }
 }
