@@ -1089,11 +1089,6 @@ impl AppState {
                 let contract_results = join_all(contract_futures).await;
                 let mut contract_nonce_counter: BTreeMap<(Identifier, Identifier), u64> =
                     contract_results.into_iter().collect();
-                tracing::info!(
-                    "Took {} seconds to obtain loaded identity nonce and {} identity contract nonces",
-                    nonce_fetching_time.elapsed().as_secs(),
-                    used_contract_ids.len()
-                );
 
                 // Get a lock on the local drive for the following two callbacks
                 let drive_lock = self.drive.lock().await;
@@ -1328,9 +1323,11 @@ impl AppState {
                 let broadcast_errors_per_code: Arc<DashMap<Code, AtomicU64>> = Default::default();
                 let wait_errors_per_code: Arc<DashMap<Code, AtomicU64>> = Default::default();
 
+                tracing::info!("Initialization complete. Starting strategy execution.");
+
                 // Now loop through the number of blocks or seconds the user asked for, preparing and processing state transitions
                 while load_start_time.elapsed().as_secs() < duration || loop_index <= 2 {
-                    tracing::info!("Start loop: {loop_index}");
+                    tracing::debug!("Start loop: {loop_index}");
                     // Every 10 loops, log statistics
                     if loop_index % 10 == 0 {
                         let stats_elapsed = load_start_time.elapsed().as_secs();
