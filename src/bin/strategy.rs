@@ -12,7 +12,6 @@ use rs_platform_explorer::{
     },
     config::Config,
 };
-use std::os::fd::IntoRawFd;
 use std::{fs::File, panic, time::Duration};
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::EnvFilter;
@@ -251,7 +250,6 @@ async fn main() {
     .expect("expected core client");
 
     if let Some(test_name) = args.test {
-        let block_mode = if args.second { false } else { true };
         backend
             .state()
             .run_strategy_task(
@@ -259,8 +257,8 @@ async fn main() {
                 backend::strategies::StrategyTask::RunStrategy(
                     test_name.to_string(),
                     args.blocks,
+                    1,
                     args.prove,
-                    block_mode,
                     credit_amount,
                 ),
                 &insight,

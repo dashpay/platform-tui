@@ -205,11 +205,6 @@ impl ScreenController for StartIdentitiesScreenController {
             let known_start_identities_text = {
                 let mut identities_list = Vec::new();
 
-                // Add the loaded identity if it exists
-                if let Some(identity) = self.loaded_identity.as_ref() {
-                    identities_list.push(identity.id().to_string(Encoding::Base58));
-                }
-
                 // Add the hard-coded identities
                 identities_list.extend(
                     strategy
@@ -218,6 +213,14 @@ impl ScreenController for StartIdentitiesScreenController {
                         .iter()
                         .map(|(identity, _)| identity.id().to_string(Encoding::Base58)),
                 );
+
+                // Add the loaded identity if it exists and isn't already in the list
+                if let Some(identity) = self.loaded_identity.as_ref() {
+                    let identity_id = identity.id().to_string(Encoding::Base58);
+                    if !identities_list.contains(&identity_id) {
+                        identities_list.push(identity_id);
+                    }
+                }
 
                 if identities_list.is_empty() {
                     "No known identities".to_string()
@@ -390,8 +393,9 @@ impl StrategyAddKnownStartIdentityFormController {
     ) -> Self {
         // Compile the list of known identities who
         //  - are not the loaded identity
-        //  - are not in the hard-coded start identities
+        //  - are not already in the hard-coded start identities
         //  - have a transfer key
+        // So that the user can select one to add as a known start identity
         //
         // Note we can refactor so that we can run strategies without a loaded identity as long as there are start identities
         // In that case, we would remove the loaded_identity check
@@ -415,7 +419,7 @@ impl StrategyAddKnownStartIdentityFormController {
             ids
         };
 
-        // Filter known identities, excluding the ones in ids_to_exclude
+        // Known identities excluding the ones in ids_to_exclude
         // and excluding identities without transfer keys
         let filtered_identities: Vec<_> = known_identities
             .into_iter()

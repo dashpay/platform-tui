@@ -81,11 +81,11 @@ impl FormController for StrategyOpIdentityTransferRandomFormController {
 pub(super) struct StrategyOpIdentityTransferSpecificFormController {
     input: ComposedInput<(
         Field<SelectInput<String>>,
-        Field<SelectInput<String>>,
         Field<TextInput<DefaultTextInputParser<u64>>>,
         Field<SelectInput<f64>>,
     )>,
     selected_strategy_name: String,
+    loaded_identity_id: String,
 }
 
 impl StrategyOpIdentityTransferSpecificFormController {
@@ -94,23 +94,20 @@ impl StrategyOpIdentityTransferSpecificFormController {
         selected_strategy: Strategy,
         loaded_identity_id: Option<String>,
     ) -> Self {
-        let mut identity_id_strings: Vec<String> = selected_strategy
+        let identity_id_strings: Vec<String> = selected_strategy
             .start_identities
             .hard_coded
             .iter()
             .map(|(identity, _)| identity.id().to_string(Encoding::Base58))
             .collect();
 
-        if let Some(id) = loaded_identity_id {
-            identity_id_strings.push(id);
-        }
-
         Self {
             input: ComposedInput::new((
-                Field::new(
-                    "Select sender",
-                    SelectInput::new(identity_id_strings.clone()),
-                ),
+                // For now, sender is always loaded identity otherwise we need to get signer from sender
+                // Field::new(
+                //     "Select sender",
+                //     SelectInput::new(identity_id_strings.clone()),
+                // ),
                 Field::new("Select recipient", SelectInput::new(identity_id_strings)), // TODO: Take out sender
                 Field::new("Amount", TextInput::new("Minimum 300000")),
                 Field::new(
@@ -119,6 +116,8 @@ impl StrategyOpIdentityTransferSpecificFormController {
                 ),
             )),
             selected_strategy_name,
+            loaded_identity_id: loaded_identity_id
+                .expect("Need a loaded identity to create transfer"),
         }
     }
 }
@@ -131,15 +130,18 @@ impl FormController for StrategyOpIdentityTransferSpecificFormController {
                     strategy_name: self.selected_strategy_name.clone(),
                     operation: Operation {
                         op_type: OperationType::IdentityTransfer(Some(IdentityTransferInfo {
-                            from: Identifier::from_string(&inputs.0, Encoding::Base58)
+                            from: Identifier::from_string(
+                                &self.loaded_identity_id,
+                                Encoding::Base58,
+                            )
+                            .expect("Expected to convert string to Identifier"),
+                            to: Identifier::from_string(&inputs.0, Encoding::Base58)
                                 .expect("Expected to convert string to Identifier"),
-                            to: Identifier::from_string(&inputs.1, Encoding::Base58)
-                                .expect("Expected to convert string to Identifier"),
-                            amount: inputs.2,
+                            amount: inputs.1,
                         })),
                         frequency: Frequency {
                             times_per_block_range: 1..2,
-                            chance_per_block: Some(inputs.3),
+                            chance_per_block: Some(inputs.2),
                         },
                     },
                 }),
