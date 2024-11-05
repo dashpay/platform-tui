@@ -1014,7 +1014,7 @@ dependencies = [
 [[package]]
 name = "dapi-grpc"
 version = "1.5.0"
-source = "git+https://github.com/dashpay/platform.git?branch=feat/hardcoded-identity-transfers-in-strategy-tests#99fe5fa402ddcae329795bb29eaf73fd5044b4f2"
+source = "git+https://github.com/dashpay/platform.git#cafda11af1ee767a8cf803c23697f57401fc30fb"
 dependencies = [
  "dapi-grpc-macros",
  "futures-core",
@@ -1031,7 +1031,7 @@ dependencies = [
 [[package]]
 name = "dapi-grpc-macros"
 version = "1.5.0"
-source = "git+https://github.com/dashpay/platform.git?branch=feat/hardcoded-identity-transfers-in-strategy-tests#99fe5fa402ddcae329795bb29eaf73fd5044b4f2"
+source = "git+https://github.com/dashpay/platform.git#cafda11af1ee767a8cf803c23697f57401fc30fb"
 dependencies = [
  "heck",
  "quote",
@@ -1076,7 +1076,7 @@ dependencies = [
 [[package]]
 name = "dash-sdk"
 version = "1.5.0"
-source = "git+https://github.com/dashpay/platform.git?branch=feat/hardcoded-identity-transfers-in-strategy-tests#99fe5fa402ddcae329795bb29eaf73fd5044b4f2"
+source = "git+https://github.com/dashpay/platform.git#cafda11af1ee767a8cf803c23697f57401fc30fb"
 dependencies = [
  "arc-swap",
  "async-trait",
@@ -1189,7 +1189,7 @@ dependencies = [
 [[package]]
 name = "dashpay-contract"
 version = "1.5.0"
-source = "git+https://github.com/dashpay/platform.git?branch=feat/hardcoded-identity-transfers-in-strategy-tests#99fe5fa402ddcae329795bb29eaf73fd5044b4f2"
+source = "git+https://github.com/dashpay/platform.git#cafda11af1ee767a8cf803c23697f57401fc30fb"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -1200,7 +1200,7 @@ dependencies = [
 [[package]]
 name = "data-contracts"
 version = "1.5.0"
-source = "git+https://github.com/dashpay/platform.git?branch=feat/hardcoded-identity-transfers-in-strategy-tests#99fe5fa402ddcae329795bb29eaf73fd5044b4f2"
+source = "git+https://github.com/dashpay/platform.git#cafda11af1ee767a8cf803c23697f57401fc30fb"
 dependencies = [
  "dashpay-contract",
  "dpns-contract",
@@ -1323,7 +1323,7 @@ checksum = "75b325c5dbd37f80359721ad39aca5a29fb04c89279657cffdda8736d0c0b9d2"
 [[package]]
 name = "dpns-contract"
 version = "1.5.0"
-source = "git+https://github.com/dashpay/platform.git?branch=feat/hardcoded-identity-transfers-in-strategy-tests#99fe5fa402ddcae329795bb29eaf73fd5044b4f2"
+source = "git+https://github.com/dashpay/platform.git#cafda11af1ee767a8cf803c23697f57401fc30fb"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -1334,7 +1334,7 @@ dependencies = [
 [[package]]
 name = "dpp"
 version = "1.5.0"
-source = "git+https://github.com/dashpay/platform.git?branch=feat/hardcoded-identity-transfers-in-strategy-tests#99fe5fa402ddcae329795bb29eaf73fd5044b4f2"
+source = "git+https://github.com/dashpay/platform.git#cafda11af1ee767a8cf803c23697f57401fc30fb"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1380,7 +1380,7 @@ dependencies = [
 [[package]]
 name = "drive"
 version = "1.5.0"
-source = "git+https://github.com/dashpay/platform.git?branch=feat/hardcoded-identity-transfers-in-strategy-tests#99fe5fa402ddcae329795bb29eaf73fd5044b4f2"
+source = "git+https://github.com/dashpay/platform.git#cafda11af1ee767a8cf803c23697f57401fc30fb"
 dependencies = [
  "arc-swap",
  "base64 0.22.1",
@@ -1418,7 +1418,7 @@ dependencies = [
 [[package]]
 name = "drive-proof-verifier"
 version = "1.5.0"
-source = "git+https://github.com/dashpay/platform.git?branch=feat/hardcoded-identity-transfers-in-strategy-tests#99fe5fa402ddcae329795bb29eaf73fd5044b4f2"
+source = "git+https://github.com/dashpay/platform.git#cafda11af1ee767a8cf803c23697f57401fc30fb"
 dependencies = [
  "bincode",
  "dapi-grpc",
@@ -1647,7 +1647,7 @@ checksum = "e8c02a5121d4ea3eb16a80748c74f5549a5665e4c21333c6098f283870fbdea6"
 [[package]]
 name = "feature-flags-contract"
 version = "1.5.0"
-source = "git+https://github.com/dashpay/platform.git?branch=feat/hardcoded-identity-transfers-in-strategy-tests#99fe5fa402ddcae329795bb29eaf73fd5044b4f2"
+source = "git+https://github.com/dashpay/platform.git#cafda11af1ee767a8cf803c23697f57401fc30fb"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -2468,7 +2468,7 @@ dependencies = [
 [[package]]
 name = "json-schema-compatibility-validator"
 version = "1.5.0"
-source = "git+https://github.com/dashpay/platform.git?branch=feat/hardcoded-identity-transfers-in-strategy-tests#99fe5fa402ddcae329795bb29eaf73fd5044b4f2"
+source = "git+https://github.com/dashpay/platform.git#cafda11af1ee767a8cf803c23697f57401fc30fb"
 dependencies = [
  "json-patch",
  "once_cell",
@@ -2672,7 +2672,7 @@ dependencies = [
 [[package]]
 name = "masternode-reward-shares-contract"
 version = "1.5.0"
-source = "git+https://github.com/dashpay/platform.git?branch=feat/hardcoded-identity-transfers-in-strategy-tests#99fe5fa402ddcae329795bb29eaf73fd5044b4f2"
+source = "git+https://github.com/dashpay/platform.git#cafda11af1ee767a8cf803c23697f57401fc30fb"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -3321,7 +3321,7 @@ checksum = "953ec861398dccce10c670dfeaf3ec4911ca479e9c02154b3a215178c5f566f2"
 [[package]]
 name = "platform-serialization"
 version = "1.5.0"
-source = "git+https://github.com/dashpay/platform.git?branch=feat/hardcoded-identity-transfers-in-strategy-tests#99fe5fa402ddcae329795bb29eaf73fd5044b4f2"
+source = "git+https://github.com/dashpay/platform.git#cafda11af1ee767a8cf803c23697f57401fc30fb"
 dependencies = [
  "bincode",
  "platform-version",
@@ -3330,7 +3330,7 @@ dependencies = [
 [[package]]
 name = "platform-serialization-derive"
 version = "1.5.0"
-source = "git+https://github.com/dashpay/platform.git?branch=feat/hardcoded-identity-transfers-in-strategy-tests#99fe5fa402ddcae329795bb29eaf73fd5044b4f2"
+source = "git+https://github.com/dashpay/platform.git#cafda11af1ee767a8cf803c23697f57401fc30fb"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3341,7 +3341,7 @@ dependencies = [
 [[package]]
 name = "platform-value"
 version = "1.5.0"
-source = "git+https://github.com/dashpay/platform.git?branch=feat/hardcoded-identity-transfers-in-strategy-tests#99fe5fa402ddcae329795bb29eaf73fd5044b4f2"
+source = "git+https://github.com/dashpay/platform.git#cafda11af1ee767a8cf803c23697f57401fc30fb"
 dependencies = [
  "base64 0.22.1",
  "bincode",
@@ -3363,7 +3363,7 @@ dependencies = [
 [[package]]
 name = "platform-version"
 version = "1.5.0"
-source = "git+https://github.com/dashpay/platform.git?branch=feat/hardcoded-identity-transfers-in-strategy-tests#99fe5fa402ddcae329795bb29eaf73fd5044b4f2"
+source = "git+https://github.com/dashpay/platform.git#cafda11af1ee767a8cf803c23697f57401fc30fb"
 dependencies = [
  "bincode",
  "grovedb-version",
@@ -3375,7 +3375,7 @@ dependencies = [
 [[package]]
 name = "platform-versioning"
 version = "1.5.0"
-source = "git+https://github.com/dashpay/platform.git?branch=feat/hardcoded-identity-transfers-in-strategy-tests#99fe5fa402ddcae329795bb29eaf73fd5044b4f2"
+source = "git+https://github.com/dashpay/platform.git#cafda11af1ee767a8cf803c23697f57401fc30fb"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3813,7 +3813,7 @@ dependencies = [
 [[package]]
 name = "rs-dapi-client"
 version = "1.5.0"
-source = "git+https://github.com/dashpay/platform.git?branch=feat/hardcoded-identity-transfers-in-strategy-tests#99fe5fa402ddcae329795bb29eaf73fd5044b4f2"
+source = "git+https://github.com/dashpay/platform.git#cafda11af1ee767a8cf803c23697f57401fc30fb"
 dependencies = [
  "backon",
  "chrono",
@@ -4272,7 +4272,7 @@ checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
 [[package]]
 name = "simple-signer"
 version = "1.5.0"
-source = "git+https://github.com/dashpay/platform.git?branch=feat/hardcoded-identity-transfers-in-strategy-tests#99fe5fa402ddcae329795bb29eaf73fd5044b4f2"
+source = "git+https://github.com/dashpay/platform.git#cafda11af1ee767a8cf803c23697f57401fc30fb"
 dependencies = [
  "base64 0.22.1",
  "bincode",
@@ -4400,7 +4400,7 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 [[package]]
 name = "strategy-tests"
 version = "1.5.0"
-source = "git+https://github.com/dashpay/platform.git?branch=feat/hardcoded-identity-transfers-in-strategy-tests#99fe5fa402ddcae329795bb29eaf73fd5044b4f2"
+source = "git+https://github.com/dashpay/platform.git#cafda11af1ee767a8cf803c23697f57401fc30fb"
 dependencies = [
  "bincode",
  "dpp",
@@ -5663,7 +5663,7 @@ dependencies = [
 [[package]]
 name = "withdrawals-contract"
 version = "1.5.0"
-source = "git+https://github.com/dashpay/platform.git?branch=feat/hardcoded-identity-transfers-in-strategy-tests#99fe5fa402ddcae329795bb29eaf73fd5044b4f2"
+source = "git+https://github.com/dashpay/platform.git#cafda11af1ee767a8cf803c23697f57401fc30fb"
 dependencies = [
  "num_enum 0.5.11",
  "platform-value",
