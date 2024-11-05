@@ -98,7 +98,20 @@ impl StrategyOpIdentityTransferSpecificFormController {
             .start_identities
             .hard_coded
             .iter()
-            .map(|(identity, _)| identity.id().to_string(Encoding::Base58))
+            .filter_map(|(identity, _)| {
+                let id_str = identity.id().to_string(Encoding::Base58);
+
+                // Don't allow recipient to be the loaded id since the loaded id is always the sender for now
+                if let Some(loaded_identity_id) = &loaded_identity_id {
+                    if id_str != *loaded_identity_id {
+                        Some(id_str)
+                    } else {
+                        None
+                    }
+                } else {
+                    Some(id_str)
+                }
+            })
             .collect();
 
         Self {
