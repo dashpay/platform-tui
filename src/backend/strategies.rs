@@ -1322,13 +1322,14 @@ impl AppState {
                 let broadcast_errors_per_code: Arc<DashMap<Code, AtomicU64>> = Default::default();
                 let wait_errors_per_code: Arc<DashMap<Code, AtomicU64>> = Default::default();
 
-                tracing::info!("Initialization complete. Starting strategy execution.");
+                tracing::info!("Initialization complete. Starting strategy execution...");
+                tracing::info!("Progress will be logged every 10 batches of broadcasts.");
 
                 // Now loop through the number of blocks or seconds the user asked for, preparing and processing state transitions
                 while load_start_time.elapsed().as_secs() < duration || loop_index <= 2 {
                     tracing::debug!("Start loop: {loop_index}");
                     // Every 10 loops, log statistics
-                    if loop_index % 10 == 0 {
+                    if loop_index % 10 == 0 || loop_index == 1 {
                         let stats_elapsed = load_start_time.elapsed().as_secs();
                         let stats_attempted = transition_count;
                         let stats_rate = stats_attempted
@@ -1369,7 +1370,7 @@ impl AppState {
                             String::new()
                         };
 
-                        tracing::info!("\n\n{} secs passed. {} broadcast ({} tx/s)\nBroadcast results: {} successful, {} failed, {} ongoing.\nWait results: {} successful, {} failed, {} ongoing.\nBroadcast errors: {}\nWait errors: {}\nWait times (s): 50% - {} 90% - {} 95% - {}", stats_elapsed, stats_attempted, stats_rate, stats_broadcast_successful, stats_broadcast_failed, stats_ongoing_broadcasts, stats_wait_successful, stats_wait_failed, stats_ongoing_waits, broadcast_error_message, wait_error_message, stats_p50, stats_p90, stats_p95);
+                        tracing::info!("\n\n{} secs passed. {} broadcast ({} tx/s)\nBroadcast results: {} successful, {} failed, {} ongoing.\nWait results: {} successful, {} failed, {} ongoing.\nBroadcast errors: {}\nWait errors: {}\nWait times (s): 50% - {} 90% - {} 95% - {}\n", stats_elapsed, stats_attempted, stats_rate, stats_broadcast_successful, stats_broadcast_failed, stats_ongoing_broadcasts, stats_wait_successful, stats_wait_failed, stats_ongoing_waits, broadcast_error_message, wait_error_message, stats_p50, stats_p90, stats_p95);
                     }
 
                     let loop_start_time = Instant::now();
