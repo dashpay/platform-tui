@@ -30,7 +30,6 @@ use dash_sdk::{
     Sdk,
 };
 use dashmap::DashMap;
-use dpp::fee::Credits;
 use dpp::{
     block::{block_info::BlockInfo, epoch::Epoch},
     dashcore::{Address, PrivateKey, Transaction},
@@ -65,6 +64,7 @@ use dpp::{
         StateTransition, StateTransitionLike,
     },
 };
+use dpp::{data_contracts::withdrawals_contract, fee::Credits};
 use drive::{
     drive::{
         document::query::{QueryDocumentsOutcome, QueryDocumentsOutcomeV0Methods},
@@ -2543,6 +2543,7 @@ impl AppState {
                 Err(e) => match contract_id_str.as_str() {
                     "DPNS" => dpns_contract::ID,
                     "Dashpay" => dashpay_contract::ID,
+                    "Withdrawals" => withdrawals_contract::ID,
                     _ => return Err(format!("Failed to update known contracts: {e}")),
                 },
             };
