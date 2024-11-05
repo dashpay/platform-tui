@@ -335,7 +335,7 @@ fn display_strategy(
 {identity_inserts_line}
     Operations ({operations_len}):
 {operations_lines}"#,
-        strategy.start_identities.hard_coded.len() + 1, // plus one for loaded identity
+        strategy.start_identities.hard_coded.len(),
         strategy.start_identities.number_of_identities,
     )
 }
