@@ -1006,7 +1006,7 @@ impl AppState {
                 let current_identities = Arc::new(Mutex::new(vec![loaded_identity_clone.clone()]));
 
                 // Add the hardcoded start identities that are already created to current_identities
-                let hard_coded_start_identities = strategy
+                let hard_coded_start_identities: Vec<Identity> = strategy
                     .start_identities
                     .hard_coded
                     .iter()
@@ -1017,7 +1017,7 @@ impl AppState {
                             None
                         }
                     })
-                    .collect::<Vec<Identity>>();
+                    .collect();
 
                 {
                     current_identities
@@ -1046,7 +1046,6 @@ impl AppState {
                     "Fetching identity nonce and {} identity contract nonces from Platform...",
                     used_contract_ids.len()
                 );
-                let nonce_fetching_time = Instant::now();
                 let identity_future = sdk.get_identity_nonce(
                     loaded_identity_clone.id(),
                     false,
@@ -1595,7 +1594,7 @@ impl AppState {
 
                     // Now process the state transitions
                     if !transitions.is_empty() {
-                        tracing::info!(
+                        tracing::trace!(
                             "Prepared {} state transitions for loop {}",
                             transitions.len(),
                             loop_index
@@ -1661,7 +1660,7 @@ impl AppState {
                                                 success_count.fetch_add(1, Ordering::SeqCst);
                                                 let transition_owner_id = transition_clone.owner_id().to_string(Encoding::Base58);
                                                 if loop_index != 1 && loop_index != 2 {
-                                                    tracing::info!("Successfully broadcasted transition: {}. ID: {}. Owner ID: {:?}", transition_clone.name(), transition_id, transition_owner_id);
+                                                    tracing::trace!("Successfully broadcasted transition: {}. ID: {}. Owner ID: {:?}", transition_clone.name(), transition_id, transition_owner_id);
                                                 }
                                                 if transition_clone.name() == "DocumentsBatch" {
                                                     let contract_ids = match transition_clone.clone() {
@@ -2160,7 +2159,7 @@ impl AppState {
 
                     // Make sure the loop doesn't iterate faster than once per seconds_per_loop in time mode
                     let elapsed = loop_start_time.elapsed();
-                    if elapsed < Duration::from_secs(1) {
+                    if elapsed < Duration::from_secs(seconds_per_loop) {
                         let remaining_time = Duration::from_secs(seconds_per_loop) - elapsed;
                         tokio::time::sleep(remaining_time).await;
                     }

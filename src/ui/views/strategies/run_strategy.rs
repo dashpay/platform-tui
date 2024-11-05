@@ -165,8 +165,8 @@ pub(super) struct RunStrategyFormController {
         Field<TextInput<DefaultTextInputParser<u64>>>, // Number of blocks or seconds
         Field<TextInput<DefaultTextInputParser<u64>>>, // Seconds per loop
         Field<SelectInput<String>>,                    // Verify proofs?
-        Field<TextInput<DefaultTextInputParser<f64>>>, // Top up amount
-        Field<SelectInput<String>>,                    // Confirm
+        // Field<TextInput<DefaultTextInputParser<f64>>>, // Top up amount
+        Field<SelectInput<String>>, // Confirm
     )>,
     selected_strategy: String,
 }
@@ -187,10 +187,10 @@ impl RunStrategyFormController {
                     "Verify proofs?",
                     SelectInput::new(vec!["No".to_string(), "Yes".to_string()]),
                 ),
-                Field::new(
-                    "Amount to top up identities. Enter 0 for none.",
-                    TextInput::new("Enter Dash amount (decimals ok)."),
-                ),
+                // Field::new(
+                //     "Amount to top up identities. Enter 0 for none.",
+                //     TextInput::new("Enter Dash amount (decimals ok)."),
+                // ),
                 Field::new(
                     "Confirm start",
                     SelectInput::new(vec!["No".to_string(), "Yes".to_string()]),
@@ -208,10 +208,10 @@ impl FormController for RunStrategyFormController {
                 num_blocks,
                 seconds_per_loop,
                 verify_proofs,
-                top_up_amount_dash,
+                // top_up_amount_dash,
                 confirm,
             )) => {
-                let top_up_amount_credits = (top_up_amount_dash * 100_000_000_000.0) as u64;
+                // let top_up_amount_credits = (top_up_amount_dash * 100_000_000_000.0) as u64;
                 if confirm == "Yes" {
                     if verify_proofs == "Yes" {
                         FormStatus::Done {
@@ -220,7 +220,7 @@ impl FormController for RunStrategyFormController {
                                 num_blocks,
                                 seconds_per_loop,
                                 true,
-                                top_up_amount_credits,
+                                0, // top up amount
                             )),
                             block: true,
                         }
@@ -231,7 +231,7 @@ impl FormController for RunStrategyFormController {
                                 num_blocks,
                                 seconds_per_loop,
                                 false,
-                                top_up_amount_credits,
+                                0, // top up amount
                             )),
                             block: true,
                         }
@@ -263,6 +263,6 @@ impl FormController for RunStrategyFormController {
     }
 
     fn steps_number(&self) -> u8 {
-        4
+        self.input.steps_number()
     }
 }
