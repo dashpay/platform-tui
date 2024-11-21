@@ -27,7 +27,7 @@ use dpp::dashcore::{
     Address, OutPoint, PrivateKey, PublicKey, ScriptBuf, Transaction, TxIn, TxOut, Witness,
 };
 use rand::{prelude::StdRng, Rng, SeedableRng};
-use rs_dapi_client::DapiRequestExecutor;
+use rs_dapi_client::{DapiRequestExecutor, IntoInner};
 use tokio::sync::{Mutex, MutexGuard};
 
 use super::{set_clipboard, AppStateUpdate, BackendEvent, CompletedTaskPayload, Task};
@@ -636,41 +636,16 @@ impl SingleKeyWallet {
         core_client: &Client,
     ) -> Result<HashMap<OutPoint, TxOut>, String> {
         // First, let's try to get UTXOs from the RPC client using `list_unspent`.
-        match core_client.list_unspent(Some(1), None, Some(&[&self.address]), None, None) {
+        // If that doesn't work, use the Insight API as a fallback
+        match insight
+            .utxos_with_amount_for_addresses(&[&self.address])
+            .await
+        {
             Ok(utxos) => {
-                // Test log statement
-                tracing::info!("{:?} utxos", utxos.len());
-
-                // Convert RPC UTXOs to the desired HashMap format
-                let mut utxo_map = HashMap::new();
-                for utxo in utxos {
-                    let outpoint = OutPoint::new(utxo.txid, utxo.vout);
-                    let tx_out = TxOut {
-                        value: utxo.amount.to_sat(),
-                        script_pubkey: utxo.script_pub_key,
-                    };
-                    utxo_map.insert(outpoint, tx_out);
-                }
-                self.utxos = utxo_map.clone(); // Store the result in `self.utxos`
-                Ok(utxo_map)
+                self.utxos = utxos.clone();
+                Ok(utxos)
             }
-            Err(first_error) => {
-                // If that doesn't work, use the Insight API as a fallback
-                match insight
-                    .utxos_with_amount_for_addresses(&[&self.address])
-                    .await
-                {
-                    Ok(utxos) => {
-                        self.utxos = utxos.clone();
-                        Ok(utxos)
-                    }
-                    Err(err) => Err(format!(
-                        "First error from Core: {}, Second Error from Insight: {}",
-                        first_error.to_string(),
-                        err.to_string()
-                    )),
-                }
-            }
+            Err(err) => Err(format!("Error from Insight: {}", err.to_string())),
         }
     }
 
@@ -815,7 +790,11 @@ impl SingleKeyWallet {
                 bypass_limits: false,
             };
             let max_retries = 3;
-            match sdk.execute(request, RequestSettings::default()).await {
+            match sdk
+                .execute(request, RequestSettings::default())
+                .await
+                .into_inner()
+            {
                 Ok(BroadcastTransactionResponse { transaction_id: id }) => {
                     tokio::time::sleep(Duration::from_secs(1)).await;
 
@@ -829,6 +808,7 @@ impl SingleKeyWallet {
                                 RequestSettings::default(),
                             )
                             .await
+                            .into_inner()
                         {
                             Ok(GetTransactionResponse { .. }) => {
                                 transaction_found = true;

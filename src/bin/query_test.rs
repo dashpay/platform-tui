@@ -34,7 +34,7 @@ use governor::{Quota, RateLimiter};
 use rand::seq::SliceRandom;
 use rs_dapi_client::{
     Address, AddressList, DapiClient, DapiClientError, DapiRequest, DapiRequestExecutor,
-    RequestSettings,
+    ExecutionResponse, ExecutionResult, IntoInner, RequestSettings,
 };
 use rs_platform_explorer::config::Config;
 use tokio::time::{interval, Instant};
@@ -395,9 +395,15 @@ async fn send_request(
     summary: &TestSummary,
 ) {
     // TODO: Record response duration and then report average and histogram?
-    match request.execute(client.as_ref(), settings).await {
+    match request
+        .execute(client.as_ref(), settings)
+        .await
+        .into_inner()
+    {
         Ok(_) => summary.add_ok(),
-        Err(DapiClientError::Transport(e, ..)) => summary.add_error(e),
+        Err(DapiClientError::Transport(e, ..)) => summary.add_error(match e {
+            rs_dapi_client::transport::TransportError::Grpc(status) => status,
+        }),
         Err(e) => panic!("unexpected error: {}", e),
     }
 }
@@ -503,48 +509,95 @@ impl From<GetDataContractsRequest> for AnyDapiRequest {
 
 impl DapiRequest for AnyDapiRequest {
     type Response = ();
-    type TransportError = dapi_grpc::tonic::Status;
 
     fn execute<'c, D: DapiRequestExecutor>(
         self,
         dapi_client: &'c D,
         settings: RequestSettings,
-    ) -> BoxFuture<'c, Result<Self::Response, DapiClientError<Self::TransportError>>>
+    ) -> BoxFuture<'c, ExecutionResult<Self::Response, DapiClientError>>
     where
         Self: 'c,
     {
         match self {
             AnyDapiRequest::GetIdentityRequest(request) => request
                 .execute(dapi_client, settings)
-                .map(|result| result.map(|_| ()))
+                .map(|result| {
+                    result.map(|response| ExecutionResponse {
+                        inner: (),
+                        retries: response.retries,
+                        address: response.address,
+                    })
+                })
                 .boxed(),
             AnyDapiRequest::GetIdentityNonceRequest(request) => request
                 .execute(dapi_client, settings)
-                .map(|result| result.map(|_| ()))
+                .map(|result| {
+                    result.map(|response| ExecutionResponse {
+                        inner: (),
+                        retries: response.retries,
+                        address: response.address,
+                    })
+                })
                 .boxed(),
             AnyDapiRequest::GetIdentityContractNonceRequest(request) => request
                 .execute(dapi_client, settings)
-                .map(|result| result.map(|_| ()))
+                .map(|result| {
+                    result.map(|response| ExecutionResponse {
+                        inner: (),
+                        retries: response.retries,
+                        address: response.address,
+                    })
+                })
                 .boxed(),
             AnyDapiRequest::GetIdentityBalanceRequest(request) => request
                 .execute(dapi_client, settings)
-                .map(|result| result.map(|_| ()))
+                .map(|result| {
+                    result.map(|response| ExecutionResponse {
+                        inner: (),
+                        retries: response.retries,
+                        address: response.address,
+                    })
+                })
                 .boxed(),
             AnyDapiRequest::GetIdentityBalanceAndRevisionRequest(request) => request
                 .execute(dapi_client, settings)
-                .map(|result| result.map(|_| ()))
+                .map(|result| {
+                    result.map(|response| ExecutionResponse {
+                        inner: (),
+                        retries: response.retries,
+                        address: response.address,
+                    })
+                })
                 .boxed(),
             AnyDapiRequest::GetIdentityKeysRequest(request) => request
                 .execute(dapi_client, settings)
-                .map(|result| result.map(|_| ()))
+                .map(|result| {
+                    result.map(|response| ExecutionResponse {
+                        inner: (),
+                        retries: response.retries,
+                        address: response.address,
+                    })
+                })
                 .boxed(),
             AnyDapiRequest::GetDataContractRequest(request) => request
                 .execute(dapi_client, settings)
-                .map(|result| result.map(|_| ()))
+                .map(|result| {
+                    result.map(|response| ExecutionResponse {
+                        inner: (),
+                        retries: response.retries,
+                        address: response.address,
+                    })
+                })
                 .boxed(),
             AnyDapiRequest::GetDataContractsRequest(request) => request
                 .execute(dapi_client, settings)
-                .map(|result| result.map(|_| ()))
+                .map(|result| {
+                    result.map(|response| ExecutionResponse {
+                        inner: (),
+                        retries: response.retries,
+                        address: response.address,
+                    })
+                })
                 .boxed(),
         }
     }

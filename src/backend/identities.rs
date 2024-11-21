@@ -1806,6 +1806,7 @@ impl AppState {
         let block_hash = sdk
             .execute(GetBlockchainStatusRequest {}, RequestSettings::default())
             .await?
+            .inner
             .chain
             .map(|chain| chain.best_block_hash)
             .ok_or_else(|| dash_sdk::Error::DapiClientError("missing `chain` field".to_owned()))?;
@@ -1846,7 +1847,8 @@ impl AppState {
                         },
                         RequestSettings::default(),
                     )
-                    .await?;
+                    .await?
+                    .inner;
 
                 tracing::debug!(
                     "restarting the stream from the transaction minded block hash {}",
