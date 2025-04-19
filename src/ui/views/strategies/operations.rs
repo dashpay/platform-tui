@@ -360,6 +360,7 @@ fn format_operation_name(op_type: &StrategyOperationType) -> String {
         .to_string(),
         StrategyOperationType::IdentityTransfer(_) => "IdentityTransfer".to_string(),
         StrategyOperationType::ResourceVote(_) => "ResourceVote".to_string(),
+        StrategyOperationType::Token(token_op) => todo!(),
     }
 }
 

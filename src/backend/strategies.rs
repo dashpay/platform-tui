@@ -51,13 +51,13 @@ use dpp::{
         PlatformSerializableWithPlatformVersion,
     },
     state_transition::{
-        data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0,
-        documents_batch_transition::{
+        batch_transition::{
+            batched_transition::document_transition::DocumentTransition,
             document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods,
-            document_create_transition::v0::DocumentFromCreateTransitionV0,
-            document_transition::DocumentTransition, DocumentCreateTransition,
-            DocumentDeleteTransition, DocumentsBatchTransition,
+            document_create_transition::v0::DocumentFromCreateTransitionV0, BatchTransition,
+            DocumentCreateTransition, DocumentDeleteTransition,
         },
+        data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0,
         identity_topup_transition::{
             methods::IdentityTopUpTransitionMethodsV0, IdentityTopUpTransition,
         },
@@ -989,9 +989,13 @@ impl AppState {
                             if let Some(private_key_bytes) =
                                 identity_private_keys_lock.get(&identity_key_tuple)
                             {
-                                new_signer
-                                    .private_keys
-                                    .insert(public_key.clone(), private_key_bytes.clone());
+                                new_signer.private_keys.insert(
+                                    public_key.clone(),
+                                    private_key_bytes
+                                        .clone()
+                                        .try_into()
+                                        .expect("Expected to convert private key bytes"),
+                                );
                             }
                         }
                         new_signer
@@ -1053,6 +1057,7 @@ impl AppState {
                         request_settings: RequestSettings::default(),
                         identity_nonce_stale_time_s: Some(0),
                         user_fee_increase: None,
+                        wait_timeout: None,
                     }),
                 );
                 let contract_futures =
@@ -1070,6 +1075,7 @@ impl AppState {
                                 request_settings: RequestSettings::default(),
                                 identity_nonce_stale_time_s: Some(0),
                                 user_fee_increase: None,
+                                wait_timeout: None,
                             })
                         ).await.expect("Couldn't get current identity contract nonce");
                                 ((identity_id, used_contract_id), current_nonce)
@@ -1483,7 +1489,7 @@ impl AppState {
                                 }
                             }
                             // Add new documents to the local Drive for later getting documents to delete
-                            StateTransition::DocumentsBatch(DocumentsBatchTransition::V0(
+                            StateTransition::Batch(BatchTransition::V0(
                                 documents_batch_transition_v0,
                             )) => {
                                 for document_transition in
@@ -1665,7 +1671,7 @@ impl AppState {
                                                 }
                                                 if transition_clone.name() == "DocumentsBatch" {
                                                     let contract_ids = match transition_clone.clone() {
-                                                        StateTransition::DocumentsBatch(DocumentsBatchTransition::V0(transition)) => transition.transitions.iter().map(|document_transition|
+                                                        StateTransition::Batch(BatchTransition::V0(transition)) => transition.transitions.iter().map(|document_transition|
                                                             match document_transition {
                                                                 DocumentTransition::Create(DocumentCreateTransition::V0(create_tx)) => create_tx.base.data_contract_id(),
                                                                 DocumentTransition::Delete(DocumentDeleteTransition::V0(delete_tx)) => delete_tx.base.data_contract_id(),
@@ -1831,9 +1837,9 @@ impl AppState {
 
                                         // I think what's happening here is we're using this data_contract_clone for proof verification later
                                         let data_contract_id_option = match &transition {
-                                            StateTransition::DocumentsBatch(
-                                                DocumentsBatchTransition::V0(documents_batch),
-                                            ) => {
+                                            StateTransition::Batch(BatchTransition::V0(
+                                                documents_batch,
+                                            )) => {
                                                 documents_batch.transitions.get(0).and_then(
                                                     |document_transition| {
                                                         match document_transition {
@@ -2051,7 +2057,7 @@ impl AppState {
                                                                 tracing::trace!(" >>> Transition was included in a block. ID: {}", transition_id);
                                                                 if transition_type == "DocumentsBatch" {
                                                                     let contract_ids = match transition.clone() {
-                                                                        StateTransition::DocumentsBatch(DocumentsBatchTransition::V0(transition)) => transition.transitions.iter().map(|document_transition|
+                                                                        StateTransition::Batch(BatchTransition::V0(transition)) => transition.transitions.iter().map(|document_transition|
                                                                             match document_transition {
                                                                                 DocumentTransition::Create(DocumentCreateTransition::V0(create_tx)) => create_tx.base.data_contract_id(),
                                                                                 DocumentTransition::Delete(DocumentDeleteTransition::V0(delete_tx)) => delete_tx.base.data_contract_id(),
@@ -2073,7 +2079,7 @@ impl AppState {
                                                                 tracing::debug!(" >>> Transition failed in mempool with error: {:?}. ID: {}", e, transition_id);
                                                                 if transition_type == "DocumentsBatch" {
                                                                     let contract_ids = match transition.clone() {
-                                                                        StateTransition::DocumentsBatch(DocumentsBatchTransition::V0(transition)) => transition.transitions.iter().map(|document_transition|
+                                                                        StateTransition::Batch(BatchTransition::V0(transition)) => transition.transitions.iter().map(|document_transition|
                                                                             match document_transition {
                                                                                 DocumentTransition::Create(DocumentCreateTransition::V0(create_tx)) => create_tx.base.data_contract_id(),
                                                                                 DocumentTransition::Delete(DocumentDeleteTransition::V0(delete_tx)) => delete_tx.base.data_contract_id(),

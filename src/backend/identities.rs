@@ -2,6 +2,8 @@
 
 use chrono::Utc;
 use dashcore::hashes::Hash;
+use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+use dpp::state_transition::batch_transition::BatchTransition;
 use std::io::Write;
 use std::str::FromStr;
 use std::{
@@ -23,8 +25,8 @@ use dapi_grpc::{
 use dash_sdk::{
     platform::{
         transition::{
-            broadcast::BroadcastStateTransition, put_document::PutDocument,
-            put_identity::PutIdentity, put_settings::PutSettings, top_up_identity::TopUpIdentity,
+            broadcast::BroadcastStateTransition, put_identity::PutIdentity,
+            put_settings::PutSettings, top_up_identity::TopUpIdentity,
             withdraw_from_identity::WithdrawFromIdentity,
         },
         Fetch,
@@ -53,9 +55,6 @@ use dpp::{
     platform_value::{string_encoding::Encoding, Bytes32, Identifier},
     prelude::{AssetLockProof, Identity, IdentityPublicKey},
     state_transition::{
-        documents_batch_transition::{
-            methods::v0::DocumentsBatchTransitionMethodsV0, DocumentsBatchTransition,
-        },
         identity_credit_transfer_transition::{
             accessors::IdentityCreditTransferTransitionAccessorsV0,
             IdentityCreditTransferTransition,
@@ -555,7 +554,13 @@ impl AppState {
 
                     let mut signer = SimpleSigner::default();
 
-                    signer.add_key(identity_public_key.clone(), private_key.to_vec());
+                    signer.add_key(
+                        identity_public_key.clone(),
+                        private_key
+                            .clone()
+                            .try_into()
+                            .expect("Expected private key to be 32 bytes"),
+                    );
 
                     if let Err(e) = transition.sign_external(
                         identity_public_key,
@@ -567,7 +572,11 @@ impl AppState {
                             execution_result: Err(e.to_string()),
                         }
                     } else {
-                        match transition.broadcast_and_wait(sdk, None).await {
+                        match transition
+                            .broadcast_and_wait(sdk, None)
+                            .await
+                            .map(|result: StateTransitionProofResult| result)
+                        {
                             Ok(_) => BackendEvent::TaskCompletedStateChange {
                                 task: Task::Identity(task),
                                 execution_result: Ok(CompletedTaskPayload::String(
@@ -936,6 +945,7 @@ impl AppState {
                     request_settings: RequestSettings::default(),
                     identity_nonce_stale_time_s: Some(0),
                     user_fee_increase: None,
+                    wait_timeout: None,
                 }),
             )
             .await
@@ -955,9 +965,13 @@ impl AppState {
                 let identity_key_tuple = (identity_v0.id, *key_id);
                 if let Some(private_key_bytes) = identity_private_keys_lock.get(&identity_key_tuple)
                 {
-                    new_signer
-                        .private_keys
-                        .insert(public_key.clone(), private_key_bytes.clone());
+                    new_signer.private_keys.insert(
+                        public_key.clone(),
+                        private_key_bytes
+                            .clone()
+                            .try_into()
+                            .expect("Expected private key to be 32 bytes"),
+                    );
                 }
             }
             new_signer
@@ -978,88 +992,88 @@ impl AppState {
                 )),
             };
 
-        let preorder_transition =
-            DocumentsBatchTransition::new_document_creation_transition_from_document(
-                preorder_document.clone(),
-                preorder_document_type,
-                entropy.0,
-                public_key,
-                identity_contract_nonce,
-                0,
-                &signer,
-                &platform_version,
-                None,
-                None,
-                None,
-            )?;
+        let preorder_transition = BatchTransition::new_document_creation_transition_from_document(
+            preorder_document.clone(),
+            preorder_document_type,
+            entropy.0,
+            public_key,
+            identity_contract_nonce,
+            0,
+            None,
+            &signer,
+            &platform_version,
+            None,
+            None,
+            None,
+        )?;
 
-        let domain_transition =
-            DocumentsBatchTransition::new_document_creation_transition_from_document(
-                domain_document.clone(),
-                domain_document_type,
-                entropy.0,
-                identity
-                    .get_first_public_key_matching(
-                        Purpose::AUTHENTICATION,
-                        HashSet::from([SecurityLevel::CRITICAL]),
-                        HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
-                        false,
-                    )
-                    .expect("expected to get a signing key"),
-                identity_contract_nonce + 1,
-                0,
-                &signer,
-                &platform_version,
-                None,
-                None,
-                None,
-            )?;
+        let domain_transition = BatchTransition::new_document_creation_transition_from_document(
+            domain_document.clone(),
+            domain_document_type,
+            entropy.0,
+            identity
+                .get_first_public_key_matching(
+                    Purpose::AUTHENTICATION,
+                    HashSet::from([SecurityLevel::CRITICAL]),
+                    HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
+                    false,
+                )
+                .expect("expected to get a signing key"),
+            identity_contract_nonce + 1,
+            0,
+            None,
+            &signer,
+            &platform_version,
+            None,
+            None,
+            None,
+        )?;
 
-        preorder_transition.broadcast(sdk).await?;
+        preorder_transition.broadcast(sdk, None).await?;
 
-        let _preorder_document =
-            match <dash_sdk::platform::Document as PutDocument<SimpleSigner>>::wait_for_response::<
-                '_,
-                '_,
-                '_,
-            >(
-                &preorder_document,
-                sdk,
-                preorder_transition,
-                dpns_contract.clone().into(),
-            )
-            .await
-            {
-                Ok(document) => document,
-                Err(e) => {
-                    return Err(Error::DPNSError(format!(
-                        "Preorder document failed to process: {e}"
-                    )));
-                }
-            };
+        // let _preorder_document =
+        //     match <dash_sdk::platform::Document as PutDocument<SimpleSigner>>::wait_for_response::<
+        //         '_,
+        //         '_,
+        //         '_,
+        //     >(
+        //         &preorder_document,
+        //         sdk,
+        //         preorder_transition,
+        //         dpns_contract.clone().into(),
+        //     )
+        //     .await
+        //     {
+        //         Ok(document) => document,
+        //         Err(e) => {
+        //             return Err(Error::DPNSError(format!(
+        //                 "Preorder document failed to process: {e}"
+        //             )));
+        //         }
+        //     };
 
-        domain_transition.broadcast(sdk).await?;
+        domain_transition.broadcast(sdk, None).await?;
 
-        let _domain_document =
-            match <dash_sdk::platform::Document as PutDocument<SimpleSigner>>::wait_for_response::<
-                '_,
-                '_,
-                '_,
-            >(
-                &domain_document,
-                sdk,
-                domain_transition,
-                dpns_contract.into(),
-            )
-            .await
-            {
-                Ok(document) => document,
-                Err(e) => {
-                    return Err(Error::DPNSError(format!(
-                        "Domain document failed to process: {e}"
-                    )));
-                }
-            };
+        // let _domain_document =
+        //     match <dash_sdk::platform::Document as PutDocument<SimpleSigner>>::wait_for_response::<
+        //         '_,
+        //         '_,
+        //         '_,
+        //     >(
+        //         &domain_document,
+        //         sdk,
+        //         domain_transition,
+        //         dpns_contract.into(),
+        //     )
+        //     .await
+        //     {
+        //         Ok(document) => document,
+        //         Err(e) => {
+        //             return Err(Error::DPNSError(format!(
+        //                 "Domain document failed to process: {e}"
+        //             )));
+        //         }
+        //     };
 
         Ok(())
     }
@@ -1234,13 +1248,18 @@ impl AppState {
                 identity_info.clone()
             } else {
                 let mut std_rng = StdRng::from_entropy();
-                // Create a random identity with master key
-                let (mut identity, mut keys): (Identity, BTreeMap<IdentityPublicKey, Vec<u8>>) =
+
+                // call returns arrays
+                let (mut identity, raw_keys): (Identity, BTreeMap<IdentityPublicKey, [u8; 32]>) =
                     Identity::random_identity_with_main_keys_with_private_key(
                         2,
                         &mut std_rng,
                         sdk.version(),
                     )?;
+
+                // convert each [u8; 32] → Vec<u8>
+                let mut keys: BTreeMap<IdentityPublicKey, Vec<u8>> =
+                    raw_keys.into_iter().map(|(k, v)| (k, v.to_vec())).collect();
 
                 // Add a critical key
                 let (critical_key, critical_private_key) =
@@ -1250,7 +1269,13 @@ impl AppState {
                         sdk.version(),
                     )?;
                 identity.add_public_key(critical_key.clone());
-                keys.insert(critical_key, critical_private_key);
+                keys.insert(
+                    critical_key,
+                    critical_private_key
+                        .clone()
+                        .try_into()
+                        .expect("Expected private key to be 32 bytes"),
+                );
 
                 // Add a key for transfers
                 let (transfer_key, transfer_private_key) =
@@ -1264,7 +1289,13 @@ impl AppState {
                         sdk.version(),
                     )?;
                 identity.add_public_key(transfer_key.clone());
-                keys.insert(transfer_key, transfer_private_key);
+                keys.insert(
+                    transfer_key,
+                    transfer_private_key
+                        .clone()
+                        .try_into()
+                        .expect("Expected private key to be 32 bytes"),
+                );
 
                 identity.set_id(
                     asset_lock_proof
@@ -1284,7 +1315,14 @@ impl AppState {
 
         let mut signer = SimpleSigner::default();
 
-        signer.add_keys(keys.clone());
+        signer.add_keys(keys.clone().into_iter().map(|(key, value)| {
+            (
+                key,
+                value
+                    .try_into()
+                    .expect("Expected private key to be 32 bytes"),
+            )
+        }));
 
         let updated_identity = identity
             .put_to_platform_and_wait_for_response(
@@ -1292,6 +1330,7 @@ impl AppState {
                 asset_lock_proof.clone(),
                 &asset_lock_proof_private_key,
                 &signer,
+                None,
             )
             .await?;
 
@@ -1316,11 +1355,26 @@ impl AppState {
             .expect("expected an identity")
             .1
             .into_iter()
-            .map(|(key, private_key)| ((identity.id(), key.id()), private_key));
+            .map(|(key, private_key)| {
+                (
+                    (identity.id(), key.id()),
+                    private_key
+                        .clone()
+                        .try_into()
+                        .expect("Expected private key to be 32 bytes"),
+                )
+            });
 
         let mut identity_private_keys = self.known_identities_private_keys.lock().await;
 
-        identity_private_keys.extend(keys);
+        identity_private_keys.extend(keys.into_iter().map(
+            |((id, key_id), value): ((Identifier, u32), Vec<u8>)| {
+                let array: [u8; 32] = value
+                    .try_into()
+                    .expect("Expected private key to be 32 bytes");
+                ((id, key_id), array.to_vec())
+            },
+        ));
 
         let mut known_identities_lock = self.known_identities.lock().await;
         known_identities_lock.insert(identity.id(), identity);
@@ -1411,6 +1465,7 @@ impl AppState {
                 asset_lock_proof.clone(),
                 &asset_lock_proof_private_key,
                 None,
+                None,
             )
             .await
         {
@@ -1455,6 +1510,7 @@ impl AppState {
                             sdk,
                             new_asset_lock_proof.clone(),
                             &new_asset_lock_proof_private_key,
+                            None,
                             None,
                         )
                         .await?;
@@ -1514,7 +1570,13 @@ impl AppState {
 
         let mut signer = SimpleSigner::default();
 
-        signer.add_key(identity_public_key.clone(), private_key.to_vec());
+        signer.add_key(
+            identity_public_key.clone(),
+            private_key
+                .clone()
+                .try_into()
+                .expect("Expected private key to be 32 bytes"),
+        );
 
         //// Platform steps
 
@@ -1575,7 +1637,13 @@ impl AppState {
 
         let mut signer = SimpleSigner::default();
 
-        signer.add_key(identity_public_key.clone(), private_key.to_vec());
+        signer.add_key(
+            identity_public_key.clone(),
+            private_key
+                .clone()
+                .try_into()
+                .expect("Expected private key to be 32 bytes"),
+        );
 
         //// Platform steps
 
@@ -1636,7 +1704,13 @@ impl AppState {
 
         let mut signer = SimpleSigner::default();
 
-        signer.add_key(identity_public_key.clone(), private_key.to_vec());
+        signer.add_key(
+            identity_public_key.clone(),
+            private_key
+                .clone()
+                .try_into()
+                .expect("Expected private key to be 32 bytes"),
+        );
 
         //// Platform steps
 
@@ -1698,7 +1772,13 @@ impl AppState {
 
         let mut signer = SimpleSigner::default();
 
-        signer.add_key(identity_public_key.clone(), private_key.to_vec());
+        signer.add_key(
+            identity_public_key.clone(),
+            private_key
+                .clone()
+                .try_into()
+                .expect("Expected private key to be 32 bytes"),
+        );
 
         //// Platform steps
 
@@ -1766,7 +1846,13 @@ impl AppState {
 
         let mut signer = SimpleSigner::default();
 
-        signer.add_key(identity_public_key.clone(), private_key.to_vec());
+        signer.add_key(
+            identity_public_key.clone(),
+            private_key
+                .clone()
+                .try_into()
+                .expect("Expected private key to be 32 bytes"),
+        );
 
         //// Platform steps
 
@@ -2039,7 +2125,13 @@ async fn add_identity_key<'a>(
         .ok_or_else(|| "Master private key not found".to_owned())?;
 
     let mut signer = SimpleSigner::default();
-    signer.add_key(master_public_key.clone(), master_private_key.to_vec());
+    signer.add_key(
+        master_public_key.clone(),
+        master_private_key
+            .clone()
+            .try_into()
+            .expect("Expected private key to be 32 bytes"),
+    );
     signer.add_key(identity_public_key.clone(), private_key.clone());
 
     let mut identity_updated = loaded_identity.clone();
@@ -2082,12 +2174,21 @@ async fn add_identity_key<'a>(
 
     identity_private_keys.insert(
         (loaded_identity.id(), identity_public_key.id()),
-        private_key.clone(),
+        private_key
+            .clone()
+            .try_into()
+            .expect("Expected private key to be 32 bytes"),
     );
 
     // Log the newly added key
     let mut keys_to_log = BTreeMap::new();
-    keys_to_log.insert(identity_public_key.clone(), private_key);
+    keys_to_log.insert(
+        identity_public_key.clone(),
+        private_key
+            .clone()
+            .try_into()
+            .expect("Expected private key to be 32 bytes"),
+    );
     log_identity_keys(&loaded_identity, &keys_to_log)
         .map_err(|e| format!("Failed to log identity keys: {e}"))?;
 

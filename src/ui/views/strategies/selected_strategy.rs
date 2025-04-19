@@ -290,6 +290,7 @@ fn display_strategy(
                 }
                 OperationType::IdentityTransfer(_) => "IdentityTransfer".to_string(),
                 OperationType::ResourceVote(_) => "ResourceVote".to_string(),
+                OperationType::Token(token_op) => todo!(),
             };
 
             let times_per_block_display = if op.frequency.times_per_block_range.end
