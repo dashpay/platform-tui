@@ -288,8 +288,9 @@ fn display_strategy(
                         op.contract.id().to_string(Encoding::Base58)
                     )
                 }
-                OperationType::IdentityTransfer => "IdentityTransfer".to_string(),
+                OperationType::IdentityTransfer(_) => "IdentityTransfer".to_string(),
                 OperationType::ResourceVote(_) => "ResourceVote".to_string(),
+                OperationType::Token(token_op) => todo!(),
             };
 
             let times_per_block_display = if op.frequency.times_per_block_range.end
@@ -327,7 +328,7 @@ fn display_strategy(
 
     format!(
         r#"{strategy_name}:
-    Start identities: {} (Keys: {}, Balance: {:.2} dash)
+    Start identities: {} known, {} new
     
     Start contracts ({start_contracts_len}):
 {start_contracts_lines}
@@ -335,10 +336,8 @@ fn display_strategy(
 {identity_inserts_line}
     Operations ({operations_len}):
 {operations_lines}"#,
+        strategy.start_identities.hard_coded.len(),
         strategy.start_identities.number_of_identities,
-        strategy.start_identities.keys_per_identity
-            + strategy.start_identities.extra_keys.len() as u8,
-        strategy.start_identities.starting_balances as f64 / 100_000_000.0,
     )
 }
 

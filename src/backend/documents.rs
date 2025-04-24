@@ -23,7 +23,7 @@ use dpp::{
         accessors::v0::DataContractV0Getters,
         document_type::{
             accessors::DocumentTypeV0Getters,
-            methods::DocumentTypeV0Methods,
+            methods::{DocumentTypeBasicMethods, DocumentTypeV0Methods},
             random_document::{CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType},
             DocumentType,
         },
@@ -268,9 +268,13 @@ impl AppState {
                     if let Some(private_key_bytes) =
                         identity_private_keys_lock.get(&identity_key_tuple)
                     {
-                        signer
-                            .private_keys
-                            .insert(public_key.clone(), private_key_bytes.clone());
+                        signer.private_keys.insert(
+                            public_key.clone(),
+                            private_key_bytes
+                                .clone()
+                                .try_into()
+                                .expect("Expected private key to be 32 bytes"),
+                        );
                     }
                 }
                 drop(identity_private_keys_lock);
@@ -289,7 +293,15 @@ impl AppState {
                     document_state_transition_entropy.as_slice(),
                 );
 
-                let DocumentType::V0(document_type_v0) = document_type;
+                let document_type_v0 = match document_type {
+                    DocumentType::V0(document_type_v0) => document_type_v0,
+                    DocumentType::V1(_) => {
+                        return BackendEvent::TaskCompleted {
+                            task: Task::Document(task),
+                            execution_result: Err("Unsupported DocumentType version".to_string()),
+                        };
+                    }
+                };
                 let revision = if document_type_v0.requires_revision() {
                     Some(INITIAL_REVISION)
                 } else {
@@ -387,8 +399,8 @@ impl AppState {
                         document_type.clone(),
                         document_state_transition_entropy,
                         identity_public_key.clone(),
-                        data_contract_arc,
                         &signer,
+                        None,
                     )
                     .await
                 {
@@ -456,9 +468,13 @@ impl AppState {
                             if let Some(private_key_bytes) =
                                 identity_private_keys_lock.get(&identity_key_tuple)
                             {
-                                signer
-                                    .private_keys
-                                    .insert(public_key.clone(), private_key_bytes.clone());
+                                signer.private_keys.insert(
+                                    public_key.clone(),
+                                    private_key_bytes
+                                        .clone()
+                                        .try_into()
+                                        .expect("Expected private key to be 32 bytes"),
+                                );
                             }
                         }
                         drop(identity_private_keys_lock);
@@ -475,8 +491,9 @@ impl AppState {
                                 document_type.clone(),
                                 loaded_identity.id(),
                                 public_key.clone(),
-                                data_contract_arc,
+                                None,
                                 &signer,
+                                None,
                             )
                             .await
                         {
@@ -562,9 +579,13 @@ impl AppState {
                             if let Some(private_key_bytes) =
                                 identity_private_keys_lock.get(&identity_key_tuple)
                             {
-                                signer
-                                    .private_keys
-                                    .insert(public_key.clone(), private_key_bytes.clone());
+                                signer.private_keys.insert(
+                                    public_key.clone(),
+                                    private_key_bytes
+                                        .clone()
+                                        .try_into()
+                                        .expect("Expected private key to be 32 bytes"),
+                                );
                             }
                         }
                         drop(identity_private_keys_lock);
@@ -580,8 +601,9 @@ impl AppState {
                                 sdk,
                                 document_type.clone(),
                                 public_key.clone(),
-                                data_contract_arc,
+                                None,
                                 &signer,
+                                None
                             )
                             .await
                         {
@@ -694,7 +716,13 @@ impl AppState {
                         };
                     };
                     let mut signer = SimpleSigner::default();
-                    signer.add_key(identity_public_key.clone(), private_key.to_vec());
+                    signer.add_key(
+                        identity_public_key.clone(),
+                        private_key
+                            .clone()
+                            .try_into()
+                            .expect("Expected private key to be 32 bytes"),
+                    );
 
                     let data_contract_arc = Arc::new(data_contract.clone());
 
@@ -707,8 +735,9 @@ impl AppState {
                             sdk,
                             document_type.clone(),
                             identity_public_key.clone(),
-                            data_contract_arc,
+                            None,
                             &signer,
+                            None
                         )
                         .await
                     {
@@ -958,9 +987,13 @@ impl AppState {
                     if let Some(private_key_bytes) =
                         identity_private_keys_lock.get(&identity_key_tuple)
                     {
-                        signer
-                            .private_keys
-                            .insert(public_key.clone(), private_key_bytes.clone());
+                        signer.private_keys.insert(
+                            public_key.clone(),
+                            private_key_bytes
+                                .clone()
+                                .try_into()
+                                .expect("Expected private key to be 32 bytes"),
+                        );
                     }
                 }
 
@@ -1080,7 +1113,13 @@ async fn broadcast_random_documents<'s>(
 
     let data_contract = Arc::new(data_contract.clone());
     let mut signer = SimpleSigner::default();
-    signer.add_key(identity_public_key.clone(), private_key.to_vec());
+    signer.add_key(
+        identity_public_key.clone(),
+        private_key
+            .clone()
+            .try_into()
+            .expect("Expected private key to be 32 bytes"),
+    );
 
     fn put_random_document<'a, 'r>(
         sdk: &'a Sdk,
@@ -1118,8 +1157,8 @@ async fn broadcast_random_documents<'s>(
                     document_type.clone(),
                     document_state_transition_entropy,
                     identity_public_key.clone(),
-                    data_contract,
                     signer,
+                    None,
                 )
                 .await
                 .map(|_| ())

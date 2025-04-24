@@ -1,6 +1,7 @@
 //! Strategies management backend module.
 
 use std::{
+    cmp::min,
     collections::{BTreeMap, BTreeSet, VecDeque},
     fs::File,
     io::Write,
@@ -29,7 +30,6 @@ use dash_sdk::{
     Sdk,
 };
 use dashmap::DashMap;
-use dpp::fee::Credits;
 use dpp::{
     block::{block_info::BlockInfo, epoch::Epoch},
     dashcore::{Address, PrivateKey, Transaction},
@@ -51,19 +51,20 @@ use dpp::{
         PlatformSerializableWithPlatformVersion,
     },
     state_transition::{
-        data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0,
-        documents_batch_transition::{
+        batch_transition::{
+            batched_transition::document_transition::DocumentTransition,
             document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods,
-            document_create_transition::v0::DocumentFromCreateTransitionV0,
-            document_transition::DocumentTransition, DocumentCreateTransition,
-            DocumentDeleteTransition, DocumentsBatchTransition,
+            document_create_transition::v0::DocumentFromCreateTransitionV0, BatchTransition,
+            DocumentCreateTransition, DocumentDeleteTransition,
         },
+        data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0,
         identity_topup_transition::{
             methods::IdentityTopUpTransitionMethodsV0, IdentityTopUpTransition,
         },
         StateTransition, StateTransitionLike,
     },
 };
+use dpp::{data_contracts::withdrawals_contract, fee::Credits};
 use drive::{
     drive::{
         document::query::{QueryDocumentsOutcome, QueryDocumentsOutcomeV0Methods},
@@ -117,13 +118,17 @@ pub enum StrategyTask {
         balance: u64,
         add_transfer_key: bool,
     },
+    AddHardCodedStartIdentity {
+        strategy_name: String,
+        identity_id_str: String,
+    },
     SetStartIdentitiesBalance(String, u64),
     AddOperation {
         strategy_name: String,
         operation: Operation,
     },
     RegisterDocsToAllContracts(String, u16, DocumentFieldFillSize, DocumentFieldFillType),
-    RunStrategy(String, u64, bool, bool, u64),
+    RunStrategy(String, u64, u64, bool, u64),
     RemoveLastContract(String),
     ClearContracts(String),
     ClearOperations(String),
@@ -805,6 +810,42 @@ impl AppState {
                     }
                 }
             }
+            StrategyTask::AddHardCodedStartIdentity {
+                strategy_name,
+                identity_id_str,
+            } => {
+                let mut strategies_lock = self.available_strategies.lock().await;
+                if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
+                    let known_identities = self.known_identities.lock().await;
+                    let maybe_identity = known_identities
+                        .get(
+                            &Identifier::from_string(&identity_id_str, Encoding::Base58)
+                                .expect("Expected to convert string to Identifier"),
+                        )
+                        .cloned();
+                    if let Some(identity) = maybe_identity {
+                        strategy.start_identities.hard_coded.push((identity, None));
+                        BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
+                            strategy_name.clone(),
+                            MutexGuard::map(strategies_lock, |strategies| {
+                                strategies.get_mut(&strategy_name).expect("strategy exists")
+                            }),
+                            MutexGuard::map(
+                                self.available_strategies_contract_names.lock().await,
+                                |names| names.get_mut(&strategy_name).expect("inconsistent data"),
+                            ),
+                        ))
+                    } else {
+                        BackendEvent::StrategyError {
+                            error: format!("Identity with id {} not found", identity_id_str),
+                        }
+                    }
+                } else {
+                    BackendEvent::StrategyError {
+                        error: format!("Strategy doesn't exist in app state."),
+                    }
+                }
+            }
             StrategyTask::SetStartIdentitiesBalance(strategy_name, balance) => {
                 let mut strategies_lock = self.available_strategies.lock().await;
                 if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
@@ -833,9 +874,9 @@ impl AppState {
             }
             StrategyTask::RunStrategy(
                 strategy_name,
-                num_blocks_or_seconds,
+                duration,
+                seconds_per_loop,
                 verify_proofs,
-                block_mode,
                 top_up_amount,
             ) => {
                 tracing::info!("-----Starting strategy '{}'-----", strategy_name);
@@ -902,7 +943,6 @@ impl AppState {
                         },
                     )),
                 };
-                // Use retry mechanism to fetch current block info
                 while retries <= MAX_RETRIES {
                     match sdk
                         .execute(request.clone(), RequestSettings::default())
@@ -910,7 +950,7 @@ impl AppState {
                     {
                         Ok(response) => {
                             if let Some(get_epochs_info_response::Version::V0(response_v0)) =
-                                response.version
+                                response.inner.version
                             {
                                 if let Some(metadata) = response_v0.metadata {
                                     initial_block_info = BlockInfo {
@@ -949,9 +989,13 @@ impl AppState {
                             if let Some(private_key_bytes) =
                                 identity_private_keys_lock.get(&identity_key_tuple)
                             {
-                                new_signer
-                                    .private_keys
-                                    .insert(public_key.clone(), private_key_bytes.clone());
+                                new_signer.private_keys.insert(
+                                    public_key.clone(),
+                                    private_key_bytes
+                                        .clone()
+                                        .try_into()
+                                        .expect("Expected to convert private key bytes"),
+                                );
                             }
                         }
                         new_signer
@@ -965,6 +1009,40 @@ impl AppState {
                 let mut loaded_identity_clone = loaded_identity_lock.clone();
                 let current_identities = Arc::new(Mutex::new(vec![loaded_identity_clone.clone()]));
 
+                // Add the hardcoded start identities that are already created to current_identities
+                let hard_coded_start_identities: Vec<Identity> = strategy
+                    .start_identities
+                    .hard_coded
+                    .iter()
+                    .filter_map(|(identity, transition)| {
+                        if transition.is_none() {
+                            Some(identity.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+
+                {
+                    current_identities
+                        .lock()
+                        .await
+                        .extend(hard_coded_start_identities);
+                }
+
+                // Add the loaded identity to hardcoded start identities if it's not already present
+                if !strategy
+                    .start_identities
+                    .hard_coded
+                    .iter()
+                    .any(|(identity, _)| identity.id() == loaded_identity_lock.id())
+                {
+                    strategy
+                        .start_identities
+                        .hard_coded
+                        .push((loaded_identity_lock.clone(), None));
+                }
+
                 // Set the nonce counters
                 let used_contract_ids = strategy.used_contract_ids();
                 let mut identity_nonce_counter = BTreeMap::new();
@@ -972,7 +1050,6 @@ impl AppState {
                     "Fetching identity nonce and {} identity contract nonces from Platform...",
                     used_contract_ids.len()
                 );
-                let nonce_fetching_time = Instant::now();
                 let identity_future = sdk.get_identity_nonce(
                     loaded_identity_clone.id(),
                     false,
@@ -980,6 +1057,7 @@ impl AppState {
                         request_settings: RequestSettings::default(),
                         identity_nonce_stale_time_s: Some(0),
                         user_fee_increase: None,
+                        wait_timeout: None,
                     }),
                 );
                 let contract_futures =
@@ -997,23 +1075,25 @@ impl AppState {
                                 request_settings: RequestSettings::default(),
                                 identity_nonce_stale_time_s: Some(0),
                                 user_fee_increase: None,
+                                wait_timeout: None,
                             })
                         ).await.expect("Couldn't get current identity contract nonce");
                                 ((identity_id, used_contract_id), current_nonce)
                             }
                         });
-                let identity_result = identity_future
-                    .await
-                    .expect("Couldn't get current identity nonce");
+                let identity_result = match identity_future.await {
+                    Ok(nonce) => nonce,
+                    Err(e) => {
+                        return BackendEvent::StrategyError {
+                            error: format!("Failed to fetch identity nonce: {:?}", e),
+                        };
+                    }
+                };
+
                 identity_nonce_counter.insert(loaded_identity_clone.id(), identity_result);
                 let contract_results = join_all(contract_futures).await;
                 let mut contract_nonce_counter: BTreeMap<(Identifier, Identifier), u64> =
                     contract_results.into_iter().collect();
-                tracing::info!(
-                    "Took {} seconds to obtain {} identity contract nonces",
-                    nonce_fetching_time.elapsed().as_secs(),
-                    used_contract_ids.len()
-                );
 
                 // Get a lock on the local drive for the following two callbacks
                 let drive_lock = self.drive.lock().await;
@@ -1103,7 +1183,7 @@ impl AppState {
                     .frequency
                     .times_per_block_range
                     .start as f64
-                    * num_blocks_or_seconds as f64
+                    * duration as f64
                     * strategy
                         .identity_inserts
                         .frequency
@@ -1113,7 +1193,7 @@ impl AppState {
                 for operation in &strategy.operations {
                     if matches!(operation.op_type, OperationType::IdentityTopUp(_)) {
                         num_top_ups += (operation.frequency.times_per_block_range.start as f64
-                            * num_blocks_or_seconds as f64
+                            * duration as f64
                             * operation.frequency.chance_per_block.unwrap_or(1.0))
                             as u64;
                     }
@@ -1220,14 +1300,6 @@ impl AppState {
                     );
                 }
 
-                // Get the execution mode as a string for logging
-                let mut mode_string = String::new();
-                if block_mode {
-                    mode_string.push_str("block");
-                } else {
-                    mode_string.push_str("second");
-                }
-
                 // Some final initialization
                 let mut rng = StdRng::from_entropy(); // Will be passed to state_transitions_for_block
                 let mut current_block_info = initial_block_info.clone(); // Used for transition creation and logging
@@ -1256,12 +1328,14 @@ impl AppState {
                 let broadcast_errors_per_code: Arc<DashMap<Code, AtomicU64>> = Default::default();
                 let wait_errors_per_code: Arc<DashMap<Code, AtomicU64>> = Default::default();
 
+                tracing::info!("Initialization complete. Starting strategy execution...");
+                tracing::info!("Progress will be logged every 10 batches of broadcasts.");
+
                 // Now loop through the number of blocks or seconds the user asked for, preparing and processing state transitions
-                while (block_mode && current_block_info.height < (initial_block_info.height + num_blocks_or_seconds + 2)) // +2 because we don't count the first two initialization blocks
-                    || (!block_mode && load_start_time.elapsed().as_secs() < num_blocks_or_seconds) || loop_index <= 2
-                {
-                    // Every 10 seconds, log statistics
-                    if loop_index % 10 == 0 {
+                while load_start_time.elapsed().as_secs() < duration || loop_index <= 2 {
+                    tracing::debug!("Start loop: {loop_index}");
+                    // Every 10 loops, log statistics
+                    if loop_index % 10 == 0 || loop_index == 1 {
                         let stats_elapsed = load_start_time.elapsed().as_secs();
                         let stats_attempted = transition_count;
                         let stats_rate = stats_attempted
@@ -1302,7 +1376,7 @@ impl AppState {
                             String::new()
                         };
 
-                        tracing::info!("\n\n{} secs passed. {} broadcast ({} tx/s)\nBroadcast results: {} successful, {} failed, {} ongoing.\nWait results: {} successful, {} failed, {} ongoing.\nBroadcast errors: {}\nWait errors: {}\nWait times (s): 50% - {} 90% - {} 95% - {}", stats_elapsed, stats_attempted, stats_rate, stats_broadcast_successful, stats_broadcast_failed, stats_ongoing_broadcasts, stats_wait_successful, stats_wait_failed, stats_ongoing_waits, broadcast_error_message, wait_error_message, stats_p50, stats_p90, stats_p95);
+                        tracing::info!("\n\n{} secs passed. {} broadcast ({} tx/s)\nBroadcast results: {} successful, {} failed, {} ongoing.\nWait results: {} successful, {} failed, {} ongoing.\nBroadcast errors: {}\nWait errors: {}\nWait times (s): 50% - {} 90% - {} 95% - {}\n", stats_elapsed, stats_attempted, stats_rate, stats_broadcast_successful, stats_broadcast_failed, stats_ongoing_broadcasts, stats_wait_successful, stats_wait_failed, stats_ongoing_waits, broadcast_error_message, wait_error_message, stats_p50, stats_p90, stats_p95);
                     }
 
                     let loop_start_time = Instant::now();
@@ -1344,7 +1418,7 @@ impl AppState {
                             &mut rng,
                             &StrategyConfig {
                                 start_block_height: initial_block_info.height,
-                                number_of_blocks: num_blocks_or_seconds,
+                                number_of_blocks: duration,
                             },
                             sdk.version(),
                         );
@@ -1415,7 +1489,7 @@ impl AppState {
                                 }
                             }
                             // Add new documents to the local Drive for later getting documents to delete
-                            StateTransition::DocumentsBatch(DocumentsBatchTransition::V0(
+                            StateTransition::Batch(BatchTransition::V0(
                                 documents_batch_transition_v0,
                             )) => {
                                 for document_transition in
@@ -1528,9 +1602,8 @@ impl AppState {
                     // Now process the state transitions
                     if !transitions.is_empty() {
                         tracing::trace!(
-                            "Prepared {} state transitions for {} {}",
+                            "Prepared {} state transitions for loop {}",
                             transitions.len(),
-                            mode_string,
                             loop_index
                         );
 
@@ -1569,17 +1642,16 @@ impl AppState {
 
                             let mut request_settings = RequestSettings::default();
                             // Time-based strategy body
-                            if !block_mode && loop_index != 1 && loop_index != 2 {
+                            if loop_index != 1 && loop_index != 2 {
                                 // time mode loading
-                                request_settings.connect_timeout = Some(Duration::from_secs(30));
-                                request_settings.timeout = Some(Duration::from_secs(30));
+                                request_settings.connect_timeout = Some(Duration::from_millis(
+                                    min(seconds_per_loop * 1000 / 2, 3000),
+                                ));
+                                request_settings.timeout = Some(Duration::from_millis(min(
+                                    seconds_per_loop * 1000 / 2,
+                                    3000,
+                                )));
                                 request_settings.retries = Some(0);
-                            }
-                            // Block-based strategy body
-                            if block_mode && loop_index != 1 && loop_index != 2 {
-                                request_settings.connect_timeout = Some(Duration::from_secs(3));
-                                request_settings.timeout = Some(Duration::from_secs(3));
-                                request_settings.retries = Some(1);
                             }
 
                             // Prepare futures for broadcasting transitions
@@ -1594,12 +1666,12 @@ impl AppState {
                                                 broadcast_oks.fetch_add(1, Ordering::SeqCst);
                                                 success_count.fetch_add(1, Ordering::SeqCst);
                                                 let transition_owner_id = transition_clone.owner_id().to_string(Encoding::Base58);
-                                                if !block_mode && loop_index != 1 && loop_index != 2 {
+                                                if loop_index != 1 && loop_index != 2 {
                                                     tracing::trace!("Successfully broadcasted transition: {}. ID: {}. Owner ID: {:?}", transition_clone.name(), transition_id, transition_owner_id);
                                                 }
                                                 if transition_clone.name() == "DocumentsBatch" {
                                                     let contract_ids = match transition_clone.clone() {
-                                                        StateTransition::DocumentsBatch(DocumentsBatchTransition::V0(transition)) => transition.transitions.iter().map(|document_transition|
+                                                        StateTransition::Batch(BatchTransition::V0(transition)) => transition.transitions.iter().map(|document_transition|
                                                             match document_transition {
                                                                 DocumentTransition::Create(DocumentCreateTransition::V0(create_tx)) => create_tx.base.data_contract_id(),
                                                                 DocumentTransition::Delete(DocumentDeleteTransition::V0(delete_tx)) => delete_tx.base.data_contract_id(),
@@ -1618,9 +1690,11 @@ impl AppState {
                                                 Ok((transition_clone, broadcast_result))
                                             },
                                             Err(e) => {
-                                                match e {
+                                                match e.inner {
                                                     rs_dapi_client::DapiClientError::Transport(ref e, ..) => {broadcast_errors_per_code
-                                                        .entry(e.code())
+                                                        .entry(match e {
+                                                            rs_dapi_client::transport::TransportError::Grpc(status) => status.code(),
+                                                        })
                                                         .or_insert_with(|| AtomicU64::new(0))
                                                         .fetch_add(1, Ordering::SeqCst);},
                                                     _ => {
@@ -1713,11 +1787,9 @@ impl AppState {
                                     },
                                     Err(e) => {
                                         broadcast_errs.fetch_add(1, Ordering::SeqCst);
-                                        if !block_mode {
-                                            tracing::debug!("Error preparing broadcast request for transition: {}, Error: {:?}", transition_clone.name(), e);
-                                        }
+                                        tracing::debug!("Error preparing broadcast request for transition: {}, Error: {:?}", transition_clone.name(), e);
                                         Err(e)
-                                    }.expect("Expected to prepare broadcast for request for state transition") // I guess I have to do this to make it compile
+                                    }.expect("Expected to prepare broadcast for request for state transition")
                                 }
                             };
 
@@ -1730,7 +1802,7 @@ impl AppState {
                         // Now wait for results
 
                         // If we're in block mode, or index 1 or 2 of time mode
-                        if block_mode || loop_index == 1 || loop_index == 2 {
+                        if loop_index == 1 || loop_index == 2 {
                             let request_settings = RequestSettings {
                                 connect_timeout: None,
                                 timeout: Some(Duration::from_secs(75)),
@@ -1753,10 +1825,9 @@ impl AppState {
 
                                         if broadcast_result.is_err() {
                                             tracing::debug!(
-                                                "Error broadcasting state transition {} ({}) for {} {}: {:?}. ID: {}",
+                                                "Error broadcasting state transition {} ({}) for loop {}: {:?}. ID: {}",
                                                 tx_index + 1,
                                                 transition_type,
-                                                mode_string,
                                                 loop_index,
                                                 broadcast_result.err().unwrap(),
                                                 transition_id
@@ -1766,9 +1837,9 @@ impl AppState {
 
                                         // I think what's happening here is we're using this data_contract_clone for proof verification later
                                         let data_contract_id_option = match &transition {
-                                            StateTransition::DocumentsBatch(
-                                                DocumentsBatchTransition::V0(documents_batch),
-                                            ) => {
+                                            StateTransition::Batch(BatchTransition::V0(
+                                                documents_batch,
+                                            )) => {
                                                 documents_batch.transitions.get(0).and_then(
                                                     |document_transition| {
                                                         match document_transition {
@@ -1804,12 +1875,6 @@ impl AppState {
                                         drop(known_contracts_lock);
 
                                         let wait_future = async move {
-                                            let mut mode_string = String::new();
-                                            if block_mode {
-                                                mode_string.push_str("block");
-                                            } else {
-                                                mode_string.push_str("second");
-                                            }
                                             let wait_result = match transition
                                                 .wait_for_state_transition_result_request()
                                             {
@@ -1820,8 +1885,8 @@ impl AppState {
                                                 }
                                                 Err(e) => {
                                                     tracing::debug!(
-                                                        "Error creating wait request for state transition {} {} {}: {:?}. ID: {}",
-                                                        tx_index + 1, mode_string, loop_index, e, transition_id
+                                                        "Error creating wait request for state transition {} loop {}: {:?}. ID: {}",
+                                                        tx_index + 1, loop_index, e, transition_id
                                                     );
                                                     return None;
                                                 }
@@ -1829,7 +1894,7 @@ impl AppState {
 
                                             match wait_result {
                                                 Ok(wait_response) => {
-                                                    Some(if let Some(wait_for_state_transition_result_response::Version::V0(v0_response)) = &wait_response.version {
+                                                    Some(if let Some(wait_for_state_transition_result_response::Version::V0(v0_response)) = &wait_response.inner.version {
                                                         if let Some(metadata) = &v0_response.metadata {
                                                             // Verification of the proof
                                                             if let Some(wait_for_state_transition_result_response_v0::Result::Proof(proof)) = &v0_response.result {
@@ -1871,14 +1936,14 @@ impl AppState {
 
                                                                     match verified {
                                                                         Ok(_) => {
-                                                                            tracing::trace!("Successfully processed and verified proof for state transition {} ({}), {} {} (Actual block height: {}). ID: {}", tx_index + 1, transition_type, mode_string, tx_index, metadata.height, transition_id);
+                                                                            tracing::trace!("Successfully processed and verified proof for state transition {} ({}), second {} (Actual block height: {}). ID: {}", tx_index + 1, transition_type, tx_index, metadata.height, transition_id);
                                                                         }
                                                                         Err(e) => tracing::debug!("Error verifying state transition execution proof: {}", e),
                                                                     }
                                                                 } else {
                                                                     tracing::trace!(
-                                                                        "Successfully broadcasted and processed state transition {} ({}) for {} {} (Actual block height: {}). ID: {}",
-                                                                        tx_index + 1, transition.name(), mode_string, loop_index, metadata.height, transition_id
+                                                                        "Successfully broadcasted and processed state transition {} ({}) for loop {} (Actual block height: {}). ID: {}",
+                                                                        tx_index + 1, transition.name(), loop_index, metadata.height, transition_id
                                                                     );
                                                                 }
                                                             } else if let Some(wait_for_state_transition_result_response_v0::Result::Error(e)) = &v0_response.result {
@@ -1923,9 +1988,8 @@ impl AppState {
                                     }
                                     Err(e) => {
                                         tracing::debug!(
-                                            "Error preparing broadcast request for state transition {} {} {}: {:?}",
+                                            "Error preparing broadcast request for state transition {} second {}: {:?}",
                                             tx_index + 1,
-                                            mode_string,
                                             current_block_info.height,
                                             e
                                         );
@@ -1984,7 +2048,7 @@ impl AppState {
                                                             let mut hist_lock = hist.lock().await;
                                                             hist_lock.record(wait_time).unwrap();
 
-                                                            if let Some(wait_for_state_transition_result_response::Version::V0(v0_response)) = &wait_response.version {
+                                                            if let Some(wait_for_state_transition_result_response::Version::V0(v0_response)) = &wait_response.inner.version {
                                                             if let Some(wait_for_state_transition_result_response_v0::Result::Proof(_proof)) = &v0_response.result {
                                                                 // Assume the proof is correct in time mode for now
                                                                 // Decrement the transitions counter
@@ -1993,7 +2057,7 @@ impl AppState {
                                                                 tracing::trace!(" >>> Transition was included in a block. ID: {}", transition_id);
                                                                 if transition_type == "DocumentsBatch" {
                                                                     let contract_ids = match transition.clone() {
-                                                                        StateTransition::DocumentsBatch(DocumentsBatchTransition::V0(transition)) => transition.transitions.iter().map(|document_transition|
+                                                                        StateTransition::Batch(BatchTransition::V0(transition)) => transition.transitions.iter().map(|document_transition|
                                                                             match document_transition {
                                                                                 DocumentTransition::Create(DocumentCreateTransition::V0(create_tx)) => create_tx.base.data_contract_id(),
                                                                                 DocumentTransition::Delete(DocumentDeleteTransition::V0(delete_tx)) => delete_tx.base.data_contract_id(),
@@ -2015,7 +2079,7 @@ impl AppState {
                                                                 tracing::debug!(" >>> Transition failed in mempool with error: {:?}. ID: {}", e, transition_id);
                                                                 if transition_type == "DocumentsBatch" {
                                                                     let contract_ids = match transition.clone() {
-                                                                        StateTransition::DocumentsBatch(DocumentsBatchTransition::V0(transition)) => transition.transitions.iter().map(|document_transition|
+                                                                        StateTransition::Batch(BatchTransition::V0(transition)) => transition.transitions.iter().map(|document_transition|
                                                                             match document_transition {
                                                                                 DocumentTransition::Create(DocumentCreateTransition::V0(create_tx)) => create_tx.base.data_contract_id(),
                                                                                 DocumentTransition::Delete(DocumentDeleteTransition::V0(delete_tx)) => delete_tx.base.data_contract_id(),
@@ -2043,18 +2107,20 @@ impl AppState {
                                                                 .fetch_add(1, Ordering::SeqCst);
                                                             ongoing_waits
                                                                 .fetch_sub(1, Ordering::SeqCst);
-                                                            match e {
-                                                            rs_dapi_client::DapiClientError::Transport(ref e, ..) => {wait_errors_per_code
-                                                                .entry(e.code())
-                                                                .or_insert_with(|| AtomicU64::new(0))
-                                                                .fetch_add(1, Ordering::SeqCst);},
-                                                            _ => {
-                                                                wait_errors_per_code
-                                                                .entry(Code::Unknown)
-                                                                .or_insert_with(|| AtomicU64::new(0))
-                                                                .fetch_add(1, Ordering::SeqCst);
-                                                                }
-                                                        };
+                                                            match e.inner {
+                                                                rs_dapi_client::DapiClientError::Transport(ref e, ..) => {wait_errors_per_code
+                                                                    .entry(match e {
+                                                                        rs_dapi_client::transport::TransportError::Grpc(status) => status.code(),
+                                                                    })
+                                                                    .or_insert_with(|| AtomicU64::new(0))
+                                                                    .fetch_add(1, Ordering::SeqCst);},
+                                                                _ => {
+                                                                    wait_errors_per_code
+                                                                    .entry(Code::Unknown)
+                                                                    .or_insert_with(|| AtomicU64::new(0))
+                                                                    .fetch_add(1, Ordering::SeqCst);
+                                                                    }
+                                                            };
                                                             tracing::debug!("Error waiting for state transition result: {:?}, {}, Tx ID: {}", e, transition_type, transition_id);
                                                         }
                                                     }
@@ -2082,11 +2148,7 @@ impl AppState {
                         }
                     } else {
                         // No transitions prepared for the block (or second)
-                        tracing::trace!(
-                            "Prepared 0 state transitions for {} {}",
-                            mode_string,
-                            loop_index
-                        );
+                        tracing::trace!("Prepared 0 state transitions for loop {}", loop_index);
                     }
 
                     if loop_index == 2 {
@@ -2102,13 +2164,11 @@ impl AppState {
                     current_block_info.time_ms = current_time_ms as u64;
                     loop_index += 1;
 
-                    // Make sure the loop doesn't iterate faster than once per second in time mode
-                    if !block_mode {
-                        let elapsed = loop_start_time.elapsed();
-                        if elapsed < Duration::from_secs(1) {
-                            let remaining_time = Duration::from_secs(1) - elapsed;
-                            tokio::time::sleep(remaining_time).await;
-                        }
+                    // Make sure the loop doesn't iterate faster than once per seconds_per_loop in time mode
+                    let elapsed = loop_start_time.elapsed();
+                    if elapsed < Duration::from_secs(seconds_per_loop) {
+                        let remaining_time = Duration::from_secs(seconds_per_loop) - elapsed;
+                        tokio::time::sleep(remaining_time).await;
                     }
                 }
 
@@ -2124,9 +2184,12 @@ impl AppState {
 
                 // Time the execution took
                 let load_execution_run_time = load_start_time.elapsed();
-                if !block_mode {
-                    tracing::info!("Time-based strategy execution ran for {} seconds and intended to run for {} seconds.", load_execution_run_time.as_secs(), num_blocks_or_seconds);
-                }
+
+                tracing::info!(
+                    "Strategy execution ran for {} seconds and intended to run for {} seconds.",
+                    load_execution_run_time.as_secs(),
+                    duration
+                );
 
                 // Log all the newly created identities and contracts.
                 // Note these txs were not confirmed. They were just attempted at least.
@@ -2230,9 +2293,7 @@ impl AppState {
                     / 100_000_000_000.0;
 
                 // For time mode, success_count is just the number of broadcasts
-                if !block_mode {
-                    success_count = broadcast_oks;
-                }
+                success_count = broadcast_oks;
 
                 // Make sure we don't divide by 0 when we determine the tx/s rate
                 let mut load_run_time = 1;
@@ -2283,33 +2344,12 @@ impl AppState {
                 let mut supporting_contracts_lock = self.supporting_contracts.lock().await;
                 supporting_contracts_lock.clear();
 
-                if block_mode {
-                    tracing::info!(
-                        "-----Strategy '{}' completed-----\n\nMode: {}\nBroadcasts attempted: {}\nBroadcasts succeeded: {}\nNumber of seconds: {}\nRun time: \
-                        {:?} seconds\nTPS rate (approx): {} tps\nDash spent (Loaded Identity): {}\nDash spent (Wallet): {}\nBroadcast nonce \
-                        errors: {}\nBroadcast balance errors: {}\nBroadcast rate limit errors: {}\nBroadcast connection errors: {}",
-                        strategy_name,
-                        mode_string,
-                        transition_count,
-                        success_count.load(Ordering::SeqCst),
-                        (current_block_info.height - initial_block_info.height),
-                        load_run_time, // Processing time after the second block
-                        tps, // tps besides the first two blocks
-                        dash_spent_identity,
-                        dash_spent_wallet,
-                        identity_nonce_error_count.load(Ordering::SeqCst),
-                        insufficient_balance_error_count.load(Ordering::SeqCst),
-                        local_rate_limit_error_count.load(Ordering::SeqCst),
-                        broadcast_connection_error_count.load(Ordering::SeqCst)
-                    );
-                } else {
-                    // Time mode
-                    tracing::info!(
-                        "-----Strategy '{}' completed-----\n\nMode: {}\nBroadcasts attempted: {}\nBroadcasts succeeded: {}\nNumber of loops: {}\nLoad run time: \
+                // Time mode
+                tracing::info!(
+                        "-----Strategy '{}' completed-----\n\nBroadcasts attempted: {}\nBroadcasts succeeded: {}\nNumber of loops: {}\nLoad run time: \
                         {:?} seconds\nInit run time: {} seconds\nAttempted rate (approx): {} txs/s\nSuccessful rate: {} tx/s\nSuccess percentage: {}%\nDash spent (Loaded Identity): {}\nDash spent (Wallet): {}\nBroadcast nonce \
                         errors: {}\nBroadcast balance errors: {}\nBroadcast rate limit errors: {}\nBroadcast connection errors: {}",
                         strategy_name,
-                        mode_string,
                         transition_count,
                         success_count.load(Ordering::SeqCst),
                         loop_index-3, // Minus 3 because we still incremented one at the end of the last loop, and don't count the first two blocks
@@ -2325,12 +2365,11 @@ impl AppState {
                         local_rate_limit_error_count.load(Ordering::SeqCst),
                         broadcast_connection_error_count.load(Ordering::SeqCst)
                     );
-                }
 
                 BackendEvent::StrategyCompleted {
                     strategy_name: strategy_name.clone(),
                     result: StrategyCompletionResult::Success {
-                        block_mode: block_mode,
+                        block_mode: false,
                         final_block_height: current_block_info.height,
                         start_block_height: initial_block_info.height,
                         success_count: success_count.load(Ordering::SeqCst) as u64,
@@ -2510,6 +2549,7 @@ impl AppState {
                 Err(e) => match contract_id_str.as_str() {
                     "DPNS" => dpns_contract::ID,
                     "Dashpay" => dashpay_contract::ID,
+                    "Withdrawals" => withdrawals_contract::ID,
                     _ => return Err(format!("Failed to update known contracts: {e}")),
                 },
             };

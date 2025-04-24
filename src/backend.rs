@@ -20,8 +20,8 @@ use std::{
 };
 
 use arboard::Clipboard;
-use dash_sdk::dashcore_rpc::Client;
 use dash_sdk::Sdk;
+use dash_sdk::{dashcore_rpc::Client, query_types::IndexMap};
 use dpp::{
     document::Document,
     identity::accessors::IdentityGettersV0,
@@ -77,13 +77,13 @@ pub enum Task {
 /// that case specific variants are used.
 #[derive(Debug)]
 pub enum CompletedTaskPayload {
-    Documents(BTreeMap<Identifier, Option<Document>>),
+    Documents(IndexMap<Identifier, Option<Document>>),
     Document(Document),
     Identities(BTreeMap<Identifier, Identity>),
     String(String),
     ContestedResources(ContestedResources),
     ContestedResourceContenders(ContestedDocumentResourceVotePoll, Contenders, Option<u64>),
-    DocumentsAndContestedResources(BTreeMap<Identifier, Option<Document>>, ContestedResources),
+    DocumentsAndContestedResources(IndexMap<Identifier, Option<Document>>, ContestedResources),
 }
 
 impl From<String> for CompletedTaskPayload {

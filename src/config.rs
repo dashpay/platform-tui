@@ -78,7 +78,7 @@ impl Config {
 
     /// List of DAPI addresses
     pub fn dapi_address_list(&self) -> AddressList {
-        AddressList::from(self.dapi_addresses.as_str())
+        AddressList::from_str(self.dapi_addresses.as_str()).expect("invalid DAPI addresses")
     }
 
     /// Insight API URI

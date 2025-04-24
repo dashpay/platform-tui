@@ -162,11 +162,11 @@ impl ScreenController for RunStrategyScreenController {
 
 pub(super) struct RunStrategyFormController {
     input: ComposedInput<(
-        Field<SelectInput<String>>,
-        Field<TextInput<DefaultTextInputParser<u64>>>,
-        Field<SelectInput<String>>,
-        Field<TextInput<DefaultTextInputParser<f64>>>,
-        Field<SelectInput<String>>,
+        Field<TextInput<DefaultTextInputParser<u64>>>, // Number of blocks or seconds
+        Field<TextInput<DefaultTextInputParser<u64>>>, // Seconds per loop
+        Field<SelectInput<String>>,                    // Verify proofs?
+        // Field<TextInput<DefaultTextInputParser<f64>>>, // Top up amount
+        Field<SelectInput<String>>, // Confirm
     )>,
     selected_strategy: String,
 }
@@ -176,23 +176,23 @@ impl RunStrategyFormController {
         RunStrategyFormController {
             input: ComposedInput::new((
                 Field::new(
-                    "Execute strategy per block or per second?",
-                    SelectInput::new(vec!["Block".to_string(), "Second".to_string()]),
-                ),
-                Field::new(
-                    "Number of blocks or seconds to run the strategy",
+                    "Number of seconds to run the strategy",
                     TextInput::new("Enter a whole number"),
                 ),
                 Field::new(
-                    "Verify state transition proofs? (Only applies to block mode)",
+                    "Number of seconds between each batch of transitions",
+                    TextInput::new("Enter a whole number"),
+                ),
+                Field::new(
+                    "Verify proofs?",
                     SelectInput::new(vec!["No".to_string(), "Yes".to_string()]),
                 ),
+                // Field::new(
+                //     "Amount to top up identities. Enter 0 for none.",
+                //     TextInput::new("Enter Dash amount (decimals ok)."),
+                // ),
                 Field::new(
-                    "Amount of Dash to top up identities who run out. Enter 0 for no top ups.",
-                    TextInput::new("Enter Dash amount (decimals ok). Note topping up will halt transaction broadcasting temporarily."),
-                ),
-                Field::new(
-                    "Confirm you would like to run the strategy",
+                    "Confirm start",
                     SelectInput::new(vec!["No".to_string(), "Yes".to_string()]),
                 ),
             )),
@@ -204,60 +204,36 @@ impl RunStrategyFormController {
 impl FormController for RunStrategyFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
         match self.input.on_event(event) {
-            InputStatus::Done((mode, num_blocks, verify_proofs, top_up_amount_dash, confirm)) => {
-                let top_up_amount_credits = (top_up_amount_dash * 100_000_000_000.0) as u64;
+            InputStatus::Done((
+                num_blocks,
+                seconds_per_loop,
+                verify_proofs,
+                // top_up_amount_dash,
+                confirm,
+            )) => {
+                // let top_up_amount_credits = (top_up_amount_dash * 100_000_000_000.0) as u64;
                 if confirm == "Yes" {
                     if verify_proofs == "Yes" {
-                        if mode == "Block" {
-                            // block-based with proofs
-                            FormStatus::Done {
-                                task: Task::Strategy(StrategyTask::RunStrategy(
-                                    self.selected_strategy.clone(),
-                                    num_blocks,
-                                    true,
-                                    true,
-                                    top_up_amount_credits,
-                                )),
-                                block: true,
-                            }
-                        } else {
-                            // time-based with proofs
-                            FormStatus::Done {
-                                task: Task::Strategy(StrategyTask::RunStrategy(
-                                    self.selected_strategy.clone(),
-                                    num_blocks,
-                                    true,
-                                    false,
-                                    top_up_amount_credits,
-                                )),
-                                block: true,
-                            }
+                        FormStatus::Done {
+                            task: Task::Strategy(StrategyTask::RunStrategy(
+                                self.selected_strategy.clone(),
+                                num_blocks,
+                                seconds_per_loop,
+                                true,
+                                0, // top up amount
+                            )),
+                            block: true,
                         }
                     } else {
-                        if mode == "Block" {
-                            // block-based without proofs
-                            FormStatus::Done {
-                                task: Task::Strategy(StrategyTask::RunStrategy(
-                                    self.selected_strategy.clone(),
-                                    num_blocks,
-                                    false,
-                                    true,
-                                    top_up_amount_credits,
-                                )),
-                                block: true,
-                            }
-                        } else {
-                            // time-based without proofs
-                            FormStatus::Done {
-                                task: Task::Strategy(StrategyTask::RunStrategy(
-                                    self.selected_strategy.clone(),
-                                    num_blocks,
-                                    false,
-                                    false,
-                                    top_up_amount_credits,
-                                )),
-                                block: true,
-                            }
+                        FormStatus::Done {
+                            task: Task::Strategy(StrategyTask::RunStrategy(
+                                self.selected_strategy.clone(),
+                                num_blocks,
+                                seconds_per_loop,
+                                false,
+                                0, // top up amount
+                            )),
+                            block: true,
                         }
                     }
                 } else {
@@ -287,6 +263,6 @@ impl FormController for RunStrategyFormController {
     }
 
     fn steps_number(&self) -> u8 {
-        4
+        self.input.steps_number()
     }
 }

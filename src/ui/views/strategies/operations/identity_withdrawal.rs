@@ -34,7 +34,7 @@ impl FormController for StrategyOpIdentityWithdrawalFormController {
                     strategy_name: self.selected_strategy.clone(),
                     operation: Operation {
                         op_type: OperationType::IdentityWithdrawal(
-                            dash_to_credits!(1)..=dash_to_credits!(1),
+                            dash_to_credits!(2)..=dash_to_credits!(2),
                         ),
                         frequency: Frequency {
                             times_per_block_range: 1..2,

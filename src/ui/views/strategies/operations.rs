@@ -12,9 +12,11 @@ mod identity_withdrawal;
 use std::collections::BTreeMap;
 
 use dash_sdk::platform::DataContract;
-use dpp::data_contract::document_type::random_document::{
-    DocumentFieldFillSize, DocumentFieldFillType,
+use dpp::{
+    data_contract::document_type::random_document::{DocumentFieldFillSize, DocumentFieldFillType},
+    identity::accessors::IdentityGettersV0,
 };
+use identity_transfer::StrategyOpIdentityTransferSpecificFormController;
 use tracing::error;
 use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
@@ -23,7 +25,7 @@ use self::{
     contract_update_doc_types::StrategyOpContractUpdateDocTypesFormController,
     document::StrategyOpDocumentFormController,
     identity_top_up::StrategyOpIdentityTopUpFormController,
-    identity_transfer::StrategyOpIdentityTransferFormController,
+    identity_transfer::StrategyOpIdentityTransferRandomFormController,
     identity_update::StrategyOpIdentityUpdateFormController,
     identity_withdrawal::StrategyOpIdentityWithdrawalFormController,
 };
@@ -69,7 +71,7 @@ const COMMAND_KEYS: [ScreenCommandKey; 5] = [
 
 pub struct OperationsScreenController {
     info: Info,
-    strategy_name: Option<String>,
+    selected_strategy_name: Option<String>,
     selected_strategy: Option<Strategy>,
     start_contracts: Vec<(
         CreatedDataContract,
@@ -78,6 +80,7 @@ pub struct OperationsScreenController {
     known_contracts: BTreeMap<String, DataContract>,
     supporting_contracts: BTreeMap<String, DataContract>,
     strategy_contract_names: BTreeMap<String, Vec<(String, Option<BTreeMap<u64, String>>)>>,
+    loaded_identity_id: Option<String>,
 }
 
 impl_builder!(OperationsScreenController);
@@ -90,6 +93,13 @@ impl OperationsScreenController {
         let supporting_contracts_lock = app_state.supporting_contracts.lock().await;
         let strategy_contract_names_lock =
             app_state.available_strategies_contract_names.lock().await;
+        let loaded_identity = app_state.loaded_identity.lock().await;
+
+        let loaded_identity_id = if let Some(identity) = &*loaded_identity {
+            Some(identity.id().to_string(Encoding::Base58))
+        } else {
+            None
+        };
 
         let (info_text, current_strategy, current_start_contracts) =
             if let Some(selected_strategy_name) = &*selected_strategy_lock {
@@ -110,12 +120,13 @@ impl OperationsScreenController {
 
         Self {
             info,
-            strategy_name: selected_strategy_lock.clone(),
+            selected_strategy_name: selected_strategy_lock.clone(),
             selected_strategy: current_strategy,
             start_contracts: current_start_contracts,
             known_contracts: known_contracts_lock.clone(),
             supporting_contracts: supporting_contracts_lock.clone(),
             strategy_contract_names: strategy_contract_names_lock.clone(),
+            loaded_identity_id,
         }
     }
 
@@ -173,20 +184,24 @@ impl ScreenController for OperationsScreenController {
                 code: Key::Char('a'),
                 modifiers: KeyModifiers::NONE,
             }) => {
-                if let Some(strategy_name) = self.strategy_name.clone() {
+                if let Some(selected_strategy_name) = self.selected_strategy_name.clone() {
                     // Update known contracts before showing the form
                     self.update_supporting_contracts_sync();
 
                     let strategy_contract_names = self
                         .strategy_contract_names
-                        .get(&strategy_name)
+                        .get(&selected_strategy_name)
                         .expect("Expected to get strategy contract names in operations screen");
 
                     ScreenFeedback::Form(Box::new(StrategyAddOperationFormController::new(
-                        strategy_name.clone(),
+                        selected_strategy_name.clone(),
+                        self.selected_strategy
+                            .clone()
+                            .expect("Expected a loaded strategy"),
                         self.known_contracts.clone(),
                         self.supporting_contracts.clone(),
                         strategy_contract_names.to_vec(),
+                        self.loaded_identity_id.clone(),
                     )))
                 } else {
                     ScreenFeedback::None
@@ -197,7 +212,7 @@ impl ScreenController for OperationsScreenController {
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::Task {
                 task: Task::Strategy(StrategyTask::RemoveLastOperation(
-                    self.strategy_name.clone().unwrap(),
+                    self.selected_strategy_name.clone().unwrap(),
                 )),
                 block: false,
             },
@@ -205,7 +220,7 @@ impl ScreenController for OperationsScreenController {
                 code: Key::Char('c'),
                 modifiers: KeyModifiers::NONE,
             }) => {
-                if let Some(strategy_name) = &self.strategy_name {
+                if let Some(strategy_name) = &self.selected_strategy_name {
                     ScreenFeedback::Task {
                         task: Task::Strategy(StrategyTask::ClearOperations(strategy_name.clone())),
                         block: false,
@@ -218,7 +233,7 @@ impl ScreenController for OperationsScreenController {
                 code: Key::Char('x'),
                 modifiers: KeyModifiers::NONE,
             }) => {
-                if let Some(strategy_name) = self.strategy_name.clone() {
+                if let Some(strategy_name) = self.selected_strategy_name.clone() {
                     ScreenFeedback::Form(Box::new(StrategyAutomaticDocumentsFormController::new(
                         strategy_name.clone(),
                     )))
@@ -251,11 +266,11 @@ impl ScreenController for OperationsScreenController {
                 },
             ) => {
                 self.selected_strategy = Some((*strategy).clone());
-                self.strategy_name = Some(strategy_name.clone());
+                self.selected_strategy_name = Some(strategy_name.clone());
                 self.start_contracts = strategy.start_contracts.clone();
 
                 // Update the strategy_contract_names map
-                if let Some(strategy_name) = &self.strategy_name {
+                if let Some(strategy_name) = &self.selected_strategy_name {
                     self.strategy_contract_names
                         .insert(strategy_name.clone(), contract_names.to_vec());
                 }
@@ -293,7 +308,7 @@ impl ScreenController for OperationsScreenController {
             } else {
                 format!(
                     "Strategy: {}\nOperations:\n{}",
-                    self.strategy_name
+                    self.selected_strategy_name
                         .as_ref()
                         .unwrap_or(&"Unknown".to_string()),
                     operations_lines
@@ -343,8 +358,9 @@ fn format_operation_name(op_type: &StrategyOperationType) -> String {
             ),
         }
         .to_string(),
-        StrategyOperationType::IdentityTransfer => "IdentityTransfer".to_string(),
+        StrategyOperationType::IdentityTransfer(_) => "IdentityTransfer".to_string(),
         StrategyOperationType::ResourceVote(_) => "ResourceVote".to_string(),
+        StrategyOperationType::Token(token_op) => todo!(),
     }
 }
 
@@ -355,7 +371,8 @@ enum OperationType {
     IdentityAddKeys,
     IdentityDisableKeys,
     IdentityWithdrawal,
-    IdentityTransfer,
+    IdentityTransferRandom,
+    IdentityTransferSpecific,
     ContractCreateRandom,
     ContractUpdateDocTypesRandom,
     // ContractUpdateFieldsRandom,
@@ -365,17 +382,21 @@ pub(super) struct StrategyAddOperationFormController {
     op_type_input: SelectInput<String>,
     op_specific_form: Option<Box<dyn FormController>>,
     strategy_name: String,
+    selected_strategy: Strategy,
     known_contracts: BTreeMap<String, DataContract>,
     supporting_contracts: BTreeMap<String, DataContract>,
     strategy_contract_names: StrategyContractNames,
+    loaded_identity_id: Option<String>,
 }
 
 impl StrategyAddOperationFormController {
     pub(super) fn new(
-        strategy_name: String,
+        selected_strategy_name: String,
+        selected_strategy: Strategy,
         known_contracts: BTreeMap<String, DataContract>,
         supporting_contracts: BTreeMap<String, DataContract>,
         strategy_contract_names: StrategyContractNames,
+        loaded_identity_id: Option<String>,
     ) -> Self {
         let operation_types = vec![
             "Document".to_string(),
@@ -383,7 +404,8 @@ impl StrategyAddOperationFormController {
             "IdentityAddKeys".to_string(),
             "IdentityDisableKeys".to_string(),
             "IdentityWithdrawal".to_string(),
-            "IdentityTransfer (requires start_identities > 0)".to_string(),
+            "IdentityTransferRandom".to_string(),
+            "IdentityTransferSpecific".to_string(),
             "ContractCreateRandom".to_string(),
             "ContractUpdateDocTypesRandom".to_string(),
             // "ContractUpdateFieldsRandom".to_string(),
@@ -391,10 +413,12 @@ impl StrategyAddOperationFormController {
         Self {
             op_type_input: SelectInput::new(operation_types),
             op_specific_form: None,
-            strategy_name,
+            strategy_name: selected_strategy_name,
+            selected_strategy,
             known_contracts,
             supporting_contracts,
             strategy_contract_names,
+            loaded_identity_id,
         }
     }
 
@@ -424,9 +448,16 @@ impl StrategyAddOperationFormController {
             OperationType::IdentityWithdrawal => Box::new(
                 StrategyOpIdentityWithdrawalFormController::new(self.strategy_name.clone()),
             ),
-            OperationType::IdentityTransfer => Box::new(
-                StrategyOpIdentityTransferFormController::new(self.strategy_name.clone()),
+            OperationType::IdentityTransferRandom => Box::new(
+                StrategyOpIdentityTransferRandomFormController::new(self.strategy_name.clone()),
             ),
+            OperationType::IdentityTransferSpecific => {
+                Box::new(StrategyOpIdentityTransferSpecificFormController::new(
+                    self.strategy_name.clone(),
+                    self.selected_strategy.clone(),
+                    self.loaded_identity_id.clone(),
+                ))
+            }
             OperationType::ContractCreateRandom => Box::new(
                 StrategyOpContractCreateFormController::new(self.strategy_name.clone()),
             ),
@@ -455,9 +486,8 @@ impl FormController for StrategyAddOperationFormController {
                         "IdentityAddKeys" => OperationType::IdentityAddKeys,
                         "IdentityDisableKeys" => OperationType::IdentityDisableKeys,
                         "IdentityWithdrawal" => OperationType::IdentityWithdrawal,
-                        "IdentityTransfer (requires start_identities > 0)" => {
-                            OperationType::IdentityTransfer
-                        }
+                        "IdentityTransferRandom" => OperationType::IdentityTransferRandom,
+                        "IdentityTransferSpecific" => OperationType::IdentityTransferSpecific,
                         "ContractCreateRandom" => OperationType::ContractCreateRandom,
                         "ContractUpdateDocTypesRandom" => {
                             OperationType::ContractUpdateDocTypesRandom
