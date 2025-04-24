@@ -2,6 +2,7 @@
 
 use chrono::Utc;
 use dashcore::hashes::Hash;
+use dpp::document::Document;
 use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use dpp::state_transition::batch_transition::BatchTransition;
 use std::io::Write;
@@ -1029,51 +1030,15 @@ impl AppState {
             None,
         )?;
 
-        preorder_transition.broadcast(sdk, None).await?;
+        let _preorder_document: Document = preorder_transition
+            .broadcast_and_wait(sdk, None)
+            .await
+            .map_err(|e| Error::DPNSError(format!("Preorder document failed to process: {e}")))?;
 
-        // let _preorder_document =
-        //     match <dash_sdk::platform::Document as PutDocument<SimpleSigner>>::wait_for_response::<
-        //         '_,
-        //         '_,
-        //         '_,
-        //     >(
-        //         &preorder_document,
-        //         sdk,
-        //         preorder_transition,
-        //         dpns_contract.clone().into(),
-        //     )
-        //     .await
-        //     {
-        //         Ok(document) => document,
-        //         Err(e) => {
-        //             return Err(Error::DPNSError(format!(
-        //                 "Preorder document failed to process: {e}"
-        //             )));
-        //         }
-        //     };
-
-        domain_transition.broadcast(sdk, None).await?;
-
-        // let _domain_document =
-        //     match <dash_sdk::platform::Document as PutDocument<SimpleSigner>>::wait_for_response::<
-        //         '_,
-        //         '_,
-        //         '_,
-        //     >(
-        //         &domain_document,
-        //         sdk,
-        //         domain_transition,
-        //         dpns_contract.into(),
-        //     )
-        //     .await
-        //     {
-        //         Ok(document) => document,
-        //         Err(e) => {
-        //             return Err(Error::DPNSError(format!(
-        //                 "Domain document failed to process: {e}"
-        //             )));
-        //         }
-        //     };
+        let _domain_document: Document = domain_transition
+            .broadcast_and_wait(sdk, None)
+            .await
+            .map_err(|e| Error::DPNSError(format!("Domain document failed to process: {e}")))?;
 
         Ok(())
     }

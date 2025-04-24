@@ -111,20 +111,20 @@ impl Default for AppState {
             Drive::open("explorer.drive", None, Some(platform_version))
                 .expect("expected to open Drive successfully");
 
-        // if drive
-        //     .grove
-        //     .is_empty_tree(
-        //         drive::grovedb_path::SubtreePath::empty(),
-        //         None,
-        //         GroveVersion::latest(),
-        //     )
-        //     .unwrap()
-        //     .expect("expected to find id this is an empty db")
-        // {
-        //     drive
-        //         .create_initial_state_structure(None, platform_version)
-        //         .expect("expected to create root tree successfully");
-        // }
+        if drive
+            .grove
+            .is_empty_tree(
+                drive::grovedb_path::SubtreePath::empty(),
+                None,
+                &PlatformVersion::latest().drive.grove_version,
+            )
+            .unwrap()
+            .expect("expected to find id this is an empty db")
+        {
+            drive
+                .create_initial_state_structure(None, platform_version)
+                .expect("expected to create root tree successfully");
+        }
 
         AppState {
             loaded_identity: None.into(),

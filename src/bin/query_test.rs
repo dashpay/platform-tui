@@ -23,7 +23,6 @@ use dapi_grpc::platform::v0::{
     GetIdentityContractNonceRequest, GetIdentityKeysRequest, GetIdentityNonceRequest,
     KeyRequestType,
 };
-use dapi_grpc::tonic::transport::Uri;
 use dapi_grpc::tonic::{Code, Status as TransportError};
 use dashmap::DashMap;
 use futures::future::{join_all, BoxFuture};
@@ -749,10 +748,7 @@ impl From<&str> for AddressPool {
     fn from(addresses: &str) -> Self {
         let addresses = addresses
             .split(',')
-            .map(|uri| {
-                let uri = Uri::from_str(uri).expect("invalid uri");
-                Address::from(uri)
-            })
+            .filter_map(|uri| Address::from_str(uri).ok())
             .collect();
 
         Self::new(addresses)

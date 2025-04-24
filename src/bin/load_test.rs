@@ -22,6 +22,7 @@ use dash_sdk::{
     Sdk, SdkBuilder,
 };
 use dpp::prelude::IdentityNonce;
+use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use dpp::{
     data_contract::{
@@ -275,7 +276,13 @@ async fn main() {
             .get(&(identity.id(), *key_id))
             .expect("expected a private key")
             .clone();
-        signer.add_key(identity_public_key.clone(), private_key);
+        signer.add_key(
+            identity_public_key.clone(),
+            private_key
+                .as_slice()
+                .try_into()
+                .expect("expected a 32-byte private key"),
+        );
     }
 
     let arc_signer = Arc::new(signer);
@@ -454,7 +461,10 @@ async fn broadcast_contract_variants(
         if i % contract_push_speed as usize == 0
             || i > (count - count % contract_push_speed) as usize
         {
-            match transaction.broadcast_and_wait(&sdk, None).await {
+            match transaction
+                .broadcast_and_wait::<StateTransitionProofResult>(&sdk, None)
+                .await
+            {
                 Ok(_) => {}
                 Err(e) => {
                     tracing::info!("Experienced a failure {:?} broadcasting a contract while waiting for the response", e);
@@ -471,7 +481,7 @@ async fn broadcast_contract_variants(
                 }
             }
         } else {
-            match transaction.broadcast(&sdk).await {
+            match transaction.broadcast(&sdk, None).await {
                 Ok(_) => {}
                 Err(e) => {
                     tracing::info!("Experienced a failure {:?} broadcasting a contract without waiting for the response", e);
@@ -660,6 +670,7 @@ async fn broadcast_random_documents_load_test(
                             request_settings: settings,
                             identity_nonce_stale_time_s: None,
                             user_fee_increase: None,
+                            wait_timeout: None,
                         }),
                     )
                     .await;
