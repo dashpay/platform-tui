@@ -82,9 +82,11 @@ use rand::{rngs::StdRng, SeedableRng};
 use rs_dapi_client::{DapiRequest, DapiRequestExecutor, RequestSettings};
 use simple_signer::signer::SimpleSigner;
 use strategy_tests::{
+    addresses_with_balance::AddressesWithBalance,
     frequency::Frequency,
     operations::{DocumentAction, DocumentOp, FinalizeBlockOperation, Operation, OperationType},
-    IdentityInsertInfo, LocalDocumentQuery, StartIdentities, Strategy, StrategyConfig,
+    IdentityInsertInfo, LocalDocumentQuery, StartAddresses, StartIdentities, Strategy,
+    StrategyConfig,
 };
 use tokio::sync::{oneshot, Mutex, MutexGuard, Semaphore};
 
@@ -135,6 +137,12 @@ pub enum StrategyTask {
     RemoveIdentityInserts(String),
     RemoveStartIdentities(String),
     RemoveLastOperation(String),
+    SetStartAddresses {
+        strategy_name: String,
+        count: u16,
+        balance: Credits,
+    },
+    RemoveStartAddresses(String),
 }
 
 impl AppState {
@@ -1009,6 +1017,9 @@ impl AppState {
                 let mut loaded_identity_clone = loaded_identity_lock.clone();
                 let current_identities = Arc::new(Mutex::new(vec![loaded_identity_clone.clone()]));
 
+                // Initialize addresses with balance tracking for address-based operations
+                let mut addresses_with_balance = AddressesWithBalance::new();
+
                 // Add the hardcoded start identities that are already created to current_identities
                 let hard_coded_start_identities: Vec<Identity> = strategy
                     .start_identities
@@ -1192,6 +1203,7 @@ impl AppState {
                         .chance_per_block
                         .unwrap_or(1.0)) as u64;
                 let mut num_top_ups: u64 = 0;
+                let mut num_address_funding: u64 = 0;
                 for operation in &strategy.operations {
                     if matches!(operation.op_type, OperationType::IdentityTopUp(_)) {
                         num_top_ups += (operation.frequency.times_per_block_range.start as f64
@@ -1199,9 +1211,16 @@ impl AppState {
                             * operation.frequency.chance_per_block.unwrap_or(1.0))
                             as u64;
                     }
+                    if matches!(operation.op_type, OperationType::AddressFundingFromCoreAssetLock(_)) {
+                        num_address_funding += (operation.frequency.times_per_block_range.start as f64
+                            * duration as f64
+                            * operation.frequency.chance_per_block.unwrap_or(1.0))
+                            as u64;
+                    }
                 }
+                let num_start_addresses = strategy.start_addresses.number_of_addresses as u64;
                 let num_asset_lock_proofs_needed =
-                    num_start_identities + num_identity_inserts + num_top_ups;
+                    num_start_identities + num_identity_inserts + num_top_ups + num_start_addresses + num_address_funding;
                 let mut asset_lock_proofs: Vec<(AssetLockProof, PrivateKey)> = Vec::new();
                 if num_asset_lock_proofs_needed > 0 {
                     let wallet_lock = self.loaded_wallet.lock().await;
@@ -1412,6 +1431,7 @@ impl AppState {
                             &mut asset_lock_proofs,
                             &current_block_info,
                             &mut current_identities_lock,
+                            &mut addresses_with_balance,
                             &mut known_contracts_lock,
                             &mut signer,
                             &mut identity_nonce_counter,
@@ -2512,6 +2532,54 @@ impl AppState {
                 let mut strategies_lock = self.available_strategies.lock().await;
                 if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
                     strategy.operations.pop();
+                    BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
+                        strategy_name.clone(),
+                        MutexGuard::map(strategies_lock, |strategies| {
+                            strategies.get_mut(&strategy_name).expect("strategy exists")
+                        }),
+                        MutexGuard::map(
+                            self.available_strategies_contract_names.lock().await,
+                            |names| names.get_mut(&strategy_name).expect("inconsistent data"),
+                        ),
+                    ))
+                } else {
+                    BackendEvent::StrategyError {
+                        error: "Strategy doesn't exist in app state".to_string(),
+                    }
+                }
+            }
+            StrategyTask::SetStartAddresses {
+                strategy_name,
+                count,
+                balance,
+            } => {
+                let mut strategies_lock = self.available_strategies.lock().await;
+                if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
+                    strategy.start_addresses = StartAddresses {
+                        number_of_addresses: count,
+                        starting_balance: balance,
+                        extra_addresses: Default::default(),
+                    };
+                    BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
+                        strategy_name.clone(),
+                        MutexGuard::map(strategies_lock, |strategies| {
+                            strategies.get_mut(&strategy_name).expect("strategy exists")
+                        }),
+                        MutexGuard::map(
+                            self.available_strategies_contract_names.lock().await,
+                            |names| names.get_mut(&strategy_name).expect("inconsistent data"),
+                        ),
+                    ))
+                } else {
+                    BackendEvent::StrategyError {
+                        error: "Strategy doesn't exist in app state".to_string(),
+                    }
+                }
+            }
+            StrategyTask::RemoveStartAddresses(strategy_name) => {
+                let mut strategies_lock = self.available_strategies.lock().await;
+                if let Some(strategy) = strategies_lock.get_mut(&strategy_name) {
+                    strategy.start_addresses = StartAddresses::default();
                     BackendEvent::AppStateUpdated(AppStateUpdate::SelectedStrategy(
                         strategy_name.clone(),
                         MutexGuard::map(strategies_lock, |strategies| {

@@ -4,6 +4,7 @@ mod identity_inserts;
 mod operations;
 mod run_strategy;
 pub mod selected_strategy;
+mod start_addresses;
 mod start_contracts;
 mod start_identities;
 

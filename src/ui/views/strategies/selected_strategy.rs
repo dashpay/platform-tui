@@ -21,7 +21,7 @@ use tuirealm::{
 use super::{
     identity_inserts::IdentityInsertsScreenController, operations::OperationsScreenController,
     run_strategy::RunStrategyFormController, run_strategy::RunStrategyScreenController,
-    start_contracts::StartContractsScreenController,
+    start_addresses::StartAddressesScreenController, start_contracts::StartContractsScreenController,
     start_identities::StartIdentitiesScreenController,
 };
 use crate::{
@@ -40,7 +40,7 @@ use crate::{
     },
 };
 
-const COMMAND_KEYS: [ScreenCommandKey; 7] = [
+const COMMAND_KEYS: [ScreenCommandKey; 8] = [
     ScreenCommandKey::new("q", "Back to Strategies"),
     ScreenCommandKey::new("r", "Run strategy"),
     ScreenCommandKey::new("l", "Clone this strategy"),
@@ -48,6 +48,7 @@ const COMMAND_KEYS: [ScreenCommandKey; 7] = [
     ScreenCommandKey::new("i", "Identity inserts"),
     ScreenCommandKey::new("o", "Operations"),
     ScreenCommandKey::new("s", "Start identities"),
+    ScreenCommandKey::new("a", "Start addresses"),
 ];
 
 const COMMAND_KEYS_NO_SELECTION: [ScreenCommandKey; 1] =
@@ -126,6 +127,10 @@ impl ScreenController for SelectedStrategyScreenController {
                 code: Key::Char('s'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::NextScreen(StartIdentitiesScreenController::builder()),
+            Event::Key(KeyEvent {
+                code: Key::Char('a'),
+                modifiers: KeyModifiers::NONE,
+            }) => ScreenFeedback::NextScreen(StartAddressesScreenController::builder()),
             Event::Key(KeyEvent {
                 code: Key::Char('o'),
                 modifiers: KeyModifiers::NONE,
