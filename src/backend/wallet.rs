@@ -19,8 +19,8 @@ use dash_sdk::dashcore_rpc::{Client, RpcApi};
 use dash_sdk::{RequestSettings, Sdk};
 use dpp::dashcore::secp256k1::SecretKey;
 use dpp::dashcore::{
+    consensus,
     hashes::Hash,
-    psbt::serialize::Serialize,
     secp256k1::{Message, Secp256k1},
     sighash::SighashCache,
     transaction::special_transaction::{asset_lock::AssetLockPayload, TransactionPayload},
@@ -45,6 +45,7 @@ pub enum WalletTask {
     CopyAddress,
     ClearLoadedWallet,
     SplitUTXOs(u32),
+    SendToAddress(String, u64),
 }
 
 pub async fn add_wallet_by_private_key_as_string<'s>(
@@ -61,7 +62,11 @@ pub async fn add_wallet_by_private_key_as_string<'s>(
                 Err(_) => return Err(WalletError::Custom("Failed to decode hex".to_string())),
             };
             let network = Config::load().core_network();
-            match PrivateKey::from_slice(bytes.as_slice(), network) {
+            let array: &[u8; 32] = bytes
+                .as_slice()
+                .try_into()
+                .map_err(|_| WalletError::Custom("Expected 32-byte private key".to_string()))?;
+            match PrivateKey::from_byte_array(array, network) {
                 Ok(key) => key,
                 Err(_) => return Err(WalletError::Custom("Expected private key".to_string())),
             }
@@ -89,6 +94,11 @@ pub async fn add_wallet_by_private_key<'s>(
     let public_key = private_key.public_key(&secp);
     let network = Config::load().core_network();
     let address = Address::p2pkh(&public_key, network);
+    tracing::info!(
+        "Initializing wallet from private key: address={}, network={:?}",
+        address,
+        network
+    );
     let mut wallet = Wallet::SingleKeyWallet(SingleKeyWallet {
         private_key,
         public_key,
@@ -100,10 +110,16 @@ pub async fn add_wallet_by_private_key<'s>(
         Ok(utxos) => match wallet {
             BackendWallet(ref mut single_key_wallet) => {
                 single_key_wallet.utxos = utxos;
+                let balance: u64 = single_key_wallet.utxos.values().map(|o| o.value).sum();
+                tracing::info!(
+                    "Wallet initialized: utxos_count={}, balance_sats={}",
+                    single_key_wallet.utxos.len(),
+                    balance
+                );
             }
         },
-        Err(_) => {
-            // nothing
+        Err(e) => {
+            tracing::warn!("Failed to load initial UTXOs for wallet: {}", e);
         }
     };
 
@@ -120,6 +136,7 @@ pub(super) async fn run_wallet_task<'s>(
 ) -> BackendEvent<'s> {
     match task {
         WalletTask::AddByPrivateKey(ref private_key) => {
+            tracing::info!("WalletTask::AddByPrivateKey invoked (redacted key)");
             match add_wallet_by_private_key_as_string(
                 &wallet_state,
                 private_key,
@@ -150,6 +167,16 @@ pub(super) async fn run_wallet_task<'s>(
             let mut rng = StdRng::from_entropy();
             let network = Config::load().core_network();
             let private_key = PrivateKey::new(SecretKey::new(&mut rng), network);
+            {
+                let secp = Secp256k1::new();
+                let public_key = private_key.public_key(&secp);
+                let address = Address::p2pkh(&public_key, network);
+                tracing::info!(
+                    "WalletTask::AddRandomKey invoked: address={}, network={:?}",
+                    address,
+                    network
+                );
+            }
             add_wallet_by_private_key(&wallet_state, private_key, insight, core_client).await;
 
             let wallet_guard = wallet_state.lock().await;
@@ -166,21 +193,39 @@ pub(super) async fn run_wallet_task<'s>(
         WalletTask::Refresh => {
             let mut wallet_guard = wallet_state.lock().await;
             if let Some(wallet) = wallet_guard.deref_mut() {
+                let refresh_address = wallet.receive_address();
+                tracing::info!("WalletTask::Refresh invoked: address={}", refresh_address);
                 match wallet.reload_utxos(insight, core_client).await {
                     Ok(_) => {
                         let loaded_wallet_update = MutexGuard::map(wallet_guard, |opt| {
                             opt.as_mut().expect("wallet was set above")
                         });
+                        let post_balance: u64 = loaded_wallet_update.balance();
+                        let utxo_count = match &*loaded_wallet_update {
+                            Wallet::SingleKeyWallet(w) => w.utxos.len(),
+                        };
+                        tracing::info!(
+                            "Wallet refreshed: utxos_count={}, balance_sats={}",
+                            utxo_count,
+                            post_balance
+                        );
                         BackendEvent::TaskCompletedStateChange {
                             task: Task::Wallet(task),
                             execution_result: Ok("Refreshed wallet".into()),
                             app_state_update: AppStateUpdate::LoadedWallet(loaded_wallet_update),
                         }
                     }
-                    Err(err) => BackendEvent::TaskCompleted {
-                        task: Task::Wallet(task),
-                        execution_result: Err(err),
-                    },
+                    Err(err) => {
+                        tracing::warn!(
+                            "Wallet refresh failed for address {}: {}",
+                            refresh_address,
+                            err
+                        );
+                        BackendEvent::TaskCompleted {
+                            task: Task::Wallet(task),
+                            execution_result: Err(err),
+                        }
+                    }
                 }
             } else {
                 BackendEvent::TaskCompleted {
@@ -249,6 +294,51 @@ pub(super) async fn run_wallet_task<'s>(
                 }
             }
         }
+        WalletTask::SendToAddress(ref recipient, amount_sats) => {
+            let mut wallet_guard = wallet_state.lock().await;
+            if let Some(wallet) = wallet_guard.deref_mut() {
+                tracing::info!(
+                    "WalletTask::SendToAddress invoked: recipient={}, amount_sats={}",
+                    recipient,
+                    amount_sats
+                );
+                match wallet
+                    .send_to_address(sdk, recipient.as_str(), amount_sats)
+                    .await
+                {
+                    Ok(txid) => {
+                        let loaded_wallet_update = MutexGuard::map(wallet_guard, |opt| {
+                            opt.as_mut().expect("wallet was set above")
+                        });
+                        BackendEvent::TaskCompletedStateChange {
+                            task: Task::Wallet(WalletTask::SendToAddress(
+                                recipient.clone(),
+                                amount_sats,
+                            )),
+                            execution_result: Ok(CompletedTaskPayload::String(format!(
+                                "Sent {} DASH to {}. Txid: {}",
+                                (amount_sats as f64) / 100_000_000f64,
+                                recipient,
+                                txid
+                            ))),
+                            app_state_update: AppStateUpdate::LoadedWallet(loaded_wallet_update),
+                        }
+                    }
+                    Err(e) => BackendEvent::TaskCompleted {
+                        task: Task::Wallet(WalletTask::SendToAddress(
+                            recipient.clone(),
+                            amount_sats,
+                        )),
+                        execution_result: Err(format!("{}", e)),
+                    },
+                }
+            } else {
+                BackendEvent::TaskCompleted {
+                    task: Task::Wallet(WalletTask::SendToAddress(recipient.clone(), amount_sats)),
+                    execution_result: Err(format!("No wallet loaded")),
+                }
+            }
+        }
     }
 }
 
@@ -276,6 +366,21 @@ impl Wallet {
         }
     }
 
+    pub(crate) async fn send_to_address(
+        &mut self,
+        sdk: &Sdk,
+        recipient_str: &str,
+        amount_sats: u64,
+    ) -> Result<String, WalletError> {
+        match self {
+            Wallet::SingleKeyWallet(single_wallet) => {
+                single_wallet
+                    .send_to_address(sdk, recipient_str, amount_sats)
+                    .await
+            }
+        }
+    }
+
     pub(crate) fn asset_lock_transaction(
         &mut self,
         seed: Option<u64>,
@@ -288,8 +393,8 @@ impl Wallet {
         let fee = 30_000;
         let random_private_key: [u8; 32] = rng.gen();
         let network = Config::load().core_network();
-        let private_key =
-            PrivateKey::from_slice(&random_private_key, network).expect("expected a private key");
+        let private_key = PrivateKey::from_byte_array(&random_private_key, network)
+            .expect("expected a private key");
 
         let secp = Secp256k1::new();
         let asset_lock_public_key = private_key.public_key(&secp);
@@ -379,8 +484,7 @@ impl Wallet {
                 let (_, public_key, input_address) = utxos
                     .remove(&input.previous_output)
                     .expect("expected a txout");
-                let message =
-                    Message::from_slice(sighash.as_byte_array()).expect("Error creating message");
+                let message = Message::from_digest(*sighash.as_byte_array());
 
                 let private_key = self.private_key_for_address(&input_address);
 
@@ -396,7 +500,7 @@ impl Wallet {
 
                 sig_script.push(1);
 
-                let mut serialized_pub_key = public_key.serialize();
+                let mut serialized_pub_key = public_key.inner.serialize().to_vec();
 
                 sig_script.push(serialized_pub_key.len() as u8);
                 sig_script.append(&mut serialized_pub_key);
@@ -508,7 +612,7 @@ impl Decode for SingleKeyWallet {
         let network = Config::load().core_network();
 
         let private_key =
-            PrivateKey::from_slice(bytes.as_slice(), network).expect("expected private key");
+            PrivateKey::from_byte_array(&bytes, network).expect("expected private key");
 
         let secp = Secp256k1::new();
         let public_key = private_key.public_key(&secp);
@@ -551,7 +655,7 @@ impl<'a> BorrowDecode<'a> for SingleKeyWallet {
         let network = Config::load().core_network();
 
         let private_key =
-            PrivateKey::from_slice(bytes.as_slice(), network).expect("expected private key");
+            PrivateKey::from_byte_array(&bytes, network).expect("expected private key");
 
         let secp = Secp256k1::new();
         let public_key = private_key.public_key(&secp);
@@ -635,36 +739,91 @@ impl SingleKeyWallet {
         insight: &InsightAPIClient,
         core_client: &Client,
     ) -> Result<HashMap<OutPoint, TxOut>, String> {
-        // First, let's try to get UTXOs from the RPC client using `list_unspent`.
-        match core_client.list_unspent(Some(1), None, Some(&[&self.address]), None, None) {
-            Ok(utxos) => {
-                // Convert RPC UTXOs to the desired HashMap format
-                let mut utxo_map = HashMap::new();
-                for utxo in utxos {
-                    let outpoint = OutPoint::new(utxo.txid, utxo.vout);
-                    let tx_out = TxOut {
-                        value: utxo.amount.to_sat(),
-                        script_pubkey: utxo.script_pub_key,
-                    };
-                    utxo_map.insert(outpoint, tx_out);
+        // Try Dash Core RPC first (include unconfirmed), then fall back to Insight
+        tracing::info!(
+            "Reloading UTXOs via Core RPC for address {} (minconf=0)",
+            self.address
+        );
+        // Note: list_unspent with an addresses filter only returns UTXOs known to the Core wallet.
+        // If the address isn't imported, Core will return an empty list even if funds exist.
+        match core_client.list_unspent(Some(0), None, Some(&[&self.address]), None, None) {
+            Ok(core_utxos) => {
+                // If Core returns any UTXOs, use them.
+                if !core_utxos.is_empty() {
+                    tracing::info!(
+                        "Core RPC returned {} UTXOs for {}",
+                        core_utxos.len(),
+                        self.address
+                    );
+                    let mut utxo_map = HashMap::new();
+                    for utxo in core_utxos {
+                        let outpoint = OutPoint::new(utxo.txid, utxo.vout);
+                        let tx_out = TxOut {
+                            value: utxo.amount.to_sat(),
+                            script_pubkey: utxo.script_pub_key,
+                        };
+                        utxo_map.insert(outpoint, tx_out);
+                    }
+                    self.utxos = utxo_map.clone();
+                    let bal: u64 = self.utxos.values().map(|o| o.value).sum();
+                    tracing::info!(
+                        "Updated wallet from Core: utxos_count={}, balance_sats={}",
+                        self.utxos.len(),
+                        bal
+                    );
+                    return Ok(utxo_map);
                 }
-                self.utxos = utxo_map.clone(); // Store the result in `self.utxos`
-                Ok(utxo_map)
-            }
-            Err(first_error) => {
-                // If that doesn't work, use the Insight API as a fallback
+
+                // Core returned no UTXOs; try Insight to fetch chain-scoped UTXOs
+                tracing::info!(
+                    "Core RPC returned 0 UTXOs for {}. Falling back to Insight.",
+                    self.address
+                );
                 match insight
                     .utxos_with_amount_for_addresses(&[&self.address])
                     .await
                 {
                     Ok(utxos) => {
                         self.utxos = utxos.clone();
+                        let bal: u64 = self.utxos.values().map(|o| o.value).sum();
+                        tracing::info!(
+                            "Updated wallet from Insight: utxos_count={}, balance_sats={}",
+                            self.utxos.len(),
+                            bal
+                        );
                         Ok(utxos)
                     }
                     Err(err) => Err(format!(
-                        "First error from Core: {}, Second Error from Insight: {}",
-                        first_error.to_string(),
+                        "No UTXOs from Core wallet and Insight failed: {}",
                         err.to_string()
+                    )),
+                }
+            }
+            Err(core_err) => {
+                // Core call failed entirely; attempt Insight as primary source
+                tracing::warn!(
+                    "Core RPC list_unspent failed for {}: {}. Falling back to Insight.",
+                    self.address,
+                    core_err
+                );
+                match insight
+                    .utxos_with_amount_for_addresses(&[&self.address])
+                    .await
+                {
+                    Ok(utxos) => {
+                        self.utxos = utxos.clone();
+                        let bal: u64 = self.utxos.values().map(|o| o.value).sum();
+                        tracing::info!(
+                            "Updated wallet from Insight: utxos_count={}, balance_sats={}",
+                            self.utxos.len(),
+                            bal
+                        );
+                        Ok(utxos)
+                    }
+                    Err(insight_err) => Err(format!(
+                        "Core RPC list_unspent failed: {}. Insight failed: {}",
+                        core_err.to_string(),
+                        insight_err.to_string()
                     )),
                 }
             }
@@ -788,7 +947,7 @@ impl SingleKeyWallet {
                         1, /* SIGHASH_ALL */
                     )
                     .unwrap();
-                let message = Message::from_slice(&sighash[..]).unwrap();
+                let message = Message::from_digest(*sighash.as_byte_array());
                 let sig = secp
                     .sign_ecdsa(&message, &self.private_key.inner)
                     .serialize_der();
@@ -799,7 +958,7 @@ impl SingleKeyWallet {
                         &[sig_with_sighash.len() as u8], // Convert to slice for uniform handling
                         &sig_with_sighash[..], // Convert Vec<u8> to slice for concatenation
                         &[0x21],               // Single-element slice for the public key length
-                        &self.public_key.serialize()[..], // Public key as slice
+                        &self.public_key.inner.serialize()[..], // Public key as slice
                     ]
                     .concat(),
                 );
@@ -807,7 +966,7 @@ impl SingleKeyWallet {
 
             // Attempt to broadcast the transaction
             let request = BroadcastTransactionRequest {
-                transaction: tx.serialize(),
+                transaction: consensus::serialize(&tx),
                 allow_high_fees: false,
                 bypass_limits: false,
             };
@@ -909,5 +1068,126 @@ impl SingleKeyWallet {
             panic!("address doesn't match");
         }
         &self.private_key
+    }
+
+    pub async fn send_to_address(
+        &mut self,
+        sdk: &Sdk,
+        recipient_str: &str,
+        amount_sats: u64,
+    ) -> Result<String, WalletError> {
+        let _network = Config::load().core_network();
+        let recipient = Address::from_str(recipient_str)
+            .map_err(|_| WalletError::Custom("Invalid recipient address".to_string()))?;
+        // Do not hard-fail on devnet name differences; rely on Core validation instead
+        // (e.g., devnet-mahua vs generic devnet). We proceed as long as address parses.
+        let recipient_script = recipient.assume_checked().script_pubkey();
+
+        let fee: u64 = 30_000; // conservative flat fee
+        let (mut utxos, change) = self
+            .take_unspent_utxos_for(amount_sats + fee)
+            .ok_or(WalletError::Balance)?;
+
+        let mut outputs: Vec<TxOut> = Vec::with_capacity(2);
+        outputs.push(TxOut {
+            value: amount_sats,
+            script_pubkey: recipient_script,
+        });
+        let mut change_index: Option<u32> = None;
+        if change > 0 {
+            change_index = Some(1);
+            outputs.push(TxOut {
+                value: change,
+                script_pubkey: self.change_address().script_pubkey(),
+            });
+        }
+
+        let inputs = utxos
+            .iter()
+            .map(|(outpoint, _)| {
+                let mut txin = TxIn::default();
+                txin.previous_output = outpoint.clone();
+                txin
+            })
+            .collect::<Vec<_>>();
+
+        let mut tx = Transaction {
+            version: 3,
+            lock_time: 0,
+            input: inputs,
+            output: outputs,
+            special_transaction_payload: None,
+        };
+
+        // Sign inputs using legacy sighash
+        let sighash_u32 = 1u32; // SIGHASH_ALL
+        let cache = SighashCache::new(&tx);
+        let sighashes: Vec<_> = tx
+            .input
+            .iter()
+            .enumerate()
+            .map(|(i, input)| {
+                let script_pubkey = utxos
+                    .get(&input.previous_output)
+                    .expect("expected utxo for input")
+                    .0
+                    .script_pubkey
+                    .clone();
+                cache
+                    .legacy_signature_hash(i, &script_pubkey, sighash_u32)
+                    .expect("expected sighash")
+            })
+            .collect();
+        drop(cache);
+
+        let secp = Secp256k1::new();
+        tx.input
+            .iter_mut()
+            .zip(sighashes.into_iter())
+            .for_each(|(input, sighash)| {
+                let (_, public_key, input_address) = utxos
+                    .remove(&input.previous_output)
+                    .expect("expected utxo for input");
+                let message = Message::from_digest(*sighash.as_byte_array());
+                let privkey = self.private_key_for_address(&input_address);
+                let sig = secp.sign_ecdsa(&message, &privkey.inner).serialize_der();
+                let mut sig_with_sighash = sig.to_vec();
+                sig_with_sighash.push(1u8);
+
+                let mut script = Vec::with_capacity(sig_with_sighash.len() + 2 + 33);
+                script.push(sig_with_sighash.len() as u8);
+                script.extend_from_slice(&sig_with_sighash);
+
+                let pub_ser = public_key.inner.serialize();
+                script.push(pub_ser.len() as u8);
+                script.extend_from_slice(&pub_ser);
+
+                input.script_sig = ScriptBuf::from_bytes(script);
+            });
+
+        // Broadcast
+        let request = BroadcastTransactionRequest {
+            transaction: consensus::serialize(&tx),
+            allow_high_fees: false,
+            bypass_limits: false,
+        };
+
+        match sdk
+            .execute(request, RequestSettings::default())
+            .await
+            .into_inner()
+        {
+            Ok(BroadcastTransactionResponse { transaction_id: _ }) => {
+                // Update local UTXOs: remove spent, add change output if present
+                let txid = tx.txid();
+                if let Some(idx) = change_index {
+                    let change_out = tx.output.get(idx as usize).expect("change index bounds");
+                    self.utxos
+                        .insert(OutPoint { txid, vout: idx }, change_out.clone());
+                }
+                Ok(txid.to_string())
+            }
+            Err(e) => Err(WalletError::Custom(format!("Broadcast failed: {}", e))),
+        }
     }
 }

@@ -2,7 +2,6 @@ use crate::backend::{as_json_string, BackendEvent, Task};
 use chrono::{prelude::*, LocalResult};
 use chrono_humanize::{Accuracy, HumanTime, Tense};
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
-use dash_sdk::dashcore_rpc::dashcore::hashes::Hash;
 use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
 use dash_sdk::platform::{DocumentQuery, FetchUnproved};
 use dash_sdk::sdk::prettify_proof;
@@ -13,6 +12,7 @@ use dash_sdk::{
 use dpp::block::epoch::Epoch;
 use dpp::core_subsidy::NetworkCoreSubsidy;
 use dpp::core_types::validator_set::v0::ValidatorSetV0Getters;
+use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{Address, Network, ScriptBuf};
 use dpp::data_contracts::withdrawals_contract::v1::document_types::withdrawal::properties::{
     AMOUNT, STATUS, TRANSACTION_INDEX,
@@ -40,16 +40,15 @@ use drive::drive::credit_pools::epochs::epoch_key_constants::KEY_START_BLOCK_COR
 use drive::drive::credit_pools::epochs::epochs_root_tree_key_constants::KEY_UNPAID_EPOCH_INDEX;
 use drive::drive::credit_pools::epochs::paths::EpochProposers;
 use drive::drive::identity::withdrawals::paths::{
-    get_withdrawal_root_path_vec, get_withdrawal_transactions_sum_tree_path,
-    WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
+    get_withdrawal_root_path_vec, WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
 };
 use drive::drive::RootTree;
 use drive::grovedb::element::SumValue;
 use drive::grovedb::{Element, GroveDb, PathQuery, Query, SizedQuery};
-use drive::query::{DriveDocumentQuery, OrderClause, WhereClause, WhereOperator};
+use drive::query::{OrderClause, WhereClause, WhereOperator};
 use drive_proof_verifier::types::TotalCreditsInPlatform;
 use drive_proof_verifier::types::{
-    CurrentQuorumsInfo, Elements, KeysInPath, NoParamQuery, ProtocolVersionUpgrades,
+    CurrentQuorumsInfo, KeysInPath, NoParamQuery, ProtocolVersionUpgrades,
 };
 use drive_proof_verifier::ContextProvider;
 use itertools::Itertools;

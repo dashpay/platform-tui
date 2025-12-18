@@ -276,7 +276,7 @@ impl ConfirmClearKnownContractsFormController {
 impl FormController for ConfirmClearKnownContractsFormController {
     fn on_event(&mut self, event: KeyEvent) -> FormStatus {
         match self.input.on_event(event) {
-            InputStatus::Done(contract_name) => FormStatus::Done {
+            InputStatus::Done(_contract_name) => FormStatus::Done {
                 task: Task::Contract(ContractTask::ClearKnownContracts),
                 block: false,
             },

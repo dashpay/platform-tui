@@ -8,7 +8,7 @@ use tuirealm::{
 
 use super::{
     contracts::ContractsScreenController, usernames::DpnsUsernamesScreenController,
-    wallet::WalletScreenController, withdrawals::WithdrawalsScreenController,
+    wallet::WalletScreenController,
 };
 use crate::ui::views::strategies::StrategiesScreenController;
 use crate::{

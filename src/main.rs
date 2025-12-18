@@ -1,9 +1,8 @@
 use std::{fs::File, panic, time::Duration};
 
 use crossterm::event::{Event as TuiEvent, EventStream};
-use dapi_grpc::core::v0::core_client::CoreClient;
 use dash_sdk::dashcore_rpc::{Auth, Client};
-use dash_sdk::{sdk, RequestSettings, SdkBuilder};
+use dash_sdk::{RequestSettings, SdkBuilder};
 use dpp::{identity::accessors::IdentityGettersV0, version::PlatformVersion};
 use futures::{future::OptionFuture, select, FutureExt, StreamExt};
 use rs_platform_explorer::{

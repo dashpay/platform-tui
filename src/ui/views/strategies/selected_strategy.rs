@@ -290,7 +290,56 @@ fn display_strategy(
                 }
                 OperationType::IdentityTransfer(_) => "IdentityTransfer".to_string(),
                 OperationType::ResourceVote(_) => "ResourceVote".to_string(),
-                OperationType::Token(token_op) => todo!(),
+                OperationType::Token(token_op) => {
+                    format!(
+                        "Token({}): {}",
+                        token_op.token_id.to_string(Encoding::Base58),
+                        match &token_op.action {
+                            dpp::tokens::token_event::TokenEvent::Mint(..) => "Mint",
+                            dpp::tokens::token_event::TokenEvent::Burn(..) => "Burn",
+                            dpp::tokens::token_event::TokenEvent::Transfer(..) => "Transfer",
+                            dpp::tokens::token_event::TokenEvent::Freeze(..) => "Freeze",
+                            dpp::tokens::token_event::TokenEvent::Unfreeze(..) => "Unfreeze",
+                            dpp::tokens::token_event::TokenEvent::DestroyFrozenFunds(..) => "DestroyFrozenFunds",
+                            _ => "Unknown",
+                        }
+                    )
+                }
+                OperationType::IdentityTopUpFromAddresses(amount) => {
+                    format!("IdentityTopUpFromAddresses [{}..{}]", amount.start(), amount.end())
+                }
+                OperationType::AddressFundingFromCoreAssetLock(amount) => {
+                    format!("AddressFundingFromCoreAssetLock [{}..{}]", amount.start(), amount.end())
+                }
+                OperationType::AddressTransfer(amount, output_count, _, _) => {
+                    format!(
+                        "AddressTransfer [{}..{}] outputs:[{}..{}]",
+                        amount.start(),
+                        amount.end(),
+                        output_count.start(),
+                        output_count.end()
+                    )
+                }
+                OperationType::AddressWithdrawal(amount, _, _) => {
+                    format!("AddressWithdrawal [{}..{}]", amount.start(), amount.end())
+                }
+                OperationType::IdentityTransferToAddresses(amount, output_count, _, _) => {
+                    format!(
+                        "IdentityTransferToAddresses [{}..{}] outputs:[{}..{}]",
+                        amount.start(),
+                        amount.end(),
+                        output_count.start(),
+                        output_count.end()
+                    )
+                }
+                OperationType::IdentityCreateFromAddresses(amount, _, _, key_count, _) => {
+                    format!(
+                        "IdentityCreateFromAddresses [{}..{}] keys:{}",
+                        amount.start(),
+                        amount.end(),
+                        key_count
+                    )
+                }
             };
 
             let times_per_block_display = if op.frequency.times_per_block_range.end

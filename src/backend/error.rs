@@ -1,6 +1,5 @@
 use std::time::SystemTimeError;
 
-use dapi_grpc::tonic::Status;
 use dpp::ProtocolError;
 use rs_dapi_client::DapiClientError;
 

@@ -47,12 +47,17 @@ impl InsightAPIClient {
         addresses: &[&Address],
     ) -> Result<HashMap<OutPoint, TxOut>, InsightError> {
         let url = format!("{}/{}", self.0, ADDRESS_UTXO_PATH);
+        tracing::info!(
+            "Insight: fetching UTXOs for {} address(es)",
+            addresses.len()
+        );
 
         let addr_str = addresses
             .iter()
             .map(|address| address.to_string())
             .collect::<Vec<_>>()
             .join(",");
+        tracing::debug!("Insight address list: {}", addr_str);
         let resp = reqwest::Client::new()
             .post(&url)
             .header("Content-Type", "application/x-www-form-urlencoded")
@@ -64,6 +69,7 @@ impl InsightAPIClient {
         let status = resp.status();
 
         if !status.is_success() {
+            tracing::warn!("Insight request failed with status {}", status);
             let error_body = resp
                 .text()
                 .await
@@ -76,6 +82,7 @@ impl InsightAPIClient {
 
         let json: Vec<serde_json::Value> =
             resp.json().await.map_err(|e| InsightError(e.to_string()))?;
+        tracing::info!("Insight returned {} UTXOs", json.len());
         let mut utxos = HashMap::new();
         for utxo in json.iter() {
             let txid_str = utxo
@@ -110,7 +117,12 @@ impl InsightAPIClient {
                 },
             );
         }
-
+        let total: u64 = utxos.values().map(|o| o.value).sum();
+        tracing::info!(
+            "Insight UTXO parse completed: utxos_count={}, balance_sats={}",
+            utxos.len(),
+            total
+        );
         Ok(utxos)
     }
 }

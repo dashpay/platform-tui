@@ -276,7 +276,7 @@ async fn main() {
             .get(&(identity.id(), *key_id))
             .expect("expected a private key")
             .clone();
-        signer.add_key(
+        signer.add_identity_public_key(
             identity_public_key.clone(),
             private_key
                 .as_slice()
@@ -663,13 +663,15 @@ async fn broadcast_random_documents_load_test(
                     .put_to_platform(
                         &sdk,
                         document_type_to_use.as_ref().clone(),
-                        document_state_transition_entropy,
+                        Some(document_state_transition_entropy),
                         identity_public_key,
+                        None,
                         signer.as_ref(),
                         Some(PutSettings {
                             request_settings: settings,
                             identity_nonce_stale_time_s: None,
                             user_fee_increase: None,
+                            state_transition_creation_options: None,
                             wait_timeout: None,
                         }),
                     )

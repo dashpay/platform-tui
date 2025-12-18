@@ -11,7 +11,6 @@ use crate::{
     },
     Event,
 };
-use clap::Id;
 use dpp::prelude::{Identifier, Identity};
 use std::collections::BTreeMap;
 use tuirealm::{

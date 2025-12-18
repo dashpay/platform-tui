@@ -1058,6 +1058,7 @@ impl AppState {
                         identity_nonce_stale_time_s: Some(0),
                         user_fee_increase: None,
                         wait_timeout: None,
+                        state_transition_creation_options: None,
                     }),
                 );
                 let contract_futures =
@@ -1076,6 +1077,7 @@ impl AppState {
                                 identity_nonce_stale_time_s: Some(0),
                                 user_fee_increase: None,
                                 wait_timeout: None,
+                                state_transition_creation_options: None,
                             })
                         ).await.expect("Couldn't get current identity contract nonce");
                                 ((identity_id, used_contract_id), current_nonce)
@@ -1516,7 +1518,7 @@ impl AppState {
                                                         .document_type_for_name(document_type_name);
                                                     match maybe_document_type {
                                                         Ok(document_type) => {
-                                                            let maybe_document = Document::try_from_create_transition_v0(document_create_transition_v0, transition.owner_id(), &current_block_info, &document_type, sdk.version());
+                                                            let maybe_document = Document::try_from_create_transition_v0(document_create_transition_v0, transition.owner_id().expect("document batch transition should have owner_id"), &current_block_info, data_contract, &document_type, sdk.version());
                                                             match maybe_document {
                                                                 Ok(document) => {
                                                                     let document_info = DocumentInfo::DocumentOwnedInfo((document, None));
@@ -1526,6 +1528,7 @@ impl AppState {
                                                                             owner_id: Some(
                                                                                 *transition
                                                                                     .owner_id()
+                                                                                    .expect("document batch transition should have owner_id")
                                                                                     .as_bytes(),
                                                                             ),
                                                                         };
@@ -1665,7 +1668,7 @@ impl AppState {
                                             Ok(_) => {
                                                 broadcast_oks.fetch_add(1, Ordering::SeqCst);
                                                 success_count.fetch_add(1, Ordering::SeqCst);
-                                                let transition_owner_id = transition_clone.owner_id().to_string(Encoding::Base58);
+                                                let transition_owner_id = transition_clone.owner_id().map(|id| id.to_string(Encoding::Base58)).unwrap_or_else(|| "None".to_string());
                                                 if loop_index != 1 && loop_index != 2 {
                                                     tracing::trace!("Successfully broadcasted transition: {}. ID: {}. Owner ID: {:?}", transition_clone.name(), transition_id, transition_owner_id);
                                                 }
@@ -1682,7 +1685,7 @@ impl AppState {
                                                     };
                                                     for contract_id in contract_ids {
                                                         let mut mempool_document_counter_clone_lock = mempool_document_counter_clone.lock().await;
-                                                        let count = mempool_document_counter_clone_lock.entry((transition_clone.owner_id(), contract_id)).or_insert(0);
+                                                        let count = mempool_document_counter_clone_lock.entry((transition_clone.owner_id().expect("document batch transition should have owner_id"), contract_id)).or_insert(0);
                                                         *count += 1;
                                                         // tracing::trace!(" + Incremented identity {} tx counter for contract {}. Count: {}", transition_owner_id, contract_id.to_string(Encoding::Base58), count);
                                                     }
@@ -1738,7 +1741,7 @@ impl AppState {
                                                                     match try_broadcast_and_retrieve_asset_lock(&sdk_clone, &asset_lock_transaction, &wallet_receive_address, 2).await {
                                                                         Ok(asset_lock_proof) => {
                                                                             tracing::trace!("Successfully obtained asset lock proof for top up");
-                                                                            let identity = current_identities.iter_mut().find(|identity| identity.id() == transition_clone.owner_id()).expect("Expected to find identity ID matching transition owner ID");
+                                                                            let identity = current_identities.iter_mut().find(|identity| Some(identity.id()) == transition_clone.owner_id()).expect("Expected to find identity ID matching transition owner ID");
 
                                                                             let state_transition = IdentityTopUpTransition::try_from_identity(
                                                                                 identity,
@@ -2068,7 +2071,7 @@ impl AppState {
                                                                     };
                                                                     for contract_id in contract_ids {
                                                                         let mut mempool_document_counter_lock = mempool_document_counter_clone.lock().await;
-                                                                        let count = mempool_document_counter_lock.entry((transition.owner_id(), contract_id)).or_insert(0);
+                                                                        let count = mempool_document_counter_lock.entry((transition.owner_id().expect("document batch transition should have owner_id"), contract_id)).or_insert(0);
                                                                         *count -= 1;
                                                                         // tracing::trace!(" - Decremented identity {} tx counter for contract {}. Count: {}", transition_owner_id, contract_id.to_string(Encoding::Base58), count);
                                                                     }
@@ -2090,7 +2093,7 @@ impl AppState {
                                                                     };
                                                                     for contract_id in contract_ids {
                                                                         let mut mempool_document_counter_lock = mempool_document_counter_clone.lock().await;
-                                                                        let count = mempool_document_counter_lock.entry((transition.owner_id(), contract_id)).or_insert(0);
+                                                                        let count = mempool_document_counter_lock.entry((transition.owner_id().expect("document batch transition should have owner_id"), contract_id)).or_insert(0);
                                                                         *count -= 1;
                                                                         // tracing::trace!(" - Decremented identity {} tx counter for contract {}. Count: {}", transition_owner_id, contract_id.to_string(Encoding::Base58), count);
                                                                     }

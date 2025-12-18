@@ -2,7 +2,6 @@ use chrono::{DateTime, Duration, Utc};
 use dash_sdk::platform::transition::vote::PutVote;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
-    fmt::format,
     iter,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
@@ -23,7 +22,7 @@ use dpp::{
         accessors::v0::DataContractV0Getters,
         document_type::{
             accessors::DocumentTypeV0Getters,
-            methods::{DocumentTypeBasicMethods, DocumentTypeV0Methods},
+            methods::DocumentTypeBasicMethods,
             random_document::{CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType},
             DocumentType,
         },
@@ -44,7 +43,6 @@ use dpp::{
     },
     platform_value::{btreemap_extensions::BTreeValueMapHelper, string_encoding::Encoding, Value},
     prelude::{DataContract, Identity, IdentityPublicKey},
-    version::PlatformVersion,
     voting::{
         contender_structs::ContenderWithSerializedDocument,
         vote_choices::resource_vote_choice::ResourceVoteChoice,
@@ -68,10 +66,7 @@ use rand::{prelude::StdRng, Rng, SeedableRng};
 use simple_signer::signer::SimpleSigner;
 
 use super::{state::IdentityPrivateKeysMap, AppStateUpdate, CompletedTaskPayload};
-use crate::{
-    backend::{error::Error, AppState, BackendEvent, Task},
-    config::Config,
-};
+use crate::backend::{error::Error, AppState, BackendEvent, Task};
 
 #[derive(Debug, Clone)]
 pub(crate) enum DocumentTask {
@@ -379,6 +374,7 @@ impl AppState {
                     id,
                     properties: properties.clone(),
                     owner_id: loaded_identity.id(),
+                    creator_id: None,
                     revision,
                     created_at,
                     updated_at,
@@ -397,8 +393,9 @@ impl AppState {
                     .put_to_platform_and_wait_for_response(
                         sdk,
                         document_type.clone(),
-                        document_state_transition_entropy,
+                        Some(document_state_transition_entropy),
                         identity_public_key.clone(),
+                        None,
                         &signer,
                         None,
                     )
@@ -716,7 +713,7 @@ impl AppState {
                         };
                     };
                     let mut signer = SimpleSigner::default();
-                    signer.add_key(
+                    signer.add_identity_public_key(
                         identity_public_key.clone(),
                         private_key
                             .clone()
@@ -1113,7 +1110,7 @@ async fn broadcast_random_documents<'s>(
 
     let data_contract = Arc::new(data_contract.clone());
     let mut signer = SimpleSigner::default();
-    signer.add_key(
+    signer.add_identity_public_key(
         identity_public_key.clone(),
         private_key
             .clone()
@@ -1128,7 +1125,6 @@ async fn broadcast_random_documents<'s>(
         rng: &'r mut StdRng,
         signer: &'a SimpleSigner,
         identity_public_key: &'a IdentityPublicKey,
-        data_contract: Arc<DataContract>,
     ) -> impl Future<Output = Result<(), String>> + 'a {
         let document_state_transition_entropy: [u8; 32] = rng.gen();
         let time_ms = SystemTime::now()
@@ -1155,8 +1151,9 @@ async fn broadcast_random_documents<'s>(
                 .put_to_platform_and_wait_for_response(
                     sdk,
                     document_type.clone(),
-                    document_state_transition_entropy,
+                    Some(document_state_transition_entropy),
                     identity_public_key.clone(),
+                    None,
                     signer,
                     None,
                 )
@@ -1174,7 +1171,6 @@ async fn broadcast_random_documents<'s>(
             &mut std_rng,
             &signer,
             identity_public_key,
-            Arc::clone(&data_contract),
         )
     })
     .take(count as usize)

@@ -1,7 +1,5 @@
 //! Screens and forms related to wallet management.
 
-use dpp::dashcore::psbt::serialize::Serialize;
-
 pub(crate) mod add_identity_key;
 
 use std::ops::Deref;
@@ -18,8 +16,8 @@ use crate::{
     },
     ui::{
         form::{
-            parsers::DefaultTextInputParser, FormController, FormStatus, Input, InputStatus,
-            TextInput,
+            parsers::DefaultTextInputParser, ComposedInput, Field, FormController, FormStatus, Input,
+            InputStatus, TextInput,
         },
         screen::{
             info_display::display_info, utils::impl_builder, widgets::info::Info, ScreenCommandKey,
@@ -29,8 +27,9 @@ use crate::{
     Event,
 };
 
-const WALLET_LOADED_COMMANDS: [ScreenCommandKey; 4] = [
+const WALLET_LOADED_COMMANDS: [ScreenCommandKey; 5] = [
     ScreenCommandKey::new("b", "Refresh wallet utxos and balance"),
+    ScreenCommandKey::new("s", "Send funds to address"),
     ScreenCommandKey::new("c", "Copy Receive Address"),
     ScreenCommandKey::new("u", "Get more utxos"),
     ScreenCommandKey::new("C-w", "Clear loaded wallet"),
@@ -208,6 +207,11 @@ impl ScreenController for WalletScreenController {
                 code: Key::Char('u'),
                 modifiers: KeyModifiers::NONE,
             }) => ScreenFeedback::Form(Box::new(SplitUTXOsFormController::new())),
+
+            Event::Key(KeyEvent {
+                code: Key::Char('s'),
+                modifiers: KeyModifiers::NONE,
+            }) if self.wallet_loaded => ScreenFeedback::Form(Box::new(SendFundsFormController::new())),
 
             Event::Key(KeyEvent {
                 code: Key::Char('c'),
@@ -427,12 +431,65 @@ impl FormController for SplitUTXOsFormController {
     }
 }
 
+struct SendFundsFormController {
+    input: ComposedInput<(
+        Field<TextInput<DefaultTextInputParser<String>>>,
+        Field<TextInput<DefaultTextInputParser<f64>>>,
+    )>,
+}
+
+impl SendFundsFormController {
+    fn new() -> Self {
+        Self {
+            input: ComposedInput::new((
+                Field::new("Recipient address", TextInput::new("Destination address")),
+                Field::new("Amount (in Dash)", TextInput::new("Amount in DASH")),
+            )),
+        }
+    }
+}
+
+impl FormController for SendFundsFormController {
+    fn on_event(&mut self, event: KeyEvent) -> FormStatus {
+        match self.input.on_event(event) {
+            InputStatus::Done((recipient, amount_dash)) => {
+                let amount_sats = (amount_dash * 100_000_000.0) as u64;
+                FormStatus::Done {
+                    task: Task::Wallet(WalletTask::SendToAddress(recipient, amount_sats)),
+                    block: true,
+                }
+            }
+            status => status.into(),
+        }
+    }
+
+    fn form_name(&self) -> &'static str {
+        "Send funds from wallet"
+    }
+
+    fn step_view(&mut self, frame: &mut Frame, area: Rect) {
+        self.input.view(frame, area)
+    }
+
+    fn step_name(&self) -> &'static str {
+        self.input.step_name()
+    }
+
+    fn step_index(&self) -> u8 {
+        self.input.step_index()
+    }
+
+    fn steps_number(&self) -> u8 {
+        self.input.steps_number()
+    }
+}
+
 fn display_wallet(wallet: &Wallet) -> String {
     match wallet {
         Wallet::SingleKeyWallet(single_key_wallet) => {
             let description = format!(
                 "Single Key Wallet\nPublic Key: {}\nAddress: {}\nBalance: {}",
-                hex::encode(single_key_wallet.public_key.serialize()),
+                hex::encode(single_key_wallet.public_key.inner.serialize()),
                 single_key_wallet.address,
                 single_key_wallet.balance_dash_formatted()
             );

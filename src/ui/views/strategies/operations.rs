@@ -1,5 +1,6 @@
 //! Forms for operations management in strategy.
 
+mod address_transfer;
 mod contract_create;
 mod contract_update_doc_types;
 mod contract_update_new_fields;
@@ -21,6 +22,7 @@ use tracing::error;
 use tuirealm::{event::KeyEvent, tui::prelude::Rect, Frame};
 
 use self::{
+    address_transfer::StrategyOpAddressTransferFormController,
     contract_create::StrategyOpContractCreateFormController,
     contract_update_doc_types::StrategyOpContractUpdateDocTypesFormController,
     document::StrategyOpDocumentFormController,
@@ -360,7 +362,65 @@ fn format_operation_name(op_type: &StrategyOperationType) -> String {
         .to_string(),
         StrategyOperationType::IdentityTransfer(_) => "IdentityTransfer".to_string(),
         StrategyOperationType::ResourceVote(_) => "ResourceVote".to_string(),
-        StrategyOperationType::Token(token_op) => todo!(),
+        StrategyOperationType::Token(token_op) => {
+            format!(
+                "Token({}): {}",
+                token_op.token_id.to_string(Encoding::Base58),
+                match &token_op.action {
+                    dpp::tokens::token_event::TokenEvent::Mint(..) => "Mint",
+                    dpp::tokens::token_event::TokenEvent::Burn(..) => "Burn",
+                    dpp::tokens::token_event::TokenEvent::Transfer(..) => "Transfer",
+                    dpp::tokens::token_event::TokenEvent::Freeze(..) => "Freeze",
+                    dpp::tokens::token_event::TokenEvent::Unfreeze(..) => "Unfreeze",
+                    dpp::tokens::token_event::TokenEvent::DestroyFrozenFunds(..) =>
+                        "DestroyFrozenFunds",
+                    _ => "Unknown",
+                }
+            )
+        }
+        StrategyOperationType::IdentityTopUpFromAddresses(amount) => {
+            format!(
+                "IdentityTopUpFromAddresses [{}..{}]",
+                amount.start(),
+                amount.end()
+            )
+        }
+        StrategyOperationType::AddressFundingFromCoreAssetLock(amount) => {
+            format!(
+                "AddressFundingFromCoreAssetLock [{}..{}]",
+                amount.start(),
+                amount.end()
+            )
+        }
+        StrategyOperationType::AddressTransfer(amount, output_count, _, _) => {
+            format!(
+                "AddressTransfer [{}..{}] outputs:[{}..{}]",
+                amount.start(),
+                amount.end(),
+                output_count.start(),
+                output_count.end()
+            )
+        }
+        StrategyOperationType::AddressWithdrawal(amount, _, _) => {
+            format!("AddressWithdrawal [{}..{}]", amount.start(), amount.end())
+        }
+        StrategyOperationType::IdentityTransferToAddresses(amount, output_count, _, _) => {
+            format!(
+                "IdentityTransferToAddresses [{}..{}] outputs:[{}..{}]",
+                amount.start(),
+                amount.end(),
+                output_count.start(),
+                output_count.end()
+            )
+        }
+        StrategyOperationType::IdentityCreateFromAddresses(amount, _, _, key_count, _) => {
+            format!(
+                "IdentityCreateFromAddresses [{}..{}] keys:{}",
+                amount.start(),
+                amount.end(),
+                key_count
+            )
+        }
     }
 }
 
@@ -376,6 +436,7 @@ enum OperationType {
     ContractCreateRandom,
     ContractUpdateDocTypesRandom,
     // ContractUpdateFieldsRandom,
+    AddressTransfer,
 }
 
 pub(super) struct StrategyAddOperationFormController {
@@ -409,6 +470,7 @@ impl StrategyAddOperationFormController {
             "ContractCreateRandom".to_string(),
             "ContractUpdateDocTypesRandom".to_string(),
             // "ContractUpdateFieldsRandom".to_string(),
+            "AddressTransfer".to_string(),
         ];
         Self {
             op_type_input: SelectInput::new(operation_types),
@@ -466,7 +528,11 @@ impl StrategyAddOperationFormController {
                     self.strategy_name.clone(),
                     self.known_contracts.clone(),
                 ))
-            } /* OperationType::ContractUpdateFieldsRandom => Box::new(
+            }
+            OperationType::AddressTransfer => Box::new(
+                StrategyOpAddressTransferFormController::new(self.strategy_name.clone()),
+            ),
+            /* OperationType::ContractUpdateFieldsRandom => Box::new(
                *     StrategyOpContractUpdateNewFieldsFormController::new(self.strategy_name.
                * clone()), ), */
         });
@@ -492,6 +558,7 @@ impl FormController for StrategyAddOperationFormController {
                         "ContractUpdateDocTypesRandom" => {
                             OperationType::ContractUpdateDocTypesRandom
                         }
+                        "AddressTransfer" => OperationType::AddressTransfer,
                         // "ContractUpdateFieldsRandom" => OperationType::ContractUpdateFields,
                         _ => {
                             error!("Non-existant operation type selected");

@@ -39,7 +39,7 @@ use dpp::{
     identity::SecurityLevel,
 };
 use dpp::{
-    dashcore::{psbt::serialize::Serialize, Address, PrivateKey, Transaction},
+    dashcore::{consensus, Address, PrivateKey, Transaction},
     data_contract::{
         accessors::v0::DataContractV0Getters,
         document_type::random_document::{
@@ -555,7 +555,7 @@ impl AppState {
 
                     let mut signer = SimpleSigner::default();
 
-                    signer.add_key(
+                    signer.add_identity_public_key(
                         identity_public_key.clone(),
                         private_key
                             .clone()
@@ -947,6 +947,7 @@ impl AppState {
                     identity_nonce_stale_time_s: Some(0),
                     user_fee_increase: None,
                     wait_timeout: None,
+                    state_transition_creation_options: None,
                 }),
             )
             .await
@@ -1004,8 +1005,6 @@ impl AppState {
             &signer,
             &platform_version,
             None,
-            None,
-            None,
         )?;
 
         let domain_transition = BatchTransition::new_document_creation_transition_from_document(
@@ -1025,8 +1024,6 @@ impl AppState {
             None,
             &signer,
             &platform_version,
-            None,
-            None,
             None,
         )?;
 
@@ -1127,6 +1124,12 @@ impl AppState {
         sdk: &Sdk,
         amount: u64,
     ) -> Result<MappedMutexGuard<'s, Identity>, Error> {
+        tracing::info!(
+            "Identity registration started: requested_amount_credits={} (≈ {:.8} DASH)",
+            amount,
+            amount as f64 / 100_000_000f64
+        );
+
         // First we need to make the transaction from the wallet
         // We start by getting a lock on the wallet
 
@@ -1165,8 +1168,21 @@ impl AppState {
                 maybe_identity.clone(),
             )
         } else {
+            tracing::info!(
+                "Creating asset-lock transaction: receive_addr={}, change_addr={}, wallet_balance_sats={}",
+                wallet.receive_address(),
+                wallet.change_address(),
+                wallet.balance()
+            );
             let (asset_lock_transaction, asset_lock_proof_private_key) =
                 wallet.asset_lock_transaction(None, amount)?;
+
+            tracing::info!(
+                "Asset-lock tx built: txid={}, inputs={}, outputs={}",
+                asset_lock_transaction.txid(),
+                asset_lock_transaction.input.len(),
+                asset_lock_transaction.output.len()
+            );
 
             identity_asset_lock_private_key_in_creation.replace((
                 asset_lock_transaction.clone(),
@@ -1184,8 +1200,17 @@ impl AppState {
         };
 
         let asset_lock_proof = if let Some(asset_lock_proof) = maybe_asset_lock_proof {
+            tracing::info!(
+                "Reusing cached asset-lock proof for txid={}",
+                asset_lock_transaction.txid()
+            );
             asset_lock_proof.clone()
         } else {
+            tracing::info!(
+                "Broadcasting asset-lock and starting stream: txid={}, to_address={}",
+                asset_lock_transaction.txid(),
+                wallet.receive_address()
+            );
             let asset_lock = Self::broadcast_and_retrieve_asset_lock(
                 sdk,
                 &asset_lock_transaction,
@@ -1203,6 +1228,10 @@ impl AppState {
                 None,
             ));
 
+            tracing::info!(
+                "Received asset-lock proof for txid={}",
+                asset_lock_transaction.txid()
+            );
             asset_lock
         };
 
@@ -1280,7 +1309,7 @@ impl AppState {
 
         let mut signer = SimpleSigner::default();
 
-        signer.add_keys(keys.clone().into_iter().map(|(key, value)| {
+        signer.add_identity_public_keys(keys.clone().into_iter().map(|(key, value)| {
             (
                 key,
                 value
@@ -1288,6 +1317,16 @@ impl AppState {
                     .expect("Expected private key to be 32 bytes"),
             )
         }));
+
+        tracing::info!(
+            "Submitting Identity ST: public_keys={}, balance_credits={}, proof_type={}",
+            identity.public_keys().len(),
+            identity.balance(),
+            match &asset_lock_proof {
+                dpp::prelude::AssetLockProof::Instant(_) => "instant",
+                _ => "chain",
+            }
+        );
 
         let updated_identity = identity
             .put_to_platform_and_wait_for_response(
@@ -1304,6 +1343,12 @@ impl AppState {
         }
 
         // Log the identity ID and the private keys to a file
+        tracing::info!(
+            "Identity registered: id={}, keys={} (logged to supporting_files/new_identity_private_keys.log)",
+            identity.id(),
+            keys.len()
+        );
+
         let _ = log_identity_keys(&identity, &keys)
             .map_err(|e| tracing::error!("Failed to log private keys: {e}"));
 
@@ -1437,9 +1482,10 @@ impl AppState {
             Ok(updated_identity_balance) => {
                 identity.set_balance(updated_identity_balance);
             }
-            Err(dash_sdk::Error::DapiClientError(error_string)) => {
+            Err(dash_sdk::Error::DapiClientError(dapi_err)) => {
                 //todo in the future, errors should be proved with a proof, even from tenderdash
 
+                let error_string = dapi_err.to_string();
                 if error_string.contains("state transition already in chain")
                     || error_string.contains("already completely used")
                 {
@@ -1480,7 +1526,7 @@ impl AppState {
                         )
                         .await?;
                 } else {
-                    return Err(dash_sdk::Error::DapiClientError(error_string).into());
+                    return Err(dash_sdk::Error::DapiClientError(dapi_err).into());
                 }
             }
             Err(e) => return Err(e.into()),
@@ -1535,7 +1581,7 @@ impl AppState {
 
         let mut signer = SimpleSigner::default();
 
-        signer.add_key(
+        signer.add_identity_public_key(
             identity_public_key.clone(),
             private_key
                 .clone()
@@ -1602,7 +1648,7 @@ impl AppState {
 
         let mut signer = SimpleSigner::default();
 
-        signer.add_key(
+        signer.add_identity_public_key(
             identity_public_key.clone(),
             private_key
                 .clone()
@@ -1669,7 +1715,7 @@ impl AppState {
 
         let mut signer = SimpleSigner::default();
 
-        signer.add_key(
+        signer.add_identity_public_key(
             identity_public_key.clone(),
             private_key
                 .clone()
@@ -1737,7 +1783,7 @@ impl AppState {
 
         let mut signer = SimpleSigner::default();
 
-        signer.add_key(
+        signer.add_identity_public_key(
             identity_public_key.clone(),
             private_key
                 .clone()
@@ -1811,7 +1857,7 @@ impl AppState {
 
         let mut signer = SimpleSigner::default();
 
-        signer.add_key(
+        signer.add_identity_public_key(
             identity_public_key.clone(),
             private_key
                 .clone()
@@ -1860,23 +1906,35 @@ impl AppState {
             .inner
             .chain
             .map(|chain| chain.best_block_hash)
-            .ok_or_else(|| dash_sdk::Error::DapiClientError("missing `chain` field".to_owned()))?;
+            .ok_or_else(|| dash_sdk::Error::Generic("missing `chain` field".to_owned()))?;
 
         tracing::debug!(
             "starting the stream from the tip block hash {}",
             hex::encode(&block_hash)
         );
 
-        let mut asset_lock_stream = sdk
-            .start_instant_send_lock_stream(block_hash, address)
-            .await?;
+        let mut asset_lock_stream = match sdk
+            .start_instant_send_lock_stream(block_hash.clone(), address)
+            .await
+        {
+            Ok(stream) => stream,
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to start instant lock stream from tip ({}): {}. Retrying from zero height.",
+                    hex::encode(&block_hash),
+                    e
+                );
+                // Fallback: try starting from zero hash (some nodes expect non-tip start to avoid 'Block not found')
+                let zero: Vec<u8> = vec![];
+                sdk.start_instant_send_lock_stream(zero, address).await?
+            }
+        };
 
         tracing::debug!("stream is started");
 
         // we need to broadcast the transaction to core
         let request = BroadcastTransactionRequest {
-            transaction: asset_lock_transaction.serialize(), /* transaction but how to encode it
-                                                              * as bytes?, */
+            transaction: consensus::serialize(&asset_lock_transaction), /* consensus-encoded bytes */
             allow_high_fees: false,
             bypass_limits: false,
         };
@@ -1906,9 +1964,21 @@ impl AppState {
                     hex::encode(&block_hash)
                 );
 
-                asset_lock_stream = sdk
-                    .start_instant_send_lock_stream(block_hash, address)
-                    .await?;
+                asset_lock_stream = match sdk
+                    .start_instant_send_lock_stream(block_hash.clone(), address)
+                    .await
+                {
+                    Ok(stream) => stream,
+                    Err(e) => {
+                        tracing::warn!(
+                            "Failed to restart stream from mined block ({}): {}. Retrying from zero height.",
+                            hex::encode(&block_hash),
+                            e
+                        );
+                        let zero: Vec<u8> = vec![];
+                        sdk.start_instant_send_lock_stream(zero, address).await?
+                    }
+                };
 
                 tracing::debug!("stream is started");
             }
@@ -1974,7 +2044,10 @@ impl AppState {
                         }
                     };
                     let network = Config::load().core_network();
-                    match PrivateKey::from_slice(bytes.as_slice(), network) {
+                    let array: [u8; 32] = bytes.try_into().map_err(|_| {
+                        WalletError::Custom("Expected 32 bytes for private key".to_string())
+                    })?;
+                    match PrivateKey::from_byte_array(&array, network) {
                         Ok(key) => Ok(key),
                         Err(_) => {
                             return Err(WalletError::Custom("Expected private key".to_string()))
@@ -2090,14 +2163,14 @@ async fn add_identity_key<'a>(
         .ok_or_else(|| "Master private key not found".to_owned())?;
 
     let mut signer = SimpleSigner::default();
-    signer.add_key(
+    signer.add_identity_public_key(
         master_public_key.clone(),
         master_private_key
             .clone()
             .try_into()
             .expect("Expected private key to be 32 bytes"),
     );
-    signer.add_key(identity_public_key.clone(), private_key.clone());
+    signer.add_identity_public_key(identity_public_key.clone(), private_key.clone());
 
     let mut identity_updated = loaded_identity.clone();
     identity_updated.bump_revision();

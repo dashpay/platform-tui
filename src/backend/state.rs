@@ -10,7 +10,7 @@ use bincode::{Decode, Encode};
 use dash_sdk::dashcore_rpc::Client;
 use dpp::{
     dashcore::{
-        psbt::serialize::{Deserialize, Serialize},
+        consensus::{deserialize, serialize},
         PrivateKey, Transaction,
     },
     identity::{IdentityPublicKey, KeyID},
@@ -82,7 +82,7 @@ pub struct AppState {
 
 impl Default for AppState {
     fn default() -> Self {
-        let platform_version = PlatformVersion::get(CURRENT_PROTOCOL_VERSION).unwrap();
+        let platform_version = PlatformVersion::latest();
 
         // Helper function to check if a file is a JSON file
         fn is_json(entry: &DirEntry) -> bool {
@@ -107,9 +107,8 @@ impl Default for AppState {
             }
         }
 
-        let (drive, _protocol_version) =
-            Drive::open("explorer.drive", None, Some(platform_version))
-                .expect("expected to open Drive successfully");
+        let (drive, _platform_version_opt) =
+            Drive::open("explorer.drive", None).expect("expected to open Drive successfully");
 
         if drive
             .grove
@@ -188,7 +187,7 @@ impl PlatformSerializableWithPlatformVersion for AppState {
             loaded_identity_pro_tx_hash,
             known_identities_private_keys: identity_private_keys,
             loaded_wallet,
-            drive,
+            drive: _,
             known_identities,
             known_identities_names,
             known_contracts,
@@ -237,7 +236,7 @@ impl PlatformSerializableWithPlatformVersion for AppState {
                 .map(
                     |(transaction, private_key, asset_lock_proof, identity_info)| {
                         (
-                            transaction.serialize(),
+                            serialize(transaction),
                             private_key.inner.secret_bytes(),
                             asset_lock_proof.clone(),
                             identity_info.clone(),
@@ -250,7 +249,7 @@ impl PlatformSerializableWithPlatformVersion for AppState {
             .as_ref()
             .map(|(transaction, private_key, asset_lock_proof)| {
                 (
-                    transaction.serialize(),
+                    serialize(transaction),
                     private_key.inner.secret_bytes(),
                     asset_lock_proof.clone(),
                 )
@@ -379,9 +378,9 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
             identity_asset_lock_private_key_in_creation.map(
                 |(transaction, private_key, asset_lock_proof, identity_info)| {
                     (
-                        Transaction::deserialize(&transaction)
+                        deserialize::<Transaction>(&transaction)
                             .expect("expected to deserialize transaction"),
-                        PrivateKey::from_slice(&private_key, network)
+                        PrivateKey::from_byte_array(&private_key, network)
                             .expect("expected private key"),
                         asset_lock_proof,
                         identity_info,
@@ -392,16 +391,16 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
         let identity_asset_lock_private_key_in_top_up = identity_asset_lock_private_key_in_top_up
             .map(|(transaction, private_key, asset_lock_proof)| {
                 (
-                    Transaction::deserialize(&transaction)
+                    deserialize::<Transaction>(&transaction)
                         .expect("expected to deserialize transaction"),
-                    PrivateKey::from_slice(&private_key, network).expect("expected private key"),
+                    PrivateKey::from_byte_array(&private_key, network)
+                        .expect("expected private key"),
                     asset_lock_proof,
                 )
             });
 
-        let (drive, _protocol_version) =
-            Drive::open("explorer.drive", None, Some(platform_version))
-                .expect("expected to open Drive successfully");
+        let (drive, _platform_version_opt) =
+            Drive::open("explorer.drive", None).expect("expected to open Drive successfully");
 
         // Deserialize the wallet state and wrap it in Arc<Mutex<_>>
         let deserialized_wallet_state = loaded_wallet
@@ -497,7 +496,7 @@ impl AppState {
         }
 
         // Load supporting contracts
-        let platform_version = PlatformVersion::get(CURRENT_PROTOCOL_VERSION).unwrap();
+        let platform_version = PlatformVersion::latest();
         let mut supporting_contracts = BTreeMap::new();
         for entry in WalkDir::new("supporting_files/contract")
             .into_iter()
@@ -522,7 +521,7 @@ impl AppState {
 
     /// Used in backend destructor, must not panic
     pub fn save(&self, config: &Config) {
-        let platform_version = PlatformVersion::get(CURRENT_PROTOCOL_VERSION).unwrap();
+        let platform_version = PlatformVersion::latest();
         let path = config.state_file_path();
 
         let serialized_state = tokio::task::block_in_place(|| {
