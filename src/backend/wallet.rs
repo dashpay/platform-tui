@@ -390,7 +390,8 @@ impl Wallet {
             None => StdRng::from_entropy(),
             Some(seed_value) => StdRng::seed_from_u64(seed_value),
         };
-        let fee = 30_000;
+        // Higher fee to ensure transactions get mined quickly
+        let fee = 100_000u64; // 0.001 DASH
         let random_private_key: [u8; 32] = rng.gen();
         let network = Config::load().core_network();
         let private_key = PrivateKey::from_byte_array(&random_private_key, network)

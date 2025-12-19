@@ -1,5 +1,6 @@
 //! Identities backend logic.
 
+use bip37_bloom_filter::{BloomFilter, BloomFilterData};
 use chrono::Utc;
 use dashcore::hashes::Hash;
 use dpp::document::Document;
@@ -15,8 +16,9 @@ use std::{
 
 use dapi_grpc::{
     core::v0::{
+        transactions_with_proofs_request, BloomFilter as BloomFilterProto,
         BroadcastTransactionRequest, GetBlockchainStatusRequest, GetTransactionRequest,
-        GetTransactionResponse,
+        GetTransactionResponse, TransactionsWithProofsRequest, TransactionsWithProofsResponse,
     },
     platform::v0::{
         get_identity_balance_request::{self, GetIdentityBalanceRequestV0},
@@ -76,7 +78,7 @@ use dpp::{
 };
 use dpp::{identity::Purpose, ProtocolError};
 use rand::{rngs::StdRng, Rng, SeedableRng};
-use rs_dapi_client::{DapiRequestExecutor, RequestSettings};
+use rs_dapi_client::{DapiRequestExecutor, IntoInner, RequestSettings};
 use sha2::{Digest, Sha256};
 use simple_signer::signer::SimpleSigner;
 use tokio::sync::{MappedMutexGuard, MutexGuard};
@@ -1889,6 +1891,52 @@ impl AppState {
         ))
     }
 
+    /// Starts a transaction stream from a specific block height.
+    /// This is more reliable than using block hash because it avoids race conditions
+    /// when different DAPI nodes have different chain tips.
+    async fn start_instant_send_lock_stream_from_height(
+        sdk: &Sdk,
+        from_block_height: u32,
+        address: &Address,
+    ) -> Result<dapi_grpc::tonic::Streaming<TransactionsWithProofsResponse>, dash_sdk::Error> {
+        let address_bytes = address.as_unchecked().payload_to_vec();
+
+        // Create the bloom filter
+        let bloom_filter = BloomFilter::builder(1, 0.001)
+            .expect("this FP rate allows up to 10000 items")
+            .add_element(&address_bytes)
+            .build();
+
+        let bloom_filter_proto = {
+            let BloomFilterData {
+                v_data,
+                n_hash_funcs,
+                n_tweak,
+                n_flags,
+            } = bloom_filter.into();
+            BloomFilterProto {
+                v_data,
+                n_hash_funcs,
+                n_tweak,
+                n_flags,
+            }
+        };
+
+        let request = TransactionsWithProofsRequest {
+            bloom_filter: Some(bloom_filter_proto),
+            count: 0, // Subscribe to new transactions as well
+            send_transaction_hashes: true,
+            from_block: Some(transactions_with_proofs_request::FromBlock::FromBlockHeight(
+                from_block_height,
+            )),
+        };
+
+        sdk.execute(request, RequestSettings::default())
+            .await
+            .into_inner()
+            .map_err(|e| e.into())
+    }
+
     pub(crate) async fn broadcast_and_retrieve_asset_lock(
         sdk: &Sdk,
         asset_lock_transaction: &Transaction,
@@ -1900,56 +1948,44 @@ impl AppState {
         )
         .entered();
 
-        let block_hash = sdk
+        // Get current block height from Core
+        tracing::info!("Getting blockchain status from Core...");
+        let chain_info = sdk
             .execute(GetBlockchainStatusRequest {}, RequestSettings::default())
             .await?
             .inner
             .chain
-            .map(|chain| chain.best_block_hash)
             .ok_or_else(|| dash_sdk::Error::Generic("missing `chain` field".to_owned()))?;
 
-        tracing::debug!(
-            "starting the stream from the tip block hash {}",
-            hex::encode(&block_hash)
+        let block_height = chain_info.blocks_count;
+
+        tracing::info!(
+            "Starting stream from block height {}",
+            block_height
         );
 
-        let mut asset_lock_stream = match sdk
-            .start_instant_send_lock_stream(block_hash.clone(), address)
-            .await
-        {
-            Ok(stream) => stream,
-            Err(e) => {
-                tracing::warn!(
-                    "Failed to start instant lock stream from tip ({}): {}. Retrying from zero height.",
-                    hex::encode(&block_hash),
-                    e
-                );
-                // Fallback: try starting from zero hash (some nodes expect non-tip start to avoid 'Block not found')
-                let zero: Vec<u8> = vec![];
-                sdk.start_instant_send_lock_stream(zero, address).await?
-            }
-        };
+        // Start stream from height (more reliable than hash - avoids DAPI node race conditions)
+        let mut asset_lock_stream =
+            Self::start_instant_send_lock_stream_from_height(sdk, block_height, address).await?;
 
-        tracing::debug!("stream is started");
+        tracing::info!("Stream started successfully from height {}", block_height);
 
-        // we need to broadcast the transaction to core
+        // Broadcast the transaction to core
         let request = BroadcastTransactionRequest {
-            transaction: consensus::serialize(&asset_lock_transaction), /* consensus-encoded bytes */
+            transaction: consensus::serialize(&asset_lock_transaction),
             allow_high_fees: false,
             bypass_limits: false,
         };
 
-        tracing::debug!("broadcast the transaction");
+        tracing::info!("Broadcasting asset lock transaction...");
 
         match sdk.execute(request, RequestSettings::default()).await {
-            Ok(_) => tracing::debug!("transaction is successfully broadcasted"),
+            Ok(_) => tracing::info!("Transaction broadcasted successfully"),
             Err(error) if error.to_string().contains("AlreadyExists") => {
-                // Transaction is already broadcasted. We need to restart the stream from a
-                // block when it was mined
-
+                // Transaction is already broadcasted. Restart the stream from the block it was mined in.
                 tracing::warn!("transaction is already broadcasted");
 
-                let GetTransactionResponse { block_hash, .. } = sdk
+                let GetTransactionResponse { height, .. } = sdk
                     .execute(
                         GetTransactionRequest {
                             id: asset_lock_transaction.txid().to_string(),
@@ -1960,36 +1996,22 @@ impl AppState {
                     .inner;
 
                 tracing::debug!(
-                    "restarting the stream from the transaction minded block hash {}",
-                    hex::encode(&block_hash)
+                    "restarting the stream from mined block height {}",
+                    height
                 );
 
-                asset_lock_stream = match sdk
-                    .start_instant_send_lock_stream(block_hash.clone(), address)
-                    .await
-                {
-                    Ok(stream) => stream,
-                    Err(e) => {
-                        tracing::warn!(
-                            "Failed to restart stream from mined block ({}): {}. Retrying from zero height.",
-                            hex::encode(&block_hash),
-                            e
-                        );
-                        let zero: Vec<u8> = vec![];
-                        sdk.start_instant_send_lock_stream(zero, address).await?
-                    }
-                };
+                asset_lock_stream =
+                    Self::start_instant_send_lock_stream_from_height(sdk, height, address).await?;
 
-                tracing::debug!("stream is started");
+                tracing::debug!("stream is restarted from height {}", height);
             }
             Err(error) => {
                 tracing::error!("transaction broadcast failed: {error}");
-
                 return Err(error.into());
             }
         };
 
-        tracing::debug!("waiting for asset lock proof");
+        tracing::info!("Waiting for asset lock proof (timeout: 4 min)...");
 
         sdk.wait_for_asset_lock_proof_for_transaction(
             asset_lock_stream,

@@ -6,7 +6,7 @@ use std::{
     fs::File,
     io::Write,
     sync::{
-        atomic::{AtomicU64, AtomicUsize, Ordering},
+        atomic::{AtomicU64, Ordering},
         Arc,
     },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -51,6 +51,7 @@ use dpp::{
         PlatformSerializableWithPlatformVersion,
     },
     state_transition::{
+        address_funds_transfer_transition::accessors::AddressFundsTransferTransitionAccessorsV0,
         batch_transition::{
             batched_transition::document_transition::DocumentTransition,
             document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods,
@@ -61,7 +62,7 @@ use dpp::{
         identity_topup_transition::{
             methods::IdentityTopUpTransitionMethodsV0, IdentityTopUpTransition,
         },
-        StateTransition, StateTransitionLike,
+        StateTransition, StateTransitionLike, StateTransitionWitnessSigned,
     },
 };
 use dpp::{data_contracts::withdrawals_contract, fee::Credits};
@@ -75,7 +76,7 @@ use drive::{
     query::DriveDocumentQuery,
     util::object_size_info::{DocumentInfo, OwnedDocumentInfo},
 };
-use futures::{future::join_all, stream::FuturesUnordered, FutureExt};
+use futures::future::join_all;
 use hdrhistogram::Histogram;
 use itertools::Itertools;
 use rand::{rngs::StdRng, SeedableRng};
@@ -88,7 +89,7 @@ use strategy_tests::{
     IdentityInsertInfo, LocalDocumentQuery, StartAddresses, StartIdentities, Strategy,
     StrategyConfig,
 };
-use tokio::sync::{oneshot, Mutex, MutexGuard, Semaphore};
+use tokio::sync::{oneshot, Mutex, MutexGuard};
 
 use crate::backend::{wallet::SingleKeyWallet, Wallet};
 
@@ -887,6 +888,9 @@ impl AppState {
                 verify_proofs,
                 top_up_amount,
             ) => {
+                // Reset cancellation token for this new strategy run
+                *self.cancellation_token.lock().unwrap() = tokio_util::sync::CancellationToken::new();
+
                 tracing::info!("-----Starting strategy '{}'-----", strategy_name);
                 let init_start_time = Instant::now(); // Start time of strategy initialization plus execution of first two blocks
                 let mut init_time = Duration::new(0, 0); // Will set this to the time it takes for all initialization plus the first two blocks to complete
@@ -905,16 +909,21 @@ impl AppState {
                 };
 
                 // Refresh loaded_identity and get the current balance at strategy start
-                let mut loaded_identity_lock = match self.refresh_loaded_identity(&sdk).await {
-                    Ok(lock) => lock,
+                // Identity is optional for address-only strategies
+                let maybe_loaded_identity = match self.refresh_loaded_identity(&sdk).await {
+                    Ok(lock) => Some(lock),
                     Err(e) => {
-                        tracing::debug!("Failed to refresh loaded identity: {:?}", e);
-                        return BackendEvent::StrategyError {
-                            error: format!("Failed to refresh loaded identity: {:?}", e),
-                        };
+                        tracing::debug!(
+                            "No loaded identity (this is OK for address-only strategies): {:?}",
+                            e
+                        );
+                        None
                     }
                 };
-                let initial_balance_identity = loaded_identity_lock.balance();
+                let initial_balance_identity = maybe_loaded_identity
+                    .as_ref()
+                    .map(|i| i.balance())
+                    .unwrap_or(0);
 
                 // Refresh UTXOs for the loaded wallet and get initial wallet balance
                 let mut loaded_wallet_lock = self.loaded_wallet.lock().await;
@@ -985,25 +994,27 @@ impl AppState {
                 }
                 initial_block_info.height += 1; // Add one because we'll be submitting to the next block
 
-                // Get signer from loaded_identity
+                // Get signer from loaded_identity (if available)
                 // Convert loaded_identity to SimpleSigner
                 let identity_private_keys_lock = self.known_identities_private_keys.lock().await;
                 let mut signer = {
                     let strategy_signer = strategy.signer.insert({
                         let mut new_signer = SimpleSigner::default();
-                        let Identity::V0(identity_v0) = &*loaded_identity_lock;
-                        for (key_id, public_key) in &identity_v0.public_keys {
-                            let identity_key_tuple = (identity_v0.id, *key_id);
-                            if let Some(private_key_bytes) =
-                                identity_private_keys_lock.get(&identity_key_tuple)
-                            {
-                                new_signer.private_keys.insert(
-                                    public_key.clone(),
-                                    private_key_bytes
-                                        .clone()
-                                        .try_into()
-                                        .expect("Expected to convert private key bytes"),
-                                );
+                        if let Some(ref loaded_identity) = maybe_loaded_identity {
+                            let Identity::V0(identity_v0) = &**loaded_identity;
+                            for (key_id, public_key) in &identity_v0.public_keys {
+                                let identity_key_tuple = (identity_v0.id, *key_id);
+                                if let Some(private_key_bytes) =
+                                    identity_private_keys_lock.get(&identity_key_tuple)
+                                {
+                                    new_signer.private_keys.insert(
+                                        public_key.clone(),
+                                        private_key_bytes
+                                            .clone()
+                                            .try_into()
+                                            .expect("Expected to convert private key bytes"),
+                                    );
+                                }
                             }
                         }
                         new_signer
@@ -1012,13 +1023,18 @@ impl AppState {
                 };
                 drop(identity_private_keys_lock);
 
-                // Set initial current_identities to loaded_identity
+                // Set initial current_identities to loaded_identity (if available)
                 // During strategy execution, newly created identities will be added to current_identities
-                let mut loaded_identity_clone = loaded_identity_lock.clone();
-                let current_identities = Arc::new(Mutex::new(vec![loaded_identity_clone.clone()]));
+                let current_identities = Arc::new(Mutex::new(
+                    maybe_loaded_identity
+                        .as_ref()
+                        .map(|i| vec![(**i).clone()])
+                        .unwrap_or_default(),
+                ));
 
                 // Initialize addresses with balance tracking for address-based operations
-                let mut addresses_with_balance = AddressesWithBalance::new();
+                // Wrapped in Arc<Mutex> so we can access it from broadcast closures to reset nonces on failure
+                let addresses_with_balance = Arc::new(Mutex::new(AddressesWithBalance::new()));
 
                 // Add the hardcoded start identities that are already created to current_identities
                 let hard_coded_start_identities: Vec<Identity> = strategy
@@ -1042,71 +1058,80 @@ impl AppState {
                 }
 
                 // Add the loaded identity to hardcoded start identities if it's not already present
-                if !strategy
-                    .start_identities
-                    .hard_coded
-                    .iter()
-                    .any(|(identity, _)| identity.id() == loaded_identity_lock.id())
-                {
-                    strategy
+                if let Some(ref loaded_identity) = maybe_loaded_identity {
+                    if !strategy
                         .start_identities
                         .hard_coded
-                        .push((loaded_identity_lock.clone(), None));
+                        .iter()
+                        .any(|(identity, _)| identity.id() == loaded_identity.id())
+                    {
+                        strategy
+                            .start_identities
+                            .hard_coded
+                            .push(((**loaded_identity).clone(), None));
+                    }
                 }
 
-                // Set the nonce counters
+                // Set the nonce counters (only if we have a loaded identity)
                 let used_contract_ids = strategy.used_contract_ids();
                 let mut identity_nonce_counter = BTreeMap::new();
-                tracing::info!(
-                    "Fetching identity nonce and {} identity contract nonces from Platform...",
-                    used_contract_ids.len()
-                );
-                let identity_future = sdk.get_identity_nonce(
-                    loaded_identity_clone.id(),
-                    false,
-                    Some(dash_sdk::platform::transition::put_settings::PutSettings {
-                        request_settings: RequestSettings::default(),
-                        identity_nonce_stale_time_s: Some(0),
-                        user_fee_increase: None,
-                        wait_timeout: None,
-                        state_transition_creation_options: None,
-                    }),
-                );
-                let contract_futures =
-                    used_contract_ids
-                        .clone()
-                        .into_iter()
-                        .map(|used_contract_id| {
-                            let identity_id = loaded_identity_clone.id();
-                            async move {
-                                let current_nonce = sdk.get_identity_contract_nonce(
-                            identity_id,
-                            used_contract_id,
-                            false,
-                            Some(dash_sdk::platform::transition::put_settings::PutSettings {
-                                request_settings: RequestSettings::default(),
-                                identity_nonce_stale_time_s: Some(0),
-                                user_fee_increase: None,
-                                wait_timeout: None,
-                                state_transition_creation_options: None,
-                            })
-                        ).await.expect("Couldn't get current identity contract nonce");
-                                ((identity_id, used_contract_id), current_nonce)
-                            }
-                        });
-                let identity_result = match identity_future.await {
-                    Ok(nonce) => nonce,
-                    Err(e) => {
-                        return BackendEvent::StrategyError {
-                            error: format!("Failed to fetch identity nonce: {:?}", e),
-                        };
-                    }
-                };
-
-                identity_nonce_counter.insert(loaded_identity_clone.id(), identity_result);
-                let contract_results = join_all(contract_futures).await;
                 let mut contract_nonce_counter: BTreeMap<(Identifier, Identifier), u64> =
-                    contract_results.into_iter().collect();
+                    BTreeMap::new();
+
+                if let Some(ref loaded_identity) = maybe_loaded_identity {
+                    tracing::info!(
+                        "Fetching identity nonce and {} identity contract nonces from Platform...",
+                        used_contract_ids.len()
+                    );
+                    let identity_id = loaded_identity.id();
+                    let identity_future = sdk.get_identity_nonce(
+                        identity_id,
+                        false,
+                        Some(dash_sdk::platform::transition::put_settings::PutSettings {
+                            request_settings: RequestSettings::default(),
+                            identity_nonce_stale_time_s: Some(0),
+                            user_fee_increase: None,
+                            wait_timeout: None,
+                            state_transition_creation_options: None,
+                        }),
+                    );
+                    let contract_futures =
+                        used_contract_ids
+                            .clone()
+                            .into_iter()
+                            .map(|used_contract_id| async move {
+                                let current_nonce = sdk
+                                .get_identity_contract_nonce(
+                                    identity_id,
+                                    used_contract_id,
+                                    false,
+                                    Some(
+                                        dash_sdk::platform::transition::put_settings::PutSettings {
+                                            request_settings: RequestSettings::default(),
+                                            identity_nonce_stale_time_s: Some(0),
+                                            user_fee_increase: None,
+                                            wait_timeout: None,
+                                            state_transition_creation_options: None,
+                                        },
+                                    ),
+                                )
+                                .await
+                                .expect("Couldn't get current identity contract nonce");
+                                ((identity_id, used_contract_id), current_nonce)
+                            });
+                    let identity_result = match identity_future.await {
+                        Ok(nonce) => nonce,
+                        Err(e) => {
+                            return BackendEvent::StrategyError {
+                                error: format!("Failed to fetch identity nonce: {:?}", e),
+                            };
+                        }
+                    };
+
+                    identity_nonce_counter.insert(identity_id, identity_result);
+                    let contract_results = join_all(contract_futures).await;
+                    contract_nonce_counter = contract_results.into_iter().collect();
+                }
 
                 // Get a lock on the local drive for the following two callbacks
                 let drive_lock = self.drive.lock().await;
@@ -1211,16 +1236,23 @@ impl AppState {
                             * operation.frequency.chance_per_block.unwrap_or(1.0))
                             as u64;
                     }
-                    if matches!(operation.op_type, OperationType::AddressFundingFromCoreAssetLock(_)) {
-                        num_address_funding += (operation.frequency.times_per_block_range.start as f64
+                    if matches!(
+                        operation.op_type,
+                        OperationType::AddressFundingFromCoreAssetLock(_)
+                    ) {
+                        num_address_funding += (operation.frequency.times_per_block_range.start
+                            as f64
                             * duration as f64
                             * operation.frequency.chance_per_block.unwrap_or(1.0))
                             as u64;
                     }
                 }
                 let num_start_addresses = strategy.start_addresses.number_of_addresses as u64;
-                let num_asset_lock_proofs_needed =
-                    num_start_identities + num_identity_inserts + num_top_ups + num_start_addresses + num_address_funding;
+                let num_asset_lock_proofs_needed = num_start_identities
+                    + num_identity_inserts
+                    + num_top_ups
+                    + num_start_addresses
+                    + num_address_funding;
                 let mut asset_lock_proofs: Vec<(AssetLockProof, PrivateKey)> = Vec::new();
                 if num_asset_lock_proofs_needed > 0 {
                     let wallet_lock = self.loaded_wallet.lock().await;
@@ -1246,72 +1278,116 @@ impl AppState {
                     );
                     let asset_lock_proof_time = Instant::now();
 
-                    // Broadcast asset locks and receive proofs.
-                    let permits = Arc::new(Semaphore::new(20));
-                    let starting_balance = strategy.start_identities.starting_balances;
-                    let processed = Arc::new(AtomicUsize::new(0));
-                    let tasks: FuturesUnordered<_> = (0..num_asset_lock_proofs_needed)
-                    .map(|_| {
-                        let permits = Arc::clone(&permits);
-                        let processed = Arc::clone(&processed);
+                    // Use the appropriate starting balance - prefer addresses if configured, fall back to identities
+                    let starting_balance = if strategy.start_addresses.starting_balance > 0 {
+                        strategy.start_addresses.starting_balance
+                    } else {
+                        strategy.start_identities.starting_balances
+                    };
+                    if starting_balance == 0 {
+                        return BackendEvent::StrategyError {
+                            error: "Starting balance is 0. Configure a non-zero balance for start_addresses or start_identities.".to_string(),
+                        };
+                    }
+                    tracing::info!(
+                        "Using starting balance of {} credits ({:.4} DASH, {} sats) for asset lock proofs",
+                        starting_balance,
+                        starting_balance as f64 / 100_000_000_000.0,
+                        starting_balance / 1000
+                    );
+                    // Process asset lock proofs sequentially to avoid UTXO conflicts
+                    // Each proof needs its own UTXO, and parallel creation causes tx-txlock-conflict
+                    let mut processed = 0usize;
+                    for i in 0..num_asset_lock_proofs_needed {
+                        const MAX_RETRIES: u32 = 15;
+                        const RETRY_DELAY_MS: u64 = 3000;
+                        let mut retry_count = 0;
 
-                        async move {
-                            let _permit = permits.acquire_owned().await.ok()?;
-
+                        loop {
+                            // Refresh wallet UTXOs and create transaction in single lock acquisition
                             let mut wallet_lock = self.loaded_wallet.lock().await;
                             let wallet = wallet_lock.as_mut().expect("Wallet not loaded");
+                            if let Err(e) = wallet.reload_utxos(insight, core_client).await {
+                                tracing::warn!("Failed to refresh wallet UTXOs: {}", e);
+                            }
 
-                            let (asset_lock_transaction, asset_lock_proof_private_key) = wallet
-                                .asset_lock_transaction(None, starting_balance)
+                            // Convert credits to satoshis (credits / 1000 = satoshis)
+                            let starting_balance_sats = starting_balance / 1000;
+                            tracing::debug!("Creating asset lock transaction for {} sats (proof {})", starting_balance_sats, i + 1);
+                            let tx_result = wallet
+                                .asset_lock_transaction(None, starting_balance_sats)
                                 .map_err(|e| {
-                                    tracing::debug!("Error creating asset lock transaction: {:?}", e);
-                                    e
-                                })
-                                .ok()?;
-
-                            let receive_address = wallet.receive_address();
-                            drop(wallet_lock);
-
-                            let result;
-
-                                match AppState::broadcast_and_retrieve_asset_lock(sdk, &asset_lock_transaction, &receive_address).await {
-                                    Ok(asset_lock_proof) => {
-                                        result = Ok((asset_lock_proof, asset_lock_proof_private_key));
-                                    }
-                                    Err(e) => {
-                                        tracing::debug!(
-                                            "Error broadcasting asset lock transaction and retrieving proof: {:?}",
-                                            e
-                                        );
-                                        result = Err(e);
-                                    }
-                                }
-
-
-                            match result {
-                                Ok(asset_lock_proof) => {
-                                    let prev = processed.fetch_add(1, Ordering::SeqCst);
-                                    tracing::trace!(
-                                        "Successfully obtained asset lock proof {} of {}",
-                                        prev + 1,
-                                        num_asset_lock_proofs_needed
-                                    );
-                                    Some(asset_lock_proof)
-                                }
-                                Err(e) => {
-                                    tracing::debug!(
-                                        "Failed to obtain asset lock proof: {:?}",
+                                    tracing::warn!(
+                                        "Error creating asset lock transaction: {:?}",
                                         e
                                     );
-                                    None
+                                    e
+                                });
+                            tracing::debug!("Asset lock transaction created: {:?}", tx_result.is_ok());
+
+                            let (asset_lock_transaction, asset_lock_proof_private_key) =
+                                match tx_result {
+                                    Ok(tx) => tx,
+                                    Err(_) => {
+                                        drop(wallet_lock);
+                                        break; // Can't create transaction, skip this proof
+                                    }
+                                };
+
+                            let receive_address = wallet.receive_address();
+                            tracing::debug!("Dropping wallet lock before broadcast (proof {})", i + 1);
+                            drop(wallet_lock);
+                            tracing::debug!("Wallet lock dropped, starting broadcast (proof {})", i + 1);
+
+                            match AppState::broadcast_and_retrieve_asset_lock(
+                                sdk,
+                                &asset_lock_transaction,
+                                &receive_address,
+                            )
+                            .await
+                            {
+                                Ok(asset_lock_proof) => {
+                                    processed += 1;
+                                    tracing::info!(
+                                        "Successfully obtained asset lock proof {} of {}",
+                                        processed,
+                                        num_asset_lock_proofs_needed
+                                    );
+                                    asset_lock_proofs
+                                        .push((asset_lock_proof, asset_lock_proof_private_key));
+                                    break; // Success, move to next proof
+                                }
+                                Err(e) => {
+                                    let error_str = e.to_string();
+                                    // Retry on UTXO conflicts (both tx-txlock-conflict and txn-mempool-conflict)
+                                    if (error_str.contains("tx-txlock-conflict")
+                                        || error_str.contains("txn-mempool-conflict"))
+                                        && retry_count < MAX_RETRIES
+                                    {
+                                        retry_count += 1;
+                                        tracing::warn!(
+                                            "UTXO conflict for proof {}, retry {}/{} after {}ms...",
+                                            i + 1,
+                                            retry_count,
+                                            MAX_RETRIES,
+                                            RETRY_DELAY_MS
+                                        );
+                                        tokio::time::sleep(tokio::time::Duration::from_millis(
+                                            RETRY_DELAY_MS,
+                                        ))
+                                        .await;
+                                        continue; // Retry with refreshed UTXOs
+                                    }
+                                    tracing::warn!(
+                                        "Failed to obtain asset lock proof {}: {:?}",
+                                        i + 1,
+                                        e
+                                    );
+                                    break; // Give up on this proof
                                 }
                             }
                         }
-                        .boxed_local()
-                    })
-                    .collect();
-
-                    asset_lock_proofs = join_all(tasks).await.into_iter().flatten().collect();
+                    }
 
                     tracing::info!(
                         "Took {} seconds to obtain {} asset lock proofs from {} required",
@@ -1319,6 +1395,25 @@ impl AppState {
                         asset_lock_proofs.len(),
                         num_asset_lock_proofs_needed
                     );
+
+                    // Fail early if we couldn't obtain any asset lock proofs when they were required
+                    if asset_lock_proofs.is_empty() {
+                        return BackendEvent::StrategyError {
+                            error: format!(
+                                "Failed to obtain any asset lock proofs (needed {}). Check logs for details.",
+                                num_asset_lock_proofs_needed
+                            ),
+                        };
+                    }
+
+                    // Warn if we got fewer than needed
+                    if (asset_lock_proofs.len() as u64) < num_asset_lock_proofs_needed {
+                        tracing::warn!(
+                            "Only obtained {} of {} required asset lock proofs. Strategy will continue but some operations may fail.",
+                            asset_lock_proofs.len(),
+                            num_asset_lock_proofs_needed
+                        );
+                    }
                 }
 
                 // Some final initialization
@@ -1336,6 +1431,8 @@ impl AppState {
                 let ongoing_waits = Arc::new(AtomicU64::new(0)); // Atomic counter for ongoing waits
                 let wait_oks = Arc::new(AtomicU64::new(0)); // Atomic counter for successful waits
                 let wait_errs = Arc::new(AtomicU64::new(0)); // Atomic counter for failed waits
+                let addresses_created_attempted = Arc::new(AtomicU64::new(0)); // Atomic counter for addresses attempted to create
+                let addresses_created_successful = Arc::new(AtomicU64::new(0)); // Atomic counter for addresses successfully created
                 let mempool_document_counter =
                     Arc::new(Mutex::new(BTreeMap::<(Identifier, Identifier), u64>::new())); // Map to track how many documents an identity has in the mempool per contract
                 let hist = Arc::new(Mutex::new(Histogram::<u64>::new(3).unwrap()));
@@ -1354,6 +1451,18 @@ impl AppState {
 
                 // Now loop through the number of blocks or seconds the user asked for, preparing and processing state transitions
                 while load_start_time.elapsed().as_secs() < duration || loop_index <= 2 {
+                    // Check if cancellation was requested
+                    if self.cancellation_token.lock().unwrap().is_cancelled() {
+                        tracing::info!("Strategy cancelled by user");
+                        return BackendEvent::StrategyCompleted {
+                            strategy_name: strategy_name.clone(),
+                            result: StrategyCompletionResult::Cancelled {
+                                reached_block_height: current_block_info.height,
+                                completed_transitions: wait_oks.load(Ordering::SeqCst),
+                            },
+                        };
+                    }
+
                     tracing::debug!("Start loop: {loop_index}");
                     // Every 10 loops, log statistics
                     if loop_index % 10 == 0 || loop_index == 1 {
@@ -1397,7 +1506,10 @@ impl AppState {
                             String::new()
                         };
 
-                        tracing::info!("\n\n{} secs passed. {} broadcast ({} tx/s)\nBroadcast results: {} successful, {} failed, {} ongoing.\nWait results: {} successful, {} failed, {} ongoing.\nBroadcast errors: {}\nWait errors: {}\nWait times (s): 50% - {} 90% - {} 95% - {}\n", stats_elapsed, stats_attempted, stats_rate, stats_broadcast_successful, stats_broadcast_failed, stats_ongoing_broadcasts, stats_wait_successful, stats_wait_failed, stats_ongoing_waits, broadcast_error_message, wait_error_message, stats_p50, stats_p90, stats_p95);
+                        let stats_addresses_attempted = addresses_created_attempted.load(Ordering::SeqCst);
+                        let stats_addresses_successful = addresses_created_successful.load(Ordering::SeqCst);
+
+                        tracing::info!("\n\n{} secs passed. {} broadcast ({} tx/s)\nBroadcast results: {} successful, {} failed, {} ongoing.\nWait results: {} successful, {} failed, {} ongoing.\nAddresses created: {} successful / {} attempted\nBroadcast errors: {}\nWait errors: {}\nWait times (s): 50% - {} 90% - {} 95% - {}\n", stats_elapsed, stats_attempted, stats_rate, stats_broadcast_successful, stats_broadcast_failed, stats_ongoing_broadcasts, stats_wait_successful, stats_wait_failed, stats_ongoing_waits, stats_addresses_successful, stats_addresses_attempted, broadcast_error_message, wait_error_message, stats_p50, stats_p90, stats_p95);
                     }
 
                     let loop_start_time = Instant::now();
@@ -1416,12 +1528,15 @@ impl AppState {
                         broadcast_connection_error_count.clone();
                     let broadcast_errors_per_code_clone = broadcast_errors_per_code.clone();
                     let wait_errors_per_code_clone = wait_errors_per_code.clone();
+                    let addresses_created_attempted_clone = addresses_created_attempted.clone();
+                    let addresses_created_successful_clone = addresses_created_successful.clone();
 
                     // Need to pass self.known_contracts to state_transitions_for_block
                     let mut known_contracts_lock = self.known_contracts.lock().await;
 
                     let mempool_document_counter_lock = mempool_document_counter.lock().await;
                     let mut current_identities_lock = current_identities.lock().await;
+                    let mut addresses_with_balance_lock = addresses_with_balance.lock().await;
 
                     // Get the state transitions for the block (or second)
                     let (transitions, finalize_operations, mut new_identities) = strategy
@@ -1431,7 +1546,7 @@ impl AppState {
                             &mut asset_lock_proofs,
                             &current_block_info,
                             &mut current_identities_lock,
-                            &mut addresses_with_balance,
+                            &mut addresses_with_balance_lock,
                             &mut known_contracts_lock,
                             &mut signer,
                             &mut identity_nonce_counter,
@@ -1447,6 +1562,7 @@ impl AppState {
 
                     drop(known_contracts_lock);
                     drop(mempool_document_counter_lock);
+                    drop(addresses_with_balance_lock);
 
                     // Add the identities that will be created to current_identities.
                     // Only do this on init block because identity_inserts don't have transfer keys atm
@@ -1589,6 +1705,15 @@ impl AppState {
                                     }
                                 }
                             }
+                            // Track address transfer outputs for logging
+                            StateTransition::AddressFundsTransfer(address_transfer) => {
+                                let output_count = address_transfer.outputs().len() as u64;
+                                addresses_created_attempted_clone.fetch_add(output_count, Ordering::SeqCst);
+                                tracing::debug!(
+                                    "AddressFundsTransfer: {} new addresses being created",
+                                    output_count
+                                );
+                            }
                             _ => {
                                 // nothing
                             }
@@ -1611,14 +1736,8 @@ impl AppState {
                         }
                     }
 
-                    // Update the loaded_identity_clone and loaded_identity_lock with the latest state of the identity
-                    if let Some(modified_identity) = current_identities_lock
-                        .iter()
-                        .find(|identity| identity.id() == loaded_identity_clone.id())
-                    {
-                        loaded_identity_clone = modified_identity.clone();
-                        *loaded_identity_lock = modified_identity.clone();
-                    }
+                    // Update the loaded identity with the latest state (if we have one)
+                    // This is a no-op for address-only strategies
 
                     drop(current_identities_lock);
 
@@ -1662,6 +1781,8 @@ impl AppState {
                             let broadcast_connection_error_count =
                                 broadcast_connection_error_count_clone.clone();
                             let broadcast_errors_per_code = broadcast_errors_per_code_clone.clone();
+                            let addresses_created_successful = addresses_created_successful_clone.clone();
+                            let addresses_with_balance_clone = addresses_with_balance.clone();
 
                             let mut request_settings = RequestSettings::default();
                             // Time-based strategy body
@@ -1674,7 +1795,9 @@ impl AppState {
                                     seconds_per_loop * 1000 / 2,
                                     3000,
                                 )));
-                                request_settings.retries = Some(0);
+                                // Enable retries with peer banning so transport errors retry on different peers
+                                request_settings.retries = Some(3);
+                                request_settings.ban_failed_address = Some(true);
                             }
 
                             // Prepare futures for broadcasting transitions
@@ -1710,32 +1833,70 @@ impl AppState {
                                                         // tracing::trace!(" + Incremented identity {} tx counter for contract {}. Count: {}", transition_owner_id, contract_id.to_string(Encoding::Base58), count);
                                                     }
                                                 }
+                                                // Track successfully created addresses
+                                                if let StateTransition::AddressFundsTransfer(ref address_transfer) = transition_clone {
+                                                    let output_count = address_transfer.outputs().len() as u64;
+                                                    addresses_created_successful.fetch_add(output_count, Ordering::SeqCst);
+                                                }
                                                 Ok((transition_clone, broadcast_result))
                                             },
                                             Err(e) => {
-                                                match e.inner {
-                                                    rs_dapi_client::DapiClientError::Transport(ref e, ..) => {broadcast_errors_per_code
-                                                        .entry(match e {
-                                                            rs_dapi_client::transport::TransportError::Grpc(status) => status.code(),
-                                                        })
-                                                        .or_insert_with(|| AtomicU64::new(0))
-                                                        .fetch_add(1, Ordering::SeqCst);},
-                                                    _ => {
-                                                        broadcast_errors_per_code
-                                                            .entry(Code::Unknown)
-                                                            .or_insert_with(|| AtomicU64::new(0))
-                                                            .fetch_add(1, Ordering::SeqCst);
-                                                    }
+                                                // Extract gRPC status code and decode consensus error if available
+                                                let (grpc_code, error_string) = match &e.inner {
+                                                    rs_dapi_client::DapiClientError::Transport(transport_err, ..) => {
+                                                        match transport_err {
+                                                            rs_dapi_client::transport::TransportError::Grpc(status) => {
+                                                                let code = status.code();
+                                                                // Try to decode consensus error from metadata
+                                                                let metadata_result = status.metadata()
+                                                                    .get_bin("dash-serialized-consensus-error-bin");
+
+                                                                let decoded = if let Some(metadata_value) = metadata_result {
+                                                                    match metadata_value.to_bytes() {
+                                                                        Ok(bytes) => {
+                                                                            use dpp::serialization::PlatformDeserializable;
+                                                                            match dpp::consensus::ConsensusError::deserialize_from_bytes(&bytes) {
+                                                                                Ok(ce) => {
+                                                                                    tracing::debug!("Successfully decoded consensus error: {:?}", ce);
+                                                                                    Some(ce.to_string())
+                                                                                },
+                                                                                Err(deser_err) => {
+                                                                                    tracing::debug!("Failed to deserialize consensus error: {:?}", deser_err);
+                                                                                    None
+                                                                                }
+                                                                            }
+                                                                        },
+                                                                        Err(bytes_err) => {
+                                                                            tracing::debug!("Failed to get bytes from metadata: {:?}", bytes_err);
+                                                                            None
+                                                                        }
+                                                                    }
+                                                                } else {
+                                                                    tracing::debug!("No consensus error metadata found, raw status message: {}", status.message());
+                                                                    None
+                                                                };
+                                                                (code, decoded.unwrap_or_else(|| format!("gRPC error ({}): {}", code, status.message())))
+                                                            },
+                                                        }
+                                                    },
+                                                    _ => (Code::Unknown, e.to_string()),
                                                 };
+                                                broadcast_errors_per_code
+                                                    .entry(grpc_code)
+                                                    .or_insert_with(|| AtomicU64::new(0))
+                                                    .fetch_add(1, Ordering::SeqCst);
                                                 broadcast_errs.fetch_add(1, Ordering::SeqCst);
-                                                tracing::error!("Error: Failed to broadcast {} transition: {:?}. ID: {}", transition_clone.name(), e, transition_id);
-                                                if e.to_string().contains("Insufficient identity") {
+                                                tracing::error!("Error: Failed to broadcast {} transition: {}. ID: {}", transition_clone.name(), error_string, transition_id);
+                                                if error_string.contains("Insufficient identity") || error_string.contains("Insufficient address") {
                                                     insufficient_balance_error_count.fetch_add(1, Ordering::SeqCst);
                                                     // Top up. This logic works but it slows the broadcasting down slightly.
                                                     if top_up_amount > 0 {
                                                         let current_identities = Arc::clone(&current_identities_clone);
                                                         let sdk_clone = sdk.clone();
                                                         let (tx, rx) = oneshot::channel();
+
+                                                        // Extract owner_id before moving transition_clone into closure
+                                                        let owner_id = transition_clone.owner_id();
 
                                                         // Lock the wallet and clone the necessary data before moving into the async block
                                                         let asset_lock_transaction;
@@ -1761,7 +1922,7 @@ impl AppState {
                                                                     match try_broadcast_and_retrieve_asset_lock(&sdk_clone, &asset_lock_transaction, &wallet_receive_address, 2).await {
                                                                         Ok(asset_lock_proof) => {
                                                                             tracing::trace!("Successfully obtained asset lock proof for top up");
-                                                                            let identity = current_identities.iter_mut().find(|identity| Some(identity.id()) == transition_clone.owner_id()).expect("Expected to find identity ID matching transition owner ID");
+                                                                            let identity = current_identities.iter_mut().find(|identity| Some(identity.id()) == owner_id).expect("Expected to find identity ID matching transition owner ID");
 
                                                                             let state_transition = IdentityTopUpTransition::try_from_identity(
                                                                                 identity,
@@ -1797,13 +1958,33 @@ impl AppState {
                                                         let _ = rx.await;
 
                                                     }
-                                                } else if e.to_string().contains("invalid identity nonce") {
+                                                } else if error_string.contains("invalid identity nonce") {
                                                     identity_nonce_error_count.fetch_add(1, Ordering::SeqCst);
-                                                } else if e.to_string().contains("rate-limit") {
+                                                } else if error_string.contains("rate-limit") {
                                                     local_rate_limit_error_count.fetch_add(1, Ordering::SeqCst);
-                                                } else if e.to_string().contains("error trying to connect") {
+                                                } else if error_string.contains("error trying to connect") {
                                                     broadcast_connection_error_count.fetch_add(1, Ordering::SeqCst);
                                                 }
+
+                                                // Reset address nonces for failed AddressFundsTransfer transitions
+                                                // so the address can be used again with the correct nonce
+                                                if let StateTransition::AddressFundsTransfer(ref address_transfer) = transition_clone {
+                                                    let mut addresses_lock = addresses_with_balance_clone.lock().await;
+                                                    for (address, (nonce, _credits)) in address_transfer.inputs().iter() {
+                                                        // Reset the nonce to one less than what was used in the failed transition
+                                                        // This allows the address to be used again with the correct nonce
+                                                        if *nonce > 0 {
+                                                            let previous_nonce = nonce - 1;
+                                                            if addresses_lock.reset_address_nonce(address, previous_nonce) {
+                                                                tracing::info!(
+                                                                    "Reset nonce for address {} from {} to {} after broadcast failure",
+                                                                    address, nonce, previous_nonce
+                                                                );
+                                                            }
+                                                        }
+                                                    }
+                                                }
+
                                                 Err(e)
                                             }
                                         }
@@ -2178,6 +2359,9 @@ impl AppState {
                         init_time = init_start_time.elapsed();
                     }
 
+                    // Commit address balance/nonce changes for this block so addresses can be reused next block
+                    addresses_with_balance.lock().await.commit();
+
                     // Update current_block_info and index for next loop iteration
                     current_block_info.height += 1;
                     let current_time_ms = SystemTime::now()
@@ -2204,6 +2388,18 @@ impl AppState {
                     broadcast_oks.load(Ordering::SeqCst),
                     broadcast_errs.load(Ordering::SeqCst)
                 );
+
+                // Log address creation results
+                let final_addresses_attempted = addresses_created_attempted.load(Ordering::SeqCst);
+                let final_addresses_successful = addresses_created_successful.load(Ordering::SeqCst);
+                if final_addresses_attempted > 0 {
+                    tracing::info!(
+                        "Addresses created: {} successful / {} attempted ({:.1}% success rate)",
+                        final_addresses_successful,
+                        final_addresses_attempted,
+                        (final_addresses_successful as f64 / final_addresses_attempted as f64) * 100.0
+                    );
+                }
 
                 // Time the execution took
                 let load_execution_run_time = load_start_time.elapsed();
@@ -2289,8 +2485,8 @@ impl AppState {
                 tracing::info!("Completed {} withdrawals.", withdrawals_count);
                 drop(wallet_lock);
 
-                // Refresh the identity at the end
-                drop(loaded_identity_lock);
+                // Refresh the identity at the end (if we have one)
+                drop(maybe_loaded_identity);
                 let refresh_result = self.refresh_loaded_identity(&sdk).await;
                 if let Err(ref e) = refresh_result {
                     tracing::warn!("Failed to refresh identity after running strategy: {:?}", e);

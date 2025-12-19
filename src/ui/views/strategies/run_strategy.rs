@@ -19,7 +19,11 @@ use crate::{
     Event,
 };
 
-const COMMAND_KEYS: [ScreenCommandKey; 2] = [
+const COMMAND_KEYS_RUNNING: [ScreenCommandKey; 1] = [
+    ScreenCommandKey::new("q", "Stop strategy"),
+];
+
+const COMMAND_KEYS_FINISHED: [ScreenCommandKey; 2] = [
     ScreenCommandKey::new("q", "Back to Strategy"),
     ScreenCommandKey::new("r", "Rerun strategy"),
 ];
@@ -61,7 +65,11 @@ impl ScreenController for RunStrategyScreenController {
     }
 
     fn command_keys(&self) -> &[ScreenCommandKey] {
-        COMMAND_KEYS.as_ref()
+        if self.strategy_running {
+            COMMAND_KEYS_RUNNING.as_ref()
+        } else {
+            COMMAND_KEYS_FINISHED.as_ref()
+        }
     }
 
     fn toggle_keys(&self) -> &[ScreenToggleKey] {
@@ -135,6 +143,15 @@ impl ScreenController for RunStrategyScreenController {
                         format!(
                             "Strategy '{}' failed to complete. Reached block/second {}. Reason: {}",
                             strategy_name, reached_block_height, reason
+                        )
+                    }
+                    StrategyCompletionResult::Cancelled {
+                        reached_block_height,
+                        completed_transitions,
+                    } => {
+                        format!(
+                            "Strategy '{}' was cancelled by user.\n\nReached block/second: {}\nCompleted transitions: {}",
+                            strategy_name, reached_block_height, completed_transitions
                         )
                     }
                 };

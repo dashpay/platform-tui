@@ -51,3 +51,4 @@ dashmap = "5.5.3"
 sha2 = "0.10.8"
 arboard = { version = "3.4.0", default-features = false, features = ["windows-sys"] }
 hdrhistogram = "7.5.4"
+bip37-bloom-filter = { git = "https://github.com/dashpay/rs-bip37-bloom-filter", branch = "develop" }

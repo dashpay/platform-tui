@@ -27,6 +27,7 @@ use dpp::{
 use drive::drive::Drive;
 use strategy_tests::Strategy;
 use tokio::sync::Mutex;
+use tokio_util::sync::CancellationToken;
 use walkdir::{DirEntry, WalkDir};
 
 use super::wallet::{add_wallet_by_private_key_as_string, Wallet};
@@ -78,6 +79,8 @@ pub struct AppState {
     >,
     pub identity_asset_lock_private_key_in_top_up:
         Mutex<Option<(Transaction, PrivateKey, Option<AssetLockProof>)>>,
+    /// Cancellation token for long-running tasks like strategy tests
+    pub cancellation_token: std::sync::Mutex<CancellationToken>,
 }
 
 impl Default for AppState {
@@ -140,6 +143,7 @@ impl Default for AppState {
             identity_asset_lock_private_key_in_creation: None.into(),
             identity_asset_lock_private_key_in_top_up: None.into(),
             available_strategies_contract_names: BTreeMap::new().into(),
+            cancellation_token: std::sync::Mutex::new(CancellationToken::new()),
         }
     }
 }
@@ -197,6 +201,7 @@ impl PlatformSerializableWithPlatformVersion for AppState {
             identity_asset_lock_private_key_in_creation,
             available_strategies_contract_names,
             identity_asset_lock_private_key_in_top_up,
+            cancellation_token: _, // Runtime-only, not serialized
         } = self;
 
         let known_contracts_in_serialization_format = known_contracts
@@ -427,6 +432,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for App
                 identity_asset_lock_private_key_in_creation.into(),
             identity_asset_lock_private_key_in_top_up: identity_asset_lock_private_key_in_top_up
                 .into(),
+            cancellation_token: std::sync::Mutex::new(CancellationToken::new()),
         })
     }
 }

@@ -183,6 +183,10 @@ pub(crate) enum StrategyCompletionResult {
         reached_block_height: u64,
         reason: String,
     },
+    Cancelled {
+        reached_block_height: u64,
+        completed_transitions: u64,
+    },
 }
 
 /// Application state, dependencies are task execution logic around it.

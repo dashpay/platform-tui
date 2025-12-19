@@ -2,6 +2,7 @@
 //!
 //! Allows configuring address-to-address transfers in strategy tests.
 
+use dpp::address_funds::AddressFundsFeeStrategyStep;
 use strategy_tests::{
     frequency::Frequency,
     operations::{Operation, OperationType},
@@ -85,7 +86,7 @@ impl FormController for StrategyOpAddressTransferFormController {
                                 min_amount..=max_amount,
                                 min_outputs..=max_outputs,
                                 use_existing,
-                                None, // Fee strategy - use default
+                                Some(vec![AddressFundsFeeStrategyStep::DeductFromInput(0)]),
                             ),
                             frequency: Frequency {
                                 times_per_block_range: times_per_block..times_per_block + 1,

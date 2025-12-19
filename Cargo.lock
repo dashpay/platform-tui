@@ -1077,7 +1077,6 @@ dependencies = [
  "dpp",
  "drive",
  "hex",
- "serde",
  "serde_json",
  "thiserror 1.0.69",
 ]
@@ -1486,7 +1485,6 @@ dependencies = [
  "platform-serialization",
  "platform-serialization-derive",
  "serde",
- "serde_json",
  "tenderdash-abci",
  "thiserror 2.0.17",
  "tracing",
@@ -4246,7 +4244,6 @@ dependencies = [
  "gloo-timers",
  "hex",
  "http",
- "http-body-util",
  "http-serde",
  "lru 0.12.5",
  "rand",
@@ -4256,7 +4253,6 @@ dependencies = [
  "thiserror 2.0.17",
  "tokio",
  "tonic-web-wasm-client",
- "tower-service",
  "tracing",
  "wasm-bindgen-futures",
 ]
@@ -4267,6 +4263,7 @@ version = "0.1.0"
 dependencies = [
  "arboard",
  "bincode",
+ "bip37-bloom-filter",
  "bs58",
  "chrono",
  "chrono-humanize",
@@ -4919,13 +4916,9 @@ dependencies = [
  "bincode",
  "dpp",
  "drive",
- "futures",
  "hex",
- "platform-serialization",
- "platform-serialization-derive",
  "platform-version",
  "rand",
- "serde_json",
  "simple-signer",
  "tracing",
 ]

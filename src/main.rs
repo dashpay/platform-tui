@@ -18,8 +18,12 @@ async fn main() {
     // Initialize logger
     let log_file = File::create("explorer.log").expect("create log file");
 
-    let filter = EnvFilter::try_new("info")
-        .unwrap()
+    // Use RUST_LOG env var if set, otherwise default to info with strategy_tests at debug
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| {
+            EnvFilter::new("info")
+                .add_directive("strategy_tests=debug".parse().unwrap())
+        })
         .add_directive("rs_dapi_client=off".parse().unwrap()); // Turn off all logs from `rs-dapi-client`
 
     let subscriber = tracing_subscriber::fmt()
@@ -157,6 +161,10 @@ async fn main() {
             UiFeedback::ExecuteTask(task) => {
                 backend_task = Some(backend.run_task(task.clone()).boxed_local().fuse()).into();
                 ui.redraw();
+            }
+            UiFeedback::CancelRunningTask => {
+                backend.state().cancellation_token.lock().unwrap().cancel();
+                tracing::info!("Cancellation requested by user");
             }
             UiFeedback::Redraw => {
                 ui_debounced_redraw = Some(

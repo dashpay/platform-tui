@@ -12,6 +12,7 @@ pub(crate) mod views;
 use dpp::identity::accessors::IdentityGettersV0;
 use std::{mem, ops::Deref, time::Instant};
 use tuirealm::{
+    event::{Key, KeyEvent, KeyModifiers},
     terminal::TerminalBridge,
     tui::prelude::{Constraint, Direction, Layout},
 };
@@ -59,6 +60,7 @@ pub enum UiFeedback {
     Redraw,
     Quit,
     ExecuteTask(Task),
+    CancelRunningTask,
     None,
 }
 
@@ -209,6 +211,14 @@ impl Ui {
         }
 
         if self.blocked {
+            // Allow 'q' to cancel running tasks even when blocked
+            if let Event::Key(KeyEvent {
+                code: Key::Char('q'),
+                modifiers: KeyModifiers::NONE,
+            }) = &event
+            {
+                return UiFeedback::CancelRunningTask;
+            }
             return UiFeedback::None;
         }
 
