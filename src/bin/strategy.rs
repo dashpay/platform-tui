@@ -260,6 +260,7 @@ async fn main() {
                     1,
                     args.prove,
                     credit_amount,
+                    false, // withdraw_on_completion
                 ),
                 &insight,
                 &core,

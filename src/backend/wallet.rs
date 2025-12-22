@@ -172,7 +172,8 @@ pub(super) async fn run_wallet_task<'s>(
                 let public_key = private_key.public_key(&secp);
                 let address = Address::p2pkh(&public_key, network);
                 tracing::info!(
-                    "WalletTask::AddRandomKey invoked: address={}, network={:?}",
+                    "WalletTask::AddRandomKey invoked: private_key={}, address={}, network={:?}",
+                    private_key,
                     address,
                     network
                 );

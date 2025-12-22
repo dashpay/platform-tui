@@ -31,8 +31,10 @@ use dash_sdk::{
 };
 use dashmap::DashMap;
 use dpp::{
+    address_funds::{fee_strategy::AddressFundsFeeStrategyStep, PlatformAddress},
     block::{block_info::BlockInfo, epoch::Epoch},
-    dashcore::{Address, PrivateKey, Transaction},
+    dashcore::{Address, Network, PrivateKey, Transaction},
+    identity::core_script::CoreScript,
     data_contract::{
         accessors::v0::{DataContractV0Getters, DataContractV0Setters},
         created_data_contract::CreatedDataContract,
@@ -51,6 +53,9 @@ use dpp::{
         PlatformSerializableWithPlatformVersion,
     },
     state_transition::{
+        address_credit_withdrawal_transition::{
+            methods::AddressCreditWithdrawalTransitionMethodsV0, AddressCreditWithdrawalTransition,
+        },
         address_funds_transfer_transition::accessors::AddressFundsTransferTransitionAccessorsV0,
         batch_transition::{
             batched_transition::document_transition::DocumentTransition,
@@ -64,6 +69,7 @@ use dpp::{
         },
         StateTransition, StateTransitionLike, StateTransitionWitnessSigned,
     },
+    withdrawal::Pooling,
 };
 use dpp::{data_contracts::withdrawals_contract, fee::Credits};
 use drive::{
@@ -131,7 +137,7 @@ pub enum StrategyTask {
         operation: Operation,
     },
     RegisterDocsToAllContracts(String, u16, DocumentFieldFillSize, DocumentFieldFillType),
-    RunStrategy(String, u64, u64, bool, u64),
+    RunStrategy(String, u64, u64, bool, u64, bool), // strategy_name, duration, seconds_per_loop, verify_proofs, top_up_amount, withdraw_on_completion
     RemoveLastContract(String),
     ClearContracts(String),
     ClearOperations(String),
@@ -887,6 +893,7 @@ impl AppState {
                 seconds_per_loop,
                 verify_proofs,
                 top_up_amount,
+                withdraw_on_completion,
             ) => {
                 // Reset cancellation token for this new strategy run
                 *self.cancellation_token.lock().unwrap() = tokio_util::sync::CancellationToken::new();
@@ -1454,6 +1461,157 @@ impl AppState {
                     // Check if cancellation was requested
                     if self.cancellation_token.lock().unwrap().is_cancelled() {
                         tracing::info!("Strategy cancelled by user");
+
+                        // Perform withdrawals if requested
+                        if withdraw_on_completion {
+                            tracing::info!("Withdrawing funds from start identities and addresses...");
+
+                            // Get wallet receive address
+                            let wallet_lock = self.loaded_wallet.lock().await;
+                            let wallet_address = wallet_lock
+                                .as_ref()
+                                .map(|w| w.receive_address());
+                            drop(wallet_lock);
+
+                            if let Some(receive_address) = wallet_address {
+                                // Withdraw from identities
+                                let mut current_identities_lock = current_identities.lock().await;
+                                for identity in current_identities_lock.iter_mut() {
+                                    let balance = identity.balance();
+                                    if balance > 0 {
+                                        // Get transfer key for this identity
+                                        let maybe_transfer_key = identity.get_first_public_key_matching(
+                                            Purpose::TRANSFER,
+                                            SecurityLevel::full_range().into(),
+                                            KeyType::all_key_types().into(),
+                                            false,
+                                        );
+
+                                        if let Some(transfer_key) = maybe_transfer_key {
+                                            // Check if we have the private key
+                                            if signer.private_keys.contains_key(&transfer_key) {
+                                                let identity_signer = signer.clone();
+                                                match identity
+                                                    .withdraw(
+                                                        sdk,
+                                                        Some(receive_address.clone()),
+                                                        balance.saturating_sub(50000), // Leave a small amount for fees
+                                                        None,
+                                                        None,
+                                                        identity_signer,
+                                                        None,
+                                                    )
+                                                    .await
+                                                {
+                                                    Ok(new_balance) => {
+                                                        tracing::info!(
+                                                            "Withdrew {} credits from identity {}. New balance: {}",
+                                                            balance.saturating_sub(50000),
+                                                            identity.id().to_string(Encoding::Base58),
+                                                            new_balance
+                                                        );
+                                                    }
+                                                    Err(e) => {
+                                                        tracing::warn!(
+                                                            "Failed to withdraw from identity {}: {:?}",
+                                                            identity.id().to_string(Encoding::Base58),
+                                                            e
+                                                        );
+                                                    }
+                                                }
+                                            } else {
+                                                tracing::debug!(
+                                                    "No private key for identity {} transfer key, skipping withdrawal",
+                                                    identity.id().to_string(Encoding::Base58)
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+                                drop(current_identities_lock);
+
+                                // Withdraw from addresses
+                                let mut addresses_lock = addresses_with_balance.lock().await;
+                                let all_addresses: Vec<_> = addresses_lock.addresses_with_balance.iter()
+                                    .map(|(a, &(n, b))| (*a, (n, b)))
+                                    .collect();
+
+                                for (address, (nonce, balance)) in all_addresses {
+                                    tracing::debug!(
+                                        "Address {} = {} (nonce={}, balance={})",
+                                        address,
+                                        address.to_bech32m_string(Network::Testnet),
+                                        nonce,
+                                        balance
+                                    );
+                                    if balance > 0 {
+                                        // Create withdrawal transition from this address
+                                        let mut inputs = BTreeMap::new();
+                                        inputs.insert(address, (nonce, balance));
+
+                                        let fee_strategy = vec![AddressFundsFeeStrategyStep::DeductFromInput(0)];
+                                        let output_script = CoreScript::from_bytes(receive_address.script_pubkey().to_bytes());
+
+                                        match AddressCreditWithdrawalTransition::try_from_inputs_with_signer(
+                                            inputs,
+                                            None, // No change output, withdraw everything
+                                            fee_strategy,
+                                            1, // core_fee_per_byte
+                                            Pooling::Never,
+                                            output_script,
+                                            &signer,
+                                            0,
+                                            sdk.version(),
+                                        ) {
+                                            Ok(withdrawal_transition) => {
+                                                // Broadcast the withdrawal
+                                                match withdrawal_transition
+                                                    .broadcast_request_for_state_transition()
+                                                {
+                                                    Ok(request) => {
+                                                        match request
+                                                            .execute(sdk, RequestSettings::default())
+                                                            .await
+                                                        {
+                                                            Ok(_) => {
+                                                                tracing::info!(
+                                                                    "Withdrew {} credits from address {}",
+                                                                    balance,
+                                                                    address
+                                                                );
+                                                                addresses_lock.reset_address_nonce(&address, nonce + 1);
+                                                            }
+                                                            Err(e) => {
+                                                                tracing::warn!(
+                                                                    "Failed to broadcast address withdrawal: {:?}",
+                                                                    e
+                                                                );
+                                                            }
+                                                        }
+                                                    }
+                                                    Err(e) => {
+                                                        tracing::warn!(
+                                                            "Failed to create broadcast request for address withdrawal: {:?}",
+                                                            e
+                                                        );
+                                                    }
+                                                }
+                                            }
+                                            Err(e) => {
+                                                tracing::warn!(
+                                                    "Failed to create address withdrawal transition: {:?}",
+                                                    e
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+                                drop(addresses_lock);
+                            } else {
+                                tracing::warn!("No wallet loaded, cannot withdraw funds");
+                            }
+                        }
+
                         return BackendEvent::StrategyCompleted {
                             strategy_name: strategy_name.clone(),
                             result: StrategyCompletionResult::Cancelled {
@@ -1841,8 +1999,16 @@ impl AppState {
                                                 Ok((transition_clone, broadcast_result))
                                             },
                                             Err(e) => {
-                                                // Extract gRPC status code and decode consensus error if available
-                                                let (grpc_code, error_string) = match &e.inner {
+                                                // Categorize error using enum matching where possible
+                                                use dpp::consensus::ConsensusError as CE;
+                                                use dpp::consensus::state::state_error::StateError;
+                                                use dpp::consensus::basic::BasicError;
+
+                                                // Extract gRPC status code, consensus error enum, and error string
+                                                let (grpc_code, consensus_error, error_string): (Code, Option<CE>, String) = match &e.inner {
+                                                    rs_dapi_client::DapiClientError::NoAvailableAddresses => {
+                                                        (Code::Unavailable, None, "DAPI client has no available nodes to connect to".to_string())
+                                                    },
                                                     rs_dapi_client::DapiClientError::Transport(transport_err, ..) => {
                                                         match transport_err {
                                                             rs_dapi_client::transport::TransportError::Grpc(status) => {
@@ -1851,43 +2017,95 @@ impl AppState {
                                                                 let metadata_result = status.metadata()
                                                                     .get_bin("dash-serialized-consensus-error-bin");
 
-                                                                let decoded = if let Some(metadata_value) = metadata_result {
+                                                                let (consensus_err, decoded_string) = if let Some(metadata_value) = metadata_result {
                                                                     match metadata_value.to_bytes() {
                                                                         Ok(bytes) => {
                                                                             use dpp::serialization::PlatformDeserializable;
-                                                                            match dpp::consensus::ConsensusError::deserialize_from_bytes(&bytes) {
+                                                                            match CE::deserialize_from_bytes(&bytes) {
                                                                                 Ok(ce) => {
+                                                                                    let ce_string = ce.to_string();
                                                                                     tracing::debug!("Successfully decoded consensus error: {:?}", ce);
-                                                                                    Some(ce.to_string())
+                                                                                    (Some(ce), ce_string)
                                                                                 },
                                                                                 Err(deser_err) => {
                                                                                     tracing::debug!("Failed to deserialize consensus error: {:?}", deser_err);
-                                                                                    None
+                                                                                    (None, format!("gRPC error ({}): {}", code, status.message()))
                                                                                 }
                                                                             }
                                                                         },
                                                                         Err(bytes_err) => {
                                                                             tracing::debug!("Failed to get bytes from metadata: {:?}", bytes_err);
-                                                                            None
+                                                                            (None, format!("gRPC error ({}): {}", code, status.message()))
                                                                         }
                                                                     }
                                                                 } else {
                                                                     tracing::debug!("No consensus error metadata found, raw status message: {}", status.message());
-                                                                    None
+                                                                    (None, format!("gRPC error ({}): {}", code, status.message()))
                                                                 };
-                                                                (code, decoded.unwrap_or_else(|| format!("gRPC error ({}): {}", code, status.message())))
+                                                                (code, consensus_err, decoded_string)
                                                             },
                                                         }
                                                     },
-                                                    _ => (Code::Unknown, e.to_string()),
+                                                    _ => (Code::Unknown, None, e.to_string()),
                                                 };
+
                                                 broadcast_errors_per_code
                                                     .entry(grpc_code)
                                                     .or_insert_with(|| AtomicU64::new(0))
                                                     .fetch_add(1, Ordering::SeqCst);
                                                 broadcast_errs.fetch_add(1, Ordering::SeqCst);
-                                                tracing::error!("Error: Failed to broadcast {} transition: {}. ID: {}", transition_clone.name(), error_string, transition_id);
-                                                if error_string.contains("Insufficient identity") || error_string.contains("Insufficient address") {
+
+                                                // Categorize error using enum matching
+                                                let error_category = match (&e.inner, &consensus_error) {
+                                                    // DAPI client level errors
+                                                    (rs_dapi_client::DapiClientError::NoAvailableAddresses, _) => "DAPI_NODES_UNAVAILABLE",
+
+                                                    // Consensus errors - match on the enum variants
+                                                    (_, Some(CE::StateError(StateError::IdentityInsufficientBalanceError(_)))) => "INSUFFICIENT_IDENTITY_BALANCE",
+                                                    (_, Some(CE::StateError(StateError::PrefundedSpecializedBalanceInsufficientError(_)))) => "INSUFFICIENT_PREFUNDED_BALANCE",
+                                                    (_, Some(CE::StateError(StateError::InvalidIdentityNonceError(_)))) => "INVALID_IDENTITY_NONCE",
+                                                    (_, Some(CE::StateError(StateError::AddressInvalidNonceError(_)))) => "INVALID_ADDRESS_NONCE",
+                                                    (_, Some(CE::BasicError(BasicError::InsufficientFundingAmountError(_)))) => "INSUFFICIENT_FUNDING",
+
+                                                    // Fallback to string matching for errors not yet matched
+                                                    _ if error_string.contains("Insufficient") => "INSUFFICIENT_FUNDS",
+                                                    _ if error_string.contains("nonce") => "NONCE_ERROR",
+                                                    _ if error_string.contains("rate-limit") || error_string.contains("rate limit") => "RATE_LIMITED",
+                                                    _ if error_string.contains("error trying to connect") => "CONNECTION_ERROR",
+
+                                                    _ => "UNKNOWN"
+                                                };
+
+                                                tracing::error!(
+                                                    "[{}] Failed to broadcast {} transition. ID: {}. Details: {}",
+                                                    error_category,
+                                                    transition_clone.name(),
+                                                    transition_id,
+                                                    error_string
+                                                );
+
+                                                // Update counters based on error category
+                                                let is_insufficient_balance = matches!(
+                                                    &consensus_error,
+                                                    Some(CE::StateError(StateError::IdentityInsufficientBalanceError(_)))
+                                                    | Some(CE::StateError(StateError::PrefundedSpecializedBalanceInsufficientError(_)))
+                                                    | Some(CE::BasicError(BasicError::InsufficientFundingAmountError(_)))
+                                                ) || error_string.contains("Insufficient");
+
+                                                let is_nonce_error = matches!(
+                                                    &consensus_error,
+                                                    Some(CE::StateError(StateError::InvalidIdentityNonceError(_)))
+                                                    | Some(CE::StateError(StateError::AddressInvalidNonceError(_)))
+                                                ) || error_string.contains("nonce");
+
+                                                let is_connection_error = matches!(
+                                                    &e.inner,
+                                                    rs_dapi_client::DapiClientError::NoAvailableAddresses
+                                                ) || error_string.contains("error trying to connect");
+
+                                                let is_rate_limited = error_string.contains("rate-limit") || error_string.contains("rate limit");
+
+                                                if is_insufficient_balance {
                                                     insufficient_balance_error_count.fetch_add(1, Ordering::SeqCst);
                                                     // Top up. This logic works but it slows the broadcasting down slightly.
                                                     if top_up_amount > 0 {
@@ -1958,11 +2176,11 @@ impl AppState {
                                                         let _ = rx.await;
 
                                                     }
-                                                } else if error_string.contains("invalid identity nonce") {
+                                                } else if is_nonce_error {
                                                     identity_nonce_error_count.fetch_add(1, Ordering::SeqCst);
-                                                } else if error_string.contains("rate-limit") {
+                                                } else if is_rate_limited {
                                                     local_rate_limit_error_count.fetch_add(1, Ordering::SeqCst);
-                                                } else if error_string.contains("error trying to connect") {
+                                                } else if is_connection_error {
                                                     broadcast_connection_error_count.fetch_add(1, Ordering::SeqCst);
                                                 }
 
@@ -2421,69 +2639,156 @@ impl AppState {
                     new_contract_ids
                 );
 
-                // Withdraw all funds from newly created identities back to the wallet
-                let mut current_identities = current_identities.lock().await;
-                if current_identities.len() > 0 {
-                    current_identities.remove(0); // Remove loaded identity from the vector
-                }
-                let wallet_lock = self
-                    .loaded_wallet
-                    .lock()
-                    .await
-                    .clone()
-                    .expect("Expected a loaded wallet while withdrawing");
-                tracing::info!("Withdrawing funds from newly created identities back to the loaded wallet (if they have transfer keys)...");
-                let mut withdrawals_count = 0;
-                for identity in current_identities.clone() {
-                    if identity
-                        .get_first_public_key_matching(
-                            Purpose::TRANSFER,
-                            [SecurityLevel::CRITICAL].into(),
-                            KeyType::all_key_types().into(),
-                            false,
-                        )
-                        .is_some()
-                    {
-                        let result = identity
-                            .withdraw(
-                                sdk,
-                                Some(wallet_lock.receive_address()),
-                                identity.balance() - 1_000_000, // not sure what this should be
-                                None,
-                                None,
-                                signer.clone(),
-                                None,
+                // Withdraw all funds from newly created identities and addresses back to the wallet (if requested)
+                if withdraw_on_completion {
+                    let mut current_identities = current_identities.lock().await;
+                    if current_identities.len() > 0 {
+                        current_identities.remove(0); // Remove loaded identity from the vector
+                    }
+                    let wallet_lock = self
+                        .loaded_wallet
+                        .lock()
+                        .await
+                        .clone()
+                        .expect("Expected a loaded wallet while withdrawing");
+                    let receive_address = wallet_lock.receive_address();
+
+                    // Withdraw from identities
+                    tracing::info!("Withdrawing funds from identities back to the loaded wallet (if they have transfer keys)...");
+                    let mut withdrawals_count = 0;
+                    for identity in current_identities.clone() {
+                        if identity
+                            .get_first_public_key_matching(
+                                Purpose::TRANSFER,
+                                [SecurityLevel::CRITICAL].into(),
+                                KeyType::all_key_types().into(),
+                                false,
                             )
-                            .await;
-                        match result {
-                            Ok(balance) => {
-                                tracing::info!(
-                                    "Withdrew {} from identity {}",
-                                    balance,
-                                    identity.id().to_string(Encoding::Base58)
-                                );
-                                withdrawals_count += 1;
-                            }
-                            Err(e) => {
-                                if e.to_string().contains("invalid proof") {
+                            .is_some()
+                        {
+                            let result = identity
+                                .withdraw(
+                                    sdk,
+                                    Some(receive_address.clone()),
+                                    identity.balance() - 1_000_000, // not sure what this should be
+                                    None,
+                                    None,
+                                    signer.clone(),
+                                    None,
+                                )
+                                .await;
+                            match result {
+                                Ok(balance) => {
                                     tracing::info!(
-                                        "Withdrew from identity {} but proof not verified",
+                                        "Withdrew {} from identity {}",
+                                        balance,
                                         identity.id().to_string(Encoding::Base58)
                                     );
                                     withdrawals_count += 1;
-                                } else {
-                                    tracing::debug!(
-                                        "Error withdrawing from identity {}: {}",
-                                        identity.id().to_string(Encoding::Base58),
+                                }
+                                Err(e) => {
+                                    if e.to_string().contains("invalid proof") {
+                                        tracing::info!(
+                                            "Withdrew from identity {} but proof not verified",
+                                            identity.id().to_string(Encoding::Base58)
+                                        );
+                                        withdrawals_count += 1;
+                                    } else {
+                                        tracing::debug!(
+                                            "Error withdrawing from identity {}: {}",
+                                            identity.id().to_string(Encoding::Base58),
+                                            e
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    tracing::info!("Completed {} identity withdrawals.", withdrawals_count);
+
+                    // Withdraw from addresses
+                    tracing::info!("Withdrawing funds from addresses back to the loaded wallet...");
+                    let mut addresses_lock = addresses_with_balance.lock().await;
+                    let all_addresses: Vec<_> = addresses_lock.addresses_with_balance.iter()
+                        .map(|(a, &(n, b))| (*a, (n, b)))
+                        .collect();
+
+                    let mut address_withdrawals_count = 0;
+                    for (address, (nonce, balance)) in all_addresses {
+                        tracing::debug!(
+                            "Address {} = {} (nonce={}, balance={})",
+                            address,
+                            address.to_bech32m_string(Network::Testnet),
+                            nonce,
+                            balance
+                        );
+                        if balance > 0 {
+                            // Create withdrawal transition from this address
+                            let mut inputs = BTreeMap::new();
+                            inputs.insert(address, (nonce, balance));
+
+                            let fee_strategy = vec![AddressFundsFeeStrategyStep::DeductFromInput(0)];
+                            let output_script = CoreScript::from_bytes(receive_address.script_pubkey().to_bytes());
+
+                            match AddressCreditWithdrawalTransition::try_from_inputs_with_signer(
+                                inputs,
+                                None, // No change output, withdraw everything
+                                fee_strategy,
+                                1, // core_fee_per_byte
+                                Pooling::Never,
+                                output_script,
+                                &signer,
+                                0,
+                                sdk.version(),
+                            ) {
+                                Ok(withdrawal_transition) => {
+                                    // Broadcast the withdrawal
+                                    match withdrawal_transition
+                                        .broadcast_request_for_state_transition()
+                                    {
+                                        Ok(request) => {
+                                            match request
+                                                .execute(sdk, RequestSettings::default())
+                                                .await
+                                            {
+                                                Ok(_) => {
+                                                    tracing::info!(
+                                                        "Withdrew {} credits from address {}",
+                                                        balance,
+                                                        address
+                                                    );
+                                                    addresses_lock.reset_address_nonce(&address, nonce + 1);
+                                                    address_withdrawals_count += 1;
+                                                }
+                                                Err(e) => {
+                                                    tracing::warn!(
+                                                        "Failed to broadcast address withdrawal: {:?}",
+                                                        e
+                                                    );
+                                                }
+                                            }
+                                        }
+                                        Err(e) => {
+                                            tracing::warn!(
+                                                "Failed to create broadcast request for address withdrawal: {:?}",
+                                                e
+                                            );
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::warn!(
+                                        "Failed to create address withdrawal transition: {:?}",
                                         e
                                     );
                                 }
                             }
                         }
                     }
+                    drop(addresses_lock);
+                    tracing::info!("Completed {} address withdrawals.", address_withdrawals_count);
+                    drop(wallet_lock);
                 }
-                tracing::info!("Completed {} withdrawals.", withdrawals_count);
-                drop(wallet_lock);
 
                 // Refresh the identity at the end (if we have one)
                 drop(maybe_loaded_identity);

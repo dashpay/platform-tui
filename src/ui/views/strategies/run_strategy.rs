@@ -183,6 +183,7 @@ pub(super) struct RunStrategyFormController {
         Field<TextInput<DefaultTextInputParser<u64>>>, // Seconds per loop
         Field<SelectInput<String>>,                    // Verify proofs?
         // Field<TextInput<DefaultTextInputParser<f64>>>, // Top up amount
+        Field<SelectInput<String>>, // Withdraw on completion?
         Field<SelectInput<String>>, // Confirm
     )>,
     selected_strategy: String,
@@ -209,6 +210,10 @@ impl RunStrategyFormController {
                 //     TextInput::new("Enter Dash amount (decimals ok)."),
                 // ),
                 Field::new(
+                    "Withdraw funds to wallet on completion?",
+                    SelectInput::new(vec!["No".to_string(), "Yes".to_string()]),
+                ),
+                Field::new(
                     "Confirm start",
                     SelectInput::new(vec!["No".to_string(), "Yes".to_string()]),
                 ),
@@ -226,32 +231,23 @@ impl FormController for RunStrategyFormController {
                 seconds_per_loop,
                 verify_proofs,
                 // top_up_amount_dash,
+                withdraw_on_completion,
                 confirm,
             )) => {
                 // let top_up_amount_credits = (top_up_amount_dash * 100_000_000_000.0) as u64;
                 if confirm == "Yes" {
-                    if verify_proofs == "Yes" {
-                        FormStatus::Done {
-                            task: Task::Strategy(StrategyTask::RunStrategy(
-                                self.selected_strategy.clone(),
-                                num_blocks,
-                                seconds_per_loop,
-                                true,
-                                0, // top up amount
-                            )),
-                            block: true,
-                        }
-                    } else {
-                        FormStatus::Done {
-                            task: Task::Strategy(StrategyTask::RunStrategy(
-                                self.selected_strategy.clone(),
-                                num_blocks,
-                                seconds_per_loop,
-                                false,
-                                0, // top up amount
-                            )),
-                            block: true,
-                        }
+                    let verify = verify_proofs == "Yes";
+                    let withdraw = withdraw_on_completion == "Yes";
+                    FormStatus::Done {
+                        task: Task::Strategy(StrategyTask::RunStrategy(
+                            self.selected_strategy.clone(),
+                            num_blocks,
+                            seconds_per_loop,
+                            verify,
+                            0, // top up amount
+                            withdraw,
+                        )),
+                        block: true,
                     }
                 } else {
                     FormStatus::PreviousScreen
